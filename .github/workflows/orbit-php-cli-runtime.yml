@@ -163,7 +163,13 @@ jobs:
           brew update
           brew install autoconf automake bison cmake flex libtool pkg-config re2c
 
+      # static-php-cli 2.8.5 reads GITHUB_TOKEN (Bearer) for api.github.com downloads
+      # (e.g. static-php/static-php-cli-hosted releases). Unauthenticated calls 403 under
+      # shared runner rate limits. Pass the workflow token only on this step — not job-
+      # or workflow-global env — and never echo it.
       - name: Build php-cli runtime
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "artifacts/php-cli"

@@ -165,6 +165,45 @@ it('defines the full 24-cell matrix as an explicit workflow_dispatch release lan
     // Exactly one setup-php in the build job path; matrix still drives artifact versions.
     expect(substr_count($workflow, 'shivammathur/setup-php@v2'))->toBe(1);
 
+    // SPC needs GITHUB_TOKEN for authenticated api.github.com fetches. Scope the
+    // workflow-provided token to the build step only — never workflow/job-global env,
+    // never a custom repository secret, and never print the token.
+    $buildJobEnd = strpos($workflow, "\n  assemble-manifest:");
+    expect($buildJobEnd)->not->toBeFalse();
+    $buildJob = substr($workflow, 0, (int) $buildJobEnd);
+
+    expect($buildJob)
+        ->toContain("name: Build php-cli runtime\n        env:\n          GITHUB_TOKEN: \${{ github.token }}")
+        ->not->toContain('echo "$GITHUB_TOKEN"')
+        ->not->toContain('echo "${GITHUB_TOKEN}"')
+        ->not->toContain('echo $GITHUB_TOKEN')
+        ->not->toContain('printenv GITHUB_TOKEN')
+        ->not->toContain('secrets.GITHUB_TOKEN')
+        ->not->toContain('ORBIT_GITHUB_TOKEN')
+        ->not->toContain('PERSONAL_ACCESS_TOKEN');
+
+    // Workflow-level env must not inject GITHUB_TOKEN into every job/step.
+    if (preg_match('/^env:\n((?:  .*\n)+)/m', $workflow, $workflowEnvBlock) === 1) {
+        expect($workflowEnvBlock[1])->not->toContain('GITHUB_TOKEN');
+    }
+
+    // Build job-level env (if any) must not set GITHUB_TOKEN for all steps.
+    if (
+        preg_match(
+            '/^  build:\n(?:    .*\n)*?    env:\n((?:      .*\n)+)/m',
+            $workflow,
+            $buildJobEnvBlock,
+        ) === 1
+    ) {
+        expect($buildJobEnvBlock[1])->not->toContain('GITHUB_TOKEN');
+    }
+
+    // Token appears only once in the workflow (the build step), not on other jobs.
+    expect(substr_count($workflow, 'GITHUB_TOKEN: ${{ github.token }}'))
+        ->toBe(1)
+        ->and(substr_count($workflow, 'GITHUB_TOKEN:'))
+        ->toBe(1);
+
     // Ordering: assemble must not invoke handoff; publish job runs handoff after upload.
     $assemblePos = strpos($workflow, 'assemble-manifest:');
     $publishPos = strpos($workflow, 'publish-object-storage:');
