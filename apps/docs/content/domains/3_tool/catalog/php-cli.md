@@ -188,6 +188,15 @@ install contracts. The full 24-cell matrix (long builds on `ubuntu-24.04`,
 `ubuntu-24.04-arm`, `macos-15`, and `macos-15-intel`) runs only on explicit
 `workflow_dispatch` when intentionally producing release artifacts.
 
+Each matrix cell installs a pinned **host** PHP 8.5 via
+`shivammathur/setup-php@v2` (same pattern as `orbit-cli-binary` /
+`orbit-release`) before platform build dependencies and
+`bin/orbit-build-php-cli-runtime`. That host PHP only runs builder tooling
+(catalog JSON via `php -r`); it is not the static `php-cli` artifact. Matrix
+`php_version` still selects the pinned patch built into each tarball. macOS
+GitHub-hosted images may omit system PHP, so the workflow must not assume a
+preinstalled `php` binary.
+
 Object-storage publication is a separate opt-in on that same dispatch:
 `publish_to_object_storage=true`. It requires repository secrets
 `ORBIT_ARTIFACTS_ACCESS_KEY`, `ORBIT_ARTIFACTS_SECRET_KEY`,

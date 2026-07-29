@@ -132,6 +132,39 @@ it('defines the full 24-cell matrix as an explicit workflow_dispatch release lan
         // Assemble must not hand off before upload; handoff lives in publish job only.
         ->toContain('Generate SHA256SUMS and collect manifests (no catalog mutation)');
 
+    // Host PHP for the builder (catalog JSON via php -r). macOS arm64 images may
+    // ship without php; pin with the same setup-php pattern as other Orbit workflows.
+    // This must not replace the static php-cli artifact build (matrix php_version).
+    expect($workflow)
+        ->toContain('shivammathur/setup-php@v2')
+        ->toContain('php-version: "8.5"')
+        ->toContain('coverage: none')
+        ->toContain('Set up PHP')
+        // Do not install a floating host PHP via Homebrew for the builder.
+        ->not->toContain('brew install php')
+        ->not->toContain('brew install php@');
+
+    $checkoutPos = strpos($workflow, "name: Checkout\n        uses: actions/checkout@v4");
+    $setupPhpPos = strpos($workflow, 'shivammathur/setup-php@v2');
+    $buildStepPos = strpos($workflow, 'name: Build php-cli runtime');
+    $linuxDepsPos = strpos($workflow, 'name: Install Linux build dependencies');
+    $macosDepsPos = strpos($workflow, 'name: Install macOS build dependencies');
+
+    expect($checkoutPos)
+        ->not->toBeFalse()->and($setupPhpPos)
+        ->not->toBeFalse()->and($buildStepPos)
+        ->not->toBeFalse()->and($linuxDepsPos)
+        ->not->toBeFalse()->and($macosDepsPos)
+        ->not->toBeFalse()
+        // Host PHP is installed for every matrix cell (Linux + both macOS runners)
+        // before platform deps and before the static build.
+        ->and($checkoutPos)->toBeLessThan($setupPhpPos)->and($setupPhpPos)->toBeLessThan($linuxDepsPos)->and(
+            $setupPhpPos,
+        )->toBeLessThan($macosDepsPos)->and($setupPhpPos)->toBeLessThan($buildStepPos);
+
+    // Exactly one setup-php in the build job path; matrix still drives artifact versions.
+    expect(substr_count($workflow, 'shivammathur/setup-php@v2'))->toBe(1);
+
     // Ordering: assemble must not invoke handoff; publish job runs handoff after upload.
     $assemblePos = strpos($workflow, 'assemble-manifest:');
     $publishPos = strpos($workflow, 'publish-object-storage:');

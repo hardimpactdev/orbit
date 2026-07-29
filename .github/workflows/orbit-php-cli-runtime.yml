@@ -137,6 +137,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Host PHP is required by bin/orbit-build-php-cli-runtime (catalog JSON via php -r).
+      # macOS GitHub-hosted images (especially macos-15 arm64) may not ship PHP; pin it
+      # with the same setup-php pattern used by orbit-cli-binary / orbit-release.
+      # This is the builder host runtime only — not the static php-cli artifact under build.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          coverage: none
+
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
