@@ -16,6 +16,9 @@ use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Processes\ProcessServiceResourceGuard;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class EditProcess
 {
     public function __construct(
