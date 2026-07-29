@@ -273,6 +273,50 @@ it('installs and records agent artifacts for Agent-eligible workload nodes', fun
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-linux-x64');
 });
 
+it('preserves a failed installer result before checking Agent artifact confirmation', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteShellResult(
+            exitCode: 12,
+            stdout: '',
+            stderr: 'required image load failed',
+            durationMs: 20,
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0])
+        ->toMatchArray([
+            'status' => 'failed',
+            'failed_step' => 'remote_update',
+            'output' => 'required image load failed',
+        ])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.app-dev-1', 'fail', 'required image load failed']);
+});
+
 it('installs macos agent artifacts into the user local agent binary path', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);

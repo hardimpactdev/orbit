@@ -59,6 +59,10 @@ final readonly class FleetUpdateNodeInstaller
             }
         }
 
+        if (! $result->successful()) {
+            return $result;
+        }
+
         if (! $this->installResults->expectedAgentInstallWasConfirmed($result, $transportOptions['input'])) {
             throw new RuntimeException('Orbit Agent artifact install was not confirmed.');
         }
