@@ -94,8 +94,8 @@
             role="progressbar"
             aria-label="Wake-up progress"
             aria-valuemin="0"
-            aria-valuemax="{{ $totalSteps }}"
-            aria-valuenow="{{ $completedSteps }}"
+            aria-valuemax="100"
+            aria-valuenow="{{ $progress }}"
         >
             <div class="progress-value" data-progress="{{ $progress }}" style="width: {{ $progress }}%"></div>
         </div>
