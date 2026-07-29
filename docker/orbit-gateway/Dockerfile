@@ -67,6 +67,8 @@ COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
 COPY bin/install-orbit /srv/orbit/bin/install-orbit
 COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
 COPY packages/core/src /srv/orbit/packages/core/src
+# Runtime consumer catalog only — required by PhpCliArtifactCatalog::load() on gateway.
+COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json
 COPY packages/sdk/src /srv/orbit/packages/sdk/src
 COPY VERSION /srv/orbit/VERSION
 

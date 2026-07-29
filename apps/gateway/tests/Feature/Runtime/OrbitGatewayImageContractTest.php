@@ -23,6 +23,10 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway')
         ->toContain('chmod 755 /srv/orbit/bin/install-orbit')
         ->toContain('COPY packages/core/src /srv/orbit/packages/core/src')
+        // Runtime php-cli catalog required by gateway tool install/update/doctor paths.
+        ->toContain(
+            'COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json',
+        )
         ->toContain('rm -f bootstrap/cache/*.php')
         ->toContain('composer dump-autoload --no-dev --no-interaction --optimize --no-scripts')
         ->toContain('docker-ce-cli')
@@ -44,6 +48,9 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('HEALTHCHECK')
         ->not->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
         ->not->toContain('COPY packages/core /srv/orbit/packages/core')
+        ->not->toContain('artifact-catalog.build.json')
+        ->not->toContain('static-php-cli-')
+        ->not->toContain('pcov-1.0.12-config-m4')
         ->not->toContain('COPY apps/gateway /app')
         ->not->toContain('COPY apps/reverb')
         ->not->toContain('COPY --from=composer')
@@ -70,9 +77,12 @@ it('keeps the orbit gateway image build context free of host secrets and generat
         ->toContain('!apps/gateway/resources/views/**')
         ->toContain('!bin/install-orbit')
         ->toContain('!packages/core/src/**')
-        ->toContain('**/tests')
-        ->toContain('**/build')
-        ->toContain('**/builds')
+        // Admit only the runtime php-cli catalog; never the build handoff catalog or patches.
+        ->toContain('!packages/core/resources/php-cli/artifact-catalog.json')
+        ->not->toContain('!packages/core/resources/php-cli/artifact-catalog.build.json')
+        ->not->toContain('!packages/core/resources/php-cli/**')->toContain('**/tests')->toContain(
+            '**/build',
+        )->toContain('**/builds')
         ->not->toContain('!apps/gateway/**')
         ->not->toContain('!apps/reverb/**')
         ->not->toContain('!packages/core/**')->toContain('!docker/orbit-gateway/**');

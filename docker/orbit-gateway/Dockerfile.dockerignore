@@ -37,6 +37,10 @@ apps/gateway/bootstrap/cache/**
 !packages/core/composer.lock
 !packages/core/src/
 !packages/core/src/**
+# Runtime php-cli catalog only (gateway install/update/doctor). No build catalog or patches.
+!packages/core/resources/
+!packages/core/resources/php-cli/
+!packages/core/resources/php-cli/artifact-catalog.json
 !packages/sdk/
 !packages/sdk/composer.json
 !packages/sdk/composer.lock
