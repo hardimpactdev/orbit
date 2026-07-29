@@ -60,7 +60,9 @@ describe('AppInstanceEnvApplier', function (): void {
             ),
         ]);
 
-        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, 'MAIL_MAILER', 'smtp');
+        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, [
+            'MAIL_MAILER' => 'smtp',
+        ]);
 
         expect($result->envPath)
             ->toBe($path.'/.env')
@@ -89,7 +91,10 @@ describe('AppInstanceEnvApplier', function (): void {
         );
         app()->instance(RemoteShell::class, $shell);
 
-        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, 'MAIL_MAILER', 'smtp');
+        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, [
+            'APP_NAME' => 'Billing',
+            'MAIL_MAILER' => 'smtp',
+        ]);
 
         expect($result->cacheCleared)
             ->toBeTrue()

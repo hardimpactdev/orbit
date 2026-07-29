@@ -7,6 +7,7 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Project;
 use App\Services\Ca\OrbitCaService;
@@ -228,7 +229,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    AppInstance::factory()->for($app)->create([
+    $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
@@ -237,14 +238,36 @@ it('applies set env values to the remote app runtime when apply is requested', f
             domain: 'billing-development.test',
         ),
     ]);
+    $connection = DatabaseConnection::factory()->for($node)->create([
+        'slug' => 'billing-db',
+        'driver' => 'pgsql',
+        'host' => 'postgres.internal',
+        'database' => 'billing',
+        'username' => 'billing',
+        'credentials' => ['password' => 'database-secret'],
+    ]);
+    DatabaseConnectionTarget::factory()
+        ->for($connection, 'connection')
+        ->forAppInstance($instance)
+        ->create();
 
-    app()->instance(RemoteShell::class, new AppInstanceEnvControllerRecordingRemoteShell);
+    $shell = new AppInstanceEnvControllerRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $shell);
     app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService {
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
         }
     });
+
+    appInstanceEnvApiJson(
+        'POST',
+        '/api/projects/billing/instances/development/env',
+        [
+            'key' => 'APP_NAME',
+            'value' => 'Billing',
+        ],
+    )->assertOk();
 
     $response = appInstanceEnvApiJson(
         'POST',
@@ -272,6 +295,21 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing-development/.env')
         ->assertJsonPath('success.data.apply.cache_cleared', true)
         ->assertJsonPath('success.data.apply.runtime_outcome', 'created');
+
+    $writePayload = collect($shell->options)
+        ->pluck('input')
+        ->filter()
+        ->map(fn (string $input): array => json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->firstWhere('action', 'write');
+
+    expect($writePayload)
+        ->toBeArray()
+        ->and($writePayload['contents'] ?? null)
+        ->toContain('APP_NAME=Billing')
+        ->toContain('MAIL_MAILER=smtp')
+        ->toContain('DB_PASSWORD=database-secret')
+        ->and($response->getContent())
+        ->not->toContain('database-secret');
 });
 
 it('rejects secret env writes until secret storage is designed', function (): void {
@@ -295,8 +333,15 @@ it('rejects secret env writes until secret storage is designed', function (): vo
 
 final class AppInstanceEnvControllerRecordingRemoteShell implements RemoteShell
 {
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->options[] = $options;
+
         if (str_contains($script, 'id -u')) {
             return new RemoteShellResult(exitCode: 0, stdout: "1000\n1000\n", stderr: '', durationMs: 1);
         }

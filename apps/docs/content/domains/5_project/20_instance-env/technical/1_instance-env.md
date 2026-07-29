@@ -69,10 +69,13 @@ serving node. These defaults are not stored as explicit instance env rows.
 5. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
 6. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
-   writes the selected instance's live `.env` on its serving node through
-   authenticated Agent push over WireGuard. It cannot write the project
-   default path or a sibling instance path. Workspace CWD never supplies an
-   implicit instance target; project and instance selection remains explicit.
+   renders the complete effective instance env from authoritative gateway state
+   and writes that map to the selected instance's live `.env` on its serving
+   node through authenticated Agent push over WireGuard. Consecutive applies
+   include previously stored values, Orbit-derived values, and attached
+   database values. It cannot write the project default path or a sibling
+   instance path. Workspace CWD never supplies an implicit instance target;
+   project and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config and deletes generated bootstrap cache files at the selected
    instance path on the host PHP toolchain as the instance's isolated runtime

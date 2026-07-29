@@ -42,9 +42,12 @@ instance env values, and database connections attached to that same instance.
 Secret database values are redacted in API and CLI responses.
 
 `set` without `--apply` stores gateway intent only. `set --apply` also writes
-the selected instance's live `.env` on its serving node, clears Laravel
-config and generated bootstrap cache files at that instance path as its runtime
-user, and reapplies that instance's FrankenPHP runtime container for PHP apps.
+the complete effective env map from authoritative gateway state to the selected
+instance's live `.env` on its serving node, clears Laravel config and generated
+bootstrap cache files at that instance path as its runtime user, and reapplies
+that instance's FrankenPHP runtime container for PHP apps. Consecutive applies
+therefore preserve every stored and derived value instead of reducing the file
+to the latest mutation.
 It never targets the project's default path or a sibling instance. Running from
 inside a workspace does not infer its parent project: `instance:env` still
 requires explicit project and instance selectors; use `workspace:env` for the

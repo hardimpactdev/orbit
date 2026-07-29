@@ -27,7 +27,10 @@ final readonly class AppInstanceEnvApplier
         private AppRuntimeUser $runtimeUser,
     ) {}
 
-    public function apply(Project $app, AppInstance $instance, string $key, string $value): AppInstanceEnvApplyResult
+    /**
+     * @param  array<string, string>  $values
+     */
+    public function apply(Project $app, AppInstance $instance, array $values): AppInstanceEnvApplyResult
     {
         $node = $this->placement->nodeForInstance($instance);
 
@@ -47,7 +50,7 @@ final readonly class AppInstanceEnvApplier
 
         $runtimeApp = $this->containerRenderer->runtimeAppForInstance($app, $instance);
         $contents = $this->readContents($node, $envPath);
-        $updated = $this->envFileEditor->update($contents, [$key => $value]);
+        $updated = $this->envFileEditor->update($contents, $values);
         $this->writeContents(
             $node,
             $envPath,

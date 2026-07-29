@@ -42,6 +42,32 @@ final readonly class AppInstanceEnvRenderer
      */
     public function render(AppInstance $instance): array
     {
+        return $this->renderEntries($instance, redactSecrets: true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function applicableValues(AppInstance $instance): array
+    {
+        $values = [];
+
+        foreach ($this->renderEntries($instance, redactSecrets: false) as $key => $entry) {
+            if (! is_string($entry['value'])) {
+                continue;
+            }
+
+            $values[$key] = $entry['value'];
+        }
+
+        return $values;
+    }
+
+    /**
+     * @return array<string, array{value: string|null, secret: bool, source: string}>
+     */
+    private function renderEntries(AppInstance $instance, bool $redactSecrets): array
+    {
         $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
 
         $env = [];
@@ -60,7 +86,7 @@ final readonly class AppInstanceEnvRenderer
 
         foreach ($instance->envVariables as $variable) {
             $env[$variable->key] = [
-                'value' => $variable->secret ? null : $variable->value,
+                'value' => $redactSecrets && $variable->secret ? null : $variable->value,
                 'secret' => (bool) $variable->secret,
                 'source' => 'instance',
             ];
@@ -73,7 +99,7 @@ final readonly class AppInstanceEnvRenderer
                 continue;
             }
 
-            foreach ($this->databaseVariables($connection, $target->env_prefix) as $key => $entry) {
+            foreach ($this->databaseVariables($connection, $target->env_prefix, $redactSecrets) as $key => $entry) {
                 $env[$key] = $entry;
             }
         }
@@ -98,8 +124,11 @@ final readonly class AppInstanceEnvRenderer
     /**
      * @return array<string, array{value: string|null, secret: bool, source: string}>
      */
-    private function databaseVariables(DatabaseConnection $connection, string $prefix): array
-    {
+    private function databaseVariables(
+        DatabaseConnection $connection,
+        string $prefix,
+        bool $redactSecrets,
+    ): array {
         $prefix = strtoupper($prefix);
         $password = $connection->credentials['password'] ?? null;
 
@@ -126,7 +155,7 @@ final readonly class AppInstanceEnvRenderer
         }
 
         $payload["{$prefix}_PASSWORD"] = [
-            'value' => null,
+            'value' => $redactSecrets || ! is_string($password) ? null : $password,
             'secret' => is_string($password) && $password !== '',
             'source' => 'database',
         ];

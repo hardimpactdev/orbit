@@ -90,7 +90,7 @@ final class AppInstanceEnvController implements Loggable
         if ($request->boolean('apply')) {
             try {
                 $payload['apply'] = $this->applier
-                    ->apply($targetApp, $targetInstance, $key, $value)
+                    ->apply($targetApp, $targetInstance, $this->env->applicableValues($targetInstance))
                     ->toArray();
                 $payload['applied'] = true;
                 $payload['runtime_restarted'] = in_array(
