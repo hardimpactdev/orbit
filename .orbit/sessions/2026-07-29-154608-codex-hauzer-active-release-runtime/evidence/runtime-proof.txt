@@ -1,0 +1,74 @@
+Orbit active production release runtime proof
+Date: 2026-07-29
+Checkout: /Users/nckrtl/orbit/.worktrees/codex-hauzer-active-release-runtime
+Commit: ee8477c96f7d73a5b7809286bae3401a37ce2f47
+Solo terminal: hauzer-active-release-proof (process 1149)
+Topology: dev-16cbe4
+Kind: operator_gateway_app-dev_app-prod
+Host: beast
+Nodes:
+- operator: orbit-e2e-dev-16cbe4-operator
+- gateway: orbit-e2e-dev-16cbe4-gateway
+- dev: orbit-e2e-dev-16cbe4-dev
+- prod: orbit-e2e-dev-16cbe4-prod
+Runtime checkout: /home/orbit/orbit-run
+
+The retained topology was synchronized after commit ee8477c96 with:
+
+composer e2e:incus -- --sync --id=dev-16cbe4
+
+A release-aware PHP production instance was registered as
+release-proof.production on app-prod-1. Its pipeline copied the Laravel E2E
+fixture into {{ release_path }}, created its required view directory, made the
+isolated fixture writable, and activated it with:
+
+ln -sfn '{{ release_path }}' '{{ live_path }}'
+
+The deployment manager was invoked from the synchronized gateway checkout.
+Two consecutive deployments completed:
+
+deploy-ok
+deploy-ok
+
+After the first completed deployment:
+
+live=/home/orbit-release-proof/app/releases/20260729_132737_9
+marker=first-run
+workdir=/app/live
+started=2026-07-29T13:28:02.136920776Z
+container-pwd=/home/orbit-release-proof/app/releases/20260729_132737_9
+container-base=/app/live
+SERVER_ROOT=/app/live/public
+APP_BASE_PATH=/app/live
+warmup-cache=ready
+
+After the second completed deployment:
+
+live=/home/orbit-release-proof/app/releases/20260729_132939_10
+marker=first-run
+workdir=/app/live
+started=2026-07-29T13:30:02.930795349Z
+container-pwd=/home/orbit-release-proof/app/releases/20260729_132939_10
+container-base=/app/live
+SERVER_ROOT=/app/live/public
+APP_BASE_PATH=/app/live
+warmup-cache=ready
+
+The container was not recreated for the second deployment. Its creation time
+and ID remained from the earlier convergence while StartedAt advanced:
+
+created=2026-07-29T13:21:01.735156819Z
+started=2026-07-29T13:30:02.930795349Z
+id=a113fbdc538a674b444c78d31e84fd3e08dceaf5af2a62a6ac4aa5ca9480f2e8
+
+Gateway state after the second deployment:
+
+document_root=live/public
+latest_status=completed
+latest_run=10
+
+The first topology attempt exposed that AppCommandRouter embedded the old app
+path inside warmup commands even when the executor cwd was /app/live. Commit
+ee8477c96 changed DeployManager to route Composer and Artisan warmups through
+routeForPath(..., $cwd, ...). The synchronized topology then produced
+warmup-cache=ready under each activated release.

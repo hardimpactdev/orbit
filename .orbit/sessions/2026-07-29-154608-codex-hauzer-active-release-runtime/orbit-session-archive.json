@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T13:46:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-hauzer-active-release-runtime/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-154608-codex-hauzer-active-release-runtime",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-29T134348Z-a176c13a39c4.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "fecfa507e6ab1e59d4bb71a36712f697d4eeb7e3a65437df4ac6b62f1074e13e",
+        "loop.md": "a63084478baf9ee0a97558ad471a3fd19e782dab86c957ae3bf98d7d9c96aafc",
+        "quality-gates/quality-check-2026-07-29T134348Z-a176c13a39c4.json": "9aed621a0a98eb2c56f39c6ec5a01500445163c8030960cd3c9840e01f2431ac"
+    },
+    "branch": "codex/hauzer-active-release-runtime",
+    "candidate_commit": "31ce0fcbbcdedd0a3b4c11799f21f4d4c9afab53",
+    "accepted_feature_tip": "31ce0fcbbcdedd0a3b4c11799f21f4d4c9afab53",
+    "accepted_main_tip": "c8d0a7030071709576a2d11dbd8c67f28e7cd8b5",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
