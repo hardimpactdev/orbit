@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T15:21:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-offline-candidate-image-load/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-172101-offline-candidate-image-load",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-29T151809Z-2a49ecc4d60f.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "e19e436e716168a974058c751543c1fef49a2a22e13b34eb945d2b95ef1f6c64",
+        "loop.md": "d7502448bcdf7c7e38febff637ecff1456107fdf0f200f7ee516e7c631273892",
+        "quality-gates/quality-check-2026-07-29T151809Z-2a49ecc4d60f.json": "c076e39edec4dad8e5ad344a40f9bcc0720f409f0b14f891bd3f308889f68bf9"
+    },
+    "branch": "codex/offline-candidate-image-load",
+    "candidate_commit": "caf52767baf5d7c903cc2e2482cab3e68ce93d48",
+    "accepted_feature_tip": "caf52767baf5d7c903cc2e2482cab3e68ce93d48",
+    "accepted_main_tip": "df9a471ac3af2a555d0ed6f41805775b395b4837",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
