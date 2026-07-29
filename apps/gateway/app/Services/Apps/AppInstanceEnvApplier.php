@@ -15,12 +15,16 @@ use RuntimeException;
 
 final readonly class AppInstanceEnvApplier
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private AppRuntimeContainerRenderer $containerRenderer,
         private AppRuntimeContainerManager $containerManager,
         private RemoteAppCacheClear $cacheClear,
         private WorkspacePlacement $placement,
+        private AppRuntimeUser $runtimeUser,
     ) {}
 
     public function apply(Project $app, AppInstance $instance, string $key, string $value): AppInstanceEnvApplyResult
@@ -44,7 +48,12 @@ final readonly class AppInstanceEnvApplier
         $runtimeApp = $this->containerRenderer->runtimeAppForInstance($app, $instance);
         $contents = $this->readContents($node, $envPath);
         $updated = $this->envFileEditor->update($contents, [$key => $value]);
-        $this->writeContents($node, $envPath, $updated);
+        $this->writeContents(
+            $node,
+            $envPath,
+            $updated,
+            $this->runtimeUser->forApp($runtimeApp),
+        );
 
         $cacheCleared = false;
         $runtimeOutcome = null;
@@ -85,8 +94,12 @@ final readonly class AppInstanceEnvApplier
         return app(RemoteEnvFile::class)->read($node, $path) ?? '';
     }
 
-    private function writeContents(Node $node, string $path, string $contents): void
-    {
+    private function writeContents(
+        Node $node,
+        string $path,
+        string $contents,
+        string $runtimeUser,
+    ): void {
         if ($this->shouldUseLocalFilesystem($node)) {
             if (! is_dir(dirname($path))) {
                 mkdir(dirname($path), 0775, true);
@@ -97,7 +110,7 @@ final readonly class AppInstanceEnvApplier
             return;
         }
 
-        app(RemoteEnvFile::class)->write($node, $path, $contents);
+        app(RemoteEnvFile::class)->write($node, $path, $contents, $runtimeUser);
     }
 
     private function clearCaches(Node $node, Project $app): void

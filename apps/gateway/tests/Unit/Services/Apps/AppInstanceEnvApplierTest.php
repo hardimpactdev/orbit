@@ -117,6 +117,13 @@ describe('AppInstanceEnvApplier', function (): void {
         expect(array_column($envPayloads, 'path'))
             ->toContain('/home/orbit/apps/billing-development/.env')
             ->not->toContain('/home/orbit/apps/billing/.env');
+
+        $writePayload = collect($envPayloads)->firstWhere('action', 'write');
+
+        expect($writePayload)
+            ->toBeArray()
+            ->and($writePayload['runtime_user'] ?? null)
+            ->toBe('orbit');
     });
 });
 

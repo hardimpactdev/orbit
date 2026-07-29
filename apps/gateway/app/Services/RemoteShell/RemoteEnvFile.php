@@ -30,13 +30,23 @@ final readonly class RemoteEnvFile
         return is_string($contents) ? $contents : null;
     }
 
-    public function write(Node $node, string $path, string $contents): void
-    {
-        $result = $this->run($node, [
+    public function write(
+        Node $node,
+        string $path,
+        string $contents,
+        ?string $runtimeUser = null,
+    ): void {
+        $payload = [
             'action' => 'write',
             'path' => $path,
             'contents' => $contents,
-        ]);
+        ];
+
+        if ($runtimeUser !== null) {
+            $payload['runtime_user'] = $runtimeUser;
+        }
+
+        $result = $this->run($node, $payload);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->output());
