@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T10:56:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-sqlite-live-finalization/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-125644-codex-sqlite-live-finalization",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "7fd767060184685a26cd070245565a05cbedd5f073731055598762f3a7c8f9c0",
+        "loop.md": "dd526dd20dbfed90c29f4c733da8df47bc71ddd68ac0035cb3b98175b7c9d3dc"
+    },
+    "branch": "codex/sqlite-live-finalization",
+    "candidate_commit": "a03e681b046b09f17b1388a759e4c2e224a86251",
+    "accepted_feature_tip": "a03e681b046b09f17b1388a759e4c2e224a86251",
+    "accepted_main_tip": "bf1a411ef7efb9566a201968e650426a85027946",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

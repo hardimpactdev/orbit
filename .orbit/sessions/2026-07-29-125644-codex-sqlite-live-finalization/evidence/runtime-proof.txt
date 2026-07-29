@@ -1,0 +1,76 @@
+Retained topology proof
+=======================
+
+Topology id: dev-d9368f
+Topology kind: operator_gateway_app-dev_app-prod
+Host: beast
+Feature tip: a03e681b046b09f17b1388a759e4c2e224a86251
+Source-mounted roles: operator, gateway, prod
+Operator instance: orbit-e2e-dev-d9368f-operator
+Gateway instance: orbit-e2e-dev-d9368f-gateway
+Production instance: orbit-e2e-dev-d9368f-prod
+
+Purpose
+-------
+
+Prove that a production instance env apply crosses the gateway-to-node Agent
+Push transport, writes an app-user-owned .env file as the derived runtime user,
+and does not retain env-file contents in operation summaries.
+
+Setup
+-----
+
+- Registered `env-proof.production` on `app-prod-1` with source path
+  `/home/envproof/app`.
+- The source directory and `.env` file were owned by `envproof:envproof`.
+- The retained proof project was set to the static runtime after registration
+  so the assertion isolated the env transport and write path from the prepared
+  topology's intentionally absent FrankenPHP application image.
+
+Command
+-------
+
+ssh beast "incus exec orbit-e2e-dev-d9368f-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit instance:env set env-proof.production --key=ORBIT_ENV_PROOF --value=transport-ok --apply --json'"
+
+Result
+------
+
+The command exited successfully and returned:
+
+- project: env-proof
+- instance: production
+- path: /home/envproof/app/.env
+- stored: true
+- applied: true
+- cache_cleared: false
+- runtime_outcome: null
+
+Production-node verification
+----------------------------
+
+Command:
+
+ssh beast "incus exec orbit-e2e-dev-d9368f-prod -- bash -lc 'stat -c \"owner=%U:%G mode=%a\" /home/envproof/app/.env; grep \"^ORBIT_ENV_PROOF=\" /home/envproof/app/.env'"
+
+Result:
+
+owner=envproof:envproof mode=644
+ORBIT_ENV_PROOF=transport-ok
+
+Audit-boundary verification
+---------------------------
+
+The retained gateway's latest `internal:env-file` operation run reported:
+
+operation_id=env-file.write
+status=succeeded
+exit_code=0
+stdout_summary=<suppressed>
+stderr_summary=<suppressed>
+
+Conclusion
+----------
+
+PASS: the source-mounted feature checkout applied the production instance env
+value through Agent Push, wrote as the path-derived runtime user, preserved file
+ownership, and suppressed env-file command output in the operation audit.
