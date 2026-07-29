@@ -7,8 +7,13 @@ namespace App\Services\Apps;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvVariable;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class AppInstanceEnvRenderer
 {
     public function __construct(
@@ -42,7 +47,17 @@ final readonly class AppInstanceEnvRenderer
      */
     public function render(AppInstance $instance): array
     {
-        return $this->renderEntries($instance, redactSecrets: true);
+        $entries = $this->renderEntries($instance);
+
+        foreach ($entries as $key => $entry) {
+            if (! $entry['secret']) {
+                continue;
+            }
+
+            $entries[$key]['value'] = null;
+        }
+
+        return $entries;
     }
 
     /**
@@ -52,7 +67,7 @@ final readonly class AppInstanceEnvRenderer
     {
         $values = [];
 
-        foreach ($this->renderEntries($instance, redactSecrets: false) as $key => $entry) {
+        foreach ($this->renderEntries($instance) as $key => $entry) {
             if (! is_string($entry['value'])) {
                 continue;
             }
@@ -66,7 +81,7 @@ final readonly class AppInstanceEnvRenderer
     /**
      * @return array<string, array{value: string|null, secret: bool, source: string}>
      */
-    private function renderEntries(AppInstance $instance, bool $redactSecrets): array
+    private function renderEntries(AppInstance $instance): array
     {
         $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
 
@@ -85,21 +100,35 @@ final readonly class AppInstanceEnvRenderer
         }
 
         foreach ($instance->envVariables as $variable) {
-            $env[$variable->key] = [
-                'value' => $redactSecrets && $variable->secret ? null : $variable->value,
+            $key = $variable->key;
+            $value = $variable->value;
+
+            if (! is_string($key) || ! is_string($value)) {
+                continue;
+            }
+
+            $env[$key] = [
+                'value' => $value,
                 'secret' => (bool) $variable->secret,
                 'source' => 'instance',
             ];
         }
 
         foreach ($instance->databaseConnectionTargets as $target) {
-            $connection = $target->connection;
+            if (! $target instanceof DatabaseConnectionTarget) {
+                continue;
+            }
+
+            /** @var DatabaseConnection|null $connection */
+            $connection = $target->getRelation('connection');
 
             if (! $connection instanceof DatabaseConnection) {
                 continue;
             }
 
-            foreach ($this->databaseVariables($connection, $target->env_prefix, $redactSecrets) as $key => $entry) {
+            $prefix = $target->env_prefix;
+
+            foreach ($this->databaseVariables($connection, $prefix) as $key => $entry) {
                 $env[$key] = $entry;
             }
         }
@@ -124,13 +153,13 @@ final readonly class AppInstanceEnvRenderer
     /**
      * @return array<string, array{value: string|null, secret: bool, source: string}>
      */
-    private function databaseVariables(
-        DatabaseConnection $connection,
-        string $prefix,
-        bool $redactSecrets,
-    ): array {
+    private function databaseVariables(DatabaseConnection $connection, string $prefix): array
+    {
         $prefix = strtoupper($prefix);
-        $password = $connection->credentials['password'] ?? null;
+        $credentials = $connection->credentials;
+        $password = is_array($credentials) && is_string($credentials['password'] ?? null)
+            ? $credentials['password']
+            : null;
 
         $values = [
             "{$prefix}_CONNECTION" => $connection->driver,
@@ -155,7 +184,7 @@ final readonly class AppInstanceEnvRenderer
         }
 
         $payload["{$prefix}_PASSWORD"] = [
-            'value' => $redactSecrets || ! is_string($password) ? null : $password,
+            'value' => is_string($password) ? $password : null,
             'secret' => is_string($password) && $password !== '',
             'source' => 'database',
         ];

@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -238,13 +239,14 @@ it('applies set env values to the remote app runtime when apply is requested', f
             domain: 'billing-development.test',
         ),
     ]);
+    $databaseCredential = Str::random(24);
     $connection = DatabaseConnection::factory()->for($node)->create([
         'slug' => 'billing-db',
         'driver' => 'pgsql',
         'host' => 'postgres.internal',
         'database' => 'billing',
         'username' => 'billing',
-        'credentials' => ['password' => 'database-secret'],
+        'credentials' => ['password' => $databaseCredential],
     ]);
     DatabaseConnectionTarget::factory()
         ->for($connection, 'connection')
@@ -307,9 +309,9 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->and($writePayload['contents'] ?? null)
         ->toContain('APP_NAME=Billing')
         ->toContain('MAIL_MAILER=smtp')
-        ->toContain('DB_PASSWORD=database-secret')
+        ->toContain("DB_PASSWORD={$databaseCredential}")
         ->and($response->getContent())
-        ->not->toContain('database-secret');
+        ->not->toContain($databaseCredential);
 });
 
 it('rejects secret env writes until secret storage is designed', function (): void {
@@ -319,11 +321,15 @@ it('rejects secret env writes until secret storage is designed', function (): vo
     $app = Project::factory()->for($node, 'node')->create(['name' => 'billing']);
     AppInstance::factory()->for($app)->create(['name' => 'development']);
 
-    $response = appInstanceEnvApiJson('POST', '/api/projects/billing/instances/development/env', [
-        'key' => 'API_TOKEN',
-        'value' => 'secret',
-        'secret' => true,
-    ]);
+    $response = appInstanceEnvApiJson(
+        method: 'POST',
+        uri: '/api/projects/billing/instances/development/env',
+        data: [
+            'key' => 'API_TOKEN',
+            'value' => 'secret',
+            'secret' => true,
+        ],
+    );
 
     $response
         ->assertUnprocessable()
