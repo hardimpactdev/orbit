@@ -460,8 +460,10 @@ describe('internal fleet update install cli command', function (): void {
         $roleImageArchive = "{$workspace}/artifact/orbit-reverb.tar";
         file_put_contents($roleImageArchive, data: 'verified role image archive');
         $dockerLog = "{$workspace}/docker.log";
-        $dockerPath = make_fleet_update_install_cli_fake_docker_bin($workspace, $dockerLog);
+        $dockerPath = make_fleet_update_install_cli_offline_docker_bin($workspace, $dockerLog);
         $originalPath = $_SERVER['PATH'] ?? getenv('PATH');
+        $candidateImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate@sha256:'.str_repeat('a', times: 64);
+        $stableImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9';
 
         putenv('PATH='.$dockerPath.':'.(is_string($originalPath) ? $originalPath : ''));
         $_ENV['PATH'] = getenv('PATH');
@@ -478,11 +480,15 @@ describe('internal fleet update install cli command', function (): void {
                 'install_root' => "{$workspace}/install-root",
                 'bin_path' => "{$workspace}/bin/orbit",
                 'shared_binary_path' => null,
-                'role_images' => ['ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64)],
+                'role_images' => [$candidateImage],
                 'role_image_artifacts' => [[
-                    'image' => 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64),
+                    'image' => $candidateImage,
                     'url' => "file://{$roleImageArchive}",
                     'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
+                'role_image_aliases' => [[
+                    'source' => $candidateImage,
+                    'target' => $stableImage,
                 ]],
             ], JSON_THROW_ON_ERROR),
         );
@@ -491,8 +497,9 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe(0, $output)
             ->and((string) file_get_contents($dockerLog))
             ->toContain('load --input')
-            ->toContain('image inspect ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:')
-            ->not->toContain('pull ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:');
+            ->toContain('image inspect ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate')
+            ->toContain("image tag sha256:orbit-test-image {$stableImage}")
+            ->toContain("pull {$candidateImage}");
     });
 });
 
@@ -1134,6 +1141,38 @@ function make_fleet_update_install_cli_fake_docker_bin(string $workspace, string
         if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${3:-}" = "--format" ]; then
             printf '%s\n' "sha256:orbit-test-image"
         fi
+        exit 0
+        SH);
+    chmod("{$bin}/docker", permissions: 0o755);
+    putenv("ORBIT_TEST_DOCKER_LOG={$log}");
+    $_ENV['ORBIT_TEST_DOCKER_LOG'] = $log;
+    $_SERVER['ORBIT_TEST_DOCKER_LOG'] = $log;
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_offline_docker_bin(string $workspace, string $log): string
+{
+    $bin = "{$workspace}/offline-docker-bin";
+    mkdir($bin, recursive: true);
+    file_put_contents("{$bin}/docker", <<<'SH'
+        #!/usr/bin/env sh
+        printf '%s\n' "$*" >> "$ORBIT_TEST_DOCKER_LOG"
+
+        if [ "$1" = "pull" ]; then
+            exit 1
+        fi
+
+        if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+            case "$*" in
+                *@sha256:*) exit 1 ;;
+            esac
+
+            if [ "${3:-}" = "--format" ]; then
+                printf '%s\n' "sha256:orbit-test-image"
+            fi
+        fi
+
         exit 0
         SH);
     chmod("{$bin}/docker", permissions: 0o755);

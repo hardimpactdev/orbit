@@ -504,7 +504,8 @@ final readonly class LocalFleetUpdateInstallCliAction
                             download_artifact "$image_url" "$image_archive"
                             check_sha256 "$image_sha256" "$image_archive"
                             docker load --input "$image_archive"
-                            docker image inspect "$image" >/dev/null
+                            loaded_image="${image%@*}"
+                            docker image inspect "$loaded_image" >/dev/null
                         done
                     fi
 
@@ -531,7 +532,8 @@ final readonly class LocalFleetUpdateInstallCliAction
                         php -r '$aliases = json_decode(getenv("ORBIT_ROLE_IMAGE_ALIASES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($aliases as $alias) { echo base64_encode($alias["source"]), " ", base64_encode($alias["target"]), "\n"; }' | while IFS=' ' read -r source_encoded target_encoded; do
                             source_image="$(printf %s "$source_encoded" | base64 --decode)"
                             target_image="$(printf %s "$target_encoded" | base64 --decode)"
-                            source_id="$(docker image inspect --format '{{.Id}}' "$source_image")"
+                            local_source_image="${source_image%@*}"
+                            source_id="$(docker image inspect --format '{{.Id}}' "$local_source_image")"
                             test -n "$source_id"
                             docker image tag "$source_id" "$target_image"
                             target_id="$(docker image inspect --format '{{.Id}}' "$target_image")"
