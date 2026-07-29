@@ -235,6 +235,21 @@ describe('process managed service binds', function (): void {
             'name' => 'database-1',
             'wireguard_address' => '10.6.0.44',
         ]);
+        $preservedVolumes = [
+            [
+                'name' => 'orbit-postgres',
+                'target' => '/var/lib/postgresql/data',
+            ],
+        ];
+        $preservedLabels = [
+            'orbit.managed' => 'true',
+            'orbit.process' => 'postgres',
+            'orbit.process.service' => 'postgres',
+            'orbit.process.version_family' => '16',
+            'orbit.process.version' => '16-alpine',
+            'orbit.process.spec_hash' => 'oldhash',
+            'custom.label' => 'retained',
+        ];
         $process = Process::factory()
             ->forOwner($node)
             ->create([
@@ -302,21 +317,8 @@ describe('process managed service binds', function (): void {
                         'POSTGRES_DB' => 'plausible_db',
                         'POSTGRES_USER' => 'orbit',
                     ],
-                    'volumes' => [
-                        [
-                            'name' => 'orbit-postgres',
-                            'target' => '/var/lib/postgresql/data',
-                        ],
-                    ],
-                    'labels' => [
-                        'orbit.managed' => 'true',
-                        'orbit.process' => 'postgres',
-                        'orbit.process.service' => 'postgres',
-                        'orbit.process.version_family' => '16',
-                        'orbit.process.version' => '16-alpine',
-                        'orbit.process.spec_hash' => 'oldhash',
-                        'custom.label' => 'retained',
-                    ],
+                    'volumes' => $preservedVolumes,
+                    'labels' => $preservedLabels,
                 ],
             ]);
         processBindRemoteShell();
@@ -337,33 +339,31 @@ describe('process managed service binds', function (): void {
             ->assertJsonPath('success.data.changed', ['binds']);
 
         $process->refresh();
+        $runtimeConfig = $process->runtime_config;
 
         expect($process->credentials['password'])
             ->toBe(str_repeat('p', 32))
             ->and($process->getRawOriginal('credentials'))
-            ->not->toBeNull()->and($process->runtime_config['image'])->toBe('postgres:16-alpine')->and(
-                $process->runtime_config['service_options']['published_port'],
-            )->toBe(5432)->and($process->runtime_config['command_mode'])->toBe('image_entrypoint')->and(
-                $process->runtime_config['credential_hash'],
-            )->toBe('preserved-hash')->and($process->runtime_config['operator_note'])->toBe('keep-me')->and(
-                $process->runtime_config['volumes'],
-            )->toBe([
-                [
-                    'name' => 'orbit-postgres',
-                    'target' => '/var/lib/postgresql/data',
-                ],
-            ])->and($process->runtime_config['labels']['custom.label'] ?? null)->toBe('retained')->and(
-                $process->runtime_config['binds'],
-            )->toBe(['wireguard'])->and($process->runtime_config['endpoint']['host'])->toBe('10.6.0.44')->and(
-                $process->runtime_config['ports'],
-            )->toBe([
+            ->not->toBeNull()->and($runtimeConfig['image'])->toBe('postgres:16-alpine')->and(
+                $runtimeConfig['service_options']['published_port'],
+            )->toBe(5432)->and($runtimeConfig['command_mode'])->toBe('image_entrypoint')->and(
+                $runtimeConfig['credential_hash'],
+            )->toBe('preserved-hash')->and($runtimeConfig['operator_note'])->toBe('keep-me')->and(json_encode(
+                $runtimeConfig['volumes'],
+                JSON_THROW_ON_ERROR,
+            ))->toBe(json_encode($preservedVolumes, JSON_THROW_ON_ERROR))->and(json_encode(
+                $runtimeConfig['labels'],
+                JSON_THROW_ON_ERROR,
+            ))->toBe(json_encode($preservedLabels, JSON_THROW_ON_ERROR))->and($runtimeConfig['binds'])->toBe([
+                'wireguard',
+            ])->and($runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')->and($runtimeConfig['ports'])->toBe([
                 [
                     'host' => '10.6.0.44',
                     'published' => 5432,
                     'target' => 5432,
                     'protocol' => 'tcp',
                 ],
-            ])->and(collect($process->runtime_config['ports'])->pluck('host')->all())
+            ])->and(collect($runtimeConfig['ports'])->pluck('host')->all())
             ->not->toContain('127.0.0.1');
     });
 

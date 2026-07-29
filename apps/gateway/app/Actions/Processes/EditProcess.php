@@ -257,8 +257,9 @@ final readonly class EditProcess
         $image = is_string($config['image'] ?? null) ? $config['image'] : null;
         $serviceOptions = $this->stringKeyedArray($config['service_options'] ?? null);
 
-        // Resolve only to recompute the publish surface. Credentials on the
-        // process model and unrelated runtime_config keys stay as-is.
+        // Existing runtime_config is the source of truth. Resolve only to obtain the
+        // publish surface; replace binds/endpoint/endpoints/ports and leave every
+        // other key (credentials hash, volumes, labels, custom fields) untouched.
         $descriptor = $this->serviceCatalog->resolve(
             service: $service,
             version: $version,
@@ -272,29 +273,16 @@ final readonly class EditProcess
 
         $resolved = $descriptor->runtimeConfig;
         $runtimeConfig = $config;
-        $runtimeConfig['binds'] = $resolved['binds'] ?? $normalized;
-        $runtimeConfig['endpoint'] = $resolved['endpoint'] ?? $runtimeConfig['endpoint'] ?? null;
-        $runtimeConfig['endpoints'] = $resolved['endpoints'] ?? $runtimeConfig['endpoints'] ?? [];
-
-        if (is_array($resolved['ports'] ?? null)) {
-            $runtimeConfig['ports'] = $resolved['ports'];
-        }
-
-        $labels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
-        unset($runtimeConfig['labels'], $runtimeConfig['spec_hash']);
-
-        $specHash = substr(
-            string: hash('sha256', json_encode([
-                ...$runtimeConfig,
-                'runtime' => $process->runtime->value,
-                'process' => $process->name,
-            ], JSON_THROW_ON_ERROR)),
-            offset: 0,
-            length: 16,
-        );
-        $runtimeConfig['spec_hash'] = $specHash;
-        $labels['orbit.process.spec_hash'] = $specHash;
-        $runtimeConfig['labels'] = $labels;
+        $runtimeConfig['binds'] = is_array($resolved['binds'] ?? null)
+            ? $resolved['binds']
+            : $normalized;
+        $runtimeConfig['endpoint'] = $resolved['endpoint'] ?? null;
+        $runtimeConfig['endpoints'] = is_array($resolved['endpoints'] ?? null)
+            ? $resolved['endpoints']
+            : [];
+        $runtimeConfig['ports'] = is_array($resolved['ports'] ?? null)
+            ? $resolved['ports']
+            : [];
 
         $this->resourceGuard->assertNoConflicts(
             context: $context,
