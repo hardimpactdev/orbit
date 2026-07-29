@@ -75,6 +75,16 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
                 ),
                 JSON_THROW_ON_ERROR,
             ),
+            'ORBIT_ROLE_IMAGE_ALIASES_JSON' => json_encode(
+                array_map(
+                    static fn (LocalFleetUpdateInstallRoleImageAliasPayload $alias): array => [
+                        'source' => $alias->source,
+                        'target' => $alias->target,
+                    ],
+                    $payload->roleImageAliases,
+                ),
+                JSON_THROW_ON_ERROR,
+            ),
         ];
     }
 

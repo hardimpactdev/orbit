@@ -784,6 +784,14 @@ it('updates topology candidate artifacts with the same version when the CLI hash
                     'sha256' => str_repeat('e', times: 64),
                 ],
             ],
+            roleImages: [
+                'orbit-caddy' => 'caddy:2-alpine',
+                'orbit-frankenphp' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-candidate-build@sha256:'
+                    .str_repeat(
+                        'f',
+                        times: 64,
+                    ),
+            ],
         ),
     );
 
@@ -805,6 +813,17 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->toBe([$shell->scriptFor('app-dev-1')])
         ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['artifact_url'])
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
+        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['role_image_aliases'])
+        ->toBe([
+            [
+                'source' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-candidate-build@sha256:'
+                    .str_repeat(
+                        'f',
+                        times: 64,
+                    ),
+                'target' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+            ],
+        ])
         ->and(workloadUpdaterStepMessages($run))
         ->not
         ->toContain(

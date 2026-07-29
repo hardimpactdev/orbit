@@ -14,6 +14,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpRuntimeCatalog;
 use RuntimeException;
 use Throwable;
 
@@ -31,6 +32,7 @@ final readonly class WorkloadNodeUpdater
         private GatewayCliArtifactRelay $artifactRelay,
         private RemoteNodeDoctor $nodeDoctor,
         private NodeAgentServicePayloadBuilder $agentServices,
+        private PhpRuntimeCatalog $phpRuntimes,
     ) {}
 
     /**
@@ -236,6 +238,7 @@ final readonly class WorkloadNodeUpdater
      *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}|null,
      *     role_images: list<string>,
      *     role_image_artifacts: list<array{image: string, url: string, sha256: string}>,
+     *     role_image_aliases: list<array{source: string, target: string}>,
      * }
      */
     private function installPayload(
@@ -256,6 +259,7 @@ final readonly class WorkloadNodeUpdater
             'agent_service' => $this->agentServicePayload($node),
             'role_images' => $this->requiredRoleImages($plan, $node),
             'role_image_artifacts' => $this->requiredRoleImageArtifacts($plan, $node),
+            'role_image_aliases' => $this->requiredRoleImageAliases($plan, $node),
         ];
     }
 
@@ -453,6 +457,29 @@ final readonly class WorkloadNodeUpdater
         }
 
         return $artifacts;
+    }
+
+    /**
+     * @return list<array{source: string, target: string}>
+     */
+    private function requiredRoleImageAliases(OperationUpdatePlan $plan, Node $node): array
+    {
+        if (
+            $plan->manifest_source !== 'topology-candidate'
+            || ! in_array('orbit-frankenphp', $this->requiredRoleImageKeys($plan, $node), true)
+        ) {
+            return [];
+        }
+
+        $source = $plan->role_images['orbit-frankenphp'] ?? null;
+        $target = $this->phpRuntimes->imageFor(PhpRuntimeCatalog::DEFAULT);
+        $pattern = '/\A'.preg_quote($target, '/').'-candidate-[^@\s]+@sha256:[0-9a-f]{64}\z/i';
+
+        if (! is_string($source) || preg_match($pattern, $source) !== 1) {
+            throw new RuntimeException('Topology candidate contains an invalid FrankenPHP role image.');
+        }
+
+        return [['source' => $source, 'target' => $target]];
     }
 
     /**

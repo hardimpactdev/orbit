@@ -23,6 +23,9 @@ final class LocalFleetUpdateInstallCliPayload
     /** @var list<LocalFleetUpdateInstallRoleImageArtifactPayload> */
     public array $roleImageArtifacts;
 
+    /** @var list<LocalFleetUpdateInstallRoleImageAliasPayload> */
+    public array $roleImageAliases;
+
     /**
      * @param  list<string>  $roleImages
      */
@@ -70,6 +73,15 @@ final class LocalFleetUpdateInstallCliPayload
         $typedPayload->roleImageArtifacts = LocalFleetUpdateInstallRoleImageArtifactPayload::listFromPayload(
             $payload['role_image_artifacts'] ?? null,
         );
+        $typedPayload->roleImageAliases = LocalFleetUpdateInstallRoleImageAliasPayload::listFromPayload(
+            $payload['role_image_aliases'] ?? null,
+        );
+
+        foreach ($typedPayload->roleImageAliases as $alias) {
+            if (! in_array($alias->source, $typedPayload->roleImages, true)) {
+                throw LocalFleetUpdateInstallCliPayloadField::validationFailure('role_image_aliases.source');
+            }
+        }
 
         return $typedPayload;
     }

@@ -38,6 +38,11 @@ These rules define what PHP runtime commands own and how they operate.
   or workspace containers.
 - The instance and workspace families own applying the selected PHP image to their
   runtime containers.
+- A topology release candidate carries its digest-pinned PHP 8.5 image under an
+  immutable candidate tag. On candidate Linux app nodes, the update installer
+  verifies that digest and aliases the exact local image ID to the catalog's
+  stable PHP 8.5 reference. This exercises the candidate without moving the
+  stable registry tag before acceptance.
 - Node CLI PHP selection is only supported for PHP 8.5. This matches the
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted

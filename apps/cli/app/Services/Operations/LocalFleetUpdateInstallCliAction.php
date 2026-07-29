@@ -524,6 +524,21 @@ final readonly class LocalFleetUpdateInstallCliAction
                             echo "skip_required_image_inspect_failed $image"
                         fi
                     done
+
+                    role_image_aliases_json="${ORBIT_ROLE_IMAGE_ALIASES_JSON:-[]}"
+                    if [ "$role_image_aliases_json" != "[]" ]; then
+                        echo alias_required_images
+                        php -r '$aliases = json_decode(getenv("ORBIT_ROLE_IMAGE_ALIASES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($aliases as $alias) { echo base64_encode($alias["source"]), " ", base64_encode($alias["target"]), "\n"; }' | while IFS=' ' read -r source_encoded target_encoded; do
+                            source_image="$(printf %s "$source_encoded" | base64 --decode)"
+                            target_image="$(printf %s "$target_encoded" | base64 --decode)"
+                            source_id="$(docker image inspect --format '{{.Id}}' "$source_image")"
+                            test -n "$source_id"
+                            docker image tag "$source_id" "$target_image"
+                            target_id="$(docker image inspect --format '{{.Id}}' "$target_image")"
+                            test "$target_id" = "$source_id"
+                            echo "aliased_required_image $target_image $source_id"
+                        done
+                    fi
                 fi
             fi
 

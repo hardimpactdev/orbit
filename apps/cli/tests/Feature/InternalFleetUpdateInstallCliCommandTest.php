@@ -129,6 +129,40 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe(JsonEnvelope::failure('validation_failed', 'Fleet update CLI install payload is invalid.'));
     });
 
+    it('rejects a role image alias whose source is not a required image', function (): void {
+        $candidateImage =
+            'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-build@sha256:'
+            .str_repeat('a', times: 64);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => 'https://artifacts.test/orbit',
+                'sha256' => str_repeat('b', times: 64),
+                'install_root' => '/home/orbit/orbit',
+                'bin_path' => '/home/orbit/.local/bin/orbit',
+                'shared_binary_path' => null,
+                'role_images' => [],
+                'role_image_aliases' => [[
+                    'source' => $candidateImage,
+                    'target' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+                ]],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'Fleet update CLI install payload is invalid.',
+                ['field' => 'role_image_aliases.source'],
+            ));
+    });
+
     it('retries transient curl failures while downloading artifacts', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
@@ -262,6 +296,12 @@ describe('internal fleet update install cli command', function (): void {
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
         $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
         $roleImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64);
+        $candidateRuntimeImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-build@sha256:'
+        .str_repeat(
+            'b',
+            times: 64,
+        );
+        $runtimeImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm';
         $path =
             $systemdBin
             .PATH_SEPARATOR
@@ -299,11 +339,15 @@ describe('internal fleet update install cli command', function (): void {
                     'http_bind' => '10.6.0.2:9477',
                     'user' => 'orbit',
                 ],
-                'role_images' => [$roleImage],
+                'role_images' => [$roleImage, $candidateRuntimeImage],
                 'role_image_artifacts' => [[
                     'image' => $roleImage,
                     'url' => "file://{$roleImageArchive}",
                     'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
+                'role_image_aliases' => [[
+                    'source' => $candidateRuntimeImage,
+                    'target' => $runtimeImage,
                 ]],
             ], JSON_THROW_ON_ERROR),
         );
@@ -320,6 +364,7 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('probe_agent_unit')
             ->toContain('converge_agent_unit')
             ->toContain('load_required_image_artifacts')
+            ->toContain('alias_required_images')
             ->toContain('schedule_agent_restart')
             ->and(strpos($stdout, 'load_required_image_artifacts'))
             ->toBeLessThan(strpos($stdout, 'schedule_agent_restart'))
@@ -339,6 +384,11 @@ describe('internal fleet update install cli command', function (): void {
                 'Restart=on-failure',
             )
             ->not->toContain('wg-quick@');
+
+        expect((string) file_get_contents($dockerLog))
+            ->toContain("image inspect {$candidateRuntimeImage}")
+            ->toContain("image tag sha256:orbit-test-image {$runtimeImage}")
+            ->toContain("image inspect --format {{.Id}} {$runtimeImage}");
     });
 
     it('restarts an unmanaged Orbit Agent listener when no service unit is present', function (): void {
@@ -1115,6 +1165,9 @@ function make_fleet_update_install_cli_fake_docker_bin(string $workspace, string
     file_put_contents("{$bin}/docker", <<<'SH'
         #!/usr/bin/env sh
         printf '%s\n' "$*" >> "$ORBIT_TEST_DOCKER_LOG"
+        if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${3:-}" = "--format" ]; then
+            printf '%s\n' "sha256:orbit-test-image"
+        fi
         exit 0
         SH);
     chmod("{$bin}/docker", permissions: 0o755);
