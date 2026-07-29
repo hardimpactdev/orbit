@@ -218,19 +218,28 @@ Fixed version/variant/platform object keys under the immutable prefix
 bytes. For each object the publish job:
 
 1. runs `s3api head-object` and captures stderr/status
-2. **definite absence only** (`404` / `NotFound` / `NoSuchKey`) → `aws s3 cp`
-   once, then verifies the public consumer URL
+2. **definite absence only** (`404` / `NotFound` / `NoSuchKey`) → single-object
+   `aws s3api put-object` once (body = local tarball; avoids multipart
+   `UploadPart` / `XAmzContentSHA256Mismatch` on S3-compatible storage), then
+   verifies the public consumer URL
 3. **present** and object metadata `sha256` and/or public
    `${artifact_base_url}/${filename}` SHA equals the local build → **skip**
-   (no `s3 cp`)
-4. **present** and hash differs → **exit before any `s3 cp`**, require a new
-   versioned prefix/pin
+   (no `put-object`)
+4. **present** and hash differs → **exit before any `put-object`**, require a
+   new versioned prefix/pin
 5. **any other head failure** (auth, network, 5xx, `AccessDenied`, unknown)
    → **fail closed before upload** — never treat ambiguous head errors as
    absence (that would open an overwrite path)
 
-`aws s3 cp` runs only on the definite-absence branch. That public URL is what
-install/update consumes after promotion. Only after every public URL verifies
+`s3api put-object` runs only on the definite-absence branch. That public URL is
+what install/update consumes after promotion.
+
+Publication-only retry: set `publish_to_object_storage=true` and
+`publish_from_run_id=<numeric run id>` (for example a green assemble run that
+already produced `php-cli-matrix-handoff`). The workflow skips all matrix
+builds and assembly, downloads that prior handoff artifact after validating the
+run path and non-expired 9-cell package, then runs publication + catalog
+handoff only. Only after every public URL verifies
 does publish run:
 
 ```bash

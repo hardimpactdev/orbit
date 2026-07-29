@@ -117,6 +117,7 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
 
     expect($workflow)
         ->toContain('publish_to_object_storage')
+        ->toContain('publish_from_run_id')
         ->toContain('publish-object-storage')
         ->toContain('ORBIT_ARTIFACTS_ACCESS_KEY')
         ->toContain('ORBIT_ARTIFACTS_SECRET_KEY')
@@ -128,9 +129,12 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         ->toContain('needs: assemble-manifest')
         ->toContain('bin/orbit-php-cli-catalog-handoff')
         ->toContain('--promote-runtime')
-        ->toContain('s3 cp')
-        ->toContain('github.event_name == \'workflow_dispatch\' && inputs.publish_to_object_storage')
-        ->toContain('missing secret/config')
+        // Single-object PUT for sub-5GB tarballs; never high-level multipart s3 copy uploads.
+        ->toContain('s3api put-object')
+        ->not->toMatch('/\bs3\s+cp\b/')
+        ->not->toMatch('/\bs3\s+sync\b/')->toContain('AWS_REQUEST_CHECKSUM_CALCULATION: when_required')->toContain(
+            'AWS_RESPONSE_CHECKSUM_VALIDATION: when_required',
+        )->toContain('missing secret/config')
         ->not->toContain('publish_catalog_handoff')
         // Prefer runner-provided AWS CLI; never fragile PEP 668 user pip installs.
         ->toContain('aws --version')->toContain('Require AWS CLI v2')
@@ -145,7 +149,7 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         )
         // Immutable fixed version/variant/platform keys: never overwrite differing content.
         ->toContain('s3api head-object')->toContain('head_object_metadata_sha')->toContain(
-            'Definite absence only — sole path that may call s3 cp',
+            'Definite absence only — sole path that may call put-object',
         )->toContain('skipping upload for')->toContain('IMMUTABLE OBJECT CONFLICT')->toContain(
             'IMMUTABLE HEAD AMBIGUOUS',
         )->toContain('Never overwrite a different artifact at a fixed version/variant/platform key')->toContain(
@@ -154,10 +158,27 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         // Only definite 404/NotFound/NoSuchKey may proceed to upload; never auth/network/5xx as absence.
         ->toContain('An error occurred \\(404\\)')->toContain('An error occurred \\(NotFound\\)')->toContain(
             'An error occurred \\(NoSuchKey\\)',
-        )->toContain('auth/network/5xx must not be treated as absence')->toContain('refusing s3 cp')
+        )->toContain('auth/network/5xx must not be treated as absence')->toContain('refusing put-object')
         ->not->toContain('if aws "${endpoint_args[@]}" s3api head-object')
         // Assemble must not hand off before upload; handoff lives in publish job only.
         ->toContain('Generate SHA256SUMS and collect manifests (no catalog mutation)');
+
+    // Publication-only retry: skip rebuilds, download php-cli-matrix-handoff from a prior run.
+    expect($workflow)
+        ->toContain('Publication-only retry')
+        ->toContain('Download assembled matrix package (prior run publication-only retry)')
+        ->toContain('Download assembled matrix package (this run)')
+        ->toContain('gh run download')
+        ->toContain('--name php-cli-matrix-handoff')
+        ->toContain('.github/workflows/orbit-php-cli-runtime.yml')
+        ->toContain('publish_from_run_id must be a numeric workflow run id')
+        ->toContain('has no non-expired artifact named php-cli-matrix-handoff')
+        ->toContain('must contain exactly 9 tarballs and 9 manifests')
+        ->toContain("inputs.publish_from_run_id == ''")
+        ->toContain("inputs.publish_from_run_id != ''")
+        ->toContain('actions: read')
+        // Build/assemble only when not retrying publication from a prior run.
+        ->toContain("if: github.event_name == 'workflow_dispatch' && inputs.publish_from_run_id == ''");
 
     // Host PHP for the builder (catalog JSON via php -r). macOS arm64 images may
     // ship without php; pin with the same setup-php pattern as other Orbit workflows.
@@ -237,8 +258,8 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
     $assembleSection = substr($workflow, (int) $assemblePos, max(0, (int) $publishPos - (int) $assemblePos));
     $publishSection = substr($workflow, (int) $publishPos);
 
-    // Exactly one upload command in the publish job (definite-absence branch only).
-    $uploadCmd = 'aws "${endpoint_args[@]}" s3 cp';
+    // Exactly one single-object put-object in the publish job (definite-absence branch only).
+    $uploadCmd = 'aws "${endpoint_args[@]}" s3api put-object';
     expect(substr_count($publishSection, $uploadCmd))
         ->toBe(1)
         ->and(substr_count($publishSection, 's3api head-object'))
@@ -246,7 +267,9 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         ->and(substr_count($publishSection, 'IMMUTABLE OBJECT CONFLICT'))
         ->toBeGreaterThanOrEqual(1)
         ->and(substr_count($publishSection, 'IMMUTABLE HEAD AMBIGUOUS'))
-        ->toBeGreaterThanOrEqual(1);
+        ->toBeGreaterThanOrEqual(1)
+        ->and(substr_count($publishSection, 's3 cp'))
+        ->toBe(0);
 
     $uploadPos = strpos($publishSection, $uploadCmd);
     $headFnPos = strpos($publishSection, 'head_object_metadata_sha');
@@ -255,6 +278,9 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
     $handoffPos = strpos($publishSection, 'bin/orbit-php-cli-catalog-handoff');
     $skipPos = strpos($publishSection, 'skipping upload');
     $elifAbsentPos = strpos($publishSection, 'elif [ "$head_rc" -eq 1 ]');
+    $priorDownloadPos = strpos($publishSection, 'Download assembled matrix package (prior run publication-only retry)');
+    $thisRunDownloadPos = strpos($publishSection, 'Download assembled matrix package (this run)');
+    $ghDownloadPos = strpos($publishSection, 'gh run download');
 
     expect($assemblePos)
         ->not->toBeFalse()->and($publishPos)
@@ -264,7 +290,7 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         )->and($publishSection)->toContain('bin/orbit-php-cli-catalog-handoff')->and($publishSection)->toContain(
             '--promote-runtime',
         )->and($publishSection)->toContain('aws --version')->and($publishSection)->toContain('public_url=')
-        // Control flow: head gate + conflict/ambiguous exits before the single s3 cp upload path.
+        // Control flow: head gate + conflict/ambiguous exits before the single put-object upload path.
         ->and($headFnPos)
         ->not->toBeFalse()->and($uploadPos)
         ->not->toBeFalse()->and($conflictPos)
@@ -282,5 +308,24 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
     expect($publishSection)
         ->toContain('Object already exists — never overwrite')
         ->toContain('elif [ "$head_rc" -eq 1 ]')
-        ->toContain('Ambiguous head-object (auth/network/5xx/AccessDenied/unknown): never treat as absence');
+        ->toContain('Ambiguous head-object (auth/network/5xx/AccessDenied/unknown): never treat as absence')
+        ->toContain('--body "$local_path"')
+        ->toContain('--content-type "application/gzip"')
+        // put-object flags for single-object body upload (not multipart s3 cp).
+        ->toContain('--bucket "$bucket"')
+        ->toContain('--key "$object_key"');
+
+    // Publication-only path: prior-run download is gated, validates source, and never rebuilds.
+    expect($priorDownloadPos)
+        ->not->toBeFalse()->and($thisRunDownloadPos)
+        ->not->toBeFalse()->and($ghDownloadPos)
+        ->not->toBeFalse()->and($thisRunDownloadPos)->toBeLessThan($priorDownloadPos)->and(
+            $priorDownloadPos,
+        )->toBeLessThan($uploadPos)->and($publishSection)->toContain('publication-only retry')->and(
+            $publishSection,
+        )->toContain('never rebuild matrix cells')->and($publishSection)->toContain('always()')->and(
+            $publishSection,
+        )->toContain("needs.assemble-manifest.result == 'skipped'")->and($publishSection)->toContain(
+            "needs.assemble-manifest.result == 'success'",
+        )->and($publishSection)->toContain('--body "$local_path"');
 });

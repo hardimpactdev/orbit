@@ -15,10 +15,15 @@ on:
   workflow_dispatch:
     inputs:
       publish_to_object_storage:
-        description: "After the matrix build, upload the 9 immutable tarballs to Orbit object storage, verify objects, then run catalog handoff + runtime promotion draft. Leave false to only assemble GitHub Actions artifacts."
+        description: "After the matrix build (or from a prior assembled run), upload the 9 immutable tarballs to Orbit object storage, verify objects, then run catalog handoff + runtime promotion draft. Leave false to only assemble GitHub Actions artifacts."
         required: false
         default: false
         type: boolean
+      publish_from_run_id:
+        description: "Publication-only retry: numeric workflow run id that already produced php-cli-matrix-handoff (e.g. 30494484244). Skips all matrix builds and assembly; requires publish_to_object_storage=true."
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -30,6 +35,8 @@ env:
 jobs:
   build:
     name: "php-cli ${{ matrix.php_version }} ${{ matrix.variant }} (${{ matrix.runner }})"
+    # Publication-only retry reuses a prior assemble artifact; skip rebuilds.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_from_run_id == ''
     strategy:
       fail-fast: false
       matrix:
@@ -134,6 +141,7 @@ jobs:
   assemble-manifest:
     name: Assemble matrix checksums
     needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_from_run_id == ''
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -186,8 +194,20 @@ jobs:
   publish-object-storage:
     name: Publish immutable objects + catalog handoff
     needs: assemble-manifest
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_to_object_storage
+    # always(): publication-only retries skip assemble (result=skipped) but still publish.
+    if: >-
+      always()
+      && github.event_name == 'workflow_dispatch'
+      && inputs.publish_to_object_storage
+      && (
+        (inputs.publish_from_run_id != '' && needs.assemble-manifest.result == 'skipped')
+        || (inputs.publish_from_run_id == '' && needs.assemble-manifest.result == 'success')
+      )
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Prior-run artifact download via gh API (publication-only retry).
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -215,11 +235,89 @@ jobs:
             exit 1
           fi
 
-      - name: Download assembled matrix package
+      - name: Download assembled matrix package (this run)
+        if: inputs.publish_from_run_id == ''
         uses: actions/download-artifact@v4
         with:
           name: php-cli-matrix-handoff
           path: assembled
+
+      - name: Download assembled matrix package (prior run publication-only retry)
+        if: inputs.publish_from_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.publish_from_run_id }}
+        run: |
+          set -euo pipefail
+          source_run_id="$(printf '%s' "${SOURCE_RUN_ID}" | tr -d '[:space:]')"
+          if ! [[ "${source_run_id}" =~ ^[0-9]+$ ]]; then
+            echo "publish_from_run_id must be a numeric workflow run id, got: [${SOURCE_RUN_ID}]" >&2
+            exit 1
+          fi
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}")" || {
+            echo "failed to fetch workflow run ${source_run_id}; check the id exists in ${GITHUB_REPOSITORY}." >&2
+            exit 1
+          }
+
+          workflow_path="$(
+            printf '%s' "$run_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $path = $d["path"] ?? "";
+              echo is_string($path) ? $path : "";
+            '
+          )"
+          if [ "$workflow_path" != ".github/workflows/orbit-php-cli-runtime.yml" ]; then
+            echo "publish_from_run_id ${source_run_id} is not an Orbit PHP CLI Runtime run (path=${workflow_path:-unknown})." >&2
+            exit 1
+          fi
+
+          head_branch="$(
+            printf '%s' "$run_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $b = $d["head_branch"] ?? "";
+              echo is_string($b) ? $b : "";
+            '
+          )"
+          echo "Using prior run ${source_run_id} (workflow=${workflow_path}, head_branch=${head_branch}) for publication-only retry."
+
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100")"
+          has_handoff="$(
+            printf '%s' "$artifacts_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $artifacts = is_array($d["artifacts"] ?? null) ? $d["artifacts"] : [];
+              foreach ($artifacts as $artifact) {
+                  if (($artifact["name"] ?? null) === "php-cli-matrix-handoff" && empty($artifact["expired"])) {
+                      echo "1";
+                      exit(0);
+                  }
+              }
+              echo "0";
+            '
+          )"
+          if [ "$has_handoff" != "1" ]; then
+            echo "prior run ${source_run_id} has no non-expired artifact named php-cli-matrix-handoff." >&2
+            exit 1
+          fi
+
+          mkdir -p assembled
+          # Download only the assembled handoff package; never rebuild matrix cells.
+          gh run download "${source_run_id}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name php-cli-matrix-handoff \
+            --dir assembled
+
+          if [ ! -f assembled/SHA256SUMS ]; then
+            echo "prior-run artifact php-cli-matrix-handoff is missing assembled/SHA256SUMS after download." >&2
+            exit 1
+          fi
+          tarball_count="$(find assembled/tarballs -name 'php-*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')"
+          manifest_count="$(find assembled/manifests -name '*.manifest.json' 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$tarball_count" != "9" ] || [ "$manifest_count" != "9" ]; then
+            echo "prior-run handoff must contain exactly 9 tarballs and 9 manifests (got tarballs=${tarball_count}, manifests=${manifest_count})." >&2
+            exit 1
+          fi
+          echo "Downloaded fleet-scoped 9-cell handoff from run ${source_run_id}."
 
       - name: Require AWS CLI v2
         run: |
@@ -237,6 +335,9 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.ORBIT_ARTIFACTS_REGION || 'us-east-1' }}
           AWS_ENDPOINT_URL: ${{ secrets.ORBIT_ARTIFACTS_ENDPOINT }}
           ORBIT_ARTIFACTS_BUCKET: ${{ secrets.ORBIT_ARTIFACTS_BUCKET }}
+          # Avoid AWS CLI v2 flexible-checksum multipart mismatches on S3-compatible storage.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           set -euo pipefail
           prefix="${ORBIT_PHP_CLI_OBJECT_PREFIX}"
@@ -310,7 +411,7 @@ jobs:
             fi
             # Only a definite missing-object signal may be treated as absence.
             # Never treat AccessDenied, 403, 5xx, timeouts, network, or credential
-            # errors as absence — those would open an overwrite path via s3 cp.
+            # errors as absence — those would open an overwrite path via put-object.
             if grep -Eqi \
               'An error occurred \(404\)|An error occurred \(NotFound\)|An error occurred \(NoSuchKey\)|HeadObject operation: Not Found|HeadObject operation: The specified key does not exist|NoSuchKey' \
               "$err"
@@ -339,10 +440,10 @@ jobs:
             test "$actual_sha" = "$expected_sha"
 
             # Immutable fixed version/variant/platform keys:
-            # - definite absence (head_rc=1)  => upload once, then verify public consumer URL
-            # - present + same hash           => skip idempotently (never s3 cp)
-            # - present + different hash      => exit BEFORE any s3 cp; require new prefix/pin
-            # - ambiguous head failure (head_rc!=0,1) => exit BEFORE any s3 cp (fail closed)
+            # - definite absence (head_rc=1)  => single-object put-object once, then verify public URL
+            # - present + same hash           => skip idempotently (never put-object)
+            # - present + different hash      => exit BEFORE any put-object; require new prefix/pin
+            # - ambiguous head failure (head_rc!=0,1) => exit BEFORE any put-object (fail closed)
             meta_sha=""
             head_rc=0
             meta_sha="$(head_object_metadata_sha "$object_key")" && head_rc=0 || head_rc=$?
@@ -379,9 +480,14 @@ jobs:
               echo "Publish under a new versioned prefix/pin (update ORBIT_PHP_CLI_OBJECT_PREFIX and catalog artifact_base_url), then retry." >&2
               exit 1
             elif [ "$head_rc" -eq 1 ]; then
-              # Definite absence only — sole path that may call s3 cp.
-              aws "${endpoint_args[@]}" s3 cp "$local_path" "s3://${bucket}/${object_key}" \
-                --only-show-errors \
+              # Definite absence only — sole path that may call put-object.
+              # Single-object PUT for sub-5GB tarballs: avoids multipart upload
+              # XAmzContentSHA256Mismatch failures on S3-compatible object storage.
+              aws "${endpoint_args[@]}" s3api put-object \
+                --bucket "$bucket" \
+                --key "$object_key" \
+                --body "$local_path" \
+                --content-type "application/gzip" \
                 --metadata "sha256=${actual_sha},tool=php-cli"
 
               if ! verify_public_sha "$public_url" "$expected_sha"; then
@@ -391,7 +497,7 @@ jobs:
               echo "published and public-URL-verified ${public_url}"
             else
               # Ambiguous head-object (auth/network/5xx/AccessDenied/unknown): never treat as absence.
-              echo "IMMUTABLE HEAD AMBIGUOUS: refusing s3 cp for s3://${bucket}/${object_key} after non-404 head-object failure (head_rc=${head_rc})." >&2
+              echo "IMMUTABLE HEAD AMBIGUOUS: refusing put-object for s3://${bucket}/${object_key} after non-404 head-object failure (head_rc=${head_rc})." >&2
               exit 1
             fi
           done < assembled/SHA256SUMS
