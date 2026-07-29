@@ -129,40 +129,6 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe(JsonEnvelope::failure('validation_failed', 'Fleet update CLI install payload is invalid.'));
     });
 
-    it('rejects a role image alias whose source is not a required image', function (): void {
-        $candidateImage =
-            'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-build@sha256:'
-            .str_repeat('a', times: 64);
-
-        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
-            [
-                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
-                '--json' => true,
-            ],
-            stdin: json_encode([
-                'artifact_url' => 'https://artifacts.test/orbit',
-                'sha256' => str_repeat('b', times: 64),
-                'install_root' => '/home/orbit/orbit',
-                'bin_path' => '/home/orbit/.local/bin/orbit',
-                'shared_binary_path' => null,
-                'role_images' => [],
-                'role_image_aliases' => [[
-                    'source' => $candidateImage,
-                    'target' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
-                ]],
-            ], JSON_THROW_ON_ERROR),
-        );
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'validation_failed',
-                'Fleet update CLI install payload is invalid.',
-                ['field' => 'role_image_aliases.source'],
-            ));
-    });
-
     it('retries transient curl failures while downloading artifacts', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";

@@ -75,13 +75,8 @@ final class LocalFleetUpdateInstallCliPayload
         );
         $typedPayload->roleImageAliases = LocalFleetUpdateInstallRoleImageAliasPayload::listFromPayload(
             $payload['role_image_aliases'] ?? null,
+            $typedPayload->roleImages,
         );
-
-        foreach ($typedPayload->roleImageAliases as $alias) {
-            if (! in_array($alias->source, $typedPayload->roleImages, true)) {
-                throw LocalFleetUpdateInstallCliPayloadField::validationFailure('role_image_aliases.source');
-            }
-        }
 
         return $typedPayload;
     }

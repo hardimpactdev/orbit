@@ -12,9 +12,10 @@ final readonly class LocalFleetUpdateInstallRoleImageAliasPayload
     ) {}
 
     /**
+     * @param  list<string>  $requiredImages
      * @return list<self>
      */
-    public static function listFromPayload(mixed $payload): array
+    public static function listFromPayload(mixed $payload, array $requiredImages): array
     {
         if ($payload === null) {
             return [];
@@ -24,7 +25,15 @@ final readonly class LocalFleetUpdateInstallRoleImageAliasPayload
             throw LocalFleetUpdateInstallCliPayloadField::validationFailure('role_image_aliases');
         }
 
-        return array_map(self::fromPayload(...), $payload);
+        $aliases = array_map(self::fromPayload(...), $payload);
+
+        foreach ($aliases as $alias) {
+            if (! in_array($alias->source, $requiredImages, strict: true)) {
+                throw LocalFleetUpdateInstallCliPayloadField::validationFailure('role_image_aliases.source');
+            }
+        }
+
+        return $aliases;
     }
 
     private static function fromPayload(mixed $payload): self
