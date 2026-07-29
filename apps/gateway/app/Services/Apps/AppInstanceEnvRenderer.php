@@ -18,6 +18,7 @@ final readonly class AppInstanceEnvRenderer
 {
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
+        private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
     /**
@@ -86,7 +87,7 @@ final readonly class AppInstanceEnvRenderer
         $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
 
         $env = [];
-        $app = $instance->app;
+        $app = $this->runtimeRenderer->runtimeAppForInstance($instance->app, $instance);
         $node = $app->node ?? null;
 
         if ($node instanceof Node) {

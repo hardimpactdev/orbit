@@ -222,25 +222,37 @@ it('sets lists and renders non-secret app instance env values with database atta
 
 it('applies set env values to the remote app runtime when apply is requested', function (): void {
     $caller = createAppInstanceEnvApiCaller();
-    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    grantAppInstanceEnvApiAccess($caller, $node);
-    $app = Project::factory()->for($node, 'node')->create([
+    $projectNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'project-app-dev',
+            'user' => 'project-runtime',
+        ]);
+    $instanceNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'instance-app-dev',
+            'user' => 'instance-runtime',
+        ]);
+    grantAppInstanceEnvApiAccess($caller, $instanceNode);
+    $app = Project::factory()->for($projectNode, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit/apps/billing',
+        'domain' => 'billing-project.test',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
-            node_id: $node->id,
+            node_id: $instanceNode->id,
             path: '/home/orbit/apps/billing-development',
             document_root: $app->document_root,
             domain: 'billing-development.test',
         ),
     ]);
     $databaseCredential = Str::random(24);
-    $connection = DatabaseConnection::factory()->for($node)->create([
+    $connection = DatabaseConnection::factory()->for($instanceNode)->create([
         'slug' => 'billing-db',
         'driver' => 'pgsql',
         'host' => 'postgres.internal',
@@ -304,14 +316,30 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->map(fn (string $input): array => json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR))
         ->firstWhere('action', 'write');
 
-    expect($writePayload)
-        ->toBeArray()
-        ->and($writePayload['contents'] ?? null)
+    expect($writePayload)->toBeArray();
+
+    $contents = is_array($writePayload) ? $writePayload['contents'] ?? null : null;
+
+    expect($contents)
+        ->toBeString()
         ->toContain('APP_NAME=Billing')
         ->toContain('MAIL_MAILER=smtp')
         ->toContain("DB_PASSWORD={$databaseCredential}")
-        ->and($response->getContent())
-        ->not->toContain($databaseCredential);
+        ->toContain('APP_URL=https://billing-development.test')
+        ->toContain('VITE_APP_URL=https://billing-development.test')
+        ->toContain('VITE_VALET_HOST=billing-development.test')
+        ->toContain(
+            'VITE_DEV_SERVER_KEY=/home/instance-runtime/.config/orbit/certs/billing-development.test.key',
+        )
+        ->toContain(
+            'VITE_DEV_SERVER_CERT=/home/instance-runtime/.config/orbit/certs/billing-development.test.crt',
+        );
+
+    expect($contents)
+        ->not->toContain('billing-project.test')
+        ->not->toContain('/home/project-runtime/.config/orbit/certs/');
+
+    expect($response->getContent())->not->toContain($databaseCredential);
 });
 
 it('rejects secret env writes until secret storage is designed', function (): void {
