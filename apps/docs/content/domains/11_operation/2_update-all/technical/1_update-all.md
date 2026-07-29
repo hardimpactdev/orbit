@@ -286,10 +286,15 @@ The expected target shape per calling context:
   metadata.
 - When that snapshot provides a hash-addressed archive for a required role
   image, each selected Linux role host downloads and verifies the archive,
-  loads it into the local Docker image store, and confirms the exact image
-  reference before attempting a registry pull. This lets candidate channels
-  verify private, digest-pinned role images without distributing registry
-  credentials to workload nodes.
+  loads it into the local Docker image store, and confirms the digest-free local
+  tag. Orbit then checks the exact digest-pinned reference and attempts a
+  registry pull only when that reference is absent; a failed pull preserves the
+  verified local artifact. Because some Docker storage drivers restore the
+  candidate tag without the registry manifest-list digest, Orbit resolves the
+  exact local image ID from the digest-free reference and aliases that ID to the
+  stable runtime reference. Final verification inspects the stable alias. This
+  lets candidate channels verify private role images without distributing
+  registry credentials to workload nodes.
 - For each remote update, the gateway authorizes a typed Orbit Agent request
   and pushes it over WireGuard to the selected Agent-eligible node.
   `update:all` never selects SSH, and the gateway does not target operator

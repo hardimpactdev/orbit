@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Operations\ReleaseManifest;
+use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 class FleetUpdateVerifier
@@ -121,7 +124,7 @@ class FleetUpdateVerifier
     private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
         foreach ($this->targets->workloadNodes() as $node) {
-            $images = FleetUpdateNodeCliLauncher::requiredRoleImages($plan, $node, $this->roles);
+            $images = $this->requiredRoleImagesToVerify($plan, $node);
 
             if ($images === []) {
                 continue;
@@ -150,6 +153,31 @@ class FleetUpdateVerifier
         }
 
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function requiredRoleImagesToVerify(OperationUpdatePlan $plan, Node $node): array
+    {
+        $images = FleetUpdateNodeCliLauncher::requiredRoleImages($plan, $node, $this->roles);
+
+        if ($plan->manifest_source !== ReleaseManifest::SourceTopologyCandidate) {
+            return $images;
+        }
+
+        $candidateRuntime = $plan->toSnapshot()->roleImages['orbit-frankenphp'] ?? null;
+
+        if ($candidateRuntime === null) {
+            return $images;
+        }
+
+        $stableRuntime = app(PhpRuntimeCatalog::class)->imageFor(PhpRuntimeCatalog::DEFAULT);
+
+        return array_values(array_unique(array_map(
+            static fn (string $image): string => $image === $candidateRuntime ? $stableRuntime : $image,
+            $images,
+        )));
     }
 
     private function localExecutor(): RunsInternalCommands

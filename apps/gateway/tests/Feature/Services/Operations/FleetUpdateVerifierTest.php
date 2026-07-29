@@ -172,6 +172,66 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ], JSON_THROW_ON_ERROR));
 });
 
+it('verifies the stable runtime alias for a topology candidate', function (): void {
+    fleet_update_verifier_use_agent_push();
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    $candidateImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-test@sha256:'
+    .str_repeat(
+        'e',
+        times: 64,
+    );
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(
+            roleImages: [
+                'orbit-caddy' => 'caddy:2-alpine',
+                'orbit-frankenphp' => $candidateImage,
+            ],
+            manifestSource: 'topology-candidate',
+        ),
+    );
+
+    app(FleetUpdateVerifier::class)->verify($run, $plan);
+
+    $requests = fleet_verifier_agent_requests();
+
+    expect($requests)
+        ->toHaveCount(2)
+        ->and($requests[1]['argv'])
+        ->toMatchArray([
+            'internal:fleet-update:verify',
+            'role-images',
+        ])
+        ->and($requests[1]['input'])
+        ->toBe(json_encode([
+            'images' => [
+                'caddy:2-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+            ],
+        ], JSON_THROW_ON_ERROR));
+});
+
 it('verifies macos workload CLI through the user launcher and skips required role images', function (): void {
     fleet_update_verifier_use_agent_push();
     Process::fake([
@@ -897,6 +957,7 @@ function fleetVerifierSnapshot(
     array $cliArtifacts = [],
     array $agentArtifacts = [],
     array $roleImages = [],
+    string $manifestSource = 'github-release',
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifacts = $cliArtifacts === []
@@ -916,11 +977,12 @@ function fleetVerifierSnapshot(
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
         gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
+        manifestSource: $manifestSource,
         manifestVersion: $targetVersion,
         manifestSnapshot: [
             'version' => $targetVersion,
-            'source' => 'github-release',
+            'source' => $manifestSource,
+            ...($manifestSource === 'topology-candidate' ? ['build_id' => 'candidate-test'] : []),
             'images' => [
                 'gateway' => $gatewayImage,
             ],
