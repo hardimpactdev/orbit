@@ -124,11 +124,15 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         ->toContain('ORBIT_ARTIFACTS_BUCKET')
         ->toContain('ORBIT_ARTIFACTS_ENDPOINT')
         ->toContain('ORBIT_PHP_CLI_OBJECT_PREFIX')
-        ->toContain('orbit/runtimes/php-cli/sqlite-3.44.6')
-        ->toContain('assemble-manifest')
-        ->toContain('needs: assemble-manifest')
-        ->toContain('bin/orbit-php-cli-catalog-handoff')
-        ->toContain('--promote-runtime')
+        // Object key prefix is bucket-relative; bucket name lives in ORBIT_ARTIFACTS_BUCKET
+        // (public URL is https://…/orbit/<prefix>/…, not s3://orbit/orbit/…).
+        ->toContain('ORBIT_PHP_CLI_OBJECT_PREFIX: runtimes/php-cli/sqlite-3.44.6')
+        ->not->toContain('ORBIT_PHP_CLI_OBJECT_PREFIX: orbit/runtimes/')
+        ->not->toMatch('/ORBIT_PHP_CLI_OBJECT_PREFIX:\s*orbit\//')->toContain(
+            'object_key="${prefix}/${filename}"',
+        )->toContain('assemble-manifest')->toContain('needs: assemble-manifest')->toContain(
+            'bin/orbit-php-cli-catalog-handoff',
+        )->toContain('--promote-runtime')
         // Single-object PUT for sub-5GB tarballs; never high-level multipart s3 copy uploads.
         ->toContain('s3api put-object')
         ->not->toMatch('/\bs3\s+cp\b/')
@@ -313,7 +317,11 @@ it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch rele
         ->toContain('--content-type "application/gzip"')
         // put-object flags for single-object body upload (not multipart s3 cp).
         ->toContain('--bucket "$bucket"')
-        ->toContain('--key "$object_key"');
+        ->toContain('--key "$object_key"')
+        // Public consumer URL requires AllUsers READ; owner-only ACL yields 403.
+        ->toContain('--acl public-read')
+        ->and(substr_count($publishSection, '--acl public-read'))
+        ->toBe(1);
 
     // Publication-only path: prior-run download is gated, validates source, and never rebuilds.
     expect($priorDownloadPos)

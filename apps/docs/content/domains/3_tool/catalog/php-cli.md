@@ -213,15 +213,18 @@ Object-storage publication is a separate opt-in on that same dispatch:
 `ORBIT_ARTIFACTS_BUCKET`, `ORBIT_ARTIFACTS_ENDPOINT`, and optional
 `ORBIT_ARTIFACTS_REGION`. The publish job requires the runner-provided
 `aws` CLI (`aws --version` prerequisite; no `pip install --user awscli`).
-Fixed version/variant/platform object keys under the immutable prefix
-`orbit/runtimes/php-cli/sqlite-3.44.6/` are never overwritten with different
-bytes. For each object the publish job:
+Fixed version/variant/platform object keys under the immutable bucket-relative
+prefix `runtimes/php-cli/sqlite-3.44.6/` (bucket `orbit`; public consumer URL
+`https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/…`) are never
+overwritten with different bytes. For each object the publish job:
 
 1. runs `s3api head-object` and captures stderr/status
 2. **definite absence only** (`404` / `NotFound` / `NoSuchKey`) → single-object
-   `aws s3api put-object` once (body = local tarball; avoids multipart
-   `UploadPart` / `XAmzContentSHA256Mismatch` on S3-compatible storage), then
-   verifies the public consumer URL
+   `aws s3api put-object` once with body = local tarball, `--acl public-read`
+   (AllUsers READ, matching existing consumable objects; without it the
+   unauthenticated consumer URL returns 403), and no multipart `UploadPart` /
+   `XAmzContentSHA256Mismatch` on S3-compatible storage; then verifies the
+   public consumer URL
 3. **present** and object metadata `sha256` and/or public
    `${artifact_base_url}/${filename}` SHA equals the local build → **skip**
    (no `put-object`)
@@ -231,8 +234,9 @@ bytes. For each object the publish job:
    → **fail closed before upload** — never treat ambiguous head errors as
    absence (that would open an overwrite path)
 
-`s3api put-object` runs only on the definite-absence branch. That public URL is
-what install/update consumes after promotion.
+`s3api put-object` runs only on the definite-absence branch and always sets
+`--acl public-read` so install/update can download the unauthenticated public
+URL after promotion.
 
 Publication-only retry: set `publish_to_object_storage=true` and
 `publish_from_run_id=<numeric run id>` (for example a green assemble run that

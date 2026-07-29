@@ -29,8 +29,11 @@ permissions:
   contents: read
 
 env:
-  # Immutable object prefix under the Orbit artifacts bucket (no moving `latest`).
-  ORBIT_PHP_CLI_OBJECT_PREFIX: orbit/runtimes/php-cli/sqlite-3.44.6
+  # Immutable object key prefix relative to the artifacts bucket (bucket is separate:
+  # secrets.ORBIT_ARTIFACTS_BUCKET, typically `orbit`). Do not prefix with the bucket
+  # name — public consumer URL already uses https://…/orbit/<this-prefix>/….
+  # No moving `latest`.
+  ORBIT_PHP_CLI_OBJECT_PREFIX: runtimes/php-cli/sqlite-3.44.6
 
 jobs:
   build:
@@ -483,11 +486,15 @@ jobs:
               # Definite absence only — sole path that may call put-object.
               # Single-object PUT for sub-5GB tarballs: avoids multipart upload
               # XAmzContentSHA256Mismatch failures on S3-compatible object storage.
+              # public-read ACL: AllUsers READ so unauthenticated consumer URL
+              # (verify_public_sha / install-update download) succeeds; owner-only
+              # FULL_CONTROL yields 403 on the public path.
               aws "${endpoint_args[@]}" s3api put-object \
                 --bucket "$bucket" \
                 --key "$object_key" \
                 --body "$local_path" \
                 --content-type "application/gzip" \
+                --acl public-read \
                 --metadata "sha256=${actual_sha},tool=php-cli"
 
               if ! verify_public_sha "$public_url" "$expected_sha"; then
