@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-29T09:23:33Z",
+    "ended_at": "2026-07-29T09:23:44Z",
+    "duration_seconds": 11,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/rc-frankenphp-artifact",
+        "commit": "f27424448723e614639e28e8b647952b2b75e2e3",
+        "dirty": true
+    },
+    "subgates": []
+}

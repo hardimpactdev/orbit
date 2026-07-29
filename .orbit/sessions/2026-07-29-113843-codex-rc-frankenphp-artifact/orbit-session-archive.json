@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T09:38:43+00:00",
+    "mode": "created",
+    "archive_mode": "full",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-rc-frankenphp-artifact/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-113843-codex-rc-frankenphp-artifact",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-113843-codex-rc-frankenphp-artifact/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "loop.md",
+        "quality-gates"
+    ],
+    "entry_digests": {
+        "agent-sessions": "dd9a09f4a9cfe6a288312a66a7015da6da979bfbca1bd6bceeccf4187c080bbb",
+        "loop.md": "33162f1d2f517367b1eb86e748ba9f1e9158f2fae296403252dc92c5059a0ada",
+        "quality-gates": "c168d5ab0bbdf576ff80a276619b8e602bcd50d44e8927d2af9c403694b06042"
+    },
+    "branch": "codex/rc-frankenphp-artifact",
+    "candidate_commit": "9806ab9edd68677ef51ed4e6e59cbaac57889777",
+    "accepted_feature_tip": "9806ab9edd68677ef51ed4e6e59cbaac57889777",
+    "accepted_main_tip": "f27424448723e614639e28e8b647952b2b75e2e3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
