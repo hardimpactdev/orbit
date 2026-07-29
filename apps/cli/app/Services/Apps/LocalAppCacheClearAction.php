@@ -20,7 +20,7 @@ final readonly class LocalAppCacheClearAction
         $phpVersion = $this->phpVersion($phpVersion);
         $runtimeUser = $this->runtimeUser($runtimeUser);
         $php = "/opt/orbit/php/{$phpVersion}/bin/php";
-        $artisan = $this->mustRun([
+        $artisanCommand = [
             'sudo',
             '-u',
             $runtimeUser,
@@ -29,14 +29,15 @@ final readonly class LocalAppCacheClearAction
             'artisan',
             'config:clear',
             '--no-interaction',
-        ], $path);
+        ];
+        $artisan = $this->mustRun($artisanCommand, $path);
 
         return [
             'path' => $path,
             'php_version' => $phpVersion,
             'runtime_user' => $runtimeUser,
             'artisan' => $artisan,
-            'deleted_cache_files' => $this->deleteBootstrapCacheFiles($path),
+            'deleted_cache_files' => $this->deleteBootstrapCacheFiles($path, $php, $runtimeUser),
         ];
     }
 
@@ -71,7 +72,7 @@ final readonly class LocalAppCacheClearAction
         ];
     }
 
-    private function deleteBootstrapCacheFiles(string $path): int
+    private function deleteBootstrapCacheFiles(string $path, string $php, string $runtimeUser): int
     {
         $cachePath = $path.'/bootstrap/cache';
 
@@ -79,24 +80,74 @@ final readonly class LocalAppCacheClearAction
             return 0;
         }
 
-        $deleted = 0;
-        $files = glob($cachePath.'/*');
+        $process = new Process([
+            'sudo',
+            '-u',
+            $runtimeUser,
+            '-H',
+            $php,
+            '-r',
+            <<<'PHP'
+                $cachePath = $argv[1] ?? '';
+                $files = glob($cachePath.'/*');
 
-        if ($files === false) {
-            return 0;
+                if ($files === false) {
+                    fwrite(STDERR, 'Unable to read the bootstrap cache directory.');
+                    exit(1);
+                }
+
+                $deleted = 0;
+
+                foreach ($files as $file) {
+                    if (! is_file($file) || basename($file) === '.gitignore') {
+                        continue;
+                    }
+
+                    if (! unlink($file)) {
+                        fwrite(STDERR, 'Unable to delete a bootstrap cache file.');
+                        exit(1);
+                    }
+
+                    $deleted++;
+                }
+
+                echo $deleted;
+                PHP,
+            '--',
+            $cachePath,
+        ], $path);
+        $process->setTimeout(60);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $error = trim($process->getErrorOutput());
+            $error = $error !== '' ? $error : trim($process->getOutput());
+            $error = $error !== '' ? $error : 'bootstrap cache deletion failed';
+
+            throw new LocalAppCacheClearFailure(
+                errorCode: 'app_cache_clear_failed',
+                message: $error,
+                meta: [
+                    'command' => $php,
+                    'exit_code' => $process->getExitCode(),
+                ],
+            );
         }
 
-        foreach ($files as $file) {
-            if (! is_file($file) || basename($file) === '.gitignore') {
-                continue;
-            }
+        $deleted = trim($process->getOutput());
 
-            if (unlink($file)) {
-                $deleted++;
-            }
+        if (preg_match('/\A\d+\z/', $deleted) !== 1) {
+            throw new LocalAppCacheClearFailure(
+                errorCode: 'app_cache_clear_failed',
+                message: 'Bootstrap cache deletion returned an invalid result.',
+                meta: [
+                    'command' => $php,
+                    'exit_code' => $process->getExitCode(),
+                ],
+            );
         }
 
-        return $deleted;
+        return (int) $deleted;
     }
 
     private function absolutePath(mixed $value): string
