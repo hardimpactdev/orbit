@@ -18,6 +18,7 @@ use RuntimeException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  * @mago-expect lint:too-many-methods
  */
 final readonly class AppRuntimeContainerRenderer

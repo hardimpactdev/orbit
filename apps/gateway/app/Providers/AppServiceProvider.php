@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\AgentIdeWorkspacePathResolver;
+use App\Contracts\ConvergesAppRuntimeContainers;
 use App\Contracts\OpenCodeClientFactory;
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Contracts\ProgressReporter;
@@ -199,6 +200,7 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
+        $this->app->bind(ConvergesAppRuntimeContainers::class, AppRuntimeContainerManager::class);
         $this->app->bind(WorkspaceRuntimeContainerManager::class, function (Application $app): WorkspaceRuntimeContainerManager {
             $commands = $app->make(DockerCommandBuilder::class);
             $ca = $app->make(OrbitCaService::class);

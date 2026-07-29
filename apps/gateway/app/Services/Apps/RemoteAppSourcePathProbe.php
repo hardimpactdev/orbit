@@ -71,14 +71,11 @@ final readonly class RemoteAppSourcePathProbe
             return $this->missing($path);
         }
 
-        $resolvedPath = $data['resolved_path'] ?? null;
-        $withinBoundary = $data['within_boundary'] ?? false;
-
         return [
             'path' => is_string($data['path'] ?? null) ? $data['path'] : $path,
             'exists' => $data['exists'],
-            'resolved_path' => is_string($resolvedPath) ? $resolvedPath : null,
-            'within_boundary' => $withinBoundary === true,
+            'resolved_path' => is_string($data['resolved_path'] ?? null) ? $data['resolved_path'] : null,
+            'within_boundary' => ($data['within_boundary'] ?? false) === true,
         ];
     }
 

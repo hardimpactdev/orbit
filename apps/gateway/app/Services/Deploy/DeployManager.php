@@ -139,8 +139,8 @@ final readonly class DeployManager
     {
         $instance = $this->productionInstance($app);
         $model = $this->runtimeApp($instance);
-        $steps = DeployStep::query()
-            ->where('app_instance_id', $instance->id)
+        $steps = $instance
+            ->deploySteps()
             ->orderBy('sort_order')
             ->get();
 
@@ -555,13 +555,17 @@ final readonly class DeployManager
     }
 
     /**
-     * @param  Collection<int, DeployStep>  $steps
+     * @param  iterable<array-key, object>  $steps
      */
-    private function usesLivePath(Collection $steps): bool
+    private function usesLivePath(iterable $steps): bool
     {
-        return $steps->contains(
-            static fn (DeployStep $step): bool => preg_match('/{{\s*live_path\s*}}/', $step->command) === 1,
-        );
+        foreach ($steps as $step) {
+            if ($step instanceof DeployStep && preg_match('/{{\s*live_path\s*}}/', $step->command) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function progressKey(DeployStep $step): string

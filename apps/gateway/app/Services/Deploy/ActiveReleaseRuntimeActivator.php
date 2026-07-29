@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Deploy;
 
+use App\Contracts\ConvergesAppRuntimeContainers;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\RemoteAppSourcePathProbe;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -17,11 +17,14 @@ use App\Services\Processes\ProcessDockerRuntimeManager;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class ActiveReleaseRuntimeActivator
 {
     public function __construct(
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
-        private AppRuntimeContainerManager $appRuntimeContainerManager,
+        private ConvergesAppRuntimeContainers $appRuntimeContainerManager,
         private RemoteAppSourcePathProbe $appSourcePathProbe,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private ProcessDockerRuntimeManager $processDockerRuntimeManager,
@@ -57,15 +60,15 @@ final readonly class ActiveReleaseRuntimeActivator
     private function activateRuntime(Project $app, AppInstance $instance, array $context): array
     {
         $node = $app->node;
-        $appPath = $context['app_path'] ?? null;
-        $livePath = $context['live_path'] ?? null;
 
         if (
             ! $node instanceof Node
-            || ! is_string($appPath)
-            || trim($appPath) === ''
-            || ! is_string($livePath)
-            || trim($livePath) === ''
+            || ! array_key_exists('app_path', $context)
+            || ! is_string($context['app_path'])
+            || trim($context['app_path']) === ''
+            || ! array_key_exists('live_path', $context)
+            || ! is_string($context['live_path'])
+            || trim($context['live_path']) === ''
         ) {
             throw new GatewayApiException(
                 message: "The active release path for '{$this->targetName($instance)}' is unavailable.",
@@ -77,6 +80,8 @@ final readonly class ActiveReleaseRuntimeActivator
             );
         }
 
+        $appPath = $context['app_path'];
+        $livePath = $context['live_path'];
         $probe = $this->appSourcePathProbe->inspect($node, $livePath, $appPath);
 
         if (! $probe['exists'] || $probe['resolved_path'] === null) {

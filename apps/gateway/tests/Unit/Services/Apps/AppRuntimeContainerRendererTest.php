@@ -675,7 +675,7 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
 });
 
 it('does not render runtime client trust for app-prod PHP runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $node = createTestAppHostNode(['user' => 'orbit'], role: 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',

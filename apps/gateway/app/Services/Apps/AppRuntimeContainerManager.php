@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Contracts\ConvergesAppRuntimeContainers;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
-use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Tools\ToolScriptDispatcher;
 use JsonException;
 use RuntimeException;
 use Throwable;
 
-final readonly class AppRuntimeContainerManager
+final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeContainers
 {
     /**
      * @mago-expect lint:excessive-parameter-list
@@ -28,13 +29,13 @@ final readonly class AppRuntimeContainerManager
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
-        private ?RunsInternalCommands $localExecutor = null,
+        private mixed $localExecutor = null,
         private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
     public function apply(Node $node, AppRuntimeContainer $container): AppRuntimeContainerApplyOutcome
     {
-        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->applyThroughLocalExecutor($node, $container);
         }
 
@@ -232,7 +233,7 @@ final readonly class AppRuntimeContainerManager
     {
         $localExecutor = $this->localExecutor($node);
 
-        if (! $localExecutor instanceof RunsInternalCommands) {
+        if (! $localExecutor instanceof RemoteLocalExecutor) {
             throw new RuntimeException('App runtime local executor is unavailable.');
         }
 
@@ -601,7 +602,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function remove(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->removeThroughLocalExecutor($node, "orbit-app-{$appSlug}");
         }
 
@@ -633,7 +634,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function removeRuntimeConfigFile(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->removeRuntimeConfigFileThroughLocalExecutor(
                 $node,
                 $this->runtimeConfigPath($node, $appSlug),
@@ -714,7 +715,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function writeRuntimeConfigFile(Node $node, AppRuntimeContainer $container): void
     {
-        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             $this->writeRuntimeConfigFileThroughLocalExecutor($node, $container);
 
             return;
@@ -1044,9 +1045,9 @@ final readonly class AppRuntimeContainerManager
         throw new RuntimeException("Failed to {$step} on {$node->name}: {$message}");
     }
 
-    private function localExecutor(Node $node): ?RunsInternalCommands
+    private function localExecutor(Node $node): ?RemoteLocalExecutor
     {
-        if (! $this->localExecutor instanceof RunsInternalCommands) {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
             return null;
         }
 
