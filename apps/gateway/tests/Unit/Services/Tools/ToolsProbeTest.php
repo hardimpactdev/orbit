@@ -340,16 +340,20 @@ describe('ToolsProbe', function (): void {
 
         $probe->introspect($tool);
 
+        // php-cli uses the dedicated php_cli_runtimes probe: absolute paths are
+        // passed as quoted literals to probe_minor (not a PATH-style binary= assignment).
         expect($shell->script)
-            ->toContain("binary='/opt/orbit/php/8.5/bin/php'")
-            ->and($shell->script)
             ->toStartWith('set -eu')
             ->and($shell->script)
-            ->toContain('case "$binary" in')
+            ->toContain('probe_minor')
+            ->and($shell->script)
+            ->toContain('probe_minor "8.5" "8.5.8" "/opt/orbit/php/8.5/bin/php"')
+            ->and($shell->script)
+            ->toContain('binary="$3"')
             ->and($shell->script)
             ->toContain('[ -x "$binary" ]')
             ->and($shell->script)
-            ->toContain('command -v');
+            ->not->toContain('command -v');
     });
 
     it('probes Claude Code through the persisted default install user', function (): void {

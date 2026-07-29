@@ -10,6 +10,8 @@ use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Php\PhpCliArtifactCatalog;
+use Orbit\Core\Php\PhpCliVariant;
 use RuntimeException;
 
 /**
@@ -252,6 +254,11 @@ class IncusBaseImagePreparer
         $sourceGatewayArtisanImage = escapeshellarg(DockerTopologyProvider::sourceGatewayArtisanImage());
         $webSocketRuntimeImage = escapeshellarg(DockerTopologyProvider::webSocketRuntimeImage());
         $wgEasyImage = escapeshellarg(WgEasyServiceInstaller::Image);
+        $phpCliInstall = str_replace(
+            "\n",
+            "\n            ",
+            trim($this->phpCliInstallBootstrapFragment()),
+        );
 
         $script = <<<BASH
             set -euo pipefail
@@ -303,17 +310,7 @@ class IncusBaseImagePreparer
                 *) echo "unsupported static PHP architecture: \$(uname -m)" >&2; exit 1 ;;
             esac
 
-            for php_version in 8.5:8.5.6 8.4:8.4.21 8.3:8.3.31; do
-                php_minor="\${php_version%%:*}"
-                php_patch="\${php_version#*:}"
-                install -d -m 0755 "/opt/orbit/php/\$php_minor/bin"
-                curl -fsSL "https://dl.static-php.dev/static-php-cli/bulk/php-\$php_patch-cli-linux-\$static_php_arch.tar.gz" -o "/tmp/orbit-php-\$php_minor.tar.gz"
-                tar -xzf "/tmp/orbit-php-\$php_minor.tar.gz" -C "/opt/orbit/php/\$php_minor/bin"
-                chmod +x "/opt/orbit/php/\$php_minor/bin/php"
-                ln -sf "/opt/orbit/php/\$php_minor/bin/php" "/usr/local/bin/php\$php_minor"
-                rm -f "/tmp/orbit-php-\$php_minor.tar.gz"
-            done
-            ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php
+            {$phpCliInstall}
 
             expected_composer_signature="\$(curl -fsSL https://composer.github.io/installer.sig)"
             curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
@@ -411,6 +408,134 @@ class IncusBaseImagePreparer
         if (! $result->successful()) {
             throw new RuntimeException("Failed to bootstrap base instance [{$instanceName}]: {$result->errorOutput()}");
         }
+    }
+
+    /**
+     * Host PHP for the shared multi-role base image: production-safe standard (no PCOV).
+     * Uses packages/core catalog only — never gateway tools.
+     *
+     * Compatibility mode: historical bulk static-php.dev install (all Linux arches).
+     * Matrix mode (after promotion): Orbit-owned standard matrix artifacts only.
+     */
+    private function phpCliInstallBootstrapFragment(?PhpCliArtifactCatalog $catalog = null): string
+    {
+        $catalog ??= PhpCliArtifactCatalog::load(
+            repo_path(PhpCliArtifactCatalog::DEFAULT_CATALOG_RELATIVE_PATH),
+        );
+
+        if ($catalog->usesMatrixContract()) {
+            return $this->phpCliMatrixStandardBootstrapFragment($catalog);
+        }
+
+        return $this->phpCliCompatibilityBulkBootstrapFragment($catalog);
+    }
+
+    /**
+     * Historical bulk install for every pinned minor (preserves Linux aarch64).
+     */
+    private function phpCliCompatibilityBulkBootstrapFragment(PhpCliArtifactCatalog $catalog): string
+    {
+        $pairs = [];
+
+        foreach ($catalog->patchPins() as $minor => $patch) {
+            $pairs[] = "{$minor}:{$patch}";
+        }
+
+        $versionList = implode(' ', $pairs);
+        $bulkBase = $catalog->bulkBaseUrl();
+
+        return <<<BASH
+            for php_version in {$versionList}; do
+                php_minor="\${php_version%%:*}"
+                php_patch="\${php_version#*:}"
+                install -d -m 0755 "/opt/orbit/php/\${php_minor}/bin"
+                curl -fsSL "{$bulkBase}/php-\${php_patch}-cli-linux-\${static_php_arch}.tar.gz" -o "/tmp/orbit-php-\${php_minor}.tar.gz"
+                tar -xzf "/tmp/orbit-php-\${php_minor}.tar.gz" -C "/opt/orbit/php/\${php_minor}/bin"
+                chmod +x "/opt/orbit/php/\${php_minor}/bin/php"
+                ln -sf "/opt/orbit/php/\${php_minor}/bin/php" "/usr/local/bin/php\${php_minor}"
+                rm -f "/tmp/orbit-php-\${php_minor}.tar.gz"
+                actual_patch="\$(/opt/orbit/php/\${php_minor}/bin/php -r 'echo PHP_VERSION;')"
+                [ "\$actual_patch" = "\$php_patch" ]
+                /opt/orbit/php/\${php_minor}/bin/php -r 'exit(extension_loaded("pcov") ? 1 : 0);'
+                if /opt/orbit/php/\${php_minor}/bin/php --ri pcov >/dev/null 2>&1; then
+                    echo "shared orbit base image must not expose pcov (standard/no coverage)" >&2
+                    exit 1
+                fi
+            done
+            ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php
+            BASH;
+    }
+
+    /**
+     * Post-cutover: Orbit-owned standard matrix artifacts with checksums.
+     */
+    private function phpCliMatrixStandardBootstrapFragment(PhpCliArtifactCatalog $catalog): string
+    {
+        $variant = PhpCliVariant::Standard;
+        $sqliteVersion = $catalog->sqliteVersion();
+        $blocks = [];
+
+        foreach ($catalog->patchPins() as $minor => $patch) {
+            $filename = "php-{$patch}-cli-{$variant->value}-linux-\${static_php_arch}.tar.gz";
+            $baseUrl = $catalog->artifactBaseUrl();
+            $shaCases = [];
+
+            foreach (['linux-x86_64', 'linux-aarch64'] as $platform) {
+                $sha = $catalog->artifactSha256($patch, $variant, $platform);
+
+                if ($sha === null) {
+                    continue;
+                }
+
+                $shaCases[] = "{$platform}) artifact_sha256={$sha} ;;";
+            }
+
+            if ($shaCases === []) {
+                throw new RuntimeException(
+                    "Matrix standard php-cli artifacts are unpublished for PHP {$patch}; cannot bake the shared E2E base.",
+                );
+            }
+
+            $shaCaseBlock = implode("\n", [
+                ...$shaCases,
+                '*) echo "unsupported or unpublished Orbit php-cli standard platform: linux-${static_php_arch}" >&2; exit 1 ;;',
+            ]);
+
+            $blocks[] = implode("\n", [
+                "php_minor='{$minor}'",
+                "php_patch='{$patch}'",
+                "artifact_name='{$filename}'",
+                "artifact_url='{$baseUrl}/'\${artifact_name}",
+                'artifact_sha256=""',
+                'case "linux-${static_php_arch}" in',
+                $shaCaseBlock,
+                'esac',
+                '[ -n "$artifact_sha256" ] || { echo "php-cli checksum missing for '.$patch.'" >&2; exit 1; }',
+                'install -d -m 0755 "/opt/orbit/php/${php_minor}/bin"',
+                'curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "${artifact_url}" -o "/tmp/orbit-php-${php_minor}.tar.gz"',
+                'printf \'%s  %s\n\' "$artifact_sha256" "/tmp/orbit-php-${php_minor}.tar.gz" | sha256sum -c -',
+                'tar -xzf "/tmp/orbit-php-${php_minor}.tar.gz" -C "/opt/orbit/php/${php_minor}/bin"',
+                'chmod +x "/opt/orbit/php/${php_minor}/bin/php"',
+                'ln -sf "/opt/orbit/php/${php_minor}/bin/php" "/usr/local/bin/php${php_minor}"',
+                'rm -f "/tmp/orbit-php-${php_minor}.tar.gz"',
+                'actual_patch="$(/opt/orbit/php/${php_minor}/bin/php -r \'echo PHP_VERSION;\')"',
+                "[ \"\$actual_patch\" = \"{$patch}\" ]",
+                'sqlite_extension="$(/opt/orbit/php/${php_minor}/bin/php -r \'echo SQLite3::version()["versionString"];\')"',
+                'sqlite_query="$(/opt/orbit/php/${php_minor}/bin/php -r \'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();\')"',
+                "[ \"\$sqlite_extension\" = \"{$sqliteVersion}\" ]",
+                "[ \"\$sqlite_query\" = \"{$sqliteVersion}\" ]",
+                '/opt/orbit/php/${php_minor}/bin/php -r \'exit(extension_loaded("pcov") ? 1 : 0);\'',
+                'if /opt/orbit/php/${php_minor}/bin/php --ri pcov >/dev/null 2>&1; then',
+                '    echo "shared orbit base image must not expose pcov (standard/no coverage)" >&2',
+                '    exit 1',
+                'fi',
+            ]);
+        }
+
+        return implode("\n", [
+            ...$blocks,
+            'ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php',
+        ]);
     }
 
     private function waitForAgent(string $instanceName, int $timeoutSeconds): void

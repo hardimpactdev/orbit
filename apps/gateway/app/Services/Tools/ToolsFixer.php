@@ -41,6 +41,11 @@ final readonly class ToolsFixer
             'tool.capability_missing' => $tool->name === 'caddy'
                 ? $this->repairContainer($tool, $entry)
                 : $this->runRepairCommand($tool, $this->repairCommand($tool, $entry), $entry),
+            'tool.php_cli_coverage_missing' => $this->runRepairCommand(
+                $tool,
+                $this->repairCommand($tool, $entry),
+                $entry,
+            ),
             'tool.config_missing', 'tool.config_mismatch' => $this->repairManagedConfig($tool, $entry),
             'tool.credentials_missing', 'tool.credentials_mismatch' => $this->repairManagedSecret($tool, $entry),
             'tool.container_missing',
@@ -65,7 +70,7 @@ final readonly class ToolsFixer
         }
 
         $action = match ($entry->key) {
-            'tool.capability_missing' => 'install',
+            'tool.capability_missing', 'tool.php_cli_coverage_missing' => 'install',
             'tool.version_mismatch' => 'update',
             default => null,
         };
@@ -174,7 +179,7 @@ final readonly class ToolsFixer
         $catalog = $this->catalog ?? app(ToolCatalog::class);
         $config = $this->configForToolScript($tool);
 
-        if ($entry->key === 'tool.capability_missing') {
+        if ($entry->key === 'tool.capability_missing' || $entry->key === 'tool.php_cli_coverage_missing') {
             $install = $catalog->installScript($tool->name, $config);
 
             if ($install !== null || ! $catalog->hasCapability($tool->name, 'safe-fix')) {
@@ -201,6 +206,10 @@ final readonly class ToolsFixer
         $config = is_array($tool->config) ? $tool->config : [];
         $tool->loadMissing('node');
         $managedUser = $tool->node?->user;
+
+        if ($tool->name === 'php-cli') {
+            $config['variant'] = app(PhpCliVariantResolver::class)->forTool($tool)->value;
+        }
 
         return [
             ...$config,

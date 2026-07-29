@@ -18,10 +18,14 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Tools\PhpCliTool;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
 use InvalidArgumentException;
 use JsonException;
+use Orbit\Core\Php\PhpCliArtifactCatalog;
+use Orbit\Core\Php\PhpCliRuntimeClassifier;
+use Orbit\Core\Php\PhpCliVariant;
 use Throwable;
 
 final readonly class ToolsProbe
@@ -57,6 +61,10 @@ final readonly class ToolsProbe
 
         if (($metadata['probe'] ?? null) === 'docker_images') {
             return $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
+        }
+
+        if (($metadata['probe'] ?? null) === 'php_cli_runtimes') {
+            return $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
         }
 
         $binary = is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name;
@@ -124,6 +132,12 @@ final readonly class ToolsProbe
                     $tool,
                     $metadata,
                 ));
+
+                continue;
+            }
+
+            if (($metadata['probe'] ?? null) === 'php_cli_runtimes') {
+                $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
 
                 continue;
             }
@@ -523,6 +537,279 @@ final readonly class ToolsProbe
         ]);
     }
 
+    private function introspectPhpCliRuntimes(NodeTool $tool): ProbeSnapshot
+    {
+        $node = $tool->node;
+
+        if (! $node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        $desiredVariant = $this->phpCliVariantForTool($tool);
+        // During compatibility, nodes intentionally run the retained standard runtime
+        // even when role desire is coverage. Classify against that effective runtime
+        // so doctor does not permanently emit coverage_missing / reinstall loops.
+        $runtimeCatalog = PhpCliArtifactCatalog::load();
+        $effectiveVariant = $runtimeCatalog->usesCompatibilityContract()
+            ? PhpCliVariant::Standard
+            : $desiredVariant;
+        $definition = $this->catalog?->definition('php-cli') ?? app(ToolCatalog::class)->definition('php-cli');
+
+        if (! $definition instanceof PhpCliTool) {
+            return new ProbeSnapshot([]);
+        }
+
+        $script = $definition->runtimeProbeScript($effectiveVariant);
+        $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe-php-cli', $script);
+        $minors = [];
+        $classifier = new PhpCliRuntimeClassifier;
+        $allOk = true;
+        $anyPresent = false;
+
+        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode('|', $line);
+
+            if (count($parts) < 8) {
+                continue;
+            }
+
+            [
+                $minor,
+                $expectedPatch,
+                $presentRaw,
+                $patch,
+                $pcovLoadedRaw,
+                $pcovStartRaw,
+                $pcovEnabledRaw,
+                $riOkRaw,
+            ] = $parts;
+
+            $observed = [
+                'present' => $presentRaw === '1',
+                'patch' => $patch !== '' ? $patch : null,
+                'expected_patch' => $expectedPatch,
+                'extension_loaded_pcov' => $pcovLoadedRaw === '1',
+                'function_exists_pcov_start' => $pcovStartRaw === '1',
+                'pcov_enabled' => $pcovEnabledRaw === '1',
+                'ri_pcov_ok' => $riOkRaw === '1',
+            ];
+            $classification = $classifier->classify($effectiveVariant, $observed);
+            $minors[$minor] = [
+                ...$observed,
+                'classification' => $classification['kind'],
+                'ok' => $classification['ok'],
+                'summary' => $classification['summary'],
+            ];
+            $anyPresent = $anyPresent || $observed['present'];
+            $allOk = $allOk && $classification['ok'];
+        }
+
+        $default = $minors['8.5'] ?? null;
+        $defaultPath = '/opt/orbit/php/8.5/bin/php';
+        $defaultPresent = ($default['present'] ?? false) === true;
+        $complete = $this->phpCliMinorSnapshotIsComplete($minors);
+        $probeOk = $result->successful() && $complete && $allOk;
+        $matrixCutoverPending =
+            $runtimeCatalog->usesCompatibilityContract() && $desiredVariant === PhpCliVariant::Coverage;
+
+        return new ProbeSnapshot([
+            $tool->name => [
+                // Presence of the default binary is the capability signal.
+                // Per-minor and PCOV classification are reported separately.
+                'installed' => $probeOk && $defaultPresent,
+                'path' => $defaultPresent ? $defaultPath : null,
+                'version' => is_string($default['patch'] ?? null) ? $default['patch'] : null,
+                'state' => null,
+                'variant' => $desiredVariant->value,
+                'desired_variant' => $desiredVariant->value,
+                'effective_variant' => $effectiveVariant->value,
+                'install_contract' => $runtimeCatalog->installContract(),
+                'matrix_cutover_pending' => $matrixCutoverPending,
+                'minors' => $minors,
+                'php_cli_probe_ok' => $probeOk,
+                'php_cli_any_present' => $anyPresent,
+                'php_cli_minors_complete' => $complete,
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+            ],
+        ]);
+    }
+
+    private function phpCliVariantForTool(NodeTool $tool): PhpCliVariant
+    {
+        return app(PhpCliVariantResolver::class)->forTool($tool);
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkPhpCliRuntimeState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        if ($tool->name !== 'php-cli' || $tool->expected_state === 'absent') {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name) ?? [];
+        $minors = is_array($observed['minors'] ?? null) ? $observed['minors'] : null;
+
+        // No php-cli probe shape at all — generic capability presence owns the check.
+        if ($minors === null) {
+            return [];
+        }
+
+        $desiredVariant = is_string($observed['desired_variant'] ?? null)
+            ? PhpCliVariant::tryFromMixed($observed['desired_variant'])
+            : null;
+        $desiredVariant ??= $this->phpCliVariantForTool($tool);
+        $effectiveVariant = is_string($observed['effective_variant'] ?? null)
+            ? PhpCliVariant::tryFromMixed($observed['effective_variant'])
+            : null;
+        $effectiveVariant ??= $desiredVariant;
+        $installContract = is_string($observed['install_contract'] ?? null)
+            ? $observed['install_contract']
+            : PhpCliArtifactCatalog::load()->installContract();
+        $matrixCutoverPending =
+            ($observed['matrix_cutover_pending'] ?? false) === true
+            || $installContract === PhpCliArtifactCatalog::INSTALL_CONTRACT_COMPATIBILITY
+            && $desiredVariant === PhpCliVariant::Coverage;
+
+        // Failed probe, empty stdout, or malformed lines leave minors empty/incomplete.
+        // That must never look like "no drift".
+        if (! $this->phpCliMinorSnapshotIsComplete($minors)) {
+            $observedMinors = array_values(array_filter(
+                array_keys($minors),
+                static fn (mixed $key): bool => is_string($key) && $key !== '',
+            ));
+
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.capability_missing',
+                    kind: DriftKind::Missing,
+                    summary: 'Tool php-cli probe failed or returned incomplete runtime evidence for supported minors.',
+                    detail: [
+                        'tool' => $tool->name,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                        'reason' => 'probe_incomplete',
+                        'php_cli_probe_ok' => $observed['php_cli_probe_ok'] ?? false,
+                        'observed_minors' => $observedMinors,
+                        'expected_minors' => PhpCliArtifactCatalog::SUPPORTED_MINORS,
+                    ],
+                ),
+            ];
+        }
+
+        $issues = [];
+
+        foreach ($minors as $minor => $state) {
+            if (! is_string($minor) || ! is_array($state)) {
+                continue;
+            }
+
+            if (($state['present'] ?? false) !== true) {
+                $issues[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.capability_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool php-cli minor {$minor} is missing on the target node.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'minor' => $minor,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                    ],
+                );
+
+                continue;
+            }
+
+            if (($state['ok'] ?? false) === true) {
+                continue;
+            }
+
+            $classification = is_string($state['classification'] ?? null) ? $state['classification'] : '';
+
+            // Only enforce coverage/PCOV after matrix promotion. In compatibility mode the
+            // effective runtime is standard, so coverage_missing would false-positive forever.
+            if (
+                $effectiveVariant === PhpCliVariant::Coverage
+                && $classification === PhpCliRuntimeClassifier::KIND_COVERAGE_BROKEN
+            ) {
+                $issues[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.php_cli_coverage_missing',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool php-cli coverage capability is missing or broken for PHP {$minor}.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'minor' => $minor,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                        'observed_patch' => $state['patch'] ?? null,
+                        'expected_patch' => $state['expected_patch'] ?? null,
+                        'extension_loaded_pcov' => $state['extension_loaded_pcov'] ?? null,
+                        'function_exists_pcov_start' => $state['function_exists_pcov_start'] ?? null,
+                        'pcov_enabled' => $state['pcov_enabled'] ?? null,
+                        'ri_pcov_ok' => $state['ri_pcov_ok'] ?? null,
+                    ],
+                );
+
+                continue;
+            }
+
+            $issues[] = new DriftEntry(
+                family: $this->key(),
+                key: 'tool.version_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool php-cli minor {$minor} does not match gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'minor' => $minor,
+                    'variant' => $desiredVariant->value,
+                    'desired_variant' => $desiredVariant->value,
+                    'effective_variant' => $effectiveVariant->value,
+                    'install_contract' => $installContract,
+                    'matrix_cutover_pending' => $matrixCutoverPending,
+                    'classification' => $classification,
+                    'observed_patch' => $state['patch'] ?? null,
+                    'expected_patch' => $state['expected_patch'] ?? null,
+                ],
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * A complete per-minor php-cli snapshot includes every supported minor with a state array.
+     *
+     * @param  array<array-key, mixed>  $minors
+     */
+    private function phpCliMinorSnapshotIsComplete(array $minors): bool
+    {
+        if ($minors === []) {
+            return false;
+        }
+
+        return array_all(PhpCliArtifactCatalog::SUPPORTED_MINORS, fn ($minor) => is_array($minors[$minor] ?? null));
+    }
+
     /**
      * @param  array<string, mixed>  $metadata
      */
@@ -595,6 +882,7 @@ final readonly class ToolsProbe
             ...$this->checkNodeEligibility($tool, $allowProvisioning),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
+            ...$this->checkPhpCliRuntimeState($tool, $snapshot),
             ...$this->checkDockerProviderReachability($tool, $snapshot),
             ...$this->checkContainerState($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
@@ -743,6 +1031,22 @@ final readonly class ToolsProbe
     {
         if ($tool->expected_state === 'absent') {
             return [];
+        }
+
+        // Only suppress the generic check when checkPhpCliRuntimeState has a complete
+        // per-minor snapshot to classify. Empty/malformed minors must not look healthy.
+        if ($tool->name === 'php-cli') {
+            $minors = $snapshot->get($tool->name)['minors'] ?? null;
+
+            if (is_array($minors) && $this->phpCliMinorSnapshotIsComplete($minors)) {
+                return [];
+            }
+
+            // Incomplete or empty minors: checkPhpCliRuntimeState emits probe_incomplete.
+            // Skip the generic path to avoid double-reporting the same failure.
+            if (is_array($minors)) {
+                return [];
+            }
         }
 
         $observed = $snapshot->get($tool->name);

@@ -602,6 +602,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
 - **Runtime PHP binary**
+- **Host PHP CLI variant**
 - **PHP runtime container artifact**
 - **PHP runtime target**
 - **Partial PHP application warning**

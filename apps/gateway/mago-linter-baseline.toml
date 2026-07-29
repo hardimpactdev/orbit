@@ -8989,6 +8989,12 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 1
 
 [[issues]]
+file = "app/Services/Tools/ToolInstaller.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
 file = "app/Services/Tools/ToolLogReader.php"
 code = "halstead"
 message = "Method has a high halstead effort"
@@ -10414,6 +10420,24 @@ count = 1
 file = "app/Tools/PhpCliTool.php"
 code = "constant-name"
 message = "Constant name `CurlRetryFlags` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Tools/PhpCliTool.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Tools/PhpCliTool.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Tools/PhpCliTool.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -12742,6 +12766,12 @@ count = 1
 file = "tests/Feature/Commands/Internal/BakeAppNodeCommandTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Internal/BakeAppNodeCommandTest.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -24496,6 +24526,12 @@ count = 1
 file = "tests/Unit/Services/Nodes/NodeConvergerTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `NodeConvergerInternalExecutor` but class `NodeConvergerSetupRemoteShell` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodeConvergerTest.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]

@@ -66,7 +66,9 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->not
             ->toBeNull()
             ->and($tool->expected_state)
-            ->toBe('installed');
+            ->toBe('installed')
+            ->and($tool->config['variant'] ?? null)
+            ->toBe('coverage');
     });
 
     it('converges composer with expected_state installed', function (): void {

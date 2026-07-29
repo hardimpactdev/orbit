@@ -7,6 +7,7 @@ use App\Services\E2E\IncusBaseImagePreparationOptions;
 use App\Services\E2E\IncusBaseImagePreparer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Mockery as m;
+use Orbit\Core\Php\PhpCliArtifactCatalog;
 
 afterEach(function (): void {
     m::close();
@@ -186,11 +187,21 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('php8.5-bcmath');
     expect($bootstrapScript)->toContain('docker.io');
     expect($bootstrapScript)->toContain('static_php_arch=');
-    expect($bootstrapScript)->toContain(
-        'https://dl.static-php.dev/static-php-cli/bulk/php-$php_patch-cli-linux-$static_php_arch.tar.gz',
-    );
-    expect($bootstrapScript)->toContain('/opt/orbit/php/$php_minor/bin');
+    // Compatibility catalog: historical bulk bootstrap (all arches, including arm).
+    // Orbit-owned standard matrix artifacts only after matrix cutover.
+    expect($bootstrapScript)->toContain('dl.static-php.dev/static-php-cli/bulk');
+    expect($bootstrapScript)->toContain('for php_version in 8.5:8.5.8 8.4:8.4.21 8.3:8.3.31');
+    expect($bootstrapScript)->toContain('php-${php_patch}-cli-linux-${static_php_arch}.tar.gz');
+    expect($bootstrapScript)->not->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/');
+    expect($bootstrapScript)->not->toContain('305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828');
+    expect($bootstrapScript)->toContain('/opt/orbit/php/');
     expect($bootstrapScript)->toContain('ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php');
+    expect($bootstrapScript)->toContain('exit(extension_loaded("pcov") ? 1 : 0)');
+    expect($bootstrapScript)->toContain('shared orbit base image must not expose pcov');
+    expect($bootstrapScript)->not->toContain('php-8.5.8-cli-coverage-');
+    expect($bootstrapScript)->not->toContain('php-8.5.8-cli-standard-');
+    expect($bootstrapScript)->not->toContain('exit(extension_loaded("pcov") ? 0 : 1)');
+    expect($bootstrapScript)->not->toContain('pcov.enabled');
     expect($bootstrapScript)->toContain('https://getcomposer.org/installer');
     expect($bootstrapScript)->toContain('php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     expect($bootstrapScript)->toContain('https://cli.github.com/packages/githubcli-archive-keyring.gpg');
@@ -218,6 +229,62 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('/usr/local/bin/composer --version >/dev/null');
     expect($bootstrapScript)->toContain('gh --version >/dev/null');
     expect($bootstrapScript)->toContain('cd /home/orbit && /usr/local/bin/laravel --version >/dev/null');
+});
+
+it('switches the shared base to Orbit standard matrix artifacts after matrix promotion', function (): void {
+    $runtime = json_decode(
+        (string) file_get_contents(repo_path('packages/core/resources/php-cli/artifact-catalog.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    $sha = str_repeat('22', 32);
+    foreach ($runtime['matrix']['artifacts'] as $patch => $variants) {
+        foreach ($variants as $variant => $platforms) {
+            foreach (array_keys($platforms) as $platform) {
+                $runtime['matrix']['artifacts'][$patch][$variant][$platform] = $sha;
+            }
+        }
+    }
+    $runtime['install_contract'] = 'matrix';
+    $runtime['publication'] = [
+        'status' => 'published',
+        'published_count' => 24,
+        'total_count' => 24,
+    ];
+
+    $path = sys_get_temp_dir().'/e2e-php-cli-matrix-'.bin2hex(random_bytes(3)).'.json';
+    file_put_contents($path, json_encode($runtime, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+
+    $catalog = PhpCliArtifactCatalog::load($path);
+    $preparer = new IncusBaseImagePreparer(m::mock(IncusHost::class));
+    $method = new ReflectionMethod($preparer, 'phpCliInstallBootstrapFragment');
+    $method->setAccessible(true);
+    $script = $method->invoke($preparer, $catalog);
+
+    expect($script)
+        ->toContain('php-8.5.8-cli-standard-linux-')
+        ->toContain('php-8.4.21-cli-standard-linux-')
+        ->toContain('php-8.3.31-cli-standard-linux-')
+        ->toContain($sha)
+        ->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/')
+        ->toContain('shared orbit base image must not expose pcov')
+        ->not->toContain('php-8.5.8-cli-coverage-')
+        ->not->toContain('dl.static-php.dev/static-php-cli/bulk');
+});
+
+it('does not import gateway tool definitions across the e2e architecture boundary', function (): void {
+    $path = app_path('Services/E2E/IncusBaseImagePreparer.php');
+    expect($path)->toBeFile();
+    $source = (string) file_get_contents($path);
+
+    expect($source)
+        ->not->toMatch('/^use\s+App\\\\Tools\\\\/m')
+        ->not->toMatch('/\\\\App\\\\Tools\\\\PhpCliTool\b/')
+        ->not->toMatch('/\bnew\s+\\\\?App\\\\Tools\\\\PhpCliTool\b/')
+        ->not->toContain('apps/gateway/app/Tools')->toContain('Orbit\\Core\\Php\\PhpCliArtifactCatalog')->toContain(
+            'PhpCliVariant::Standard',
+        );
 });
 
 it('throws when the source image is not available', function (): void {

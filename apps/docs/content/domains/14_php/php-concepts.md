@@ -74,6 +74,11 @@ These terms define each target scope that a PHP command can read or write.
   gateway's own runtime. Instance and workspace setup, deploy commands, and ad-hoc
   PHP/Composer/Artisan invocations run on the app node's host PHP toolchain,
   matched to the app's PHP version.
+- **Host PHP CLI variant:** The `php-cli` tool persists `coverage` or `standard`
+  in `NodeTool.config.variant`. Coverage runtimes statically link PCOV with
+  `pcov.enabled=1` for Pest TIA on `app-dev` nodes. Standard runtimes omit PCOV
+  on `app-prod` nodes. Both variants install the same supported minors under
+  `/opt/orbit/php/<minor>/bin/php`.
 
 ## Application and drift
 

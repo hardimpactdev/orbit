@@ -6,6 +6,7 @@ namespace App\Services\Tools;
 
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
+use Orbit\Core\Php\PhpCliVariant;
 
 final class ToolInstallConfigValidator
 {
@@ -14,6 +15,25 @@ final class ToolInstallConfigValidator
      */
     public function validate(string $tool, array $config): ?ToolRegistryFailure
     {
+        if ($tool === 'php-cli' && array_key_exists('variant', $config)) {
+            $variant = PhpCliVariant::tryFromMixed($config['variant']);
+
+            if (! $variant instanceof PhpCliVariant) {
+                $value = is_scalar($config['variant'])
+                    ? (string) $config['variant']
+                    : get_debug_type($config['variant']);
+
+                return ToolRegistryFailure::validation(
+                    field: 'config.variant',
+                    value: $value,
+                    message: "Invalid php-cli variant '{$value}'. Expected one of: "
+                    .implode(', ', PhpCliVariant::values())
+                    .'.',
+                    meta: ['reason' => 'unsupported_value'],
+                );
+            }
+        }
+
         if (! array_key_exists('install_users', $config)) {
             return null;
         }

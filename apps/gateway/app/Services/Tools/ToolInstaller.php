@@ -18,8 +18,11 @@ use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\AgentToolProxyRouteIntent;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteSecretFile;
+use App\Tools\PhpCliTool;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
+use Orbit\Core\Php\PhpCliVariant;
+use RuntimeException;
 
 final readonly class ToolInstaller
 {
@@ -89,6 +92,16 @@ final readonly class ToolInstaller
         }
 
         $definition = $this->catalog->definition($tool);
+
+        if ($tool === 'php-cli' && $definition instanceof PhpCliTool) {
+            $resolved = $this->resolvePhpCliConfig($targetNode, $config);
+
+            if ($resolved instanceof ToolRegistryFailure) {
+                return $resolved;
+            }
+
+            $config = $resolved;
+        }
 
         if ($definition instanceof UserScopedCliTool) {
             if ($version !== null && trim($version) !== '' && ! $definition->supportsInstallVersion()) {
@@ -276,6 +289,87 @@ final readonly class ToolInstaller
             'tool' => $spec['tool'],
             'action' => 'configured',
         ];
+    }
+
+    /**
+     * Manual `tool:install php-cli` with no config must resolve the role-derived
+     * or already-stored variant instead of erasing NodeTool.config.
+     *
+     * Role ownership is authoritative: app-prod always persists standard and
+     * app-dev always persists coverage, even when stored/explicit config conflicts.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
+    private function resolvePhpCliConfig(Node $node, array $config): array|ToolRegistryFailure
+    {
+        $role = $this->phpCliRoleForNode($node);
+        $definition = $this->catalog->definition('php-cli');
+
+        if ($definition instanceof PhpCliTool && array_key_exists('variant', $config) && $role !== null) {
+            try {
+                $definition->assertVariantAllowedForRole($config, $role);
+            } catch (RuntimeException $exception) {
+                return ToolRegistryFailure::validation(
+                    field: 'config.variant',
+                    value: is_scalar($config['variant'] ?? null) ? (string) $config['variant'] : '',
+                    message: $exception->getMessage(),
+                    meta: ['reason' => 'role_variant_conflict', 'role' => $role],
+                );
+            }
+        }
+
+        if ($role !== null) {
+            $variant = PhpCliVariant::forRole($role);
+
+            return [
+                ...$config,
+                'variant' => $variant->value,
+            ];
+        }
+
+        if (array_key_exists('variant', $config)) {
+            $variant = PhpCliVariant::fromMixed($config['variant']);
+
+            return [
+                ...$config,
+                'variant' => $variant->value,
+            ];
+        }
+
+        $existing = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'php-cli')
+            ->first();
+
+        $rawConfig = $existing instanceof NodeTool ? $existing->config : null;
+        /** @var array<string, mixed> $existingConfig */
+        $existingConfig = is_array($rawConfig) ? $rawConfig : [];
+        $storedVariant = PhpCliVariant::tryFromMixed($existingConfig['variant'] ?? null);
+
+        if ($storedVariant instanceof PhpCliVariant) {
+            /** @var array<string, mixed> $resolved */
+            $resolved = [
+                ...$existingConfig,
+                ...$config,
+                'variant' => $storedVariant->value,
+            ];
+
+            return $resolved;
+        }
+
+        /** @var array<string, mixed> $resolved */
+        $resolved = [
+            ...$config,
+            'variant' => PhpCliVariant::Coverage->value,
+        ];
+
+        return $resolved;
+    }
+
+    private function phpCliRoleForNode(Node $node): ?string
+    {
+        return app(PhpCliVariantResolver::class)->appRoleForNode($node);
     }
 
     /**

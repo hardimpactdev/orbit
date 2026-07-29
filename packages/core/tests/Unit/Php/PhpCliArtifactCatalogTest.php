@@ -1,0 +1,127 @@
+<?php
+
+declare(strict_types=1);
+
+use Orbit\Core\Php\PhpCliArtifactCatalog;
+use Orbit\Core\Php\PhpCliVariant;
+
+/**
+ * @return array<string, mixed>
+ */
+function phpCliCatalogFixtureDocument(): array
+{
+    return json_decode(
+        (string) file_get_contents(PhpCliArtifactCatalog::defaultBuildPath()),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+}
+
+function phpCliCatalogTempPath(array $document): string
+{
+    $path = sys_get_temp_dir().'/php-cli-catalog-'.bin2hex(random_bytes(4)).'.json';
+    file_put_contents($path, json_encode($document, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+
+    return $path;
+}
+
+it('loads the runtime compatibility catalog for production install', function (): void {
+    $catalog = PhpCliArtifactCatalog::load();
+
+    expect($catalog->usesCompatibilityContract())
+        ->toBeTrue()
+        ->and($catalog->publicationStatus())
+        ->toBe('compatibility')
+        ->and($catalog->artifactSha256('8.5.8', PhpCliVariant::Standard, 'linux-x86_64'))
+        ->toBe('305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828')
+        ->and($catalog->extensionsFor(PhpCliVariant::Coverage))
+        ->toContain('pcov')
+        ->and($catalog->extensionsFor(PhpCliVariant::Standard))
+        ->not
+        ->toContain('pcov')
+        ->and($catalog->installVerifiesPcov())
+        ->toBeFalse()
+        ->and($catalog->pcovVersion())
+        ->toBe('1.0.12')
+        ->and($catalog->pcovUrl())
+        ->toBe('https://pecl.php.net/get/pcov-1.0.12.tgz')
+        ->and($catalog->pcovArchiveSha256())
+        ->toBe('23255c8c9335a9636ccb743f5302436a97a582a0bbde9869485be911bbc15da8');
+});
+
+it('loads the separate unpublished build matrix for handoff', function (): void {
+    $catalog = PhpCliArtifactCatalog::loadBuild();
+
+    expect($catalog->catalogRole())
+        ->toBe('build')
+        ->and($catalog->matrix())
+        ->toHaveCount(24)
+        ->and($catalog->matrixFullyPublished())
+        ->toBeFalse()
+        ->and($catalog->artifactFileName('8.5.8', PhpCliVariant::Coverage, 'linux-x86_64'))
+        ->toBe('php-8.5.8-cli-coverage-linux-x86_64.tar.gz')
+        ->and($catalog->pcovPin()['spc_source_name'])
+        ->toBe('pcov')
+        ->and($catalog->staticPhpCliExtJsonSha256())
+        ->toBe('0fe7716d8cb199f34076c06a601b3ff9c8ffbce11d92a0bbd455d9d4f2d18d42')
+        ->and($catalog->staticPhpCliSourceJsonSha256())
+        ->toBe('573dc8b14c1e9f7bf4623054064c27a0c09ff6a67ce262cf53a73ad91104b4a0');
+});
+
+it('fails closed for unpublished matrix checksums on the build catalog', function (): void {
+    $catalog = PhpCliArtifactCatalog::loadBuild();
+
+    expect(fn () => $catalog->publishedChecksumsFor(PhpCliVariant::Coverage, 'linux-x86_64'))
+        ->toThrow(RuntimeException::class, 'unpublished');
+});
+
+it('rejects unknown catalog_role values', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    $document['catalog_role'] = 'staging';
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, "catalog_role must be 'runtime' or 'build'");
+});
+
+it('rejects unknown install_contract values on runtime catalogs', function (): void {
+    $document = json_decode(
+        (string) file_get_contents(PhpCliArtifactCatalog::defaultPath()),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $document['install_contract'] = 'preview';
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, "install_contract must be 'compatibility' or 'matrix'");
+});
+
+it('rejects catalogs that omit nested matrix platform slots even when matrix() would synthesize 24 rows', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    // Remove one platform key so nested validation fails. matrix() alone would still
+    // invent a 24-row listing with null sha256 for every patch/variant/platform.
+    unset($document['artifacts']['8.5.8']['coverage']['macos-x86_64']);
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, "missing platform slot '8.5.8/coverage/macos-x86_64'");
+});
+
+it('rejects catalogs that omit a whole variant branch under a patch', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    unset($document['artifacts']['8.4.21']['standard']);
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, "missing variant slot '8.4.21/standard'");
+});
+
+it('rejects invalid non-null matrix slot digests', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    $document['artifacts']['8.5.8']['coverage']['linux-x86_64'] = 'not-a-sha';
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, 'must be null or a sha256 digest');
+});

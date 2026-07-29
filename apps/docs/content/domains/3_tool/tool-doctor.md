@@ -86,6 +86,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
+| `tool.php_cli_coverage_missing` | `php-cli` effective runtime is the `coverage` variant (matrix install contract) but a supported minor lacks a working statically linked PCOV (`extension_loaded('pcov')`, `function_exists('pcov\\start')`, `pcov.enabled`, or `php --ri pcov`). Under `install_contract=compatibility`, doctor validates the retained standard runtime instead and does not emit this code for desired coverage alone. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |
 | `tool.config_mismatch` | Managed configuration exists but differs from gateway configuration. |
@@ -134,6 +135,7 @@ credential repair logic.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `tool.capability_missing` | Install or restore the managed capability only when the tool definition declares a safe install or repair path. |
+| `tool.php_cli_coverage_missing` | Reinstall `php-cli` using the role-resolved `coverage` variant so the node receives Orbit-owned PCOV-enabled matrix artifacts. |
 | `tool.version_mismatch` | Update or downgrade the managed tool only when the tool definition supports the target version transition. |
 | `tool.config_missing` | Recreate managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
 | `tool.config_mismatch` | Rewrite managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |

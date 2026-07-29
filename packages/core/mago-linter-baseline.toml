@@ -1,6 +1,30 @@
 variant = "loose"
 
 [[issues]]
+file = "src/Php/PhpCliArtifactCatalog.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Php/PhpCliArtifactCatalog.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/Php/PhpCliArtifactCatalog.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "src/Php/PhpCliRuntimeClassifier.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
 file = "src/Progress/ForkedFrameTicker.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."

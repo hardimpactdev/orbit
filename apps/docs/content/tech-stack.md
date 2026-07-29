@@ -899,9 +899,17 @@ default FrankenPHP app/workspace runtime image for app-role nodes, the
 `orbit-caddy` container where the node role needs HTTP routing, and
 WireGuard/SSH identity material. Production gateway-only nodes do not need host
 PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
-nodes install static host PHP builds and Composer for app-source workflows; the
-Orbit-owned PHP 8.5 build carries the same SQLite safety floor as the PHP 8.5
-app/workspace runtime image. The Laravel installer installs on `app-dev` only.
+nodes install Orbit-owned static host PHP builds (`php-cli`) and Composer for
+app-source workflows. The single `php-cli` slug persists a `coverage` or
+`standard` variant: `app-dev` desires coverage PHP with statically linked PCOV
+for Pest TIA, while `app-prod` installs standard PHP without PCOV. Until the
+24-cell matrix is promoted, install/update remain on the compatibility
+contract (standard-family published artifacts); doctor classifies against that
+effective runtime and only enforces coverage/PCOV after matrix cutover. Orbit
+owns both variants for PHP 8.3/8.4/8.5 across linux-x86_64, linux-aarch64,
+macos-aarch64, and macos-x86_64, and every artifact carries the same SQLite
+safety floor as the PHP 8.5 app/workspace runtime image. The Laravel installer
+installs on `app-dev` only.
 Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
 `ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install

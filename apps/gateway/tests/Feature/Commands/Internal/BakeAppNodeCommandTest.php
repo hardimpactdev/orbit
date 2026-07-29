@@ -99,7 +99,8 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'php-cli',
             ])->and(
                 $shell->probeScripts(),
-            )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(7);
+                // Capability batch probes plus dedicated php-cli runtime probes.
+            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(7);
     });
 
     it('rejects the private service namespace as an app node tld', function (): void {
@@ -491,6 +492,10 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if ($this->isPhpCliRuntimeProbe($script)) {
+            return $this->phpCliRuntimeProbeResult();
+        }
+
         if ($this->isProbeScript($script)) {
             return $this->probeResult($node, $options);
         }
@@ -666,7 +671,31 @@ final class BakeAppNodeRemoteShell implements RemoteShell
 
     private function isProbeScript(string $script): bool
     {
-        return str_contains($script, '# orbit-tool-probe:capability');
+        return str_contains($script, '# orbit-tool-probe:capability') || $this->isPhpCliRuntimeProbe($script);
+    }
+
+    private function isPhpCliRuntimeProbe(string $script): bool
+    {
+        return str_contains($script, 'probe_minor') && str_contains($script, 'expected_variant=');
+    }
+
+    private function phpCliRuntimeProbeResult(): RemoteShellResult
+    {
+        if (! ($this->installed['php-cli'] ?? false)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "8.5|8.5.8|0||0|0|0|0\n8.4|8.4.21|0||0|0|0|0\n8.3|8.3.31|0||0|0|0|0\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: "8.5|8.5.8|1|8.5.8|0|0|0|0\n8.4|8.4.21|1|8.4.21|0|0|0|0\n8.3|8.3.31|1|8.3.31|0|0|0|0\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 
     private function toolForRepairScript(string $script): ?string
