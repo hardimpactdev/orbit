@@ -903,13 +903,14 @@ nodes install Orbit-owned static host PHP builds (`php-cli`) and Composer for
 app-source workflows. The single `php-cli` slug persists a `coverage` or
 `standard` variant: `app-dev` desires coverage PHP with statically linked PCOV
 for Pest TIA, while `app-prod` installs standard PHP without PCOV. Until the
-24-cell matrix is promoted, install/update remain on the compatibility
-contract (standard-family published artifacts); doctor classifies against that
-effective runtime and only enforces coverage/PCOV after matrix cutover. Orbit
-owns both variants for PHP 8.3/8.4/8.5 across linux-x86_64, linux-aarch64,
-macos-aarch64, and macos-x86_64, and every artifact carries the same SQLite
-safety floor as the PHP 8.5 app/workspace runtime image. The Laravel installer
-installs on `app-dev` only.
+fleet-scoped 9-cell matrix is promoted, install/update remain on the
+compatibility contract (standard-family published artifacts); doctor classifies
+against that effective runtime and only enforces coverage/PCOV after matrix
+cutover. Orbit owns fleet-scoped matrix artifacts for PHP 8.3/8.4/8.5:
+coverage on linux-x86_64 and macos-aarch64, standard on linux-x86_64 only (no
+linux-aarch64, macos-x86_64, or standard macOS production cells), and every
+artifact carries the same SQLite safety floor as the PHP 8.5 app/workspace
+runtime image. The Laravel installer installs on `app-dev` only.
 Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
 `ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install

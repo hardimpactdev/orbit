@@ -480,7 +480,11 @@ class IncusBaseImagePreparer
             $baseUrl = $catalog->artifactBaseUrl();
             $shaCases = [];
 
-            foreach (['linux-x86_64', 'linux-aarch64'] as $platform) {
+            foreach ($catalog->platforms() as $platform) {
+                if (! str_starts_with($platform, 'linux-')) {
+                    continue;
+                }
+
                 $sha = $catalog->artifactSha256($patch, $variant, $platform);
 
                 if ($sha === null) {

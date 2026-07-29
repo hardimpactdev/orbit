@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-it('defines the full 24-cell matrix as an explicit workflow_dispatch release lane', function (): void {
+it('defines the fleet-scoped 9-cell matrix as an explicit workflow_dispatch release lane', function (): void {
     $workflowPath = repo_path('.github/workflows/orbit-php-cli-runtime.yml');
     expect($workflowPath)->toBeFile();
 
@@ -13,6 +13,7 @@ it('defines the full 24-cell matrix as an explicit workflow_dispatch release lan
     expect($workflow)
         ->toContain('workflow_dispatch:')
         ->toContain('Artifact release lane')
+        ->toContain('fleet-scoped')
         ->not->toContain("\n  push:")
         ->not->toContain("\n  pull_request:")
         ->not->toMatch('/^on:\s*\n(?:.*\n)*?\s+push:/m')
@@ -45,7 +46,31 @@ it('defines the full 24-cell matrix as an explicit workflow_dispatch release lan
         }
     }
 
-    expect($cells)->toHaveCount(24);
+    expect($cells)->toHaveCount(9);
+
+    $expectedCells = [];
+    foreach (['8.5.8', '8.4.21', '8.3.31'] as $patch) {
+        $expectedCells[] = [
+            'php_version' => $patch,
+            'variant' => 'coverage',
+            'runner' => 'ubuntu-24.04',
+            'platform' => 'linux-x86_64',
+        ];
+        $expectedCells[] = [
+            'php_version' => $patch,
+            'variant' => 'standard',
+            'runner' => 'ubuntu-24.04',
+            'platform' => 'linux-x86_64',
+        ];
+        $expectedCells[] = [
+            'php_version' => $patch,
+            'variant' => 'coverage',
+            'runner' => 'macos-15',
+            'platform' => 'macos-aarch64',
+        ];
+    }
+
+    expect($cells)->toEqualCanonicalizing($expectedCells);
 
     $platforms = [];
     $variants = [];
@@ -57,36 +82,38 @@ it('defines the full 24-cell matrix as an explicit workflow_dispatch release lan
         $runners[$cell['runner']] = true;
         expect($cell['runner'])
             ->not->toBe('macos-13')
-            ->not->toBe('macos-14');
+            ->not->toBe('macos-14')
+            ->not->toBe('macos-15-intel')
+            ->not->toBe('ubuntu-24.04-arm');
+        expect($cell['platform'])
+            ->not->toBe('linux-aarch64')
+            ->not->toBe('macos-x86_64');
+        // No standard macOS artifacts in the production matrix.
+        if ($cell['platform'] === 'macos-aarch64') {
+            expect($cell['variant'])->toBe('coverage')->and($cell['runner'])->toBe('macos-15');
+        }
     }
 
     expect(array_keys($platforms))
-        ->toEqualCanonicalizing([
-            'linux-x86_64',
-            'linux-aarch64',
-            'macos-aarch64',
-            'macos-x86_64',
-        ])
+        ->toEqualCanonicalizing(['linux-x86_64', 'macos-aarch64'])
         ->and(array_keys($variants))
         ->toEqualCanonicalizing(['coverage', 'standard'])
         ->and($runners)
         ->toHaveKey('ubuntu-24.04')
         ->and($runners)
-        ->toHaveKey('ubuntu-24.04-arm')
-        ->and($runners)
         ->toHaveKey('macos-15')
         ->and($runners)
-        ->toHaveKey('macos-15-intel');
+        ->not->toHaveKey('ubuntu-24.04-arm')->and($runners)
+        ->not->toHaveKey('macos-15-intel');
 
-    // arm64 uses macos-15; intel uses macos-15-intel
-    foreach ($cells as $cell) {
-        if ($cell['platform'] === 'macos-aarch64') {
-            expect($cell['runner'])->toBe('macos-15');
-        }
-        if ($cell['platform'] === 'macos-x86_64') {
-            expect($cell['runner'])->toBe('macos-15-intel');
-        }
-    }
+    expect($workflow)
+        ->toContain('test "$cell_count" = "9"')
+        ->toContain('test "${#tarballs[@]}" -eq 9')
+        // Matrix platform/runner values must not reintroduce non-fleet cells.
+        ->not->toMatch('/platform:\s*linux-aarch64/')
+        ->not->toMatch('/platform:\s*macos-x86_64/')
+        ->not->toMatch('/runner:\s*macos-15-intel/')
+        ->not->toMatch('/runner:\s*ubuntu-24.04-arm/');
 
     expect($workflow)
         ->toContain('publish_to_object_storage')

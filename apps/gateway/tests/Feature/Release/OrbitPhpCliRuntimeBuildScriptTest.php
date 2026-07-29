@@ -119,7 +119,7 @@ it('builds Orbit host PHP for every pinned patch, platform, and variant contract
         ->not
         ->toBe('https://pecl.php.net/get/pcov')
         ->and($buildCatalog->matrix())
-        ->toHaveCount(24)
+        ->toHaveCount(9)
         ->and($buildCatalog->catalogRole())
         ->toBe('build')
         ->and($runtimeCatalog->usesCompatibilityContract())

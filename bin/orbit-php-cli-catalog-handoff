@@ -206,7 +206,7 @@ php -r '
     ];
     $runtime["publication"] = [
         "status" => "published",
-        "note" => "Promoted from build catalog after object-storage publication of the full 24-cell matrix.",
+        "note" => "Promoted from build catalog after object-storage publication of the fleet-scoped 9-cell matrix.",
         "published_count" => $published,
         "total_count" => $total,
         "updated_at" => gmdate("c"),

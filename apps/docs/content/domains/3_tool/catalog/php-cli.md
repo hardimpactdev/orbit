@@ -51,7 +51,7 @@ Orbit keeps two catalog files:
 | `packages/core/resources/php-cli/artifact-catalog.json` | **Runtime consumer** used by install/update/E2E |
 | `packages/core/resources/php-cli/artifact-catalog.build.json` | **Build/handoff matrix** used by the builder and CI only |
 
-Until the full 24-cell matrix is published, the runtime catalog uses
+Until the fleet-scoped 9-cell matrix is published, the runtime catalog uses
 `install_contract=compatibility`: PHP 8.5 from the currently published Orbit
 SQLite-safe objects (`php-<patch>-cli-<os>-<arch>.tar.gz` with real checksums)
 and PHP 8.4/8.3 from the **intentional** historical bulk static-php.dev path
@@ -71,14 +71,24 @@ standard compatibility runtime on an `app-dev` node that desires coverage is
 reinstall loop. After promotion to `install_contract=matrix`, doctor enforces
 coverage/PCOV normally against the effective coverage runtime.
 
-After object-storage publication of all 24 matrix artifacts, CI promotes the
-runtime catalog to `install_contract=matrix`. Matrix artifact names include the
-variant:
+After object-storage publication of all 9 fleet matrix artifacts, CI promotes
+the runtime catalog to `install_contract=matrix`. Matrix artifact names include
+the variant:
 
 `php-<patch>-cli-<variant>-<os>-<arch>.tar.gz`
 
-Supported platforms for both variants: `linux-x86_64`, `linux-aarch64`,
-`macos-aarch64`, and `macos-x86_64` (24 artifacts total).
+The production matrix is **fleet-scoped**, not a full OS/arch cross-product.
+For each pinned patch (`8.3.31`, `8.4.21`, `8.5.8`) Orbit publishes exactly:
+
+| Variant | Platform | Fleet use |
+| --- | --- | --- |
+| `coverage` | `linux-x86_64` | Ubuntu app-dev (beast) |
+| `coverage` | `macos-aarch64` | macOS ARM app-dev (mini, NMBP) |
+| `standard` | `linux-x86_64` | Ubuntu app-prod (main1) |
+
+There are no production `linux-aarch64`, `macos-x86_64`, or standard macOS
+artifacts (9 artifacts total). Role variant authority is unchanged: `app-dev`
+desires coverage, `app-prod` desires standard.
 
 Binaries install to `/opt/orbit/php/<minor>/bin/php` with per-version symlinks at
 `/usr/local/bin/php<minor>`. PHP 8.5 is the default `php` at
@@ -184,9 +194,9 @@ refuse to distribute `pcov.so`. Standard builds omit PCOV.
 GitHub Actions workflow `.github/workflows/orbit-php-cli-runtime.yml` is an
 **artifact release lane**, not default feature CI. Ordinary PR/push validation
 is static Pest coverage of the workflow YAML, builder script, catalogs, and
-install contracts. The full 24-cell matrix (long builds on `ubuntu-24.04`,
-`ubuntu-24.04-arm`, `macos-15`, and `macos-15-intel`) runs only on explicit
-`workflow_dispatch` when intentionally producing release artifacts.
+install contracts. The fleet-scoped 9-cell matrix (long builds on
+`ubuntu-24.04` and `macos-15` only) runs only on explicit `workflow_dispatch`
+when intentionally producing release artifacts.
 
 Each matrix cell installs a pinned **host** PHP 8.5 via
 `shivammathur/setup-php@v2` (same pattern as `orbit-cli-binary` /

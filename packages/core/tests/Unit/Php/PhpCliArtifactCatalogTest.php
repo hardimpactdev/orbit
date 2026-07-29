@@ -49,13 +49,17 @@ it('loads the runtime compatibility catalog for production install', function ()
         ->toBe('23255c8c9335a9636ccb743f5302436a97a582a0bbde9869485be911bbc15da8');
 });
 
-it('loads the separate unpublished build matrix for handoff', function (): void {
+it('loads the separate unpublished fleet-scoped build matrix for handoff', function (): void {
     $catalog = PhpCliArtifactCatalog::loadBuild();
 
     expect($catalog->catalogRole())
         ->toBe('build')
         ->and($catalog->matrix())
-        ->toHaveCount(24)
+        ->toHaveCount(PhpCliArtifactCatalog::MATRIX_CELL_COUNT)
+        ->and(PhpCliArtifactCatalog::MATRIX_CELL_COUNT)
+        ->toBe(9)
+        ->and($catalog->platforms())
+        ->toEqualCanonicalizing(['linux-x86_64', 'macos-aarch64'])
         ->and($catalog->matrixFullyPublished())
         ->toBeFalse()
         ->and($catalog->artifactFileName('8.5.8', PhpCliVariant::Coverage, 'linux-x86_64'))
@@ -66,6 +70,22 @@ it('loads the separate unpublished build matrix for handoff', function (): void 
         ->toBe('0fe7716d8cb199f34076c06a601b3ff9c8ffbce11d92a0bbd455d9d4f2d18d42')
         ->and($catalog->staticPhpCliSourceJsonSha256())
         ->toBe('573dc8b14c1e9f7bf4623054064c27a0c09ff6a67ce262cf53a73ad91104b4a0');
+
+    $cellKeys = array_map(
+        static fn (array $row): string => "{$row['patch']}/{$row['variant']}/{$row['platform']}",
+        $catalog->matrix(),
+    );
+    expect($cellKeys)->toEqualCanonicalizing([
+        '8.5.8/coverage/linux-x86_64',
+        '8.5.8/coverage/macos-aarch64',
+        '8.5.8/standard/linux-x86_64',
+        '8.4.21/coverage/linux-x86_64',
+        '8.4.21/coverage/macos-aarch64',
+        '8.4.21/standard/linux-x86_64',
+        '8.3.31/coverage/linux-x86_64',
+        '8.3.31/coverage/macos-aarch64',
+        '8.3.31/standard/linux-x86_64',
+    ]);
 });
 
 it('fails closed for unpublished matrix checksums on the build catalog', function (): void {
@@ -97,15 +117,22 @@ it('rejects unknown install_contract values on runtime catalogs', function (): v
         ->toThrow(RuntimeException::class, "install_contract must be 'compatibility' or 'matrix'");
 });
 
-it('rejects catalogs that omit nested matrix platform slots even when matrix() would synthesize 24 rows', function (): void {
+it('rejects catalogs that omit a fleet-scoped matrix platform slot', function (): void {
     $document = phpCliCatalogFixtureDocument();
-    // Remove one platform key so nested validation fails. matrix() alone would still
-    // invent a 24-row listing with null sha256 for every patch/variant/platform.
-    unset($document['artifacts']['8.5.8']['coverage']['macos-x86_64']);
+    unset($document['artifacts']['8.5.8']['coverage']['macos-aarch64']);
     $path = phpCliCatalogTempPath($document);
 
     expect(fn () => PhpCliArtifactCatalog::load($path))
-        ->toThrow(RuntimeException::class, "missing platform slot '8.5.8/coverage/macos-x86_64'");
+        ->toThrow(RuntimeException::class, "missing platform slot '8.5.8/coverage/macos-aarch64'");
+});
+
+it('rejects catalogs that reintroduce non-fleet matrix platforms', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    $document['artifacts']['8.5.8']['coverage']['linux-aarch64'] = null;
+    $path = phpCliCatalogTempPath($document);
+
+    expect(fn () => PhpCliArtifactCatalog::load($path))
+        ->toThrow(RuntimeException::class, "non-fleet platform slot '8.5.8/coverage/linux-aarch64'");
 });
 
 it('rejects catalogs that omit a whole variant branch under a patch', function (): void {

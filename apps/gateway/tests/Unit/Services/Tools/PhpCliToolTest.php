@@ -193,7 +193,7 @@ describe('PhpCliTool', function (): void {
             ->and($build->catalogRole())
             ->toBe('build')
             ->and($build->matrix())
-            ->toHaveCount(24)
+            ->toHaveCount(9)
             ->and($build->matrixFullyPublished())
             ->toBeFalse();
     });

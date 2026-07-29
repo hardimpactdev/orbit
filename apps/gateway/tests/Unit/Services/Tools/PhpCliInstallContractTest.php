@@ -35,13 +35,15 @@ it('keeps production install scripts working under the compatibility runtime con
         ->not->toContain('PCOV_ENABLED=');
 });
 
-it('build catalog remains the unpublished 24-cell handoff matrix', function (): void {
+it('build catalog remains the unpublished fleet-scoped 9-cell handoff matrix', function (): void {
     $build = PhpCliArtifactCatalog::loadBuild();
 
     expect($build->catalogRole())
         ->toBe('build')
         ->and($build->matrix())
-        ->toHaveCount(24)
+        ->toHaveCount(9)
+        ->and($build->platforms())
+        ->toEqualCanonicalizing(['linux-x86_64', 'macos-aarch64'])
         ->and($build->matrixFullyPublished())
         ->toBeFalse()
         ->and($build->publicationStatus())
@@ -66,8 +68,8 @@ it('matrix install contract emits variant-named artifacts and PCOV checks', func
     $runtime['install_contract'] = 'matrix';
     $runtime['publication'] = [
         'status' => 'published',
-        'published_count' => 24,
-        'total_count' => 24,
+        'published_count' => 9,
+        'total_count' => 9,
     ];
 
     $path = sys_get_temp_dir().'/php-cli-runtime-matrix-'.bin2hex(random_bytes(3)).'.json';

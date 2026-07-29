@@ -249,8 +249,8 @@ it('switches the shared base to Orbit standard matrix artifacts after matrix pro
     $runtime['install_contract'] = 'matrix';
     $runtime['publication'] = [
         'status' => 'published',
-        'published_count' => 24,
-        'total_count' => 24,
+        'published_count' => 9,
+        'total_count' => 9,
     ];
 
     $path = sys_get_temp_dir().'/e2e-php-cli-matrix-'.bin2hex(random_bytes(3)).'.json';

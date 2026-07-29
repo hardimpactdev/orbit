@@ -32,9 +32,7 @@ it('populates intentional null catalog slots from manifests and is idempotent', 
         ],
         'spc_archive_sha256' => [
             'linux-x86_64' => '523ba4279c54c7a377156c0dd3a36adf92ee64b01e9a7f5e9e2ec084b8e458e5',
-            'linux-aarch64' => '675a3840dcdc4ed041fe20eaa54310ce019a9984c1c03951df9ec66df5795213',
             'macos-aarch64' => 'acf2f25d56d0cbf8e65aa82e5054fef555f7be7c5c38046c6e0819f266d83225',
-            'macos-x86_64' => 'e8b798048f62ca4960764196543b60ae703f7174aa418824cf542aeec1d2cd6a',
         ],
         'extensions' => [
             'base' => ['bcmath', 'sqlite3'],
@@ -44,50 +42,35 @@ it('populates intentional null catalog slots from manifests and is idempotent', 
             '8.5.8' => [
                 'coverage' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
                     'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
                 'standard' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
-                    'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
             ],
             '8.4.21' => [
                 'coverage' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
                     'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
                 'standard' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
-                    'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
             ],
             '8.3.31' => [
                 'coverage' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
                     'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
                 'standard' => [
                     'linux-x86_64' => null,
-                    'linux-aarch64' => null,
-                    'macos-aarch64' => null,
-                    'macos-x86_64' => null,
                 ],
             ],
         ],
         'publication' => [
             'status' => 'unpublished',
             'published_count' => 0,
-            'total_count' => 24,
+            'total_count' => 9,
         ],
     ];
 
@@ -114,19 +97,19 @@ it('populates intentional null catalog slots from manifests and is idempotent', 
     expect($exitCode)
         ->toBe(0)
         ->and(implode("\n", $output))
-        ->toContain('Updated 1 catalog checksum slots (1/24 published)');
+        ->toContain('Updated 1 catalog checksum slots (1/9 published)');
 
     $after = json_decode((string) file_get_contents($catalogPath), true, flags: JSON_THROW_ON_ERROR);
     expect($after['artifacts']['8.5.8']['coverage']['linux-x86_64'])
         ->toBe($sha)
-        ->and($after['artifacts']['8.5.8']['coverage']['linux-aarch64'])
+        ->and($after['artifacts']['8.5.8']['coverage']['macos-aarch64'])
         ->toBeNull()
         ->and($after['publication']['status'])
         ->toBe('partial')
         ->and($after['publication']['published_count'])
         ->toBe(1)
         ->and($after['publication']['total_count'])
-        ->toBe(24);
+        ->toBe(9);
 
     // Idempotent re-run
     exec($command.' 2>&1', $output2, $exitCode2);
@@ -291,8 +274,8 @@ it('refuses runtime promotion when build catalog lacks artifact_base_url', funct
     unset($build['artifact_base_url']);
     $build['publication'] = [
         'status' => 'published',
-        'published_count' => 24,
-        'total_count' => 24,
+        'published_count' => 9,
+        'total_count' => 9,
     ];
 
     $runtime = json_decode(

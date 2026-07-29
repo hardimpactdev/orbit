@@ -27,13 +27,33 @@ final readonly class PhpCliArtifactCatalog
 
     public const string DEFAULT_MINOR = '8.5';
 
-    /** @var list<string> */
+    /**
+     * Fleet-scoped platforms that appear in the production matrix.
+     *
+     * Not a full OS/arch cross-product: Orbit publishes only the platforms
+     * the real fleet needs (Ubuntu x86_64 app-dev/app-prod, macOS ARM app-dev).
+     *
+     * @var list<string>
+     */
     public const array PLATFORMS = [
         'linux-x86_64',
-        'linux-aarch64',
         'macos-aarch64',
-        'macos-x86_64',
     ];
+
+    /**
+     * Sparse matrix cells per pinned patch: coverage on Linux x86_64 + macOS ARM,
+     * standard on Linux x86_64 only (app-prod). No linux-aarch64, macos-x86_64,
+     * or standard macOS artifacts.
+     *
+     * @var list<array{variant: string, platform: string}>
+     */
+    public const array MATRIX_CELLS = [
+        ['variant' => 'coverage', 'platform' => 'linux-x86_64'],
+        ['variant' => 'coverage', 'platform' => 'macos-aarch64'],
+        ['variant' => 'standard', 'platform' => 'linux-x86_64'],
+    ];
+
+    public const int MATRIX_CELL_COUNT = 9;
 
     /**
      * @param  array<string, mixed>  $document
@@ -540,30 +560,21 @@ final readonly class PhpCliArtifactCatalog
         $rows = [];
 
         foreach ($this->patchPins() as $minor => $patch) {
-            foreach ($this->variants() as $variantValue) {
-                $variant = PhpCliVariant::from($variantValue);
-
-                foreach ($this->platforms() as $platform) {
-                    $sha = $this->matrixArtifactSha256($patch, $variant, $platform);
-                    $rows[] = [
-                        'minor' => $minor,
-                        'patch' => $patch,
-                        'variant' => $variant->value,
-                        'platform' => $platform,
-                        'filename' => "php-{$patch}-cli-{$variant->value}-{$platform}.tar.gz",
-                        'url' =>
-                            $this->matrixArtifactBaseUrl()
-                                .'/php-'
-                                .$patch
-                                .'-cli-'
-                                .$variant->value
-                                .'-'
-                                .$platform
-                                .'.tar.gz',
-                        'sha256' => $sha,
-                        'published' => $sha !== null,
-                    ];
-                }
+            foreach (self::MATRIX_CELLS as $cell) {
+                $variant = PhpCliVariant::from($cell['variant']);
+                $platform = $cell['platform'];
+                $sha = $this->matrixArtifactSha256($patch, $variant, $platform);
+                $rows[] = [
+                    'minor' => $minor,
+                    'patch' => $patch,
+                    'variant' => $variant->value,
+                    'platform' => $platform,
+                    'filename' => "php-{$patch}-cli-{$variant->value}-{$platform}.tar.gz",
+                    'url' =>
+                        $this->matrixArtifactBaseUrl().'/php-'.$patch.'-cli-'.$variant->value.'-'.$platform.'.tar.gz',
+                    'sha256' => $sha,
+                    'published' => $sha !== null,
+                ];
             }
         }
 
@@ -665,19 +676,26 @@ final readonly class PhpCliArtifactCatalog
     }
 
     /**
-     * Require every nested matrix slot key (patch → variant → platform) to exist.
+     * Require every fleet-scoped sparse matrix slot (patch → variant → platform)
+     * from MATRIX_CELLS to exist. Reject extra non-fleet platform keys so the
+     * catalog cannot silently re-grow a full OS/arch cross-product.
      * Values may be null (unpublished build slots) or a 64-char sha256.
      */
     private function assertMatrixSlotKeysExist(): void
     {
         $artifacts = $this->matrixArtifacts();
+        $requiredByVariant = [];
+
+        foreach (self::MATRIX_CELLS as $cell) {
+            $requiredByVariant[$cell['variant']][] = $cell['platform'];
+        }
 
         foreach ($this->patchPins() as $patch) {
             if (! array_key_exists($patch, $artifacts) || ! is_array($artifacts[$patch])) {
                 throw new RuntimeException("php-cli matrix is missing patch slot '{$patch}'.");
             }
 
-            foreach ($this->variants() as $variantValue) {
+            foreach ($requiredByVariant as $variantValue => $platforms) {
                 if (
                     ! array_key_exists($variantValue, $artifacts[$patch])
                     || ! is_array($artifacts[$patch][$variantValue])
@@ -687,7 +705,7 @@ final readonly class PhpCliArtifactCatalog
                     );
                 }
 
-                foreach ($this->platforms() as $platform) {
+                foreach ($platforms as $platform) {
                     if (! array_key_exists($platform, $artifacts[$patch][$variantValue])) {
                         throw new RuntimeException(
                             "php-cli matrix is missing platform slot '{$patch}/{$variantValue}/{$platform}'.",
@@ -701,6 +719,30 @@ final readonly class PhpCliArtifactCatalog
                             "php-cli matrix slot '{$patch}/{$variantValue}/{$platform}' must be null or a sha256 digest.",
                         );
                     }
+                }
+
+                foreach (array_keys($artifacts[$patch][$variantValue]) as $extraPlatform) {
+                    if (! is_string($extraPlatform)) {
+                        continue;
+                    }
+
+                    if (! in_array($extraPlatform, $platforms, true)) {
+                        throw new RuntimeException(
+                            "php-cli matrix has non-fleet platform slot '{$patch}/{$variantValue}/{$extraPlatform}'.",
+                        );
+                    }
+                }
+            }
+
+            foreach (array_keys($artifacts[$patch]) as $extraVariant) {
+                if (! is_string($extraVariant)) {
+                    continue;
+                }
+
+                if (! array_key_exists($extraVariant, $requiredByVariant)) {
+                    throw new RuntimeException(
+                        "php-cli matrix has unexpected variant slot '{$patch}/{$extraVariant}'.",
+                    );
                 }
             }
         }
@@ -749,7 +791,7 @@ final readonly class PhpCliArtifactCatalog
 
         if ($this->usesMatrixContract() && ! $this->matrixFullyPublished()) {
             throw new RuntimeException(
-                'Runtime matrix install_contract requires a fully published 24-cell matrix; use compatibility until cutover.',
+                'Runtime matrix install_contract requires a fully published fleet-scoped 9-cell matrix; use compatibility until cutover.',
             );
         }
     }
