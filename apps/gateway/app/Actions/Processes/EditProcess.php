@@ -258,8 +258,8 @@ final readonly class EditProcess
         $serviceOptions = $this->stringKeyedArray($config['service_options'] ?? null);
 
         // Existing runtime_config is the source of truth. Resolve only to obtain the
-        // publish surface; replace binds/endpoint/endpoints/ports and leave every
-        // other key (credentials hash, volumes, labels, custom fields) untouched.
+        // publish surface; replace binds/endpoint/endpoints/ports, refresh the
+        // canonical spec_hash, and leave every other key untouched.
         $descriptor = $this->serviceCatalog->resolve(
             service: $service,
             version: $version,
@@ -283,6 +283,18 @@ final readonly class EditProcess
         $runtimeConfig['ports'] = is_array($resolved['ports'] ?? null)
             ? $resolved['ports']
             : [];
+
+        $labels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
+        unset($runtimeConfig['labels'], $runtimeConfig['spec_hash']);
+
+        $specHash = $this->serviceCatalog->hashRuntimeSpec([
+            ...$runtimeConfig,
+            'runtime' => $process->runtime->value,
+            'process' => $process->name,
+        ]);
+        $runtimeConfig['spec_hash'] = $specHash;
+        $labels['orbit.process.spec_hash'] = $specHash;
+        $runtimeConfig['labels'] = $labels;
 
         $this->resourceGuard->assertNoConflicts(
             context: $context,

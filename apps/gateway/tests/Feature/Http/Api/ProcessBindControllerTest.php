@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\Process;
+use App\Services\Processes\ProcessServiceCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -341,6 +342,19 @@ describe('process managed service binds', function (): void {
         $process->refresh();
         $runtimeConfig = $process->runtime_config;
 
+        $hashInput = $runtimeConfig;
+        unset($hashInput['labels'], $hashInput['spec_hash']);
+        $expectedSpecHash = app(ProcessServiceCatalog::class)->hashRuntimeSpec([
+            ...$hashInput,
+            'runtime' => ProcessRuntime::Docker->value,
+            'process' => 'postgres',
+        ]);
+
+        $labelsWithoutHash = $runtimeConfig['labels'];
+        unset($labelsWithoutHash['orbit.process.spec_hash']);
+        $preservedLabelsWithoutHash = $preservedLabels;
+        unset($preservedLabelsWithoutHash['orbit.process.spec_hash']);
+
         expect($process->credentials['password'])
             ->toBe(str_repeat('p', 32))
             ->and($process->getRawOriginal('credentials'))
@@ -352,11 +366,16 @@ describe('process managed service binds', function (): void {
                 $runtimeConfig['volumes'],
                 JSON_THROW_ON_ERROR,
             ))->toBe(json_encode($preservedVolumes, JSON_THROW_ON_ERROR))->and(json_encode(
-                $runtimeConfig['labels'],
+                $labelsWithoutHash,
                 JSON_THROW_ON_ERROR,
-            ))->toBe(json_encode($preservedLabels, JSON_THROW_ON_ERROR))->and($runtimeConfig['binds'])->toBe([
-                'wireguard',
-            ])->and($runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')->and($runtimeConfig['ports'])->toBe([
+            ))->toBe(json_encode($preservedLabelsWithoutHash, JSON_THROW_ON_ERROR))->and(
+                $runtimeConfig['spec_hash'],
+            )->toBe($expectedSpecHash)->and($runtimeConfig['labels']['orbit.process.spec_hash'])->toBe(
+                $expectedSpecHash,
+            )->and($runtimeConfig['labels']['orbit.process.spec_hash'])
+            ->not->toBe('oldhash')->and($runtimeConfig['binds'])->toBe(['wireguard'])->and(
+                $runtimeConfig['endpoint']['host'],
+            )->toBe('10.6.0.44')->and($runtimeConfig['ports'])->toBe([
                 [
                     'host' => '10.6.0.44',
                     'published' => 5432,

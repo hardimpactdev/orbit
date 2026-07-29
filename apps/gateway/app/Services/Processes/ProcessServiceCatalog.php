@@ -180,7 +180,7 @@ final readonly class ProcessServiceCatalog
             ];
         }
 
-        $specHash = $this->specHash([
+        $specHash = $this->hashRuntimeSpec([
             ...$runtimeConfig,
             'runtime' => $runtime->value,
             'process' => $processName,
@@ -985,9 +985,13 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
+     * Canonical runtime-spec hash used for managed-service labels and drift.
+     * Top-level keys are sorted so callers that rebuild the same input always
+     * produce the same digest.
+     *
      * @param  array<string, mixed>  $spec
      */
-    private function specHash(array $spec): string
+    public function hashRuntimeSpec(array $spec): string
     {
         ksort($spec);
 
