@@ -107,37 +107,38 @@
     "artifacts": {
         "8.5.8": {
             "coverage": {
-                "linux-x86_64": null,
-                "macos-aarch64": null
+                "linux-x86_64": "99b4c794928963bb777432318493d08bdf5e57eab8ed19fc232057dd4e09846e",
+                "macos-aarch64": "433e5771e93440a42d7dfe51b7b6471a579cdebe06ecea43d4033b44280e3475"
             },
             "standard": {
-                "linux-x86_64": null
+                "linux-x86_64": "40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15"
             }
         },
         "8.4.21": {
             "coverage": {
-                "linux-x86_64": null,
-                "macos-aarch64": null
+                "linux-x86_64": "ef263520a63801d396a2ef82e4bd5cf914f5d22e53ad7778fa77f93b542782c8",
+                "macos-aarch64": "501aac4737a3fed18844df1c9072f07b19640e6554bfc80b977f50006e80cde9"
             },
             "standard": {
-                "linux-x86_64": null
+                "linux-x86_64": "cfc0a7a9c22280a2eda800b3f3bf6f674b0cbe8e74c6d677d2e6ac21c3461859"
             }
         },
         "8.3.31": {
             "coverage": {
-                "linux-x86_64": null,
-                "macos-aarch64": null
+                "linux-x86_64": "7ad21714b60d0f8e6c5988aa86b38967baa1171ac6a91b4133b050c170fdd239",
+                "macos-aarch64": "0e6133985f20b9f5691c419701e79513112e38f7954aa1bd898d087b73e60bef"
             },
             "standard": {
-                "linux-x86_64": null
+                "linux-x86_64": "524db47fbfae402a338dd63ab0c16064e34054790fd892a022fef22539030bf1"
             }
         }
     },
     "publication": {
-        "status": "unpublished",
-        "note": "Build/handoff matrix only (fleet-scoped 9 cells). Not consumed by production install/update until promoted into the runtime catalog after object-storage publication.",
-        "published_count": 0,
-        "total_count": 9
+        "status": "published",
+        "note": "Checksums are filled by CI/build handoff after immutable artifact publication. null sha256 means the artifact is not yet published.",
+        "published_count": 9,
+        "total_count": 9,
+        "updated_at": "2026-07-29T23:00:46+00:00"
     },
     "catalog_role": "build"
 }

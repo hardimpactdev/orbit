@@ -9,33 +9,32 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('keeps production install scripts working under the compatibility runtime contract', function (): void {
+it('keeps production install scripts working under the matrix runtime contract', function (): void {
     $catalog = PhpCliArtifactCatalog::load();
     $tool = new PhpCliTool($catalog);
 
-    expect($catalog->usesCompatibilityContract())
+    expect($catalog->usesMatrixContract())
         ->toBeTrue()
         ->and($catalog->publicationStatus())
-        ->toBe('compatibility');
+        ->toBe('published')
+        ->and($catalog->matrixFullyPublished())
+        ->toBeTrue();
 
     $script = $tool->installScript(['variant' => 'standard']);
 
     expect($script)
         ->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6')
-        ->toContain('php-8.5.8-cli-${OS}-${ARCH}.tar.gz')
-        ->toContain('305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828')
-        ->toContain('fbd88fc83c699e2f65030f314937ec05edba41209bd38c8baa11b86f224a9329')
-        ->toContain('dl.static-php.dev/static-php-cli/bulk')
-        ->toContain('php-8.4.21-cli-${OS}-${ARCH}.tar.gz')
-        ->toContain('php-8.3.31-cli-${OS}-${ARCH}.tar.gz')
+        ->toContain('php-8.5.8-cli-standard-${OS}-${ARCH}.tar.gz')
+        ->toContain('40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15')
+        ->toContain('php-8.4.21-cli-standard-${OS}-${ARCH}.tar.gz')
+        ->toContain('php-8.3.31-cli-standard-${OS}-${ARCH}.tar.gz')
         ->toContain('Stage and verify every minor')
-        ->not->toContain('php-8.5.8-cli-standard-')
-        ->not->toContain('php-8.5.8-cli-coverage-')
-        // Compatibility install does not require PCOV checks.
-        ->not->toContain('PCOV_ENABLED=');
+        ->not->toContain('dl.static-php.dev/static-php-cli/bulk')
+        // Matrix standard omits PCOV; coverage scripts assert the inverse.
+        ->not->toContain('php-8.5.8-cli-coverage-');
 });
 
-it('build catalog remains the unpublished fleet-scoped 9-cell handoff matrix', function (): void {
+it('build catalog is the published fleet-scoped 9-cell handoff matrix', function (): void {
     $build = PhpCliArtifactCatalog::loadBuild();
 
     expect($build->catalogRole())
@@ -45,9 +44,9 @@ it('build catalog remains the unpublished fleet-scoped 9-cell handoff matrix', f
         ->and($build->platforms())
         ->toEqualCanonicalizing(['linux-x86_64', 'macos-aarch64'])
         ->and($build->matrixFullyPublished())
-        ->toBeFalse()
+        ->toBeTrue()
         ->and($build->publicationStatus())
-        ->toBeIn(['unpublished', 'partial']);
+        ->toBe('published');
 });
 
 it('matrix install contract emits variant-named artifacts and PCOV checks', function (): void {
@@ -96,16 +95,23 @@ it('does not treat the build catalog as a production consumer', function (): voi
     expect($runtime->sourcePath())
         ->not
         ->toBe($build->sourcePath())
-        ->and($runtime->usesCompatibilityContract())
+        ->and($runtime->usesMatrixContract())
         ->toBeTrue()
         ->and($build->catalogRole())
-        ->toBe('build');
+        ->toBe('build')
+        ->and($runtime->sourcePath())
+        ->toEndWith('artifact-catalog.json')
+        ->and($build->sourcePath())
+        ->toEndWith('artifact-catalog.build.json');
 
-    // Production install must not require unpublished matrix cells.
+    // Production install uses the fully published matrix consumer catalog.
     $tool = new PhpCliTool($runtime);
     $script = $tool->installScript(['variant' => PhpCliVariant::Coverage->value]);
     expect($script)
         ->toContain('curl -fsSL')
+        ->toContain('php-8.5.8-cli-coverage-${OS}-${ARCH}.tar.gz')
+        ->toContain('99b4c794928963bb777432318493d08bdf5e57eab8ed19fc232057dd4e09846e')
         ->and($script)
-        ->not->toContain('__unpublished__');
+        ->not->toContain('__unpublished__')
+        ->not->toContain('dl.static-php.dev/static-php-cli/bulk');
 });

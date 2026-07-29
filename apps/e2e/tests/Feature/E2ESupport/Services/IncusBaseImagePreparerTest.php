@@ -187,19 +187,20 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('php8.5-bcmath');
     expect($bootstrapScript)->toContain('docker.io');
     expect($bootstrapScript)->toContain('static_php_arch=');
-    // Compatibility catalog: historical bulk bootstrap (all arches, including arm).
-    // Orbit-owned standard matrix artifacts only after matrix cutover.
-    expect($bootstrapScript)->toContain('dl.static-php.dev/static-php-cli/bulk');
-    expect($bootstrapScript)->toContain('for php_version in 8.5:8.5.8 8.4:8.4.21 8.3:8.3.31');
-    expect($bootstrapScript)->toContain('php-${php_patch}-cli-linux-${static_php_arch}.tar.gz');
-    expect($bootstrapScript)->not->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/');
-    expect($bootstrapScript)->not->toContain('305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828');
+    // Matrix cutover: shared base installs Orbit-owned standard artifacts (no bulk, no PCOV).
+    expect($bootstrapScript)->not->toContain('dl.static-php.dev/static-php-cli/bulk');
+    expect($bootstrapScript)->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/');
+    expect($bootstrapScript)->toContain('php-8.5.8-cli-standard-linux-');
+    expect($bootstrapScript)->toContain('php-8.4.21-cli-standard-linux-');
+    expect($bootstrapScript)->toContain('php-8.3.31-cli-standard-linux-');
+    expect($bootstrapScript)->toContain('40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15');
+    expect($bootstrapScript)->toContain('cfc0a7a9c22280a2eda800b3f3bf6f674b0cbe8e74c6d677d2e6ac21c3461859');
+    expect($bootstrapScript)->toContain('524db47fbfae402a338dd63ab0c16064e34054790fd892a022fef22539030bf1');
     expect($bootstrapScript)->toContain('/opt/orbit/php/');
     expect($bootstrapScript)->toContain('ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php');
     expect($bootstrapScript)->toContain('exit(extension_loaded("pcov") ? 1 : 0)');
     expect($bootstrapScript)->toContain('shared orbit base image must not expose pcov');
     expect($bootstrapScript)->not->toContain('php-8.5.8-cli-coverage-');
-    expect($bootstrapScript)->not->toContain('php-8.5.8-cli-standard-');
     expect($bootstrapScript)->not->toContain('exit(extension_loaded("pcov") ? 0 : 1)');
     expect($bootstrapScript)->not->toContain('pcov.enabled');
     expect($bootstrapScript)->toContain('https://getcomposer.org/installer');

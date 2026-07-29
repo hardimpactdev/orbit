@@ -165,7 +165,7 @@ it('exposes desired coverage and pending matrix cutover in compatibility probe e
         ->toBe('coverage');
 });
 
-it('does not reinstall-loop coverage through fixer under compatibility when standard is healthy', function (): void {
+it('does not emit coverage_missing under matrix when desired coverage is healthy', function (): void {
     $tool = phpCliDoctorTool('coverage');
     $probe = new ToolsProbe;
     $method = new ReflectionMethod($probe, 'checkPhpCliRuntimeState');
@@ -176,10 +176,10 @@ it('does not reinstall-loop coverage through fixer under compatibility when stan
             'installed' => true,
             'variant' => 'coverage',
             'desired_variant' => 'coverage',
-            'effective_variant' => 'standard',
-            'install_contract' => 'compatibility',
-            'matrix_cutover_pending' => true,
-            'minors' => phpCliCompleteStandardMinors(),
+            'effective_variant' => 'coverage',
+            'install_contract' => 'matrix',
+            'matrix_cutover_pending' => false,
+            'minors' => phpCliCompleteCoverageMinors(brokenEightFive: false),
             'php_cli_probe_ok' => true,
             'php_cli_minors_complete' => true,
         ],
@@ -190,24 +190,24 @@ it('does not reinstall-loop coverage through fixer under compatibility when stan
     $repair = new ReflectionMethod($fixer, 'repairCommand');
     $repair->setAccessible(true);
 
-    // No coverage_missing drift => fixer has nothing to reinstall for PCOV.
+    // Healthy coverage matrix runtime: no coverage_missing drift.
     expect($issues)->toBe([]);
 
-    // Even if a stale coverage_missing entry existed, compatibility install scripts
-    // still target the retained non-variant Orbit/bulk artifacts (not matrix coverage).
+    // After matrix cutover, a real coverage_missing repair installs variant-named
+    // coverage artifacts (not bulk / non-variant filenames).
     $stale = new DriftEntry(
         family: 'tool',
         key: 'tool.php_cli_coverage_missing',
         kind: DriftKind::Divergent,
-        summary: 'stale coverage missing',
+        summary: 'coverage missing',
     );
     $command = $repair->invoke($fixer, $tool, $stale);
 
     expect($command)
         ->toBeString()
-        ->not
         ->toContain('php-8.5.8-cli-coverage-')
-        ->toContain('/opt/orbit/php');
+        ->toContain('/opt/orbit/php')
+        ->not->toContain('dl.static-php.dev/static-php-cli/bulk');
 });
 
 it('emits tool.php_cli_coverage_missing after matrix promotion when PCOV is broken', function (): void {

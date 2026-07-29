@@ -2,7 +2,7 @@
     "schema_version": 1,
     "tool": "php-cli",
     "catalog_role": "runtime",
-    "install_contract": "compatibility",
+    "install_contract": "matrix",
     "static_php_cli_version": "2.8.5",
     "static_php_cli_ext_json_sha256": "0fe7716d8cb199f34076c06a601b3ff9c8ffbce11d92a0bbd455d9d4f2d18d42",
     "static_php_cli_source_json_sha256": "573dc8b14c1e9f7bf4623054064c27a0c09ff6a67ce262cf53a73ad91104b4a0",
@@ -125,37 +125,38 @@
         "artifacts": {
             "8.5.8": {
                 "coverage": {
-                    "linux-x86_64": null,
-                    "macos-aarch64": null
+                    "linux-x86_64": "99b4c794928963bb777432318493d08bdf5e57eab8ed19fc232057dd4e09846e",
+                    "macos-aarch64": "433e5771e93440a42d7dfe51b7b6471a579cdebe06ecea43d4033b44280e3475"
                 },
                 "standard": {
-                    "linux-x86_64": null
+                    "linux-x86_64": "40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15"
                 }
             },
             "8.4.21": {
                 "coverage": {
-                    "linux-x86_64": null,
-                    "macos-aarch64": null
+                    "linux-x86_64": "ef263520a63801d396a2ef82e4bd5cf914f5d22e53ad7778fa77f93b542782c8",
+                    "macos-aarch64": "501aac4737a3fed18844df1c9072f07b19640e6554bfc80b977f50006e80cde9"
                 },
                 "standard": {
-                    "linux-x86_64": null
+                    "linux-x86_64": "cfc0a7a9c22280a2eda800b3f3bf6f674b0cbe8e74c6d677d2e6ac21c3461859"
                 }
             },
             "8.3.31": {
                 "coverage": {
-                    "linux-x86_64": null,
-                    "macos-aarch64": null
+                    "linux-x86_64": "7ad21714b60d0f8e6c5988aa86b38967baa1171ac6a91b4133b050c170fdd239",
+                    "macos-aarch64": "0e6133985f20b9f5691c419701e79513112e38f7954aa1bd898d087b73e60bef"
                 },
                 "standard": {
-                    "linux-x86_64": null
+                    "linux-x86_64": "524db47fbfae402a338dd63ab0c16064e34054790fd892a022fef22539030bf1"
                 }
             }
         }
     },
     "publication": {
-        "status": "compatibility",
-        "note": "Runtime consumers use install_contract=compatibility until the fleet-scoped 9-cell build matrix is fully published and promoted (intentional unchecksummed bulk for 8.3/8.4). Compatibility does not fail closed on missing bulk checksums; only matrix install_contract fails closed on missing matrix cell checksums. Do not invent matrix digests.",
-        "published_count": 0,
-        "total_count": 9
+        "status": "published",
+        "note": "Promoted from build catalog after object-storage publication of the fleet-scoped 9-cell matrix.",
+        "published_count": 9,
+        "total_count": 9,
+        "updated_at": "2026-07-29T23:00:46+00:00"
     }
 }

@@ -25,22 +25,28 @@ function phpCliCatalogTempPath(array $document): string
     return $path;
 }
 
-it('loads the runtime compatibility catalog for production install', function (): void {
+it('loads the runtime matrix catalog for production install after fleet cutover', function (): void {
     $catalog = PhpCliArtifactCatalog::load();
 
-    expect($catalog->usesCompatibilityContract())
+    expect($catalog->usesMatrixContract())
         ->toBeTrue()
         ->and($catalog->publicationStatus())
-        ->toBe('compatibility')
+        ->toBe('published')
+        ->and($catalog->matrixFullyPublished())
+        ->toBeTrue()
+        ->and($catalog->matrix())
+        ->toHaveCount(9)
         ->and($catalog->artifactSha256('8.5.8', PhpCliVariant::Standard, 'linux-x86_64'))
-        ->toBe('305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828')
+        ->toBe('40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15')
+        ->and($catalog->artifactSha256('8.5.8', PhpCliVariant::Coverage, 'macos-aarch64'))
+        ->toBe('433e5771e93440a42d7dfe51b7b6471a579cdebe06ecea43d4033b44280e3475')
         ->and($catalog->extensionsFor(PhpCliVariant::Coverage))
         ->toContain('pcov')
         ->and($catalog->extensionsFor(PhpCliVariant::Standard))
         ->not
         ->toContain('pcov')
         ->and($catalog->installVerifiesPcov())
-        ->toBeFalse()
+        ->toBeTrue()
         ->and($catalog->pcovVersion())
         ->toBe('1.0.12')
         ->and($catalog->pcovUrl())
@@ -49,7 +55,7 @@ it('loads the runtime compatibility catalog for production install', function ()
         ->toBe('23255c8c9335a9636ccb743f5302436a97a582a0bbde9869485be911bbc15da8');
 });
 
-it('loads the separate unpublished fleet-scoped build matrix for handoff', function (): void {
+it('loads the separate published fleet-scoped build matrix for handoff', function (): void {
     $catalog = PhpCliArtifactCatalog::loadBuild();
 
     expect($catalog->catalogRole())
@@ -61,9 +67,13 @@ it('loads the separate unpublished fleet-scoped build matrix for handoff', funct
         ->and($catalog->platforms())
         ->toEqualCanonicalizing(['linux-x86_64', 'macos-aarch64'])
         ->and($catalog->matrixFullyPublished())
-        ->toBeFalse()
+        ->toBeTrue()
+        ->and($catalog->publicationStatus())
+        ->toBe('published')
         ->and($catalog->artifactFileName('8.5.8', PhpCliVariant::Coverage, 'linux-x86_64'))
         ->toBe('php-8.5.8-cli-coverage-linux-x86_64.tar.gz')
+        ->and($catalog->artifactSha256('8.5.8', PhpCliVariant::Coverage, 'linux-x86_64'))
+        ->toBe('99b4c794928963bb777432318493d08bdf5e57eab8ed19fc232057dd4e09846e')
         ->and($catalog->pcovPin()['spc_source_name'])
         ->toBe('pcov')
         ->and($catalog->staticPhpCliExtJsonSha256())
@@ -88,8 +98,11 @@ it('loads the separate unpublished fleet-scoped build matrix for handoff', funct
     ]);
 });
 
-it('fails closed for unpublished matrix checksums on the build catalog', function (): void {
-    $catalog = PhpCliArtifactCatalog::loadBuild();
+it('fails closed for unpublished matrix checksums on an incomplete build catalog', function (): void {
+    $document = phpCliCatalogFixtureDocument();
+    $document['artifacts']['8.5.8']['coverage']['linux-x86_64'] = null;
+    $path = phpCliCatalogTempPath($document);
+    $catalog = PhpCliArtifactCatalog::load($path);
 
     expect(fn () => $catalog->publishedChecksumsFor(PhpCliVariant::Coverage, 'linux-x86_64'))
         ->toThrow(RuntimeException::class, 'unpublished');

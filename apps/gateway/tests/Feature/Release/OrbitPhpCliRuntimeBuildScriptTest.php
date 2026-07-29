@@ -122,14 +122,18 @@ it('builds Orbit host PHP for every pinned patch, platform, and variant contract
         ->toHaveCount(9)
         ->and($buildCatalog->catalogRole())
         ->toBe('build')
-        ->and($runtimeCatalog->usesCompatibilityContract())
+        ->and($buildCatalog->matrixFullyPublished())
+        ->toBeTrue()
+        ->and($runtimeCatalog->usesMatrixContract())
+        ->toBeTrue()
+        ->and($runtimeCatalog->matrixFullyPublished())
         ->toBeTrue()
         ->and($runtimeCatalog->pcovVersion())
         ->toBe('1.0.12')
         ->and($runtimeCatalog->staticPhpCliSourceJsonSha256())
         ->toBe('573dc8b14c1e9f7bf4623054064c27a0c09ff6a67ce262cf53a73ad91104b4a0')
         ->and($runtimeCatalog->publicationStatus())
-        ->toBe('compatibility');
+        ->toBe('published');
 });
 
 it('applies and programmatically validates both PCOV SPC patches against official 2.8.5 configs', function (): void {

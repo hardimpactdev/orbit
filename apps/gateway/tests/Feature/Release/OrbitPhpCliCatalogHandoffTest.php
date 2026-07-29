@@ -283,6 +283,8 @@ it('refuses runtime promotion when build catalog lacks artifact_base_url', funct
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    // Seed runtime as compatibility so a refused promote cannot leave a half-applied cutover.
+    $runtime['install_contract'] = 'compatibility';
     file_put_contents($buildPath, json_encode($build, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     file_put_contents($runtimePath, json_encode($runtime, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 
@@ -318,11 +320,26 @@ it('refuses runtime promotion until the full matrix is published', function (): 
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    // Incomplete matrix: clear all slots, then apply a single cell via manifest.
+    foreach ($build['artifacts'] as $patch => $variants) {
+        foreach ($variants as $variant => $platforms) {
+            foreach (array_keys($platforms) as $platform) {
+                $build['artifacts'][$patch][$variant][$platform] = null;
+            }
+        }
+    }
+    $build['publication'] = [
+        'status' => 'unpublished',
+        'published_count' => 0,
+        'total_count' => 9,
+    ];
+
     $runtime = json_decode(
         (string) file_get_contents(repo_path(PhpCliArtifactCatalog::DEFAULT_CATALOG_RELATIVE_PATH)),
         true,
         flags: JSON_THROW_ON_ERROR,
     );
+    $runtime['install_contract'] = 'compatibility';
     file_put_contents($buildPath, json_encode($build, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     file_put_contents($runtimePath, json_encode($runtime, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
 

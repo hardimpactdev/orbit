@@ -117,11 +117,13 @@ describe('tool command shared contract', function (): void {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
                 // php-cli live inspection uses php_cli_runtimes multi-minor probe output.
+                // After matrix cutover, app-dev effective variant is coverage. Line order:
+                // minor|expected_patch|present|patch|pcov_loaded|pcov_start|pcov_enabled|ri_ok.
                 $stdout =
                     implode("\n", [
-                        '8.5|8.5.8|1|8.5.8|0|0|0|0',
-                        '8.4|8.4.21|1|8.4.21|0|0|0|0',
-                        '8.3|8.3.31|1|8.3.31|0|0|0|0',
+                        '8.5|8.5.8|1|8.5.8|1|1|1|1',
+                        '8.4|8.4.21|1|8.4.21|1|1|1|1',
+                        '8.3|8.3.31|1|8.3.31|1|1|1|1',
                     ])."\n";
 
                 return new RemoteShellResult(

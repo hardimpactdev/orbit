@@ -60,19 +60,18 @@ describe('PhpCliTool', function (): void {
             ->toThrow(InvalidArgumentException::class);
     });
 
-    it('installScript under compatibility retains published Orbit 8.5 and bulk minors', function (): void {
+    it('installScript under matrix uses variant-named Orbit artifacts for every minor', function (): void {
         $tool = new PhpCliTool;
         $coverage = $tool->installScript(['variant' => 'coverage']);
         $standard = $tool->installScript(['variant' => 'standard']);
 
         expect($coverage)
             ->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6')
-            ->toContain('dl.static-php.dev/static-php-cli/bulk')
-            ->toContain('php-8.5.8-cli-')
-            ->toContain('php-8.4.21-cli-')
-            ->toContain('php-8.3.31-cli-')
-            ->and($standard)
-            ->toContain('php-8.5.8-cli-')
+            ->not->toContain('dl.static-php.dev/static-php-cli/bulk')->toContain('php-8.5.8-cli-coverage-')->toContain(
+                'php-8.4.21-cli-coverage-',
+            )->toContain('php-8.3.31-cli-coverage-')->toContain('extension_loaded("pcov")')->and($standard)->toContain(
+                'php-8.5.8-cli-standard-',
+            )
             ->not->toContain('php-8.5.8-cli-coverage-');
     });
 
@@ -188,13 +187,17 @@ describe('PhpCliTool', function (): void {
         $runtime = PhpCliArtifactCatalog::load();
         $build = PhpCliArtifactCatalog::loadBuild();
 
-        expect($runtime->usesCompatibilityContract())
+        expect($runtime->usesMatrixContract())
             ->toBeTrue()
             ->and($build->catalogRole())
             ->toBe('build')
             ->and($build->matrix())
             ->toHaveCount(9)
             ->and($build->matrixFullyPublished())
-            ->toBeFalse();
+            ->toBeTrue()
+            ->and($runtime->matrixFullyPublished())
+            ->toBeTrue()
+            ->and($runtime->sourcePath())
+            ->not->toBe($build->sourcePath());
     });
 });
