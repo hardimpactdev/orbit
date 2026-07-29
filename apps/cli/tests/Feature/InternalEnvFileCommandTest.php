@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/**
+ * @mago-expect lint:halstead
+ */
 describe('internal env-file command', function (): void {
     beforeEach(function (): void {
         configureEnvFileOperationTokenGuard();
@@ -22,10 +27,7 @@ describe('internal env-file command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('rejects invalid json payloads after token validation', function (): void {
@@ -37,10 +39,7 @@ describe('internal env-file command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'validation_failed',
-                'Env file payload is invalid.',
-            ));
+            ->toBe(JsonEnvelope::failure('validation_failed', 'Env file payload is invalid.'));
     });
 
     it('rejects non-env paths outside managed roots', function (): void {
@@ -83,6 +82,70 @@ describe('internal env-file command', function (): void {
             ->toBe(1)
             ->and($payload['error']['code'] ?? null)
             ->toBe('env_file.not_found');
+    });
+
+    it('writes production app env files as their owning runtime user', function (): void {
+        Process::fake([
+            '*' => Process::result(),
+        ]);
+
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'write',
+                'path' => '/home/mealou-production/app/.env',
+                'contents' => "DB_JOURNAL_MODE=WAL\n",
+                'runtime_user' => 'mealou-production',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)->toBe(0)->and($output)->toContain('"bytes":20');
+
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                $process->command === [
+                    'sudo',
+                    '-n',
+                    '-u',
+                    'mealou-production',
+                    'tee',
+                    '--',
+                    '/home/mealou-production/app/.env',
+                ]
+                && $process->input === "DB_JOURNAL_MODE=WAL\n"
+            ),
+        );
+    });
+
+    it('rejects a production env runtime user that does not own the app path', function (): void {
+        Process::fake();
+
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'write',
+                'path' => '/home/mealou-production/app/.env',
+                'contents' => "DB_JOURNAL_MODE=WAL\n",
+                'runtime_user' => 'another-app',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'] ?? null)
+            ->toBe('runtime_user');
+
+        Process::assertNothingRan();
     });
 
     it('keeps production env access bounded to the exact app root', function (string $path): void {
@@ -162,7 +225,7 @@ describe('internal env-file command', function (): void {
 
 function configureEnvFileOperationTokenGuard(): void
 {
-    app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+    app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
 }
 
 function envFileSignedOperationToken(

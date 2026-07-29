@@ -75,7 +75,8 @@ serving node. These defaults are not stored as explicit instance env rows.
    implicit instance target; project and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config/bootstrap cache at the selected instance path on the host PHP
-   toolchain and reapplies the selected instance's FrankenPHP runtime container
+   toolchain, writes a production `.env` as the instance's isolated runtime
+   user, and reapplies the selected instance's FrankenPHP runtime container
    through `AppRuntimeContainerManager`.
 8. **Explicit scope output.** Every success response carries
    `scope=instance`, `project`, `instance`, `workspace=null`, the concrete

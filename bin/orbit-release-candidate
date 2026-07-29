@@ -451,6 +451,7 @@ cmd_promote_runtime() {
     [ -n "$build_id" ] || fail "promote-runtime requires --build-id=<accepted-id>; the latest pointer is not an acceptance identity."
 
     local state_dir state_file recorded_build_id candidate_image stable_image expected_digest expected_candidate
+    local source_docker_config
     state_dir="$(resolve_state_dir "$build_id")"
     state_file="${state_dir}/candidate.env"
     recorded_build_id="$(state_value build_id "$state_file")"
@@ -466,12 +467,19 @@ cmd_promote_runtime() {
 
     gh auth status -h github.com
 
+    source_docker_config="${DOCKER_CONFIG:-${HOME}/.docker}"
     ghcr_docker_config="$(mktemp -d)"
     local ghcr_user ghcr_auth
     ghcr_user="$(gh api user -q .login)"
     ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
     (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json")
     unset ghcr_auth
+
+    if [ -x "${source_docker_config}/cli-plugins/docker-buildx" ]; then
+        mkdir -p "${ghcr_docker_config}/cli-plugins"
+        ln -s "${source_docker_config}/cli-plugins/docker-buildx" \
+            "${ghcr_docker_config}/cli-plugins/docker-buildx"
+    fi
 
     DOCKER_CONFIG="$ghcr_docker_config" docker buildx imagetools create \
         --prefer-index=false \

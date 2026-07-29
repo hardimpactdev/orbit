@@ -18,6 +18,10 @@ final readonly class LocalEnvFileAction
 
     private const string DEVELOPMENT_APP_ENV_PATTERN = '#\A(?:/home/[a-z_][a-z0-9_-]*|/Users/[A-Za-z0-9][A-Za-z0-9._-]*)/apps/[a-z0-9][a-z0-9._-]*/\.env\z#';
 
+    public function __construct(
+        private RuntimeUserEnvFileWriter $runtimeUserWriter,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
@@ -31,7 +35,14 @@ final readonly class LocalEnvFileAction
             return $this->read($path);
         }
 
-        return $this->write($path, $this->contents($payload['contents'] ?? null));
+        $contents = $this->contents($payload['contents'] ?? null);
+        $runtimeUser = $payload['runtime_user'] ?? null;
+
+        if ($runtimeUser !== null) {
+            return $this->runtimeUserWriter->write($path, $contents, $runtimeUser);
+        }
+
+        return $this->write($path, $contents);
     }
 
     /**
@@ -40,11 +51,9 @@ final readonly class LocalEnvFileAction
     private function read(string $path): array
     {
         if (! is_file($path)) {
-            throw new LocalEnvFileFailure(
-                errorCode: 'env_file.not_found',
-                message: 'Env file was not found.',
-                meta: ['path' => $path],
-            );
+            throw new LocalEnvFileFailure(errorCode: 'env_file.not_found', message: 'Env file was not found.', meta: [
+                'path' => $path,
+            ]);
         }
 
         $contents = file_get_contents($path);
@@ -104,11 +113,9 @@ final readonly class LocalEnvFileAction
             return $value;
         }
 
-        throw new LocalEnvFileFailure(
-            errorCode: 'validation_failed',
-            message: 'Env file action is invalid.',
-            meta: ['field' => 'action'],
-        );
+        throw new LocalEnvFileFailure(errorCode: 'validation_failed', message: 'Env file action is invalid.', meta: [
+            'field' => 'action',
+        ]);
     }
 
     private function path(mixed $value): string
@@ -152,10 +159,8 @@ final readonly class LocalEnvFileAction
 
     private function invalidPath(): LocalEnvFileFailure
     {
-        return new LocalEnvFileFailure(
-            errorCode: 'validation_failed',
-            message: 'Env file path is invalid.',
-            meta: ['field' => 'path'],
-        );
+        return new LocalEnvFileFailure(errorCode: 'validation_failed', message: 'Env file path is invalid.', meta: [
+            'field' => 'path',
+        ]);
     }
 }

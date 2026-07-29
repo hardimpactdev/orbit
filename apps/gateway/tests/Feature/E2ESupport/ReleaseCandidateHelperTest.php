@@ -205,7 +205,10 @@ it('promotes the accepted FrankenPHP candidate digest without creating a GitHub 
 
         $process = release_candidate_process(
             arguments: ['promote-runtime', "--build-id={$buildId}", '--accepted'],
-            env: $env,
+            env: [
+                ...$env,
+                'ORBIT_TEST_REQUIRE_BUILDX_PLUGIN' => '1',
+            ],
         );
 
         expect($process->getExitCode())
@@ -462,8 +465,14 @@ function release_candidate_prepare_root(string $temp): string
 
     mkdir("{$root}/bin", recursive: true);
     mkdir("{$root}/home", recursive: true);
+    mkdir("{$root}/home/.docker/cli-plugins", recursive: true);
     file_put_contents("{$root}/release.env", "ORBIT_TEST_RELEASE_ENV=sourced\n");
     file_put_contents("{$root}/stub.log", '');
+    file_put_contents(
+        filename: "{$root}/home/.docker/cli-plugins/docker-buildx",
+        data: "#!/usr/bin/env bash\nexit 0\n",
+    );
+    chmod(filename: "{$root}/home/.docker/cli-plugins/docker-buildx", permissions: 0o755);
 
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'git', body: <<<'BASH'
         printf 'git %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
@@ -478,6 +487,11 @@ function release_candidate_prepare_root(string $temp): string
 
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'docker', body: <<<'BASH'
         printf 'docker %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        if [ "$1" = 'buildx' ] && [ -n "${ORBIT_TEST_REQUIRE_BUILDX_PLUGIN:-}" ] \
+            && [ ! -x "${DOCKER_CONFIG:-}/cli-plugins/docker-buildx" ]; then
+            printf 'docker: unknown command: docker buildx\n' >&2
+            exit 1
+        fi
         if [ "$1" = 'context' ] && [ "$2" = 'show' ]; then
             printf '%s\n' "${ORBIT_TEST_DOCKER_CONTEXT_NAME:-orbstack}"
             exit 0
