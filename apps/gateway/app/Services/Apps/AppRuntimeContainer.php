@@ -49,6 +49,7 @@ class AppRuntimeContainer
         array $phpIni,
         array $extraHosts = [],
         private readonly ?string $dockerUser = null,
+        private readonly string $workingDirectory = self::SourceTarget,
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
@@ -93,6 +94,11 @@ class AppRuntimeContainer
         return $this->dockerUser;
     }
 
+    public function workingDirectory(): string
+    {
+        return $this->workingDirectory;
+    }
+
     public function withDockerUser(string $dockerUser): self
     {
         return new self(
@@ -108,6 +114,7 @@ class AppRuntimeContainer
             phpIni: $this->phpIni,
             extraHosts: $this->extraHosts,
             dockerUser: trim($dockerUser),
+            workingDirectory: $this->workingDirectory,
         );
     }
 
@@ -176,6 +183,7 @@ class AppRuntimeContainer
      *     restart_policy: string,
      *     app_slug: string,
      *     runtime_user: string|null,
+     *     working_directory: string,
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     network_aliases: list<string>,
@@ -192,6 +200,7 @@ class AppRuntimeContainer
             'restart_policy' => $this->restartPolicy,
             'app_slug' => $this->appSlug,
             'runtime_user' => $this->runtimeUser,
+            'working_directory' => $this->workingDirectory,
             'environment' => $this->environment,
             'mounts' => $this->mounts,
             'network_aliases' => $this->networkAliases,

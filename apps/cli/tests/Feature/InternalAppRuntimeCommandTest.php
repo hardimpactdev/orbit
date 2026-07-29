@@ -391,6 +391,7 @@ describe('internal app runtime command', function (): void {
                     "DOCKER_HOST=unix://{$socket} docker network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network",
                 )
                 ->toContain("DOCKER_HOST=unix://{$socket} docker run -d --pull never --name orbit-ws-happie-smoke")
+                ->toContain('--workdir /app/live')
                 ->toContain('--add-host smoke.happie.nmbp:host-gateway')
                 ->not->toContain('/var/run/docker.sock');
         } finally {
@@ -539,6 +540,7 @@ function app_runtime_container_spec_payload(string $home): array
         'workspace_slug' => 'smoke',
         'runtime_user' => null,
         'docker_user' => null,
+        'working_directory' => '/app/live',
         'environment' => [
             'APP_ENV' => 'local',
         ],

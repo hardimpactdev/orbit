@@ -32,6 +32,7 @@ final readonly class LocalAppRuntimeContainerSpec
         public ?string $workspaceSlug,
         public ?string $runtimeUser,
         public ?string $dockerUser,
+        public string $workingDirectory,
         public array $environment,
         public array $mounts,
         public array $networkAliases,
@@ -57,6 +58,7 @@ final readonly class LocalAppRuntimeContainerSpec
             workspaceSlug: self::workspaceSlug($kind, $value['workspace_slug'] ?? null),
             runtimeUser: self::nullableIdentifier($value['runtime_user'] ?? null, 'runtime_user'),
             dockerUser: self::nullableDockerUser($value['docker_user'] ?? null),
+            workingDirectory: self::absolutePath($value['working_directory'] ?? '/app', 'working_directory'),
             environment: self::environment($value['environment'] ?? null),
             mounts: self::mounts($value['mounts'] ?? null),
             networkAliases: self::networkAliases($value['network_aliases'] ?? []),
@@ -97,6 +99,9 @@ final readonly class LocalAppRuntimeContainerSpec
             $command[] = '--user';
             $command[] = $dockerUser;
         }
+
+        $command[] = '--workdir';
+        $command[] = $this->workingDirectory;
 
         if ($this->e2eDockerNetwork() === null) {
             foreach ($this->extraHosts as $host => $address) {
@@ -280,6 +285,21 @@ final readonly class LocalAppRuntimeContainerSpec
         }
 
         throw self::validationFailure('docker_user');
+    }
+
+    private static function absolutePath(mixed $value, string $field): string
+    {
+        if (! is_string($value) || ! str_starts_with($value, '/') || str_contains($value, "\0")) {
+            throw self::validationFailure($field);
+        }
+
+        $segments = explode('/', $value);
+
+        if (in_array('..', $segments, strict: true)) {
+            throw self::validationFailure($field);
+        }
+
+        return $value === '/' ? $value : rtrim($value, characters: '/');
     }
 
     /**

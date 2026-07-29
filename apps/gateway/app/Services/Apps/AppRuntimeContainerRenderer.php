@@ -162,6 +162,7 @@ final readonly class AppRuntimeContainerRenderer
                 $this->runtimeClientTrust->phpIniForApp($app),
             ),
             extraHosts: $this->runtimeHostRouting->forApp($app),
+            workingDirectory: $this->applicationRootInContainer($app),
         );
     }
 
@@ -264,6 +265,7 @@ final readonly class AppRuntimeContainerRenderer
     private function environmentFor(Project $app, ?AppInstance $instance): array
     {
         $environment = [
+            'APP_BASE_PATH' => $this->applicationRootInContainer($app),
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'XDG_CONFIG_HOME' => self::XdgConfigHome,
             'XDG_DATA_HOME' => self::XdgDataHome,
@@ -337,6 +339,17 @@ final readonly class AppRuntimeContainerRenderer
         }
 
         return AppRuntimeContainer::SourceTarget.'/'.$documentRoot;
+    }
+
+    public function applicationRootInContainer(Project $app): string
+    {
+        $documentRoot = trim($app->document_root, characters: '/');
+
+        if ($documentRoot === 'live' || str_starts_with($documentRoot, 'live/')) {
+            return AppRuntimeContainer::SourceTarget.'/live';
+        }
+
+        return AppRuntimeContainer::SourceTarget;
     }
 
     /**

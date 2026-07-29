@@ -122,6 +122,11 @@ class DockerCommandBuilder
             }
         }
 
+        if ($container instanceof AppRuntimeContainer) {
+            $parts[] = '--workdir';
+            $parts[] = $this->quote($container->workingDirectory());
+        }
+
         if ($this->usesShellEntrypoint($container)) {
             $parts[] = '--workdir';
             $parts[] = $this->quote($container->workingDirectory());

@@ -38,6 +38,7 @@ final readonly class DeployManager
         private RunsInternalCommands $localExecutor,
         private AppSelectorResolver $appSelectorResolver,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
+        private ActiveReleaseRuntimeActivator $activeReleaseRuntimeActivator,
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
         private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
@@ -235,7 +236,23 @@ final readonly class DeployManager
 
         if ($status === 'completed') {
             try {
-                $warmupResult = $this->runWarmupSteps($model, $instance, $context, $progress);
+                $warmupPath = $model->path;
+
+                if ($this->usesLivePath($steps) && $model->runtimeKind() === AppRuntimeKind::Php) {
+                    $progress?->stepStart('activate-runtime');
+
+                    try {
+                        $activation = $this->activeReleaseRuntimeActivator->activate($model, $instance, $context);
+                        $warmupPath = $activation['live_path'];
+                        $progress?->stepDone('activate-runtime', $activation['resolved_path']);
+                    } catch (GatewayApiException $exception) {
+                        $progress?->stepFail('activate-runtime', 'failed');
+
+                        throw $exception;
+                    }
+                }
+
+                $warmupResult = $this->runWarmupSteps($model, $instance, $context, $warmupPath, $progress);
                 if ($warmupResult !== null) {
                     $stdout .= $warmupResult['stdout'];
                     $stderr .= $warmupResult['stderr'];
@@ -324,6 +341,7 @@ final readonly class DeployManager
         Project $app,
         AppInstance $instance,
         array $context,
+        string $cwd,
         ?ProgressReporter $progress = null,
     ): ?array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
@@ -350,7 +368,7 @@ final readonly class DeployManager
             $result = $this->runStep(
                 node: $node,
                 command: $routedCommand,
-                cwd: $app->path,
+                cwd: $cwd,
                 timeout: 300,
                 environment: $this->environment($context),
             );
@@ -519,6 +537,14 @@ final readonly class DeployManager
             ];
         }
 
+        if ($this->usesLivePath($steps)) {
+            $progressSteps[] = [
+                'key' => 'activate-runtime',
+                'label' => 'Activate release runtime',
+                'doneLabel' => 'Activated release runtime',
+            ];
+        }
+
         $progressSteps[] = [
             'key' => 'record-result',
             'label' => 'Record deployment result',
@@ -526,6 +552,16 @@ final readonly class DeployManager
         ];
 
         return $progressSteps;
+    }
+
+    /**
+     * @param  Collection<int, DeployStep>  $steps
+     */
+    private function usesLivePath(Collection $steps): bool
+    {
+        return $steps->contains(
+            static fn (DeployStep $step): bool => preg_match('/{{\s*live_path\s*}}/', $step->command) === 1,
+        );
     }
 
     private function progressKey(DeployStep $step): string

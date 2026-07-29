@@ -89,6 +89,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   for every executed step, so deploy logs show the script that actually
   executed for that run.
 - Stops at the first failed step and does not execute later steps.
+- When any configured step references `{{ live_path }}` for a PHP app, resolves
+  the resulting `live_path` inside the app source boundary, converges the
+  FrankenPHP runtime to `/app/live`, and restarts an otherwise unchanged
+  container. A missing or escaping active release fails the deployment before
+  warmup.
 - After all configured steps complete successfully for a PHP app, runs built-in
   production warmup on the host PHP toolchain (matched to the app's PHP
   version): `composer install --no-dev --optimize-autoloader --no-interaction`
@@ -138,6 +143,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Pipeline empty | The production instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
 | Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
 | Execution failed | The gateway cannot execute a step on the owning node. | `error.code=deploy.execution_failed` |
+| Active release missing | A release-aware pipeline did not leave a resolvable `live_path`. | `error.code=deploy.active_release_missing` |
+| Active release unsafe | The resolved `live_path` escapes the app source boundary. | `error.code=deploy.active_release_unsafe` |
+| Runtime activation failed | The active-release FrankenPHP runtime cannot be converged or restarted. | `error.code=deploy.runtime_activation_failed` or `deploy.runtime_restart_failed` |
 | Step failed | A deployment step exits non-zero. | `error.code=deploy.step_failed` |
 | History write failed | The gateway cannot persist the run or final run status. | `error.code=deploy.history_write_failed` |
 
@@ -157,6 +165,6 @@ deployment status when reporting `app.latest_deployment_failed` or
 | `apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php` | Operations WebSocket subscription, JSON and stream-JSON frames, and malformed operation-frame handling. |
 | `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Authorized `202` durable operation creation with caller and target node identity. |
 | `apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php` | Journal-before-WebSocket ordering, terminal operation state, and durable replay events. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Structured Agent-push routing for PHP/Composer/Artisan commands, host working-directory and environment context, built-in warmup steps, HTTP warmup paths, warmup skip on user-step failure, and failed-run status when warmup fails. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Structured Agent-push routing for PHP/Composer/Artisan commands, host working-directory and environment context, active-release runtime convergence, built-in warmup steps, HTTP warmup paths, warmup skip on user-step failure, and failed-run status when activation or warmup fails. |
 
 Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, empty-pipeline failure, run-history creation semantics, timeout enforcement, progress-tree rendering, foreground success summaries beyond the completion footer, exhaustive documented `error.code` values, step-failure stop behavior, history-write failures, latest-deployment status updates, and instance-doctor handoff behavior.

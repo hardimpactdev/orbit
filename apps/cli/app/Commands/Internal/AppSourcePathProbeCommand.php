@@ -10,7 +10,7 @@ use App\Services\Apps\LocalAppSourcePathProbeFailure;
 final class AppSourcePathProbeCommand extends InternalExecutorCommand
 {
     #[\Override]
-    protected $signature = 'internal:app-source-path:probe {path} {--operation-token=} {--json}';
+    protected $signature = 'internal:app-source-path:probe {path} {--boundary=} {--operation-token=} {--json}';
 
     #[\Override]
     protected $description = 'Probe whether an app source path exists locally';
@@ -22,7 +22,7 @@ final class AppSourcePathProbeCommand extends InternalExecutorCommand
         }
 
         try {
-            $result = $paths->probe($this->argument('path'));
+            $result = $paths->probe($this->argument('path'), $this->option('boundary'));
         } catch (LocalAppSourcePathProbeFailure $failure) {
             return $this->renderFailure($failure->errorCode, $failure->getMessage(), $failure->meta);
         }

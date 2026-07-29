@@ -543,9 +543,10 @@ container running FrankenPHP. The container listens on internal HTTP port `8080`
 publishes no public host ports, runs as a path-derived app user, and is reached
 only by the app-role backend `orbit-caddy` route. That app user must not be in
 the Docker group and must not have the Docker socket mounted into its runtime.
-Release-aware deployments may switch the source path the container bind mounts,
-but the mount boundary stays inside the app source or active release plus
-explicitly managed shared paths. The container is represented as the
+Release-aware deployments keep the app source boundary mounted at `/app`, then
+resolve the active `live` symlink inside that boundary and run the container
+with `/app/live` as its working directory and Laravel base path. Its server root
+is the configured document root below that active release. The container is represented as the
 process-owned long-running HTTP runtime unit with Docker runtime; configured
 host command processes are systemd-backed on Linux and launchd-backed on macOS
 under the process family. A fully baked app-runtime Docker Swarm service

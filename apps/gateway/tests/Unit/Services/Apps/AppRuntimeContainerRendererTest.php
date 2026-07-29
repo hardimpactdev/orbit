@@ -839,6 +839,40 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod classic
     expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse();
 });
 
+it('runs a release-aware production runtime from the active live application root', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = workerRuntimeInstance($app, [
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/docs/app',
+            document_root: 'live/public',
+            domain: 'docs.example.com',
+        ),
+    ]);
+
+    $container = rendererForTest()->renderForInstance($app, $instance);
+
+    expect($container->workingDirectory())
+        ->toBe('/app/live')
+        ->and($container->environment())
+        ->toMatchArray([
+            'APP_BASE_PATH' => '/app/live',
+            'SERVER_ROOT' => '/app/live/public',
+        ])
+        ->and($container->spec()['working_directory'] ?? null)
+        ->toBe('/app/live');
+});
+
 it('renders the FrankenPHP worker block against public/frankenphp-worker.php with workers=auto', function (): void {
     $app = makePhpApp();
     $instance = workerRuntimeInstance($app, [

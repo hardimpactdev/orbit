@@ -42,10 +42,12 @@ These rules define what the deploy command family owns and how it behaves.
   the host PHP toolchain (matched to the app's PHP version); the app's
   FrankenPHP container serves the deployed source.
 - Release-aware deployment steps may create versioned release directories and
-  switch the active `live_path`, but the active runtime mount must stay inside
-  the app source or release boundary. Symlinks for `live_path`, document root,
-  storage, and database paths must resolve inside that boundary before the
-  production runtime container is rendered.
+  switch the active `live_path`. When a pipeline references `live_path`, Orbit
+  resolves that symlink after the configured steps and fails the deployment if
+  it is missing or escapes the app source boundary. Orbit then converges the
+  production container with `/app/live` as its working directory and Laravel
+  base path, serves the document root below that active release, and restarts
+  an otherwise unchanged container before warmup.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.

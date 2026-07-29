@@ -10,8 +10,8 @@ use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Tools\ToolScriptDispatcher;
 use JsonException;
@@ -28,13 +28,13 @@ final readonly class AppRuntimeContainerManager
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
-        private mixed $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
         private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
     public function apply(Node $node, AppRuntimeContainer $container): AppRuntimeContainerApplyOutcome
     {
-        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
             return $this->applyThroughLocalExecutor($node, $container);
         }
 
@@ -232,7 +232,7 @@ final readonly class AppRuntimeContainerManager
     {
         $localExecutor = $this->localExecutor($node);
 
-        if (! $localExecutor instanceof RemoteLocalExecutor) {
+        if (! $localExecutor instanceof RunsInternalCommands) {
             throw new RuntimeException('App runtime local executor is unavailable.');
         }
 
@@ -601,7 +601,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function remove(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
             return $this->removeThroughLocalExecutor($node, "orbit-app-{$appSlug}");
         }
 
@@ -633,7 +633,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function removeRuntimeConfigFile(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
             return $this->removeRuntimeConfigFileThroughLocalExecutor(
                 $node,
                 $this->runtimeConfigPath($node, $appSlug),
@@ -714,7 +714,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function writeRuntimeConfigFile(Node $node, AppRuntimeContainer $container): void
     {
-        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RunsInternalCommands) {
             $this->writeRuntimeConfigFileThroughLocalExecutor($node, $container);
 
             return;
@@ -1044,9 +1044,9 @@ final readonly class AppRuntimeContainerManager
         throw new RuntimeException("Failed to {$step} on {$node->name}: {$message}");
     }
 
-    private function localExecutor(Node $node): ?RemoteLocalExecutor
+    private function localExecutor(Node $node): ?RunsInternalCommands
     {
-        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
+        if (! $this->localExecutor instanceof RunsInternalCommands) {
             return null;
         }
 

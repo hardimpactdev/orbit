@@ -9,14 +9,34 @@ final readonly class LocalAppSourcePathProbe
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function probe(mixed $path): array
+    public function probe(mixed $path, mixed $boundary = null): array
     {
         $path = $this->path($path);
+        $boundary = $boundary === null ? null : $this->path($boundary);
+        $resolvedPath = realpath($path);
+        $exists = is_string($resolvedPath) && is_dir($resolvedPath);
+
+        $data = [
+            'path' => $path,
+            'exists' => $exists,
+        ];
+
+        if ($boundary === null) {
+            return [
+                'data' => $data,
+                'meta' => [],
+            ];
+        }
+
+        $resolvedBoundary = realpath($boundary);
+        $withinBoundary =
+            $exists && is_string($resolvedBoundary) && $this->isSameOrChild($resolvedPath, $resolvedBoundary);
 
         return [
             'data' => [
-                'path' => $path,
-                'exists' => is_dir($path),
+                ...$data,
+                'resolved_path' => $exists ? $resolvedPath : null,
+                'within_boundary' => $withinBoundary,
             ],
             'meta' => [],
         ];
@@ -33,5 +53,16 @@ final readonly class LocalAppSourcePathProbe
             message: 'App source path must be an absolute path.',
             meta: ['field' => 'path'],
         );
+    }
+
+    private function isSameOrChild(string $path, string $boundary): bool
+    {
+        if ($boundary === '/') {
+            return str_starts_with($path, '/');
+        }
+
+        $boundary = rtrim($boundary, characters: '/');
+
+        return $path === $boundary || str_starts_with($path, "{$boundary}/");
     }
 }
