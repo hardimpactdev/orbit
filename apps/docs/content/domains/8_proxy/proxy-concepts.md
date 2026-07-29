@@ -159,13 +159,15 @@ These terms define the ingress behavior applied to app and workspace routes.
   a custom Caddy module. When the scope is cold, the same pre-check starts or
   follows its serialized restore-and-wake operation and returns a minimal
   no-store HTML response immediately. That response auto-refreshes the original
-  URL until the pre-check succeeds. Its checklist contains only the planned
-  dependency restores and the scope's actual configured processes; it exposes
-  no commands, filesystem paths, environment values, or raw logs. Failed
-  activation retains the cold gate and presents a retry action; a later request
-  replaces a detached activation runner only after its progress heartbeat
-  expires and both its source dependency fence and scope activation fence are
-  available. One sibling scope never clears another sibling's cold gate.
+  URL until the pre-check succeeds. It presents the Orbit mark and one aggregate
+  progress bar derived from the planned dependency restores and the scope's
+  actual configured processes. The bar smoothly advances when a refresh reports
+  a new completion value; the response exposes no commands, filesystem paths,
+  environment values, raw logs, or individual step rows. Failed activation
+  retains the cold gate and presents a retry action; a later request replaces a
+  detached activation runner only after its progress heartbeat expires and both
+  its source dependency fence and scope activation fence are available. One
+  sibling scope never clears another sibling's cold gate.
 - **Development runtime activity:** Every app-development instance or workspace
   route writes a dedicated access log whose modification time is the last HTTP
   activity for that scope. Activity logs remain in Caddy's persistent data

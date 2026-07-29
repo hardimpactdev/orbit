@@ -9,136 +9,135 @@
     <title>Waking {{ $name }}</title>
     <style>
         :root {
-            color-scheme: light;
-            --paper: #f6f5f0;
-            --ink: #1d211d;
-            --muted: #747a72;
-            --line: #dcded7;
-            --ready: #247451;
-            --active: #ad7227;
+            color-scheme: dark;
+            --background: #000;
+            --foreground: #fff;
+            --track: #27272a;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             min-height: 100vh;
             margin: 0;
             display: grid;
             place-items: center;
-            padding: 2rem;
-            background: var(--paper);
-            color: var(--ink);
-            font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, serif;
+            padding: 24px;
+            background: var(--background);
+            color: var(--foreground);
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            -webkit-font-smoothing: antialiased;
         }
 
-        main { width: min(100%, 28rem); }
-
-        .mark {
-            width: 2rem;
-            height: 2rem;
-            margin-bottom: 1.5rem;
-            border: 2px solid var(--line);
-            border-top-color: var(--active);
-            border-radius: 50%;
-            animation: orbit 1s linear infinite;
+        main {
+            width: min(100%, 158px);
         }
 
-        .failed .mark {
-            border-color: #a9433b;
-            animation: none;
+        .logo {
+            width: 64px;
+            height: 32px;
+            display: block;
+            margin: 0 auto 48px;
         }
 
-        h1 {
-            margin: 0;
-            font-size: clamp(1.65rem, 5vw, 2.25rem);
-            font-weight: 500;
-            letter-spacing: -.035em;
+        .progress {
+            height: 4px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: var(--track);
         }
 
-        p {
-            margin: .65rem 0 2rem;
-            color: var(--muted);
-            line-height: 1.55;
+        .progress-value {
+            height: 100%;
+            border-radius: inherit;
+            background: var(--foreground);
         }
 
-        ol {
-            margin: 0;
+        @media (prefers-reduced-motion: no-preference) {
+            .progress-value {
+                transition: width 700ms cubic-bezier(.22, 1, .36, 1);
+            }
+        }
+
+        .retry {
+            display: block;
+            margin-top: 28px;
+            color: #a1a1aa;
+            font-size: 13px;
+            text-align: center;
+            text-underline-offset: 3px;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
             padding: 0;
-            list-style: none;
-            border-top: 1px solid var(--line);
-        }
-
-        li {
-            display: flex;
-            align-items: center;
-            gap: .8rem;
-            padding: .85rem 0;
-            border-bottom: 1px solid var(--line);
-            font-size: .98rem;
-        }
-
-        .state {
-            width: .55rem;
-            height: .55rem;
-            flex: none;
-            border: 1px solid var(--muted);
-            border-radius: 50%;
-        }
-
-        li[data-status="active"] .state {
-            border-color: var(--active);
-            background: var(--active);
-            box-shadow: 0 0 0 .22rem color-mix(in srgb, var(--active) 16%, transparent);
-        }
-
-        li[data-status="done"] .state {
-            border-color: var(--ready);
-            background: var(--ready);
-        }
-
-        li[data-status="failed"] .state {
-            border-color: #a9433b;
-            background: #a9433b;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 1.5rem;
-            color: var(--ink);
-            text-underline-offset: .2rem;
-        }
-
-        @keyframes orbit {
-            to { transform: rotate(360deg); }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .mark { animation: none; }
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
     </style>
 </head>
 <body>
-    <main @class(['failed' => $failed])>
-        <div class="mark" aria-hidden="true"></div>
-        <h1>{{ $failed ? 'Wake-up paused' : "Waking {$name}" }}</h1>
-        <p>
-            {{ $failed
-                ? 'One of the preparation steps did not complete.'
-                : 'Orbit is preparing this development environment. This page will continue automatically.' }}
-        </p>
+    <main>
+        <svg class="logo" viewBox="0 25 100 50" fill="none" aria-label="Orbit">
+            <path d="M50 25C77.6143 25 100 36.1929 100 50C99.9996 63.8069 77.614 75 50 75C22.386 75 0.000366987 63.8069 0 50C0 36.1929 22.3858 25 50 25ZM49.7764 32.0107C32.7857 32.0108 15.7344 38.9923 15.7344 46.9102C15.7346 54.8279 28.3485 61.2461 49.5654 61.2461C70.7823 61.2461 83.3962 54.8279 83.3965 46.9102C83.3965 38.9923 66.7672 32.0107 49.7764 32.0107Z" fill="currentColor"/>
+        </svg>
 
-        <ol aria-label="Wake-up progress">
-            @foreach ($steps as $step)
-                <li data-status="{{ $step['status'] }}">
-                    <span class="state" aria-hidden="true"></span>
-                    <span>{{ $step['label'] }}</span>
-                </li>
-            @endforeach
-        </ol>
+        <div
+            class="progress"
+            role="progressbar"
+            aria-label="Wake-up progress"
+            aria-valuemin="0"
+            aria-valuemax="{{ $totalSteps }}"
+            aria-valuenow="{{ $completedSteps }}"
+        >
+            <div class="progress-value" data-progress="{{ $progress }}" style="width: {{ $progress }}%"></div>
+        </div>
+
+        <div class="sr-only" aria-live="polite">
+            <p>{{ $failed ? 'Wake-up paused' : "Waking {$name}" }}</p>
+            <ol>
+                @foreach ($steps as $step)
+                    <li>{{ $step['label'] }}: {{ $step['status'] }}</li>
+                @endforeach
+            </ol>
+        </div>
 
         @if ($failed)
-            <a href="{{ $retryUri }}">Try again</a>
+            <a class="retry" href="{{ $retryUri }}">Try again</a>
         @endif
     </main>
+    <script nonce="{{ $nonce }}">
+        const progressElement = document.querySelector('.progress-value');
+        const targetProgress = Number.parseFloat(progressElement.dataset.progress ?? '0');
+        const storageKey = `orbit-runtime-progress:${window.location.pathname}`;
+        let previousProgress = 0;
+
+        try {
+            previousProgress = Number.parseFloat(window.sessionStorage.getItem(storageKey) ?? '0');
+            window.sessionStorage.setItem(storageKey, String(targetProgress));
+        } catch {
+            previousProgress = 0;
+        }
+
+        if (! Number.isFinite(previousProgress) || targetProgress < previousProgress) {
+            previousProgress = 0;
+        }
+
+        progressElement.style.transition = 'none';
+        progressElement.style.width = `${previousProgress}%`;
+        progressElement.getBoundingClientRect();
+        progressElement.style.removeProperty('transition');
+
+        window.requestAnimationFrame(() => {
+            progressElement.style.width = `${targetProgress}%`;
+        });
+    </script>
 </body>
 </html>

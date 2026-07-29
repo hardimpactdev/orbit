@@ -193,12 +193,13 @@ A request for a cold scope creates or follows one serialized activation
 operation. The gateway returns a minimal auto-refreshing progress response
 through the existing stock-Caddy wake pre-check while the operation restores
 only the missing dependency families and starts the scope's configured
-processes. Progress rows are derived from that operation plan: an app without a
-queue process has no queue row, and a scope with no missing JavaScript
-dependencies has no JavaScript-install row. Once activation succeeds, the
-refreshed original request passes through to the application. A failed or
-partially completed prune remains cold. Each detached runner atomically claims
-its operation once and heartbeats the operation journal while it works.
+processes. The response shows the Orbit mark and one aggregate progress bar
+derived from the operation plan. The bar smoothly advances between newly
+reported completion values without exposing individual dependency or process
+rows. Once activation succeeds, the refreshed original request passes through
+to the application. A failed or partially completed prune remains cold. Each
+detached runner atomically claims its operation once and heartbeats the operation
+journal while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
 once. A dependency waiter uses the full bounded activation-fence duration

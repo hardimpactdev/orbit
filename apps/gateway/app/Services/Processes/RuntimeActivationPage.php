@@ -59,17 +59,30 @@ final readonly class RuntimeActivationPage
         }
 
         $uri = $this->safeOriginalUri($originalUri);
+        $steps = array_map(static fn (array $step): array => [
+            'key' => $step['key'],
+            'label' => $step['label'],
+            'status' => $statuses[$step['key']] ?? 'waiting',
+        ], $steps);
+        $completedSteps = count(array_filter(
+            $steps,
+            static fn (array $step): bool => $step['status'] === 'done',
+        ));
+        $totalSteps = count($steps);
+        $nonce = base64_encode(random_bytes(18));
 
         return response()
             ->view(
                 'runtime-activation',
                 [
                     'name' => $scope->displayName(),
-                    'steps' => array_map(static fn (array $step): array => [
-                        'key' => $step['key'],
-                        'label' => $step['label'],
-                        'status' => $statuses[$step['key']] ?? 'waiting',
-                    ], $steps),
+                    'steps' => $steps,
+                    'completedSteps' => $completedSteps,
+                    'totalSteps' => $totalSteps,
+                    'progress' => $totalSteps === 0
+                        ? 0
+                        : (int) floor(($completedSteps / $totalSteps) * 100),
+                    'nonce' => $nonce,
                     'failed' => $run->status === OperationStatus::Failed,
                     'refreshUri' => $uri,
                     'retryUri' => $this->retryUri($uri),
@@ -80,7 +93,7 @@ final readonly class RuntimeActivationPage
             ->header('Retry-After', '2')
             ->header(
                 'Content-Security-Policy',
-                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{$nonce}'; base-uri 'none'; frame-ancestors 'none'",
             )
             ->header('X-Robots-Tag', 'noindex, nofollow');
     }
