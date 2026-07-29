@@ -200,14 +200,14 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
         ->and($runScript)
         ->toContain("'orbit-ws-demo-feature-a'")
         ->and($runScript)
-        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($runScript)
         ->toContain('/home/gateway/.config/orbit/workspaces/demo-feature-a.ini')
         ->and(collect($shell->scripts)
             ->contains(
                 fn (string $script): bool => str_contains(
                     $script,
-                    "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'",
+                    "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'",
                 ),
             ))
         ->toBeTrue()

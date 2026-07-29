@@ -68,7 +68,7 @@ it('quotes docker mount fields containing csv separators and quotes', function (
 it('emits numeric docker users for app runtime containers', function (): void {
     $container = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -97,7 +97,7 @@ it('emits numeric docker users for app runtime containers', function (): void {
 it('rejects non-numeric docker users for app runtime containers', function (): void {
     $container = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -116,7 +116,7 @@ it('rejects non-numeric docker users for app runtime containers', function (): v
 it('emits development hostname mappings for app and workspace runtime containers', function (): void {
     $app = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -129,7 +129,7 @@ it('emits development hostname mappings for app and workspace runtime containers
     );
     $workspace = new WorkspaceRuntimeContainer(
         name: 'orbit-ws-docs-feature',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -226,7 +226,7 @@ it('keeps app and workspace runtime containers on the Docker E2E network with al
     try {
         $app = new AppRuntimeContainer(
             name: 'orbit-app-docs',
-            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             network: 'orbit-e2e-run123',
             restartPolicy: 'unless-stopped',
             appSlug: 'docs',
@@ -239,7 +239,7 @@ it('keeps app and workspace runtime containers on the Docker E2E network with al
         );
         $workspace = new WorkspaceRuntimeContainer(
             name: 'orbit-ws-docs-feature',
-            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             network: 'orbit-e2e-run123',
             restartPolicy: 'unless-stopped',
             appSlug: 'docs',
@@ -291,7 +291,7 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
     try {
         $process = new ProcessDockerContainer(
             name: 'orbit_docs_main_queue',
-            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             network: 'orbit-network',
             restartPolicy: 'no',
             appSlug: 'docs',
@@ -353,7 +353,7 @@ it('publishes process service ports without binding the Docker publish to a Wire
 it('does not publish ports for app owned docker process containers', function (): void {
     $process = new ProcessDockerContainer(
         name: 'orbit_docs_main_queue',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'no',
         appSlug: 'docs',

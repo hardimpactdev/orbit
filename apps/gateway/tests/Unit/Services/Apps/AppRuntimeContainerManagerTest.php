@@ -197,7 +197,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->and($scripts[2])
         ->toContain('docker container inspect')
         ->and($scripts[3])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($scripts[4])
         ->toContain('/home/orbit/.config/orbit/apps/docs.ini')
         ->and($scripts[4])
@@ -210,7 +210,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->not->toContain('target=/data')->and($scripts[4])
         ->not->toContain('target=/config')->and($scripts[4])->toContain("'orbit-app-docs'")->and(
             $scripts[4],
-        )->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'");
+        )->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'");
 });
 
 it('creates the app-dev packages bind mount source before running the app runtime container', function (): void {
@@ -375,7 +375,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the app ru
     [$app, $node] = appAndNodeForManagerTest();
     $container = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: $app->name,
@@ -498,7 +498,7 @@ it('verifies image presence on the matching-running ("Unchanged") path before re
         ->and($scripts[1])
         ->toContain('docker container inspect')
         ->and($scripts[2])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'");
+        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'");
 
     foreach ($scripts as $script) {
         expect($script)
@@ -537,7 +537,7 @@ it('verifies image presence on the matching-stopped ("Started") path before star
         ->and($scripts[1])
         ->toContain('docker container inspect')
         ->and($scripts[2])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($scripts[3])
         ->toContain('docker start')
         ->and($scripts[3])
@@ -571,7 +571,7 @@ it('recreates the container when the rendered spec drifts', function (): void {
         ->and($scripts[1])
         ->toContain('docker container inspect')
         ->and($scripts[2])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($scripts[3])
         ->toContain('docker rm -f')
         ->and($scripts[4])
@@ -810,7 +810,7 @@ it(
             new RemoteShellResult(
                 exitCode: 1,
                 stdout: '',
-                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 durationMs: 1,
             ),
         );
@@ -836,7 +836,7 @@ it(
             new RemoteShellResult(
                 exitCode: 1,
                 stdout: '',
-                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 durationMs: 1,
             ),
         );
@@ -851,7 +851,7 @@ it(
         $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
         expect($caughtImage)
-            ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+            ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
             // Must throw before any container mutation.
             ->and(collect($scripts)->contains(fn (string $s): bool => str_contains($s, 'docker start')))
             ->toBeFalse()
@@ -879,7 +879,7 @@ it(
             new RemoteShellResult(
                 exitCode: 1,
                 stdout: '',
-                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 durationMs: 1,
             ),
         );
@@ -908,7 +908,7 @@ it('throws AppRuntimeImageUnavailableException when image is not on the node bef
         new RemoteShellResult(
             exitCode: 1,
             stdout: '',
-            stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             durationMs: 1,
         ),
     );

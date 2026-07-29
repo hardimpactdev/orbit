@@ -14,7 +14,7 @@ it('frankenphp creates a shared classic runtime policy with approved image and p
     expect($runtime->phpVersion)
         ->toBe('8.5')
         ->and($runtime->image)
-        ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
         ->and($runtime->mode)
         ->toBe('classic')
         ->and($runtime->phpIni)

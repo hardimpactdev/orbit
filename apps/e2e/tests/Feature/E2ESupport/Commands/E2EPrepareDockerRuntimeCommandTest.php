@@ -19,7 +19,7 @@ it('documents docker runtime image preparation without force', function (): void
         ->expectsOutputToContain('orbit-reverb:current')
         ->expectsOutputToContain('Orbit CLI binary artifact')
         ->expectsOutputToContain('caddy:2-alpine')
-        ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
         ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm')
         ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm')
         ->expectsOutputToContain('composer:2')
@@ -45,7 +45,7 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         ->expectsOutputToContain('Built orbit-reverb:current.')
         ->expectsOutputToContain('Prepared Orbit CLI binary artifact')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
-        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
@@ -99,7 +99,7 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         fn ($process): bool => (
             is_string($process->command)
             && str_contains($process->command, 'docker pull')
-            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ),
     );
 
@@ -210,7 +210,7 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
     $this
         ->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
-        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
@@ -228,7 +228,7 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
         fn ($process): bool => (
             is_string($process->command)
             && str_contains($process->command, 'docker pull')
-            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ),
     );
 

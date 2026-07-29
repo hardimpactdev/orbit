@@ -166,7 +166,7 @@ describe('PHP runtime API controllers', function (): void {
             'node_id' => $node->id,
             'name' => 'php',
             'config' => [
-                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
                 'versions' => ['8.5'],
                 'cli_version' => '8.5',
             ],
@@ -214,7 +214,7 @@ describe('PHP runtime API controllers', function (): void {
             'node_id' => $productionNode->id,
             'name' => 'php',
             'config' => [
-                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
                 'versions' => ['8.5'],
                 'cli_version' => '8.5',
             ],
@@ -325,7 +325,7 @@ describe('PHP runtime API controllers', function (): void {
             'config' => [
                 'versions' => ['8.5', '8.4'],
                 'images' => [
-                    'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                    'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                     'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm',
                 ],
                 'cli_version' => '8.5',

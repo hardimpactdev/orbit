@@ -129,11 +129,12 @@ cmd_build() {
         exit 1
     fi
 
-    local build_id candidate_tag candidate_image candidate_reverb_image candidate_prefix candidate_channel
+    local build_id candidate_tag candidate_image candidate_reverb_image candidate_frankenphp_image candidate_prefix candidate_channel
     build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
     candidate_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${candidate_tag}"
+    candidate_frankenphp_image="ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"
     candidate_prefix="candidates/${build_id}"
     candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
@@ -209,6 +210,13 @@ cmd_build() {
         --load \
         .
 
+    docker buildx build \
+        --platform linux/amd64 \
+        -f docker/orbit-frankenphp/Dockerfile \
+        --tag "$candidate_frankenphp_image" \
+        --load \
+        .
+
     gh auth status -h github.com
 
     # Helper-free GHCR auth (release skill Failure Handling): write a minimal
@@ -230,17 +238,20 @@ cmd_build() {
     if [ -n "$active_docker_host" ]; then
         DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
         DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
+        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_frankenphp_image" > "${work_dir}/frankenphp-image-push.log" 2>&1
     else
         DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
         DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
+        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_frankenphp_image" > "${work_dir}/frankenphp-image-push.log" 2>&1
     fi
 
     rm -rf "$ghcr_docker_config"
     ghcr_docker_config=""
 
-    local gateway_digest reverb_digest
+    local gateway_digest reverb_digest frankenphp_digest
     gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
     reverb_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/reverb-image-push.log" | tail -1)"
+    frankenphp_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/frankenphp-image-push.log" | tail -1)"
 
     if [ -z "$gateway_digest" ]; then
         echo "Failed to capture the pushed gateway image digest." >&2
@@ -249,6 +260,11 @@ cmd_build() {
 
     if [ -z "$reverb_digest" ]; then
         echo "Failed to capture the pushed Reverb image digest." >&2
+        exit 1
+    fi
+
+    if [ -z "$frankenphp_digest" ]; then
+        echo "Failed to capture the pushed FrankenPHP image digest." >&2
         exit 1
     fi
 
@@ -266,6 +282,7 @@ cmd_build() {
         --agent-artifact="linux-amd64=orbit-agent-linux-x64=${work_dir}/orbit-agent-linux-x64" \
         --agent-artifact="darwin-arm64=orbit-agent-macos-arm64=${work_dir}/orbit-agent-macos-arm64" \
         --role-image="orbit-caddy=caddy:2-alpine" \
+        --role-image="orbit-frankenphp=${candidate_frankenphp_image}@${frankenphp_digest}" \
         --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
         --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=${work_dir}/orbit-reverb-linux-amd64.tar" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
@@ -364,6 +381,7 @@ cmd_build() {
     cp "${work_dir}/orbit-reverb-linux-amd64.tar" "${state_dir}/orbit-reverb-linux-amd64.tar"
     cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
     cp "${work_dir}/reverb-image-push.log" "${state_dir}/reverb-image-push.log"
+    cp "${work_dir}/frankenphp-image-push.log" "${state_dir}/frankenphp-image-push.log"
 
     local candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
     local sha256_reverb_linux_amd64
@@ -381,6 +399,8 @@ cmd_build() {
         printf 'gateway_digest=%s\n' "$gateway_digest"
         printf 'candidate_reverb_image=%s\n' "$candidate_reverb_image"
         printf 'reverb_digest=%s\n' "$reverb_digest"
+        printf 'candidate_frankenphp_image=%s\n' "$candidate_frankenphp_image"
+        printf 'frankenphp_digest=%s\n' "$frankenphp_digest"
         printf 'candidate_channel_manifest_url=%s\n' "$candidate_channel_manifest_url"
         printf 'sha256_linux_amd64=%s\n' "$sha256_linux_amd64"
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"

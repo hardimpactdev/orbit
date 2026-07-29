@@ -371,7 +371,7 @@ it(
             new RemoteShellResult(
                 exitCode: 1,
                 stdout: '',
-                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 durationMs: 1,
             ),
         );

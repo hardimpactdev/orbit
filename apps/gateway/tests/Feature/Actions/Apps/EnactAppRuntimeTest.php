@@ -211,13 +211,13 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
         ->and($runtimeScripts[2])
         ->toContain('docker container inspect')
         ->and($runtimeScripts[3])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($runtimeScripts[4])
         ->toContain('docker run -d')
         ->and($runtimeScripts[4])
         ->toContain("'orbit-app-docs-development'")
         ->and($runtimeScripts[4])
-        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
         ->and($runtimeScripts[4])
         ->toContain("'/home/orbit/.config/orbit/apps/docs-development.ini'")
         ->and(base64DecodedPhpIni($runtimeScripts[4]))
@@ -488,7 +488,7 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
         new RemoteShellResult(
             exitCode: 1,
             stdout: '',
-            stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             durationMs: 1,
         ),
     );
@@ -510,7 +510,7 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
         ->and($phpUnavailable['next_command'])
         ->toBe('doctor --family=instance --restore')
         ->and($phpUnavailable['message'])
-        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
         ->toBeTrue();
 });
@@ -606,7 +606,7 @@ it(
             new RemoteShellResult(
                 exitCode: 1,
                 stdout: '',
-                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 durationMs: 1,
             ),
         );

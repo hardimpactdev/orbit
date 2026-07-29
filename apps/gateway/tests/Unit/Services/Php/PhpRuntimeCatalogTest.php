@@ -20,7 +20,7 @@ it('frankenphp resolves supported PHP versions to approved glibc image reference
         ->and($catalog->isApprovedImage($image))
         ->toBeTrue();
 })->with([
-    'php 8.5' => ['8.5', 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+    'php 8.5' => ['8.5', 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
     'php 8.4' => ['8.4', 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'],
     'php 8.3' => ['8.3', 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'],
 ]);
@@ -44,5 +44,5 @@ it('frankenphp rejects host PHP FPM CLI and Alpine fallback image references', f
     'host fpm binary' => ['/usr/sbin/php-fpm8.5'],
     'fpm docker image' => ['php:8.5-fpm-bookworm'],
     'cli docker image' => ['php:8.5-cli-bookworm'],
-    'alpine frankenphp image' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-alpine'],
+    'alpine frankenphp image' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-alpine'],
 ]);

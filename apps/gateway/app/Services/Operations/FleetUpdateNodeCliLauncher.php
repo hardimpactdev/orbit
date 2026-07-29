@@ -49,6 +49,14 @@ final class FleetUpdateNodeCliLauncher
         }
 
         if (
+            ($roles->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)
+            || $roles->nodeHasActiveRole($node, NodeRoleName::AppProduction->value))
+            && is_string($plan->role_images['orbit-frankenphp'] ?? null)
+        ) {
+            $images[] = $plan->role_images['orbit-frankenphp'];
+        }
+
+        if (
             $roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
             && is_string($plan->role_images['orbit-websocket'] ?? null)
         ) {

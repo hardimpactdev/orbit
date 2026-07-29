@@ -90,6 +90,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             ],
             roleImages: [
                 'orbit-caddy' => 'caddy:2.9-alpine',
+                'orbit-frankenphp' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
                 'orbit-websocket' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
             ],
         ),
@@ -185,11 +186,15 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
             'sha256' => str_repeat('e', times: 64),
-            'role_images' => ['caddy:2.9-alpine'],
+            'role_images' => [
+                'caddy:2.9-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            ],
         ])
         ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_images'])
         ->toBe([
             'caddy:2.9-alpine',
+            'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
             'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         ])
         ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_image_artifacts'])

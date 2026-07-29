@@ -15,7 +15,14 @@ final readonly class PhpRuntimeCatalog
 
     public const string IMAGE_REPOSITORY = 'ghcr.io/hardimpactdev/orbit-frankenphp';
 
-    public const string IMAGE_MAJOR = '1';
+    /**
+     * @var array<string, string>
+     */
+    public const array IMAGE_MAJORS = [
+        '8.5' => '2',
+        '8.4' => '1',
+        '8.3' => '1',
+    ];
 
     public const string IMAGE_DISTRIBUTION = 'bookworm';
 
@@ -32,7 +39,7 @@ final readonly class PhpRuntimeCatalog
             throw new InvalidArgumentException("Unsupported PHP version '{$version}'.");
         }
 
-        return self::IMAGE_REPOSITORY.':'.self::IMAGE_MAJOR."-php{$version}-".self::IMAGE_DISTRIBUTION;
+        return self::IMAGE_REPOSITORY.':'.self::IMAGE_MAJORS[$version]."-php{$version}-".self::IMAGE_DISTRIBUTION;
     }
 
     public function versionForImage(string $image): string

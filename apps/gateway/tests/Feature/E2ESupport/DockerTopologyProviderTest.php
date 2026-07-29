@@ -1213,7 +1213,7 @@ it('launches app production ingress as a prod-node role', function (): void {
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
-            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
@@ -1311,7 +1311,7 @@ it('seeds gateway registry rows for composed docker app roles in parallel at acq
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
-            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker image inspect 'orbit-reverb:current' >/dev/null"
@@ -1405,7 +1405,7 @@ it('seeds dedicated ingress before app production references it at acquire time'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
-            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker image inspect 'orbit-reverb:current' >/dev/null"
@@ -1488,7 +1488,7 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
-            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker image inspect 'orbit-reverb:current' >/dev/null"
@@ -1585,7 +1585,7 @@ it('authorizes the active docker gateway ssh key into gateway self ssh and compo
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
-            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
             || $command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e:operator_base' >/dev/null"

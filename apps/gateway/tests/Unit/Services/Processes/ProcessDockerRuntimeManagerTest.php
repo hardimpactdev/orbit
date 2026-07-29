@@ -216,7 +216,7 @@ function processDockerRuntimeManagerContainer(): ProcessDockerContainer
 {
     return new ProcessDockerContainer(
         name: 'orbit_docs_main_queue',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'always',
         appSlug: 'docs',

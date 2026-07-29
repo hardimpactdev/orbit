@@ -471,6 +471,14 @@ final readonly class WorkloadNodeUpdater
         }
 
         if (
+            ($this->roles->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)
+            || $this->roles->nodeHasActiveRole($node, NodeRoleName::AppProduction->value))
+            && is_string($plan->role_images['orbit-frankenphp'] ?? null)
+        ) {
+            $keys[] = 'orbit-frankenphp';
+        }
+
+        if (
             $this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
             && is_string($plan->role_images['orbit-websocket'] ?? null)
         ) {

@@ -40,9 +40,14 @@ host-native PHP or FrankenPHP fallback.
 
 Orbit resolves supported PHP versions to the approved FrankenPHP image family
 that Orbit owns and builds from the upstream Debian/glibc image:
-`ghcr.io/hardimpactdev/orbit-frankenphp:1-php<version>-bookworm`.
+`ghcr.io/hardimpactdev/orbit-frankenphp:<image-major>-php<version>-bookworm`.
 Alpine/musl FrankenPHP variants, PHP-FPM images, CLI-only PHP images, and host
 PHP package names are invalid app/workspace runtime targets.
+
+The approved PHP 8.5 image reports the same WAL-reset-safe SQLite release
+through both `SQLite3::version()` and `select sqlite_version()` before
+publication. Orbit's PHP 8.5 image recipe pins the official SQLite 3.44.6
+safety backport.
 
 ## Doctor Relationship
 

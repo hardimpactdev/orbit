@@ -265,7 +265,7 @@ Instance renderers return this shape under `success.data.instance`, or under
   "runtime": {
     "runtime": "php",
     "php_version": "8.5",
-    "frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm",
+    "frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm",
     "mode": "classic",
     "configured_mounts": [],
     "required_php_extensions": ["intl", "redis"]

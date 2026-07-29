@@ -196,7 +196,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -215,7 +215,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
             'target' => 'instance',
             'project' => 'docs',
             'version' => '8.5',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         ]);
 });
 
@@ -228,7 +228,7 @@ it('refreshes stale PHP image inventory on a macOS Docker-backed node and stays 
         ]);
     $app = Project::factory()->create(['name' => 'nckrtl', 'node_id' => $node->id, 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node)->forceFill(['name' => 'nmbp'])->save();
-    bind_php_runtime_inventory_probe(0, stdout: "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm\n");
+    bind_php_runtime_inventory_probe(0, stdout: "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm\n");
 
     $first = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'nckrtl.nmbp');
     $second = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'nckrtl.nmbp');
@@ -241,7 +241,7 @@ it('refreshes stale PHP image inventory on a macOS Docker-backed node and stays 
         ->toBeFalse()
         ->and(NodeTool::query()->whereBelongsTo($node)->where('name', 'php')->firstOrFail()->config)
         ->toMatchArray([
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => ['8.5'],
             'image_inventory_status' => 'confirmed',
         ]);
@@ -291,7 +291,7 @@ it('reports a confirmed missing approved image after a successful empty inventor
         ->toMatchArray([
             'reason' => 'not_installed',
             'inventory_status' => 'confirmed',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         ]);
 });
 
@@ -306,7 +306,7 @@ it('does not misreport an unavailable image inventory as a confirmed missing ima
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => ['8.5'],
             'image_inventory_status' => 'unavailable',
             'image_inventory_error' => 'The previous probe failed.',
@@ -335,7 +335,7 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => '8.5',
         ],
@@ -371,7 +371,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         'node_id' => $imageNode->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -478,7 +478,7 @@ it('rejects CLI PHP selection for versions other than 8.5', function (): void {
         'name' => 'php',
         'config' => [
             'images' => [
-                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
                 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm',
             ],
             'versions' => ['8.5', '8.4'],
@@ -516,7 +516,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
         'node_id' => $imageNode->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -553,7 +553,7 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
             'images' => [
                 'php:8.5-fpm-bookworm',
                 'php:8.5-cli-bookworm',
-                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-alpine',
             ],
             'versions' => ['8.5'],
             'cli_version' => '8.5',
@@ -576,11 +576,11 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
             'reason' => 'not_installed',
             'node' => 'app-1',
             'version' => '8.5',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             'rejected_images' => [
                 'php:8.5-fpm-bookworm',
                 'php:8.5-cli-bookworm',
-                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-alpine',
             ],
         ]);
 });
@@ -609,7 +609,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         ]);
 });
 
@@ -643,6 +643,6 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         ]);
 });

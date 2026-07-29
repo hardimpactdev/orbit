@@ -80,6 +80,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
         foreach ([
             'candidate.env',
             'gateway-image-push.log',
+            'frankenphp-image-push.log',
             'orbit-linux-x64',
             'orbit-macos-arm64',
             'orbit-agent-linux-x64',
@@ -105,6 +106,8 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
             'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId}",
             'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
+            'candidate_frankenphp_image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+            'frankenphp_digest' => 'sha256:'.str_repeat('ef', times: 32),
             'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
             'sha256_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
@@ -130,12 +133,18 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('orbit-build-agent-binary linux x64')
             ->toContain('orbit-build-agent-binary mac arm')
             ->toContain('-f docker/orbit-reverb/Dockerfile')
+            ->toContain('-f docker/orbit-frankenphp/Dockerfile')
+            ->toContain('--tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
             ->toContain(
                 '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.'@sha256:'
                     .str_repeat('cd', times: 32),
             )
             ->toContain(
                 '--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=',
+            )
+            ->toContain(
+                '--role-image=orbit-frankenphp=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:'
+                    .str_repeat('ef', times: 32),
             )
             ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
             ->toContain('docker context show')
@@ -149,6 +158,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
         expect((string) file_get_contents("{$stateDir}/candidate.env"))
             ->not->toContain('stub-ghcr-token')->and((string) file_get_contents("{$stateDir}/gateway-image-push.log"))
             ->not->toContain('stub-ghcr-token')->and((string) file_get_contents("{$stateDir}/reverb-image-push.log"))
+            ->not->toContain('stub-ghcr-token')->and((string) file_get_contents(
+                "{$stateDir}/frankenphp-image-push.log",
+            ))
             ->not->toContain('stub-ghcr-token');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
@@ -429,6 +441,10 @@ function release_candidate_prepare_root(string $temp): string
                     printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-reverb]\n'
                     printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_REVERB_DIGEST}"
                     ;;
+                *orbit-frankenphp*)
+                    printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-frankenphp]\n'
+                    printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_FRANKENPHP_DIGEST}"
+                    ;;
                 *)
                     printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-gateway]\n'
                     printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_GATEWAY_DIGEST}"
@@ -559,6 +575,7 @@ function release_candidate_process_env(string $root, array $overrides = []): arr
         'ORBIT_TEST_ORIGIN_MAIN_COMMIT' => str_repeat('a', 40),
         'ORBIT_TEST_GATEWAY_DIGEST' => 'sha256:'.str_repeat('ab', times: 32),
         'ORBIT_TEST_REVERB_DIGEST' => 'sha256:'.str_repeat('cd', times: 32),
+        'ORBIT_TEST_FRANKENPHP_DIGEST' => 'sha256:'.str_repeat('ef', times: 32),
         'ORBIT_RELEASE_CANDIDATE_CHANNEL' => false,
     ], $overrides);
 }

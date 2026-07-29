@@ -62,7 +62,7 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->toContain('docker/orbit-gateway/Dockerfile')
             ->toContain('-t "$GATEWAY_IMAGE"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
-            ->toContain('docker_cli pull "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm"')
+            ->toContain('docker_cli pull "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"')
             ->toContain('ghcr.io/wg-easy/wg-easy:15')
             ->not->toContain('docker/orbit'.'-runtime/Dockerfile')
             ->not->toContain('-t "orbit'.'-runtime:current"')
@@ -93,10 +93,10 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->toContain('docker_cli image inspect "$GATEWAY_IMAGE"')
             ->toContain('docker_cli image inspect "4km3/dnsmasq:latest"')
             ->toContain('docker_cli image inspect "caddy:2-alpine"')
-            ->toContain('docker_cli image inspect "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm"')
+            ->toContain('docker_cli image inspect "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"')
             ->toContain('docker_cli image inspect "ghcr.io/wg-easy/wg-easy:15"')
             ->toContain('docker_cli pull "caddy:2-alpine"')
-            ->toContain('docker_cli pull "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm"');
+            ->toContain('docker_cli pull "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"');
     });
 
     it('can pull a digest-pinned gateway image when no local archive is staged', function (): void {

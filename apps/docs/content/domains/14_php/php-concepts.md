@@ -27,10 +27,12 @@ These terms define the PHP command domain and how PHP runtime selections are tra
 - **PHP runtime catalog:** Tool catalog knowledge that declares the PHP versions
   Orbit can manage and resolves each supported version to the approved
   FrankenPHP image reference that Orbit owns and builds from the upstream Debian/glibc image. Orbit's standard PHP app/workspace
-  image family is `ghcr.io/hardimpactdev/orbit-frankenphp:1-php<version>-bookworm`; Alpine/musl,
+  image family is `ghcr.io/hardimpactdev/orbit-frankenphp:{image-major}-php{version}-bookworm`; Alpine/musl,
   PHP-FPM, CLI-only, and host package references are invalid app/workspace
-  runtime targets. The catalog is evidence for selection and reporting, not a
-  separate state family.
+  runtime targets. The PHP 8.5 image family reports the same WAL-reset-safe
+  SQLite release through both the SQLite3 extension and a SQL
+  `sqlite_version()` query before publication. The catalog is evidence for
+  selection and reporting, not a separate state family.
 - **PHP runtime policy:** Shared runtime policy consumed by instance and workspace
   renderers. It carries the catalog-approved image reference, classic
   FrankenPHP mode default, OPcache defaults, realpath cache defaults, and

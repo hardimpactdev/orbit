@@ -10,7 +10,7 @@ These fields describe the PHP CLI toolchain's identity, backend, and support mod
 | --- | --- |
 | Slug | `php-cli` |
 | Label | PHP CLI |
-| Backend | prebuilt static binaries (dl.static-php.dev bulk preset) |
+| Backend | Static PHP binaries; Orbit-owned PHP 8.5 build via static-php-cli |
 | Support model | Installable and updatable by Orbit on app-dev/app-prod nodes |
 | Category | `runtime` |
 
@@ -18,20 +18,25 @@ These fields describe the PHP CLI toolchain's identity, backend, and support mod
 
 `php-cli` supports `tool:install`, `tool:update`, and safe doctor adopt.
 
-`tool:install php-cli` downloads prebuilt, statically linked PHP CLI binaries
-from `https://dl.static-php.dev/static-php-cli/bulk` and installs them for
-every supported minor version (8.3, 8.4, 8.5). The bulk preset includes the
-full extension set required by Laravel, including `intl`. Binaries are
-installed to `/opt/orbit/php/<minor>/bin/php` with per-version symlinks at
+`tool:install php-cli` downloads statically linked PHP CLI binaries and
+installs them for every supported minor version (8.3, 8.4, 8.5). PHP 8.5 uses
+an Orbit-owned artifact built with the full extension set required by Laravel,
+including `intl`, and pins the official SQLite 3.44.6 safety backport. Orbit rejects that artifact before
+installation unless both `SQLite3::version()` and `select sqlite_version()`
+report the same release and that release is SQLite 3.44.6, 3.50.7, or 3.51.3
+and newer. Those releases contain the WAL-reset corruption fix. Binaries are installed to
+`/opt/orbit/php/<minor>/bin/php` with per-version symlinks at
 `/usr/local/bin/php<minor>`. PHP 8.5 is set as the default `php` at
 `/usr/local/bin/php`.
 
-The installer auto-detects the host OS (`linux` or `macos`) and architecture
-(`x86_64` or `aarch64`) so the same toolchain installs correctly on both
-Ubuntu production nodes and macOS development machines.
+The installer auto-detects the host OS and architecture. Orbit's PHP 8.5
+artifacts cover the supported host pairs: Ubuntu `x86_64` production nodes and
+macOS `aarch64` development machines.
 
-`tool:update php-cli` re-downloads and re-links all pinned binaries. It uses
-the same logic as install and is safe to re-run.
+`tool:update php-cli` re-downloads, verifies, and re-links all pinned binaries.
+It uses the same logic as install and is safe to re-run. A failed PHP 8.5
+checksum, PHP-version, extension, or SQLite-version check leaves that installed
+runtime unchanged.
 
 ## Credentials
 

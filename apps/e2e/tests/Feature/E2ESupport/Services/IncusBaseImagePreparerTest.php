@@ -202,7 +202,7 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('docker swarm init');
     expect($bootstrapScript)->toContain('docker pull "$image"');
     expect($bootstrapScript)->toContain('caddy:2-alpine');
-    expect($bootstrapScript)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm');
+    expect($bootstrapScript)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm');
     expect($bootstrapScript)->toContain('orbit-frankenphp-source-artisan:prepared-current');
     expect($bootstrapScript)->toContain('orbit-reverb:current');
     expect($bootstrapScript)->toContain('apt-get install -y --no-install-recommends openssh-client');

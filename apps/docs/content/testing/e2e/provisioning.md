@@ -206,7 +206,7 @@ production-style artifact contract.
 
 The provisioning bundle stages host-local `orbit-gateway:current`,
 `orbit-reverb:current`, `caddy:2-alpine`, `4km3/dnsmasq:latest`, and
-`ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm` Docker image archives when those images
+`ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm` Docker image archives when those images
 exist on the Incus host. `bin/install-orbit` loads those archives before
 falling back to Docker Hub and marks archive-seeded installs with
 `ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1` so `node:new` can forward the same

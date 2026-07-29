@@ -404,7 +404,7 @@ function app_runtime_manager_app_container(): AppRuntimeContainer
 {
     return new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -450,7 +450,7 @@ function app_runtime_manager_workspace_container(): WorkspaceRuntimeContainer
 {
     return new WorkspaceRuntimeContainer(
         name: 'orbit-ws-docs-feature-a',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -482,7 +482,7 @@ function app_runtime_manager_macos_workspace_container(): WorkspaceRuntimeContai
 {
     return new WorkspaceRuntimeContainer(
         name: 'orbit-ws-happie-smoke',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'happie',

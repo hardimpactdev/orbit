@@ -112,7 +112,7 @@ it(
         expect($container->name())
             ->toBe('orbit-ws-demo-feature-a')
             ->and($container->image())
-            ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+            ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
             ->and($container->network())
             ->toBe('orbit-network')
             ->and($container->restartPolicy())

@@ -170,7 +170,7 @@ it('forwards local gateway and dependency image archives to install-orbit when e
     Process::assertRan(
         fn ($process): bool => (
             str_contains((string) $process->command, 'docker save')
-            && str_contains((string) $process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+            && str_contains((string) $process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'")
             && str_contains((string) $process->command, '/var/tmp/frankenphp-1-php8.5-bookworm-')
         ),
     );

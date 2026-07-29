@@ -790,7 +790,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             )->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
                 'orbit-reverb-current.tar',
             )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
-                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain('docker.io')->and(
                 $commandOutput,
             )->toContain('sudo -u "$bootstrap_user" docker image inspect')->and($commandOutput)->toContain(
@@ -1006,7 +1006,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
             )->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
                 'orbit-reverb-current.tar',
             )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
-                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain(
                 'grep "__orbit_bake_timing "',
             )->and($commandOutput)->toContain('/tmp/orbit-e2e-bake-websocket.log')->and($commandOutput)->toContain(

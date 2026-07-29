@@ -32,10 +32,12 @@ describe('PhpCliTool', function (): void {
         expect($tool->supportedOperatingSystems())->toBe(['linux', 'macos']);
     });
 
-    it('installScript downloads from dl.static-php.dev bulk preset', function (): void {
+    it('installScript downloads Orbit-owned SQLite-safe runtime artifacts', function (): void {
         $tool = new PhpCliTool;
 
-        expect($tool->installScript())->toContain('dl.static-php.dev')->and($tool->installScript())->toContain('bulk');
+        expect($tool->installScript())
+            ->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6')
+            ->toContain('dl.static-php.dev/static-php-cli/bulk');
     });
 
     it('retries transient static PHP download failures', function (): void {
@@ -52,11 +54,39 @@ describe('PhpCliTool', function (): void {
         $script = $tool->installScript();
 
         expect($script)
-            ->toContain('8.5.6')
+            ->toContain('8.5.8')
             ->and($script)
             ->toContain('8.4.21')
             ->and($script)
             ->toContain('8.3.31');
+    });
+
+    it('verifies artifact identity and both SQLite version surfaces before replacing PHP', function (): void {
+        $tool = new PhpCliTool;
+        $script = $tool->installScript();
+
+        expect($script)
+            ->toContain('shasum -a 256')
+            ->not
+            ->toContain('PENDING_')
+            ->toContain('SQLite3::version()')
+            ->toContain('select sqlite_version()')
+            ->toContain('in_array($extension, ["3.44.6", "3.50.7"], true)')
+            ->toContain('version_compare($extension, "3.51.3", ">=")')
+            ->toContain('php-8.5.next')
+            ->toContain('mv -f')
+            ->toContain('PHP_VERSION');
+    });
+
+    it('ships PHP 8.5 artifacts for the supported host architecture pairs', function (): void {
+        $tool = new PhpCliTool;
+        $script = $tool->installScript();
+
+        expect($script)
+            ->toContain('linux-x86_64) PHP_85_SHA256=')
+            ->toContain('macos-aarch64) PHP_85_SHA256=')
+            ->not->toContain('linux-aarch64) PHP_85_SHA256=')
+            ->not->toContain('macos-x86_64) PHP_85_SHA256=');
     });
 
     it('installScript installs binaries under /opt/orbit/php', function (): void {
@@ -98,10 +128,12 @@ describe('PhpCliTool', function (): void {
             ->not->toContain('add-apt-repository');
     });
 
-    it('updateScript also downloads from dl.static-php.dev', function (): void {
+    it('updateScript also downloads Orbit-owned SQLite-safe artifacts', function (): void {
         $tool = new PhpCliTool;
 
-        expect($tool->updateScript())->toContain('dl.static-php.dev');
+        expect($tool->updateScript())
+            ->toContain('https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6')
+            ->toContain('dl.static-php.dev/static-php-cli/bulk');
     });
 
     it('updateScript does not contain apt only-upgrade logic', function (): void {

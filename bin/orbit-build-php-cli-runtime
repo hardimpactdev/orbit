@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+STATIC_PHP_CLI_VERSION=2.8.5
+SQLITE_VERSION=3.44.6
+SQLITE_SOURCE_ID=863c171b76cd36e0c71662d4a50d84da531cc7fbead893d02459577febdf6396
+SQLITE_ARCHIVE_SHA256=c25cd42f803d5fb0af5f1a2863c9f529a8fd35177cb24b0f6e970b1cc96f00f0
+
+usage() {
+    echo "Usage: bin/orbit-build-php-cli-runtime <php-version> <output-directory>" >&2
+    exit 64
+}
+
+fail() {
+    echo "orbit-build-php-cli-runtime: $*" >&2
+    exit 1
+}
+
+php_version="${1:-}"
+output_directory="${2:-}"
+
+[ -n "$php_version" ] && [ -n "$output_directory" ] || usage
+
+if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+    bison_prefix="$(brew --prefix bison 2>/dev/null || true)"
+
+    if [ -n "$bison_prefix" ]; then
+        export PATH="${bison_prefix}/bin:${PATH}"
+    fi
+fi
+
+required_commands=(autoconf automake bison cmake curl flex git gzip make pkg-config re2c shasum tar tclsh unzip xz)
+
+if [ "$(uname -s)" = Darwin ]; then
+    required_commands+=(glibtoolize libtool)
+else
+    required_commands+=(libtoolize)
+fi
+
+for command in "${required_commands[@]}"; do
+    command -v "$command" >/dev/null 2>&1 || fail "required build command not found: ${command}"
+done
+
+case "$php_version" in
+    8.5.8)
+        php_sha256=58910198d19e873048fe87cdfe16bc790025417ede3d1651bfa1c4b533d573f2
+        ;;
+    *)
+        fail "unsupported PHP version: ${php_version}"
+        ;;
+esac
+
+case "$(uname -s)" in
+    Linux)
+        platform=linux
+        ;;
+    Darwin)
+        platform=macos
+        ;;
+    *)
+        fail "unsupported operating system: $(uname -s)"
+        ;;
+esac
+
+case "$(uname -m)" in
+    x86_64|amd64)
+        architecture=x86_64
+        ;;
+    aarch64|arm64)
+        architecture=aarch64
+        ;;
+    *)
+        fail "unsupported architecture: $(uname -m)"
+        ;;
+esac
+
+case "${platform}-${architecture}" in
+    linux-x86_64)
+        spc_sha256=523ba4279c54c7a377156c0dd3a36adf92ee64b01e9a7f5e9e2ec084b8e458e5
+        ;;
+    macos-aarch64)
+        spc_sha256=acf2f25d56d0cbf8e65aa82e5054fef555f7be7c5c38046c6e0819f266d83225
+        ;;
+    *)
+        fail "unsupported build platform: ${platform}-${architecture}"
+        ;;
+esac
+
+work_directory="$(mktemp -d)"
+
+cleanup() {
+    if [ "${ORBIT_KEEP_PHP_CLI_BUILD_DIRECTORY:-0}" = 1 ]; then
+        echo "Preserved build directory: ${work_directory}" >&2
+
+        return
+    fi
+
+    rm -rf "$work_directory"
+}
+
+trap cleanup EXIT
+
+spc_archive="${work_directory}/spc.tar.gz"
+php_source="${work_directory}/php-${php_version}.tar.xz"
+sqlite_source="${work_directory}/sqlite-${SQLITE_VERSION}.tar.gz"
+
+curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://github.com/crazywhalecc/static-php-cli/releases/download/${STATIC_PHP_CLI_VERSION}/spc-${platform}-${architecture}.tar.gz" \
+    -o "$spc_archive"
+printf '%s  %s\n' "$spc_sha256" "$spc_archive" | shasum -a 256 -c -
+tar -xzf "$spc_archive" -C "$work_directory"
+
+curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://www.php.net/distributions/php-${php_version}.tar.xz" \
+    -o "$php_source"
+printf '%s  %s\n' "$php_sha256" "$php_source" | shasum -a 256 -c -
+
+curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://www.sqlite.org/src/tarball/${SQLITE_SOURCE_ID}/sqlite.tar.gz" \
+    -o "$sqlite_source"
+printf '%s  %s\n' "$SQLITE_ARCHIVE_SHA256" "$sqlite_source" | shasum -a 256 -c -
+sqlite_manifest="$(
+    tar -xOf "$sqlite_source" sqlite/manifest.uuid
+)"
+[ "$sqlite_manifest" = "$SQLITE_SOURCE_ID" ] || fail "SQLite source identity mismatch"
+
+extensions=apcu,bcmath,bz2,calendar,ctype,curl,dba,dom,zlib,openssl,sockets,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,imap,intl,mbstring,mbregex,mysqlnd,mysqli,opcache,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,session,redis,shmop,simplexml,xml,libxml,soap,sodium,sqlite3,swoole-hook-pgsql,swoole-hook-mysql,swoole-hook-sqlite,swoole,sysvmsg,sysvsem,sysvshm,tokenizer,xmlreader,xmlwriter,xsl,zip
+php_minor="${php_version%.*}"
+
+(
+    cd "$work_directory"
+
+    mkdir -p buildroot/bin
+    ln -s "$(command -v pkg-config)" buildroot/bin/pkg-config
+    export PKG_CONFIG_LIBDIR="${work_directory}/buildroot/lib/pkgconfig:${work_directory}/buildroot/share/pkgconfig"
+    export PKG_CONFIG_PATH=
+
+    ./spc download \
+        --with-php="$php_minor" \
+        --for-extensions="$extensions" \
+        --custom-url="php-src:file://${php_source}" \
+        --custom-url="sqlite:file://${sqlite_source}" \
+        --prefer-pre-built \
+        --retry=5 \
+        --no-motd \
+        --no-interaction
+
+    if [ "$platform" = linux ]; then
+        ./spc doctor \
+            --auto-fix \
+            --no-motd \
+            --no-interaction
+    fi
+
+    ./spc build "$extensions" \
+        --build-cli \
+        --no-motd \
+        --no-interaction
+)
+
+runtime="${work_directory}/buildroot/bin/php"
+[ -x "$runtime" ] || fail "static PHP build did not produce an executable"
+
+actual_php_version="$("$runtime" -r 'echo PHP_VERSION;')"
+[ "$actual_php_version" = "$php_version" ] || fail "expected PHP ${php_version}, got ${actual_php_version}"
+
+sqlite_extension_version="$("$runtime" -r 'echo SQLite3::version()["versionString"];')"
+sqlite_query_version="$(
+    "$runtime" -r 'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();'
+)"
+
+[ "$sqlite_extension_version" = "$SQLITE_VERSION" ] || fail "SQLite3 extension reports ${sqlite_extension_version}"
+[ "$sqlite_query_version" = "$SQLITE_VERSION" ] || fail "SQLite query reports ${sqlite_query_version}"
+
+mkdir -p "$output_directory"
+artifact="${output_directory}/php-${php_version}-cli-${platform}-${architecture}.tar.gz"
+tar -czf "$artifact" -C "${work_directory}/buildroot/bin" php
+
+echo "Built ${artifact}"
+echo "PHP ${actual_php_version}"
+echo "SQLite3::version() ${sqlite_extension_version}"
+echo "select sqlite_version() ${sqlite_query_version}"
+echo "sha256 $(shasum -a 256 "$artifact" | awk '{print $1}')"

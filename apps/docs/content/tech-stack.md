@@ -456,6 +456,12 @@ Source-mounted Docker/Incus development and E2E nodes invoke
 app/workspace containers when their runtime is PHP. Static or non-PHP
 apps do not get a FrankenPHP container.
 
+Orbit's PHP 8.5 host toolchain and app/workspace FrankenPHP image report the
+same WAL-reset-safe SQLite release from both `SQLite3::version()` and
+`select sqlite_version()` before publication or installation. The PHP 8.5
+runtime artifacts pin the official SQLite 3.44.6 safety backport. Other
+accepted fixed releases are the 3.50.7 backport and mainline 3.51.3 or newer.
+
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated FrankenPHP runtime container
 as well. The PHP version for an app or workspace is gateway-tracked
@@ -892,8 +898,10 @@ default FrankenPHP app/workspace runtime image for app-role nodes, the
 `orbit-caddy` container where the node role needs HTTP routing, and
 WireGuard/SSH identity material. Production gateway-only nodes do not need host
 PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
-nodes install host PHP and Composer for app-source workflows; the Laravel
-installer installs on `app-dev` only. Production artifact installs link the
+nodes install static host PHP builds and Composer for app-source workflows; the
+Orbit-owned PHP 8.5 build carries the same SQLite safety floor as the PHP 8.5
+app/workspace runtime image. The Laravel installer installs on `app-dev` only.
+Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
 `ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install
 or adoption. Normal `update` and `update:all` flows refresh the owner-user

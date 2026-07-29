@@ -63,7 +63,7 @@ it('converges an app runtime after writing PHP selection intent', function (): v
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
         ],
     ]);
     $app = Project::factory()->create([
@@ -96,7 +96,7 @@ it('converges a workspace runtime on its owning node after selection', function 
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
         ],
     ]);
     $app = Project::factory()->create([

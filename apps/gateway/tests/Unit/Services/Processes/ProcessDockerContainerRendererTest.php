@@ -65,7 +65,7 @@ it('renders a docker process container for a main app PHP process with determini
         ->and($container->name())
         ->toBe('orbit_docs_development_main_queue')
         ->and($container->image())
-        ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
         ->and($container->network())
         ->toBe('orbit-network')
         ->and($container->workingDirectory())

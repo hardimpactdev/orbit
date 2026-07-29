@@ -162,7 +162,14 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'role-images',
         ])
         ->and($requests[4]['input'])
-        ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR));
+        ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR))
+        ->and($requests[5]['input'])
+        ->toBe(json_encode([
+            'images' => [
+                'caddy:2-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            ],
+        ], JSON_THROW_ON_ERROR));
 });
 
 it('verifies macos workload CLI through the user launcher and skips required role images', function (): void {
@@ -902,6 +909,7 @@ function fleetVerifierSnapshot(
     $roleImages = $roleImages === []
         ? [
             'orbit-caddy' => 'caddy:2-alpine',
+            'orbit-frankenphp' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
             'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
         ] : $roleImages;
 
