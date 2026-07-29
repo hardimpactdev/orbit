@@ -363,7 +363,12 @@ final readonly class DeployManager
         $stderr = '';
 
         foreach ($warmupCommands as $warmupCommand) {
-            $routedCommand = $this->appCommandRouter->route($app, $warmupCommand, $this->environment($context));
+            $routedCommand = $this->appCommandRouter->routeForPath(
+                $app,
+                $warmupCommand,
+                $cwd,
+                $this->environment($context),
+            );
 
             $result = $this->runStep(
                 node: $node,

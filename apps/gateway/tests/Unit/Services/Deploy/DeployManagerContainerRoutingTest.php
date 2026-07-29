@@ -607,6 +607,12 @@ it('activates a safe live release runtime before warming the application', funct
         ->and(array_column($warmupRuns, 'options'))
         ->each(
             fn ($options) => $options->toMatchArray(['cwd' => '/srv/docs/live']),
+        )
+        ->and(array_column($warmupRuns, 'script'))
+        ->each(
+            fn ($script) => $script
+                ->toContain("cd '\\''/srv/docs/live'\\'' &&")
+                ->not->toContain("cd '\\''/srv/docs'\\'' &&"),
         );
 });
 
