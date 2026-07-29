@@ -26,6 +26,7 @@ final readonly class LocalToolRunScriptPayload
         'probe',
         'probe-images',
         'probe-many',
+        'probe-php-cli',
         'reconfigure',
         'start',
         'stop',
