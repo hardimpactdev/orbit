@@ -66,7 +66,8 @@ project resolves to one concrete instance.
 ### Apply boundary
 
 5. `set --apply` reads and writes only `<workspace path>/.env`, clears Laravel
-   caches at the workspace path, and reapplies only the workspace runtime.
+   config and deletes generated bootstrap cache files at the workspace path as
+   the workspace runtime user, and reapplies only the workspace runtime.
 6. Parent instance paths, sibling workspace paths, and remote unrelated nodes are
    outside the side-effect boundary.
 

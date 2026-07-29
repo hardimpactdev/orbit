@@ -63,7 +63,7 @@ describe('internal app cache clear command', function (): void {
             ->toBe('App path must be an absolute path.');
     });
 
-    it('runs artisan cache clearing through fixed argv and deletes bootstrap cache files', function (): void {
+    it('runs artisan and bootstrap cache deletion as the runtime user through fixed argv', function (): void {
         $bin = install_app_cache_clear_fake_bin();
         $appPath = sys_get_temp_dir().'/orbit-app-cache-clear-app-'.bin2hex(random_bytes(8));
         mkdir($appPath.'/bootstrap/cache', recursive: true);
@@ -82,6 +82,8 @@ describe('internal app cache clear command', function (): void {
 
             $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
+            $calls = file_get_contents("{$bin}/calls.log");
+
             expect($exitCode)
                 ->toBe(0)
                 ->and($payload['success']['data']['deleted_cache_files'] ?? null)
@@ -90,8 +92,10 @@ describe('internal app cache clear command', function (): void {
                 ->toBeFalse()
                 ->and(is_file($appPath.'/bootstrap/cache/.gitignore'))
                 ->toBeTrue()
-                ->and(file_get_contents("{$bin}/calls.log"))
-                ->toContain('-u app -H /opt/orbit/php/8.5/bin/php artisan config:clear --no-interaction');
+                ->and($calls)
+                ->toContain('-u app -H /opt/orbit/php/8.5/bin/php artisan config:clear --no-interaction')
+                ->toContain('-u app -H /opt/orbit/php/8.5/bin/php -r')
+                ->toContain($appPath.'/bootstrap/cache');
         } finally {
             delete_app_cache_clear_file($appPath.'/bootstrap/cache/config.php');
             delete_app_cache_clear_file($appPath.'/bootstrap/cache/.gitignore');
@@ -148,6 +152,25 @@ function install_app_cache_clear_fake_bin(): string
         #!/usr/bin/env php
         <?php
         file_put_contents(__DIR__.'/calls.log', implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+
+        if (in_array('-r', $argv, true)) {
+            $cachePath = $argv[array_key_last($argv)];
+            $deleted = 0;
+            $files = glob($cachePath.'/*') ?: [];
+
+            foreach ($files as $file) {
+                if (! is_file($file) || basename($file) === '.gitignore') {
+                    continue;
+                }
+
+                if (unlink($file)) {
+                    $deleted++;
+                }
+            }
+
+            echo $deleted;
+        }
+
         exit(0);
         PHP);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);

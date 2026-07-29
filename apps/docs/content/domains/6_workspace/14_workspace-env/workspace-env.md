@@ -28,9 +28,10 @@ production-like URLs or environment labels; Orbit does not reject them based
 on their content.
 
 `set` stores gateway intent only. `set --apply` writes the effective map only to
-the selected workspace's `.env`, clears Laravel caches at the workspace path,
-and reapplies that workspace runtime when it uses PHP. It never writes the
-parent instance or a sibling workspace.
+the selected workspace's `.env`, clears Laravel config and generated bootstrap
+cache files at the workspace path as its runtime user, and reapplies that
+workspace runtime when it uses PHP. It never writes the parent instance or a
+sibling workspace.
 
 Every response identifies `scope=workspace`, `project`, `instance`, `workspace`,
 the concrete `.env` `path`, and `stored`, `applied`, and
