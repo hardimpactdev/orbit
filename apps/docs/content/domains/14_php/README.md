@@ -39,10 +39,12 @@ These rules define what PHP runtime commands own and how they operate.
 - The instance and workspace families own applying the selected PHP image to their
   runtime containers.
 - A topology release candidate carries its digest-pinned PHP 8.5 image under an
-  immutable candidate tag. On candidate Linux app nodes, the update installer
-  verifies that digest and aliases the exact local image ID to the catalog's
-  stable PHP 8.5 reference. This exercises the candidate without moving the
-  stable registry tag before acceptance. After live acceptance,
+  immutable candidate tag and as a checksummed topology artifact, so private
+  registry credentials are not required on workload nodes. On candidate Linux
+  app nodes, the update installer verifies and loads that artifact, then aliases
+  the exact local image ID to the catalog's stable PHP 8.5 reference. This
+  exercises the candidate without moving the stable registry tag before
+  acceptance. After live acceptance,
   `orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted`
   moves that accepted build's recorded digest to the stable runtime-family tag
   and verifies the resulting digest; it does not create a GitHub release.

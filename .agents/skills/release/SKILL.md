@@ -20,9 +20,10 @@ manifests.
   - `hardimpactdev/orbit-cli` from `apps/cli`
   - `hardimpactdev/orbit-gateway` from `apps/gateway`
 - Release artifacts are built once as release candidates and exposed through a
-  topology-reachable `topology-candidate` manifest. Candidate CLI binaries and
-  manifests live in the central artifact store on the Laravel
-  `orbit-artifacts` disk, under immutable `candidates/<BUILD_ID>/` paths.
+  topology-reachable `topology-candidate` manifest. Candidate CLI binaries,
+  manifests, and private runtime image archives live in the central artifact
+  store on the Laravel `orbit-artifacts` disk, under immutable
+  `candidates/<BUILD_ID>/` paths.
   Activating a candidate copies its manifest to a stable channel path,
   `channels/<CHANNEL>/orbit-release-manifest.json`, so live-test gateways can
   keep one custom manifest URL selected through `orbit manifest:update <url>`

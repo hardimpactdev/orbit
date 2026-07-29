@@ -276,6 +276,7 @@ cmd_build() {
     fi
 
     docker save "$candidate_reverb_image" -o "${work_dir}/orbit-reverb-linux-amd64.tar"
+    docker save "$candidate_frankenphp_image" -o "${work_dir}/orbit-frankenphp-linux-amd64.tar"
 
     "${repo_root}/bin/orbit-release-manifest" \
         --version="$version" \
@@ -291,6 +292,7 @@ cmd_build() {
         --role-image="orbit-caddy=caddy:2-alpine" \
         --role-image="orbit-frankenphp=${candidate_frankenphp_image}@${frankenphp_digest}" \
         --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
+        --role-image-artifact="orbit-frankenphp=orbit-frankenphp-linux-amd64.tar=${work_dir}/orbit-frankenphp-linux-amd64.tar" \
         --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=${work_dir}/orbit-reverb-linux-amd64.tar" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
 
@@ -361,7 +363,7 @@ cmd_build() {
                 throw $lastThrowable;
             };
 
-            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json", "orbit-reverb-linux-amd64.tar"] as $asset) {
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json", "orbit-frankenphp-linux-amd64.tar", "orbit-reverb-linux-amd64.tar"] as $asset) {
                 $retryingUpload("{$prefix}/{$asset}", "{$dir}/{$asset}");
             }
 
@@ -385,13 +387,15 @@ cmd_build() {
     cp "${work_dir}/orbit-agent-linux-x64" "${state_dir}/orbit-agent-linux-x64"
     cp "${work_dir}/orbit-agent-macos-arm64" "${state_dir}/orbit-agent-macos-arm64"
     cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
+    cp "${work_dir}/orbit-frankenphp-linux-amd64.tar" "${state_dir}/orbit-frankenphp-linux-amd64.tar"
     cp "${work_dir}/orbit-reverb-linux-amd64.tar" "${state_dir}/orbit-reverb-linux-amd64.tar"
     cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
     cp "${work_dir}/reverb-image-push.log" "${state_dir}/reverb-image-push.log"
     cp "${work_dir}/frankenphp-image-push.log" "${state_dir}/frankenphp-image-push.log"
 
     local candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
-    local sha256_reverb_linux_amd64
+    local sha256_frankenphp_linux_amd64 sha256_reverb_linux_amd64
+    sha256_frankenphp_linux_amd64="$(compute_sha256 "${work_dir}/orbit-frankenphp-linux-amd64.tar")"
     sha256_reverb_linux_amd64="$(compute_sha256 "${work_dir}/orbit-reverb-linux-amd64.tar")"
 
     {
@@ -414,6 +418,7 @@ cmd_build() {
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
         printf 'sha256_agent_linux_amd64=%s\n' "$sha256_agent_linux_amd64"
         printf 'sha256_agent_darwin_arm64=%s\n' "$sha256_agent_darwin_arm64"
+        printf 'sha256_frankenphp_linux_amd64=%s\n' "$sha256_frankenphp_linux_amd64"
         printf 'sha256_reverb_linux_amd64=%s\n' "$sha256_reverb_linux_amd64"
     } > "${state_dir}/candidate.env"
 
@@ -556,7 +561,9 @@ cmd_verify() {
         'sha256_linux_amd64:orbit-linux-x64' \
         'sha256_darwin_arm64:orbit-macos-arm64' \
         'sha256_agent_linux_amd64:orbit-agent-linux-x64' \
-        'sha256_agent_darwin_arm64:orbit-agent-macos-arm64'
+        'sha256_agent_darwin_arm64:orbit-agent-macos-arm64' \
+        'sha256_frankenphp_linux_amd64:orbit-frankenphp-linux-amd64.tar' \
+        'sha256_reverb_linux_amd64:orbit-reverb-linux-amd64.tar'
     do
         key="${pair%%:*}"
         artifact="${state_dir}/${pair#*:}"
