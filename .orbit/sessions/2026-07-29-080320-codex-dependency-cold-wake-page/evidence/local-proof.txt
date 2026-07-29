@@ -1,0 +1,251 @@
+Feature: dependency cold storage and browser wake progress
+Branch: codex/dependency-cold-wake-page
+
+Focused gateway:
+php artisan test --compact tests/Feature/CommandListVisibilityTest.php tests/Unit/Services/RemoteShell/LocalExecutorCommandBuilderTest.php tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php tests/Unit/Services/Proxy/ProxyRouteRendererTest.php tests/Feature/Actions/Apps/EnsureAppProxyRouteTest.php tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php
+Result: 213 passed, 1285 assertions
+
+Focused CLI:
+vendor/bin/pest --compact tests/Feature/InternalRuntimeDependenciesCommandTest.php tests/Feature/InternalCaddyConfigCommandTest.php
+Result: 25 passed, 134 assertions
+
+Stock Caddy:
+docker run --rm -i caddy:2-alpine caddy adapt --config - --adapter caddyfile
+Result: representative generated app route adapted successfully; order was cold forward_auth, ordinary asleep forward_auth, application reverse_proxy.
+
+Docs references:
+bin/orbit-docs-artisan librarian:lint --format=agent --group=references
+Result: passed with 0 errors and 4 pre-existing warnings outside this feature.
+
+Repository quality:
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-07-54Z-9cb9d81870ee
+
+Browser:
+Rendered the committed runtime-activation Blade view through the gateway app,
+then inspected desktop and iPhone 14 accessibility snapshots, console errors,
+and screenshots with agent-browser.
+Result: heading, explanatory copy, and only the supplied dynamic steps rendered;
+no browser errors; desktop and mobile layouts remained clean and readable.
+Screenshots:
+.orbit/evidence/runtime-activation-page.png
+.orbit/evidence/runtime-activation-page-mobile.png
+
+Independent-review recovery fixes:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php
+Result: 38 passed, 131 assertions.
+
+cd apps/cli && vendor/bin/pest --compact tests/Feature/InternalRuntimeDependenciesCommandTest.php
+Result: 7 passed, 26 assertions.
+
+Regressions prove stale queued and running activations are replaced, current
+runner heartbeats preserve single-flight behavior, partially failed pruning
+retains cold state, failed dependency inspection cannot clear that state, and
+process-start failure retains the failed progress page.
+
+Repository quality after recovery fixes:
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-26-02Z-64d71284190e
+
+Independent-review concurrency fixes:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php
+Result: 40 passed, 138 assertions.
+
+Regressions prove an in-flight side-effect fence blocks stale takeover and an
+activation operation can be claimed by only one detached runner. The runner
+heartbeats inside the same fence before and after dependency, process, and
+cold-marker effects.
+
+Repository quality after concurrency fixes:
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-36-06Z-dcc676df36c8
+
+Exact committed candidate quality:
+commit: 9cc7f6d7ec3cc5461ef23a36050a763763f6f095
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-37-50Z-9cc7f6d7ec3c
+composer quality-gate:final-check
+Result: passed with warning-only timing notices; no lanes were rerun.
+
+Timing triage:
+Gate: quality-check at exact candidate commit.
+Evidence: the gateway suite took 68.3s, while the three preceding successful
+profiles in this worktree took 68.3s, 60.3s, and 68.7s. Docs Pest similarly
+remained in its recent 11.1s to 12.1s range.
+Classification: performance warning caused by a stale/non-comparable 26.0s
+local baseline, not a candidate regression.
+Confidence: high.
+Smallest next action: no rerun or baseline mutation; retain the passing exact
+profile and continue review.
+Remaining unknowns: why the machine-local baseline predates the recent stable
+suite duration.
+
+Shared-source concurrency fixes:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php
+Result: 42 passed, 151 assertions.
+
+Two cold scopes sharing one node and source path now plan independently but
+restore a missing dependency family once under the shared source fence. A cold
+sibling whose dependency directory is already present still waits on the source
+readiness barrier before its scope-fenced process start, and each scope clears
+only its own warm marker.
+
+Exact committed candidate quality:
+commit: c129520a9da33c023501c60dae104c6cfcf7354b
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-45-23Z-c129520a9da3
+composer quality-gate:final-check
+Result: passed with the same warning-only machine-baseline timing class; the
+65.0s gate and 63.1s gateway suite remain within the recent successful range.
+
+Contended dependency-fence fix:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php
+Result: 43 passed, 159 assertions.
+
+The contended-lock regression proves a dependency waiter uses the full bounded
+activation-fence duration, resumes after the simulated in-flight sibling
+restore, heartbeats, and executes its re-check instead of failing at the
+scope-transition wait.
+
+Exact committed candidate quality:
+commit: cce67e1dc223ba20df7978aa85128c0454c725ad
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-50-20Z-cce67e1dc223
+composer quality-gate:final-check
+Result: passed with the same warning-only machine-baseline timing class; the
+71.0s gate and 68.3s gateway suite match the recent successful range.
+
+Repeat-prune recovery fix:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php tests/Feature/Services/Processes/RuntimeHibernationTest.php
+Result: 44 passed, 160 assertions.
+
+The hibernation sweep now stops at the persistent cold marker before dependency
+inspection, so it cannot delete a directory while activation is restoring or
+validating that cold scope.
+
+Exact committed candidate quality:
+commit: 4c42038bdd4cabd2a49d468683e9dfd3bb384e57
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-28T22-53-37Z-4c42038bdd4c
+composer quality-gate:final-check
+Result: passed with the same warning-only machine-baseline timing class; the
+67.0s gate and 64.7s gateway suite match the recent successful range.
+
+Accepted activation-page UI:
+commit: 251f96a2e9f1773c0281bec0bbe929d699ad6c69
+The committed Blade view renders the white Orbit mark above a 158px aggregate
+white-on-dark progress bar on a black canvas. Individual dependency and process
+rows remain assistive-only; failed activation retains a visible retry action.
+Screenshots:
+.orbit/evidence/runtime-activation-page.png
+.orbit/evidence/runtime-activation-page-mobile.png
+.orbit/evidence/runtime-activation-page-failed.png
+
+Cross-refresh animation proof:
+The same browser session first rendered 25% at 39.5px. On the next response at
+50%, sampled computed widths were 67.2812px, 78.6094px, and 79px across the
+700ms transition, proving an interpolated advance rather than a direct jump.
+The inline animation uses a per-response CSP nonce and honors reduced motion.
+
+Focused activation verification:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Processes/RuntimeColdActivationTest.php
+Result: 17 passed, 101 assertions.
+
+Scoped PHP verification:
+bin/orbit-gateway-vendor-bin mago format --check app/Services/Processes/RuntimeActivationPage.php
+bin/orbit-gateway-vendor-bin mago lint app/Services/Processes/RuntimeActivationPage.php
+bin/orbit-gateway-vendor-bin mago analyze app/Services/Processes/RuntimeActivationPage.php
+Result: passed; no issues.
+
+Documentation verification:
+composer docs-lint
+Result: passed with warning-only existing repository findings.
+
+Repository quality after accepted UI:
+composer quality-check
+Result: passed.
+Profile: .orbit/quality-gates/profiles/2026-07-29T05-06-22Z-4c42038bdd4c
+
+Exact-tip accessibility correction:
+commit: 0d381cd6637cbdf4aaf0ca74c89cb2a3567220d6
+The aggregate progressbar now exposes aria-valuemin=0, aria-valuemax=100, and
+the calculated percentage as aria-valuenow, including a meaningful 0/100 range
+for an empty activation tree.
+Focused RuntimeColdActivationTest result: 17 passed, 101 assertions.
+Actual Blade browser attributes at zero progress: min=0, max=100, now=0.
+Independent exact-tip review: PASS; blast radius complete; human judgment not
+required.
+
+Exact-tip quality triage:
+composer quality-check
+Profile: .orbit/quality-gates/profiles/2026-07-29T05-15-35Z-0d381cd6637c
+Result: all non-CLI lanes passed. Four CLI Pest shards passed. The service-heavy
+mixed_3 shard was terminated with exit 143 after the aggregate process timeout;
+no assertion or product failure was reported. The same exact mixed_3 file set
+was rerun directly at the candidate commit and passed 643 tests with 2882
+assertions in 21.62s.
+Classification: infrastructure/performance timeout, high confidence.
+Smallest action completed: reran only the failed shard; no baseline or product
+mutation.
+
+Exact-tip full quality pass:
+ORBIT_QUALITY_CHECK_CPU_BUDGET=4 composer quality-check
+Profile: .orbit/quality-gates/profiles/2026-07-29T05-29-45Z-0d381cd6637c
+Result: passed. The conservative supported CPU budget avoided host-contention
+timing flakes while preserving the complete official quality-check surface.
+composer quality-gate:final-check
+Result: passed with warning-only duration observations.
+
+Live no-GitHub release-candidate acceptance:
+version: 0.1.190
+build_id: 20260729T054522Z-0d381cd66
+commit: 0d381cd6637cbdf4aaf0ca74c89cb2a3567220d6
+candidate image:
+ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260729T054522Z-0d381cd66
+gateway digest:
+sha256:fde30fedab6e115e9af52815ab7bade2beb8b3995a6d9dc6d93b74bcca240528
+channel manifest:
+https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+Source identity: feature worktree HEAD, primary main, and origin/main matched.
+Focused release/update verification: 40 passed, 405 assertions.
+
+Live topology acceptance:
+ORBIT_RELEASE_MANIFEST_URL=<live-test channel> ./apps/cli/orbit update:all --stream-json
+Result: succeeded; manifest_source=topology-candidate; gateway, scheduler,
+workload CLI, Orbit Agent, and required role-image verification all passed.
+Activity: 298990
+Operation run: b15f7f03-b553-4c33-b8ca-ddb531001308
+The durable activity recorded status=completed, target_version=0.1.190, and
+the exact candidate gateway digest above.
+
+Fleet comparison:
+Pre-update: orbit doctor --all --stream-json reported 138 existing issues.
+The first post-update pass reported 163 issues: the exact 25-item delta was
+stale proxy render output introduced by the new activation pre-check on NMBP
+and beast. Scoped proxy restore fixed 11 NMBP route mismatches and 14 beast
+candidate-render mismatches. The final post-update fleet doctor reported 136
+issues: NMBP=24, agent=7, beast=63, database1=2, gateway=9, ingress1=2,
+main1=22, mini=6, services1=1. No new regression remained; mini's six Caddy
+findings were present before the release and were not changed.
+
+Real consumer browser proof on NMBP:
+- horizon-demo.development was stopped as one scope, producing stopped events
+  1271 and 1272. Visiting https://horizon-demo.nmbp/ returned the Laravel app
+  in 88ms and produced fresh started events 1273 (FrankenPHP) and 1274
+  (Horizon).
+- nckrtl.nmbp was stopped as one scope, producing stopped event 1275.
+  Visiting https://nckrtl.nmbp/ returned the full application in 2020ms and
+  produced fresh FrankenPHP started event 1276.
+- No dependency directories were removed for these release smoke checks.
+- The previously recorded real Blade browser proof covers the minimal live
+  page's visual treatment and its 25%-to-50% 700ms progress interpolation.
+
+No GitHub release, Git tag, VERSION bump, or final GHCR version-tag promotion
+was performed.

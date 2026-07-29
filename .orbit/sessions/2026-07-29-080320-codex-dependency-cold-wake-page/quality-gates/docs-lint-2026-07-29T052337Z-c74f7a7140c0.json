@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-29T05:23:24Z",
+    "ended_at": "2026-07-29T05:23:37Z",
+    "duration_seconds": 13,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/dependency-cold-wake-page",
+        "commit": "0d381cd6637cbdf4aaf0ca74c89cb2a3567220d6",
+        "dirty": false
+    },
+    "subgates": []
+}
