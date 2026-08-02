@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T12:13:35+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-live-topology-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-141335-fix-live-topology-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-caddy-restart-loop-dev-356fea.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T113128Z-55a647c47542.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-caddy-restart-loop-dev-356fea.txt": "2b131891802d96daeadb69653dcf6af6d311a1011ff55c653ef79038ce2b523e",
+        "loop.md": "a65047104826b6896287ba9e7293e7d4650972816c8c25834a128787abe31749",
+        "quality-gates/quality-check-2026-08-02T113128Z-55a647c47542.json": "9b5cba9753bc97a23a06091263742ed23cb25c86998ff4c0033174231ba4f9b5"
+    },
+    "branch": "codex/fix-live-topology-drift",
+    "candidate_commit": "096c453a6719115d3951f11874d8190e141ae71b",
+    "accepted_feature_tip": "096c453a6719115d3951f11874d8190e141ae71b",
+    "accepted_main_tip": "6a80119bde49eb537ee4337711d016a54a87323a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
