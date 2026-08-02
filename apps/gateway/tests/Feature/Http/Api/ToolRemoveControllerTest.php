@@ -176,6 +176,121 @@ describe('ToolRemoveController', function (): void {
             ->toBeEmpty();
     });
 
+    it('removes the related openclaw-gateway process before OpenClaw tool teardown', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-openclaw-remove',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'openclaw-gateway',
+                'command' => 'openclaw gateway run --port 18789 --bind lan',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'openclaw',
+            ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/openclaw',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'openclaw')
+            ->assertJsonPath('success.data.tool.process.name', 'openclaw-gateway')
+            ->assertJsonPath('success.data.tool.process.action', 'removed');
+
+        expect(NodeTool::find($tool->id))
+            ->toBeNull()
+            ->and(Process::find($process->id))
+            ->toBeNull();
+    });
+
+    it('does not remove a same-name process owned by a different tool', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-process-tool-mismatch',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $foreign = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => HermesTool::PROCESS_NAME,
+                'command' => 'sleep infinity',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'openclaw',
+            ]);
+        app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonMissingPath('success.data.tool.process');
+
+        expect(Process::find($foreign->id))->not->toBeNull();
+    });
+
     it('removes the related Orbit process before running the Hermes remove script', function (): void {
         $caller = createToolRemoveApiCallerNode();
         NodeRoleAssignment::factory()->create([

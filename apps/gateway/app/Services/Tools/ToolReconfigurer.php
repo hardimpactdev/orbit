@@ -10,6 +10,7 @@ final readonly class ToolReconfigurer
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private ToolScriptDispatcher $toolScriptDispatcher,
+        private RelatedToolProcessRemover $relatedProcessRemover,
     ) {}
 
     /**
@@ -90,10 +91,24 @@ final readonly class ToolReconfigurer
             );
         }
 
-        return [
+        // Related processes load credentials/env at unit start; restart so
+        // reconfigure file/env changes (e.g. Hermes public URL) take effect.
+        $process = $this->relatedProcessRemover->restartIfPresent($model->node, $tool);
+
+        if ($process instanceof ToolRegistryFailure) {
+            return $process;
+        }
+
+        $payload = [
             'name' => $tool,
             'node' => $model->node->name,
             'action' => 'reconfigured',
         ];
+
+        if ($process !== null) {
+            $payload['process'] = $process;
+        }
+
+        return $payload;
     }
 }

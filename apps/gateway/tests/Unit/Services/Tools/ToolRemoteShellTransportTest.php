@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolReconfigurer;
 use App\Services\Tools\ToolUpdater;
+use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Http\JsonEnvelope;
@@ -43,6 +47,8 @@ it('dispatches reconfigure tool scripts through internal tool run without transi
             'node' => 'tool-reconfigure-node',
             'action' => 'reconfigured',
         ])
+        ->not
+        ->toHaveKey('process')
         ->and($tool->fresh()->config)
         ->toBe([
             'port' => 4321,
@@ -63,6 +69,54 @@ it('dispatches reconfigure tool scripts through internal tool run without transi
         ->toBe('reconfigure')
         ->and($payload['script'] ?? null)
         ->toContain('orbit reconfigure polyscope-server');
+});
+
+it('restarts the related managed process after Hermes reconfigure so public URL env reloads', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'agent-hermes-reconfigure',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'tld' => 'agent',
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'hermes',
+        'expected_state' => 'installed',
+    ]);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => HermesTool::PROCESS_NAME,
+            'command' => 'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'hermes',
+        ]);
+    $executor = new ToolTransportRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(RemoteShell::class, new class implements RemoteShell {
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+    });
+
+    $result = app(ToolReconfigurer::class)->reconfigure(
+        tool: 'hermes',
+        node: $node->name,
+    );
+
+    expect($result)
+        ->toMatchArray([
+            'name' => 'hermes',
+            'node' => $node->name,
+            'action' => 'reconfigured',
+        ])
+        ->and($result['process'] ?? null)
+        ->toMatchArray([
+            'name' => HermesTool::PROCESS_NAME,
+            'tool' => 'hermes',
+            'action' => 'restarted',
+        ]);
 });
 
 it('dispatches bulk tool update scripts through internal tool run without transitional fallback', function (): void {

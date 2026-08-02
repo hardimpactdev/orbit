@@ -96,14 +96,17 @@ secrets. `HERMES_DASHBOARD_PUBLIC_URL` is set from
 
 Install/update/reconfigure generate durable password and secret files when
 missing (mode `0600`) and write the public URL for the resolved tool route
-hostname (`hermes.<node-tld>`). They run `hermes dashboard --stop` only when
-`orbit-hermes-dashboard.service` is not active, so unmanaged listeners free
-port `8080` on first install without killing a running Orbit unit on later
-converge. They do not run interactive `hermes setup`.
+hostname (`hermes.<node-tld>`). They stop unmanaged listeners only when the
+Orbit unit's `ActiveState` is not `active`, `activating`, or `reloading`
+(read-only `systemctl show`), so first install frees port `8080` without
+racing a managed unit mid-start/reload. They do not run interactive
+`hermes setup`.
 
-`tool:remove hermes` removes the related `orbit-hermes-dashboard` process
-(unit + intent row) before deleting Hermes home and binary paths so the
-managed unit cannot restart-loop after the tool is gone.
+`tool:reconfigure hermes` restarts the related `orbit-hermes-dashboard`
+process when present so public-URL and auth env loaded at unit start take
+effect. `tool:remove hermes` removes that process (name + `tool=hermes`)
+before deleting Hermes home and binary paths so the managed unit cannot
+restart-loop after the tool is gone.
 
 `tool:update hermes` from the node itself requires `tool:update` on the
 self-grant. `tool:install hermes`, `tool:remove hermes`,

@@ -26,7 +26,10 @@ against exactly one process row whose canonical `tool` value is
 polyscope-server` configures that process by default: a node-owned `systemd`
 process named `polyscope-server`, command `polyscope-server`, with a
 `tool=polyscope-server` dependency. The convergence is idempotent. Pass
-`--no-process` to install the capability only.
+`--no-process` to install the capability only. `tool:reconfigure` restarts the
+related process when present. `tool:remove` removes the related
+`polyscope-server` process (name + `tool=polyscope-server`) before capability
+teardown.
 
 ## Credentials
 

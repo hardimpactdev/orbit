@@ -97,6 +97,12 @@ final readonly class ToolRemover
 
         if ($process !== null) {
             $payload['process'] = $process;
+
+            // Surface process runtime-unit extras from RemoveProcess so operators
+            // can doctor --family=process without silent drop.
+            if (isset($process['warnings']) && is_array($process['warnings']) && $process['warnings'] !== []) {
+                $payload['warnings'] = $process['warnings'];
+            }
         }
 
         return $payload;

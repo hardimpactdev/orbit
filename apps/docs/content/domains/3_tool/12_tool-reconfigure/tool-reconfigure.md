@@ -49,8 +49,13 @@ Target context is required when neither `--node`, `--instance`, nor local
    says reconfiguration owns those values.
 5. Updates service endpoint configuration owned by the tool only when the tool definition
    owns that endpoint.
-6. Preserves the expected tool version.
-7. Reports the reconfiguration result.
+6. When the tool declares a `relatedProcess()` and that process row exists
+   (matched by process `name` and `tool`), restarts the process so file/env
+   changes take effect in the running unit (for example Hermes
+   `HERMES_DASHBOARD_PUBLIC_URL`).
+7. Preserves the expected tool version.
+8. Reports the reconfiguration result, including related process restart when
+   performed.
 
 Gateway-owned configuration changes stay gateway-local. Target-node
 setup/configuration uses Agent push; `tool:reconfigure` exposes no node

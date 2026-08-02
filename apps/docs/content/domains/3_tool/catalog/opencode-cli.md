@@ -27,7 +27,9 @@ adopt. It also declares `tool:start`, `tool:stop`, `tool:restart`, and
 opencode-cli` configures that process by default: a node-owned `systemd`
 process named `opencode-server`, command `opencode serve -a`, with a
 `tool=opencode-cli` dependency. The convergence is idempotent. Pass `--no-process`
-to install the capability only.
+to install the capability only. `tool:reconfigure` restarts the related process
+when present. `tool:remove` removes the related `opencode-server` process
+(name + `tool=opencode-cli`) before capability teardown.
 
 ## Credentials
 

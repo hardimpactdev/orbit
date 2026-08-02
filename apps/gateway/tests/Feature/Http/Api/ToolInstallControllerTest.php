@@ -439,7 +439,7 @@ describe('ToolInstallController', function (): void {
 
         expect($installScript)
             ->not->toBeNull()->toContain('https://hermes.fleet-agent')->toContain('ORBIT_HERMES_PUBLIC_URL')->toContain(
-                'systemctl is-active --quiet orbit-hermes-dashboard.service',
+                'systemctl show -p ActiveState --value orbit-hermes-dashboard.service',
             )
             ->not->toContain('https://hermes.agent"')->and(
                 NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists(),

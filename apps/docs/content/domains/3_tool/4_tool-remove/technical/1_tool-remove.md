@@ -49,6 +49,11 @@ fall back to the only visible non-gateway node in non-interactive mode.
 - Requires destructive consent before side effects. Consent source is `force`
   when `--force` is supplied or `interactive_confirm` when the operator accepts
   the prompt. Renderer selection never grants consent.
+- When the tool definition declares `relatedProcess()`, removes that process
+  (intent row and runtime unit) before the tool remove script. Lookup matches
+  both process `name` and `tool` so a same-name foreign process is not torn
+  down. Runtime-unit extras from process removal are surfaced on the tool
+  remove payload as `process.warnings` / `warnings` (not dropped).
 - Removes managed artifacts through the gateway.
 - Removes tool-owned credential material and service endpoint configuration when the
   tool definition owns those artifacts.
@@ -62,8 +67,10 @@ fall back to the only visible non-gateway node in non-interactive mode.
 
 `tool-remove` must not create projects, instances, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
-Tool-owned endpoint cleanup is allowed only when declared by the selected tool
-definition. Related drift belongs to each owning family doctor contract.
+It may remove a process the tool definition already declared via
+`relatedProcess()`; that is tool-owned lifecycle cleanup, not ad-hoc process
+creation. Tool-owned endpoint cleanup is allowed only when declared by the
+selected tool definition. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

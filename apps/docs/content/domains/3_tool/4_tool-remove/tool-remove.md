@@ -48,15 +48,24 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 2. Verifies the tool supports managed removal.
 3. Requires destructive consent from `--force` or an interactive confirmation
    prompt. Output mode never grants consent.
-4. Removes managed node artifacts through the gateway.
-5. Removes tool-owned credential material and service endpoint configuration when the
+4. When the tool definition declares a `relatedProcess()`, removes that
+   process intent and runtime unit first (matched by process `name` and
+   `tool`), before tool binary/home teardown, so a restarting unit cannot
+   race cleanup. Process runtime-unit warnings from that step are returned
+   on the removal result when present.
+5. Removes managed node artifacts through the gateway.
+6. Removes tool-owned credential material and service endpoint configuration when the
    selected tool owns those artifacts.
-6. Removes the gateway tool row when cleanup succeeds.
-7. Reports partial cleanup if gateway configuration and node reality diverge.
+7. Removes the gateway tool row when cleanup succeeds.
+8. Reports partial cleanup if gateway configuration and node reality diverge.
 
 The gateway cleans up its tool row and tool-owned configuration locally.
 Target-node cleanup uses Agent push; `tool:remove` exposes no node transport
 selector and never falls back to SSH.
+
+Tools that currently declare a related process include `openclaw`
+(`openclaw-gateway`), `hermes` (`orbit-hermes-dashboard`), `opencode-cli`
+(`opencode-server`), and `polyscope-server` (`polyscope-server`).
 
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.

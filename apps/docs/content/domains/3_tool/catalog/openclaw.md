@@ -26,7 +26,10 @@ model in Orbit.
 `tool:reconfigure`, `tool:credentials`, proxy route metadata, safe doctor fix,
 and safe doctor adopt. Lifecycle and logs for the managed web runtime belong to
 the related `openclaw-gateway` process (`process:*`), not to tool lifecycle
-verbs.
+verbs. `tool:install` configures that related process by default.
+`tool:reconfigure` restarts it when present so managed gateway fields take
+effect. `tool:remove` removes the related `openclaw-gateway` process (name +
+`tool=openclaw`) before tool home/binary teardown.
 
 ## Credentials
 

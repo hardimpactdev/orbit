@@ -213,12 +213,15 @@ final class HermesTool extends BaseTool
             .'if [ ! -f "${SECRET_FILE}" ]; then openssl rand -base64 32 > "${SECRET_FILE}"; chmod 600 "${SECRET_FILE}"; fi; '
             .'printf "%s\n" "${ORBIT_HERMES_PUBLIC_URL}" > "${PUBLIC_URL_FILE}"; '
             .'chmod 600 "${PUBLIC_URL_FILE}"; '
-            // Read-only unit state (no agent sudo). When Orbit's unit is active
-            // the dashboard is managed — do not hermes dashboard --stop.
-            // When inactive (first install or stopped), stop unmanaged listeners.
-            ."if ! systemctl is-active --quiet {$unit} 2>/dev/null; then "
-            .'hermes dashboard --stop 2>/dev/null || true; '
-            .'fi'
+            // Read-only unit ActiveState (no agent sudo). Treat active,
+            // activating, and reloading as managed so reconfigure never races
+            // a unit mid-start/reload with hermes dashboard --stop.
+            // Only when fully inactive/failed/missing do we free port 8080.
+            ."ORBIT_HERMES_UNIT_STATE=\"\$(systemctl show -p ActiveState --value {$unit} 2>/dev/null || true)\"; "
+            .'case "${ORBIT_HERMES_UNIT_STATE}" in '
+            .'active|activating|reloading) : ;; '
+            .'*) hermes dashboard --stop 2>/dev/null || true ;; '
+            .'esac'
             ."'"
         );
     }
