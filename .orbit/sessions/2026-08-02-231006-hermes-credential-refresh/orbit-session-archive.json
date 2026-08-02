@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T21:10:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-hermes-credential-refresh/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-231006-hermes-credential-refresh",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/dev-92f4b4-hermes-credential-refresh-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T210933Z-62f6739df6ec.json"
+    ],
+    "entry_digests": {
+        "evidence/dev-92f4b4-hermes-credential-refresh-runtime-proof.md": "cdbb93b598bcb522c5818a1e5cb5d775ed4e73704c3e96755bcfe5cddfa85453",
+        "loop.md": "6c046cba452672c3e7074ea632a85e74cb0275b168933f0163f7e5071e1acb39",
+        "quality-gates/quality-check-2026-08-02T210933Z-62f6739df6ec.json": "e35fec42f0fe0e9aa47f54b27ff8bf82a480a4ab490d47ef3597d09b3bcbee09"
+    },
+    "branch": "codex/hermes-credential-refresh",
+    "candidate_commit": "d2f3bdba49482212335f0e058b23194bfa9da7dc",
+    "accepted_feature_tip": "d2f3bdba49482212335f0e058b23194bfa9da7dc",
+    "accepted_main_tip": "e18028f9e5fcdca7f2ea17bf2b8f9a23d1340aa8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
