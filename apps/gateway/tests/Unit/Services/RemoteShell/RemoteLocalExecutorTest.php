@@ -139,6 +139,73 @@ describe(RemoteLocalExecutor::class, function (): void {
         }
     });
 
+    it('does not pre-authorize force_remote_host gateway work so the host CLI remains the sole token consumer', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-token-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+            $operationId = '00000000-0000-4000-8000-000000000430';
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:wireguard-self-route',
+                arguments: ['10.6.0.2'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationId,
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-token-ok\n");
+
+            $hostBoundaryDispatched = false;
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$hostBoundaryDispatched): bool {
+                $command = (string) $process->command;
+                $matches =
+                    str_contains($command, 'internal:wireguard-self-route')
+                    && str_contains($command, '--operation-token=')
+                    && ! str_contains($command, 'docker exec -i')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '))
+                    && ! str_contains($command, 'ORBIT_TRUSTED_EXECUTION_LANE=');
+
+                if ($matches) {
+                    $hostBoundaryDispatched = true;
+                }
+
+                return $matches;
+            });
+
+            expect($hostBoundaryDispatched)->toBeTrue();
+
+            $row = remote_local_executor_operation_run($operationId);
+
+            // ProcessFacade fakes the host process, so the host CLI never
+            // verifies/consumes. Pre-auth would wrongly mark the row consumed.
+            expect($row->operation_token_consumed_at)->toBeNull();
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {
         Http::preventStrayRequests();
         Http::fake([

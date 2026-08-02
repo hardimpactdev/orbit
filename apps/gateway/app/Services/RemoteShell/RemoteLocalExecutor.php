@@ -1354,17 +1354,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $transportOptions,
         bool $forceRemoteHost = false,
     ): RemoteShellResult {
-        $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
-            compactToken: $dispatch['operationToken'],
-            expectedNode: $node->name,
-            expectedCommand: $commandName,
-            commandContext: $dispatch['commandContext'],
-        );
         $dispatchOptions = $this->transportDispatchOptions($node, $transportOptions);
-        $dispatchOptions['environment'] = [
-            ...($dispatchOptions['environment'] ?? []),
-            ...$trustedExecution->environment(),
-        ];
         $script = $this->commands->build(
             targetNode: $node,
             commandName: $commandName,
@@ -1378,6 +1368,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
             // Host-owned gateway doctor checks leave the orbit-gateway container via
             // the host substrate executor (same lane as SshRemoteShell host work).
+            // The host CLI is the sole operation-token verifier/consumer; do not
+            // pre-authorize here or the one-use token is already spent on the host.
             // @orbit-ssh-lane provisioning-ssh
             return app(RemoteHostExecutor::class)->run(
                 node: $node,
@@ -1385,6 +1377,17 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 options: $dispatchOptions,
             );
         }
+
+        $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
+            compactToken: $dispatch['operationToken'],
+            expectedNode: $node->name,
+            expectedCommand: $commandName,
+            commandContext: $dispatch['commandContext'],
+        );
+        $dispatchOptions['environment'] = [
+            ...($dispatchOptions['environment'] ?? []),
+            ...$trustedExecution->environment(),
+        ];
 
         return app(RemoteOrbitGatewayExecutor::class)->run(
             node: $node,
