@@ -49,13 +49,23 @@ Target context is required when neither `--node`, `--instance`, nor local
    says reconfiguration owns those values.
 5. Updates service endpoint configuration owned by the tool only when the tool definition
    owns that endpoint.
-6. When the tool declares a `relatedProcess()` and that process row exists
+6. When the catalog provides a `credentialsScript` for the tool, runs that script
+   with action `credentials`, parses a JSON object from stdout, and replaces the
+   stored `NodeTool` credential fields with those values. Tools without a
+   credentials script skip this step. Transport failure, unsuccessful script
+   exit, or malformed/non-object JSON fails the reconfigure and does not claim
+   success. Credential values never appear in reconfigure success output or logs;
+   use [`tool:credentials`](../10_tool-credentials/tool-credentials.md) to read
+   them.
+7. When the tool declares a `relatedProcess()` and that process row exists
    (matched by process `name` and `tool`), restarts the process so file/env
    changes take effect in the running unit (for example Hermes
-   `HERMES_DASHBOARD_PUBLIC_URL`).
-7. Preserves the expected tool version.
-8. Reports the reconfiguration result, including related process restart when
-   performed.
+   `HERMES_DASHBOARD_PUBLIC_URL`). Credential refresh runs before this restart so
+   a failed credentials step does not restart the unit under a claimed-success
+   reconfigure.
+8. Preserves the expected tool version.
+9. Reports the reconfiguration result, including related process restart when
+   performed. The success payload does not include credential field values.
 
 Gateway-owned configuration changes stay gateway-local. Target-node
 setup/configuration uses Agent push; `tool:reconfigure` exposes no node

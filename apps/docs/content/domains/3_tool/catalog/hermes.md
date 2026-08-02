@@ -102,11 +102,23 @@ Orbit unit's `ActiveState` is not `active`, `activating`, or `reloading`
 racing a managed unit mid-start/reload. They do not run interactive
 `hermes setup`.
 
-`tool:reconfigure hermes` restarts the related `orbit-hermes-dashboard`
-process when present so public-URL and auth env loaded at unit start take
-effect. `tool:remove hermes` removes that process (name + `tool=hermes`)
-before deleting Hermes home and binary paths so the managed unit cannot
-restart-loop after the tool is gone.
+`tool:reconfigure hermes` reconverges managed dashboard credential files and
+the public URL, then re-runs the Hermes credentials script. It replaces
+gateway-stored credential fields with the parsed JSON object, including the
+password read from `/home/agent/.hermes/dashboard.password`. That keeps
+`tool:credentials hermes` truthful after reconfigure instead of retaining a
+stale install-time placeholder such as `<generated-password>`.
+
+Reconfigure success output never includes those credential values. When the
+credentials script cannot run, exits unsuccessfully, or returns
+malformed/non-object JSON, reconfigure fails and does not claim success. When
+the related `orbit-hermes-dashboard` process row is present, reconfigure
+restarts it after a successful credentials refresh so public-URL and auth env
+loaded at unit start take effect.
+
+`tool:remove hermes` removes that process (name + `tool=hermes`) before
+deleting Hermes home and binary paths so the managed unit cannot restart-loop
+after the tool is gone.
 
 `tool:update hermes` from the node itself requires `tool:update` on the
 self-grant. `tool:install hermes`, `tool:remove hermes`,

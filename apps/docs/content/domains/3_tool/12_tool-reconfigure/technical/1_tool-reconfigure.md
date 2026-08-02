@@ -46,6 +46,20 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Updates generated secrets or backend config only when the tool definition owns those values.
 - Updates service endpoint configuration owned by the tool only when the tool definition
   owns that endpoint.
+- After a successful reconfigure script, when the tool catalog provides a
+  `credentialsScript`, runs that script through the tool script dispatcher with
+  action `credentials`, requires stdout to decode as a non-empty JSON object
+  (not a JSON array or scalar), and replaces stored `NodeTool` credential
+  `fields` with the parsed object. Tools without a credentials script skip this
+  step unchanged.
+- Credential refresh failure (Agent transport failure, unsuccessful script, or
+  malformed/non-object JSON) fails the reconfigure command and does not report
+  `action=reconfigured`. Stored credentials stay as they were before the failed
+  refresh; related-process restart does not run when credentials refresh fails.
+- Reconfigure success output and logs must not include credential field values.
+  Operators read credentials through `tool:credentials`.
+- When a related process row exists for the tool, restarts that process after
+  successful reconfigure and (when applicable) successful credential refresh.
 - Preserves the expected version.
 - Supplying `--password` for a tool that does not own password reconfiguration
   fails before config, credential, endpoint, or node artifacts are mutated.
@@ -88,3 +102,4 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:reconfigure` stream request forwarding for password payloads, and gateway error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for reconfigure: final complete frame in `--json` mode, canonical stream request shape, human progress rendering, and pre-stream gateway error pass-through. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php` | Gateway `ToolReconfigurer` reconfigure dispatch, post-reconfigure credentialsScript refresh and stored-field replacement, no-script tools, credentials failure/malformed JSON honesty, and related-process restart ordering after successful credential refresh. |

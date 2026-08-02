@@ -12339,7 +12339,8 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
-                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php"
             ],
             "verification_hints": [
                 {
@@ -12362,6 +12363,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php"
                 }
             ],
             "p4_mapping": {
