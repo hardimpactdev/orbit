@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -155,9 +156,94 @@ describe('ProxyRouteIntent', function (): void {
             ])
             ->and($result['meta']['backend_removed'])
             ->toBeFalse()
+            ->and($result['meta']['removal_reason'])
+            ->toBe('custom')
             ->and($result['meta']['warnings'][0]['code'])
             ->toBe('proxy.cleanup_deferred')
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
+            ->toBeFalse();
+    });
+
+    it('denies removal when a workspace owner still exists', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        app(ProxyRouteIntent::class)->remove('feature.docs.test');
+    })->throws(GatewayApiException::class, "Domain 'feature.docs.test' is owned by workspace.");
+
+    it('removes orphaned workspace-owned routes when the workspace record is missing', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => null,
+            'domain' => 'auth.craft-starterkit-react.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $result = app(ProxyRouteIntent::class)->remove('auth.craft-starterkit-react.test');
+
+        expect($result['data']['route'])
+            ->toMatchArray([
+                'domain' => 'auth.craft-starterkit-react.test',
+                'status' => 'removed_with_drift',
+            ])
+            ->and($result['meta']['removal_reason'])
+            ->toBe('orphan_owner')
+            ->and($result['meta']['owner_type'])
+            ->toBe('workspace')
+            ->and($result['meta']['warnings'][0]['code'])
+            ->toBe('proxy.cleanup_deferred')
+            ->and(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())
+            ->toBeFalse();
+    });
+
+    it('denies removal when an app owner still exists', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        app(ProxyRouteIntent::class)->remove('docs.test');
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by");
+
+    it('removes orphaned app-owned routes when the project record is missing', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => null,
+            'domain' => 'orphan-app.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $result = app(ProxyRouteIntent::class)->remove('orphan-app.test');
+
+        expect($result['meta']['removal_reason'])
+            ->toBe('orphan_owner')
+            ->and($result['meta']['owner_type'])
+            ->toBe('project')
+            ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
             ->toBeFalse();
     });
 

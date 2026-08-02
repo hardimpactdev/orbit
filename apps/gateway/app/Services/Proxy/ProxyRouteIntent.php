@@ -6,7 +6,9 @@ namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -118,17 +120,22 @@ class ProxyRouteIntent
             ]);
         }
 
-        if ($route->owner_type !== 'custom') {
-            $ownerType = $this->publicOwnerType($route);
+        $orphanOwner = false;
+        $publicOwnerType = $this->publicOwnerType($route);
 
-            throw new GatewayApiException(
-                "Domain '{$domain}' is owned by {$ownerType}.",
-                'proxy.owned_route_denied',
-                [
-                    'domain' => $domain,
-                    'owner_type' => $ownerType,
-                ],
-            );
+        if ($route->owner_type !== 'custom') {
+            if (! $this->hasMissingOwner($route)) {
+                throw new GatewayApiException(
+                    "Domain '{$domain}' is owned by {$publicOwnerType}.",
+                    'proxy.owned_route_denied',
+                    [
+                        'domain' => $domain,
+                        'owner_type' => $publicOwnerType,
+                    ],
+                );
+            }
+
+            $orphanOwner = true;
         }
 
         $node = $route->node;
@@ -137,21 +144,44 @@ class ProxyRouteIntent
         $entity = $this->query->toRouteEntity($route, 'removed_with_drift');
         $route->delete();
 
+        $meta = [
+            'backend_removed' => false,
+            'tls_removed' => false,
+            'removal_reason' => $orphanOwner ? 'orphan_owner' : 'custom',
+            'warnings' => [$this->cleanupWarning($node->name)],
+        ];
+
+        if ($orphanOwner) {
+            $meta['owner_type'] = $publicOwnerType;
+        }
+
         return [
             'data' => [
                 'route' => $entity,
             ],
-            'meta' => [
-                'backend_removed' => false,
-                'tls_removed' => false,
-                'warnings' => [$this->cleanupWarning($node->name)],
-            ],
+            'meta' => $meta,
         ];
     }
 
     private function publicOwnerType(ProxyRoute $route): string
     {
         return $this->query->publicOwnerType($route);
+    }
+
+    /**
+     * Owner missing proof mirrors proxy doctor `proxy.owner_invalid` for
+     * FK-backed owners. Non-FK owners (gateway, tool, s3, router) cannot be
+     * proven missing here and stay denied.
+     */
+    private function hasMissingOwner(ProxyRoute $route): bool
+    {
+        $route->loadMissing(['app', 'workspace']);
+
+        return match ($route->owner_type) {
+            'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof Project,
+            'workspace' => ! $route->workspace instanceof Workspace,
+            default => false,
+        };
     }
 
     private function resolveServingNode(string $nodeName, ?Node $caller, string $permission): Node
