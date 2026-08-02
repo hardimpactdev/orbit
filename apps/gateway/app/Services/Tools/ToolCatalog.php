@@ -240,7 +240,7 @@ final readonly class ToolCatalog
             return $config;
         }
 
-        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+        $tld = trim($node->tld, characters: '.');
         $hostname = $tld !== '' ? "{$tool}.{$tld}" : $tool;
 
         return array_merge($config, ['hostname' => $hostname]);

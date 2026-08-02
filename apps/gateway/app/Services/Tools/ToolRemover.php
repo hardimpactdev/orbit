@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Actions\Processes\RemoveProcess;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\Processes\ProcessOwnerContextResolver;
-use Orbit\Sdk\Laravel\GatewayApiException;
-use Throwable;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class ToolRemover
 {
     public function __construct(
@@ -18,8 +17,7 @@ final readonly class ToolRemover
         private ToolRegistry $registry,
         private ToolScriptDispatcher $toolScriptDispatcher,
         private StaleToolIntentRemover $staleIntentRemover,
-        private ProcessOwnerContextResolver $processContexts,
-        private RemoveProcess $removeProcess,
+        private RelatedToolProcessRemover $relatedProcessRemover,
     ) {}
 
     /**
@@ -29,25 +27,15 @@ final readonly class ToolRemover
     {
         $stored = $this->registry->findStored(tool: $tool, node: $node, app: $app);
 
-        if (
-            $stored instanceof NodeTool
-            && $stored->node instanceof Node
-            && (! $this->catalog->supports($tool)
-            || ! $this->catalog->supportsNode($tool, $stored->node))
-        ) {
+        if ($this->isStaleStoredTool($tool, $stored)) {
+            /** @var NodeTool $stored */
             return $this->staleIntentRemover->withRecord($tool, $stored);
         }
 
         $model = $this->registry->show(tool: $tool, node: $node, app: $app);
 
         if ($model instanceof ToolRegistryFailure) {
-            $staleRouteCleanup = $this->staleIntentRemover->withoutRecord($tool, $node, $app);
-
-            if ($staleRouteCleanup !== null) {
-                return $staleRouteCleanup;
-            }
-
-            return $model;
+            return $this->staleIntentRemover->withoutRecord($tool, $node, $app) ?? $model;
         }
 
         $model->loadMissing('node');
@@ -64,22 +52,70 @@ final readonly class ToolRemover
             return ToolRegistryFailure::unsupportedAction($tool, 'remove');
         }
 
+        return $this->removeInstalledTool($tool, $model);
+    }
+
+    private function isStaleStoredTool(string $tool, mixed $stored): bool
+    {
+        return $stored instanceof NodeTool
+            && $stored->node instanceof Node
+            && (
+                ! $this->catalog->supports($tool)
+                || ! $this->catalog->supportsNode($tool, $stored->node)
+            );
+    }
+
+    /**
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
+    private function removeInstalledTool(string $tool, NodeTool $model): array|ToolRegistryFailure
+    {
+        /** @var Node $node */
+        $node = $model->node;
+
         // Stop and delete the related process unit before the tool remove script
         // so a restarting systemd unit cannot race the binary/home cleanup.
-        $process = $this->removeRelatedProcess($model->node, $tool);
+        $process = $this->relatedProcessRemover->removeIfPresent($node, $tool);
 
         if ($process instanceof ToolRegistryFailure) {
             return $process;
         }
 
-        $script = $this->catalog->removeScript($tool, is_array($model->config) ? $model->config : []);
+        $scriptResult = $this->runRemoveScript($tool, $node, is_array($model->config) ? $model->config : []);
+
+        if ($scriptResult instanceof ToolRegistryFailure) {
+            return $scriptResult;
+        }
+
+        $model->credentials = null;
+        $model->save();
+        $model->delete();
+
+        $payload = [
+            'name' => $tool,
+            'node' => $node->name,
+        ];
+
+        if ($process !== null) {
+            $payload['process'] = $process;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $config
+     */
+    private function runRemoveScript(string $tool, Node $node, array $config): ?ToolRegistryFailure
+    {
+        $script = $this->catalog->removeScript($tool, $config);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'remove');
         }
 
         $result = $this->toolScriptDispatcher->runForRegistry(
-            node: $model->node,
+            node: $node,
             tool: $tool,
             action: 'remove',
             script: $script,
@@ -92,77 +128,13 @@ final readonly class ToolRemover
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
-                $model->node->name,
+                $node->name,
                 'remove',
                 $result->exitCode,
                 trim($result->stderr),
             );
         }
 
-        $model->credentials = null;
-        $model->save();
-        $model->delete();
-
-        $payload = [
-            'name' => $tool,
-            'node' => $model->node->name,
-        ];
-
-        if ($process !== null) {
-            $payload['process'] = $process;
-        }
-
-        return $payload;
-    }
-
-    /**
-     * @return array{name: string, runtime: string, tool: string, action: string}|ToolRegistryFailure|null
-     */
-    private function removeRelatedProcess(Node $node, string $tool): array|ToolRegistryFailure|null
-    {
-        $spec = $this->catalog->relatedProcess($tool);
-
-        if ($spec === null) {
-            return null;
-        }
-
-        try {
-            $context = $this->processContexts->resolve(
-                nodeName: $node->name,
-                appName: null,
-                workspaceName: null,
-            );
-        } catch (Throwable $exception) {
-            return ToolRegistryFailure::remoteActionFailed(
-                $tool,
-                $node->name,
-                'remove',
-                1,
-                $exception->getMessage(),
-            );
-        }
-
-        if (! $context->ownerProcesses()->where('name', $spec['name'])->exists()) {
-            return null;
-        }
-
-        try {
-            $this->removeProcess->handle($context, $spec['name']);
-        } catch (GatewayApiException $exception) {
-            return ToolRegistryFailure::remoteActionFailed(
-                $tool,
-                $node->name,
-                'remove',
-                1,
-                $exception->getMessage(),
-            );
-        }
-
-        return [
-            'name' => $spec['name'],
-            'runtime' => $spec['runtime'],
-            'tool' => $spec['tool'],
-            'action' => 'removed',
-        ];
+        return null;
     }
 }

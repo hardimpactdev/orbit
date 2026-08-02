@@ -42,12 +42,17 @@ final readonly class ToolReconfigurer
             return ToolRegistryFailure::remoteActionFailed($tool, '', 'reconfigure', 1, 'Target node is missing.');
         }
 
-        $mergedConfig = array_merge(is_array($model->config) ? $model->config : [], $config);
+        $mergedConfig = [];
+
+        foreach (array_merge(is_array($model->config) ? $model->config : [], $config) as $key => $value) {
+            $mergedConfig[(string) $key] = $value;
+        }
 
         if ($password !== null) {
             $mergedConfig['password'] = $password;
         }
 
+        /** @var array<string, mixed> $mergedConfig */
         $scriptConfig = $this->catalog->scriptConfig($tool, $model->node, $mergedConfig);
         $script = $this->catalog->reconfigureScript($tool, $scriptConfig);
 

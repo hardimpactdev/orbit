@@ -139,10 +139,7 @@ final class HermesTool extends BaseTool
 
     public function credentialsScript(array $config = []): string
     {
-        $hostnameValue = $config['hostname'] ?? null;
-        $hostname = is_string($hostnameValue) && $hostnameValue !== ''
-            ? $hostnameValue
-            : 'hermes.agent';
+        $hostname = $this->resolvedHostname($config);
         $passwordFile = "'".str_replace(search: "'", replace: "'\\''", subject: self::PASSWORD_FILE)."'";
         $username = self::AUTH_USERNAME;
 
@@ -196,11 +193,7 @@ final class HermesTool extends BaseTool
      */
     private function configureManagedDashboardScript(array $config): string
     {
-        $hostnameValue = $config['hostname'] ?? null;
-        $hostname = is_string($hostnameValue) && $hostnameValue !== ''
-            ? $hostnameValue
-            : 'hermes.agent';
-        $publicUrl = "https://{$hostname}";
+        $publicUrl = 'https://'.$this->resolvedHostname($config);
         $publicUrlEnv = "'".str_replace(search: "'", replace: "'\\''", subject: $publicUrl)."'";
         $unit = self::PROCESS_NAME.'.service';
 
@@ -228,5 +221,17 @@ final class HermesTool extends BaseTool
             .'fi'
             ."'"
         );
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $config
+     */
+    private function resolvedHostname(array $config): string
+    {
+        $hostnameValue = $config['hostname'] ?? null;
+
+        return is_string($hostnameValue) && $hostnameValue !== ''
+            ? $hostnameValue
+            : 'hermes.agent';
     }
 }
