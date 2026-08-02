@@ -322,6 +322,7 @@ final readonly class ProxyRouteProbe
         // the default host path when the container is absent — never require a
         // healthy docker-exec target to decide whether the global config exists.
         $script = <<<'BASH'
+            # orbit-proxy-doctor:global-caddy-config-probe
             set -euo pipefail
             container=orbit-caddy
             source=$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{println}}{{end}}{{end}}' "$container" 2>/dev/null | head -n1 || true)

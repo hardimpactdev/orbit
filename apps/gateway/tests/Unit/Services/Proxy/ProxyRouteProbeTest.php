@@ -1758,9 +1758,12 @@ describe('proxy node-level introspection', function (): void {
                 'hash' => hash('sha256', $contents),
             ])
             ->and($shell->scripts[0])
+            ->toContain('orbit-proxy-doctor:global-caddy-config-probe')
+            ->and($shell->scripts[0])
             ->toContain('/etc/caddy/Caddyfile')
             ->and($shell->scripts[0])
-            ->not->toContain('docker exec')
+            ->not
+            ->toContain('docker exec')
             ->and($shell->scripts[0])
             ->toContain('.Mounts');
     });
@@ -1777,6 +1780,8 @@ describe('proxy node-level introspection', function (): void {
                 'exists' => true,
                 'content' => $contents,
             ])
+            ->and($shell->scripts[0])
+            ->toContain('orbit-proxy-doctor:global-caddy-config-probe')
             ->and($shell->scripts[0])
             ->not->toContain('State.Status')
             ->not->toContain('docker exec');

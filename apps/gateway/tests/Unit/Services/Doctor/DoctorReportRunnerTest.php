@@ -3999,7 +3999,10 @@ final class DoctorProductionProxyObservedRemoteShell implements RemoteShell
             return new RemoteShellResult(0, implode("\n", $rows)."\n", '', 1);
         }
 
-        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+        if (
+            str_contains($script, 'orbit-proxy-doctor:global-caddy-config-probe')
+            || str_contains($script, 'path="/etc/caddy/Caddyfile"')
+        ) {
             $content = collect($this->domains)
                 ->map(static fn (string $domain): string => "{$domain} {\n    reverse_proxy http://127.0.0.1:8080\n}")
                 ->implode("\n\n");
@@ -4043,7 +4046,10 @@ final class DoctorProductionProxyAdoptRemoteShell implements RemoteShell
             return new RemoteShellResult(0, "available\ttrue\ttrue\ttrue\n", '', 1);
         }
 
-        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+        if (
+            str_contains($script, 'orbit-proxy-doctor:global-caddy-config-probe')
+            || str_contains($script, 'path="/etc/caddy/Caddyfile"')
+        ) {
             return new RemoteShellResult(0, "0\t\n", '', 1);
         }
 
@@ -4102,7 +4108,10 @@ final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
             return $this->success($rows === '' ? '' : "{$rows}\n");
         }
 
-        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+        if (
+            str_contains($script, 'orbit-proxy-doctor:global-caddy-config-probe')
+            || str_contains($script, 'path="/etc/caddy/Caddyfile"')
+        ) {
             $content = new CaddyGlobalConfig()->fresh();
 
             return $this->success('1'."\t".base64_encode($content)."\n");
