@@ -273,7 +273,11 @@ The expected target shape per calling context:
   interrupt those side effects. If no systemd or launchd service is present but
   an unmanaged listener is running from the installed binary path, the update
   replaces that listener with the new binary and preserves the configured Agent
-  endpoint.
+  endpoint. Writing or replacing managed Agent config and CA trust files during
+  that install uses portable shell decoding of gateway-supplied base64 payloads
+  and atomic staged install. It must not invoke host `php`. The local install
+  action prepares role-image lists and aliases as base64 line records so the
+  target shell can iterate them without host PHP JSON helpers.
 - Agent-role nodes may expose an `agent` Unix user for tools. That user is a
   consumer user, not a second Orbit owner. Provisioning converges a shim such as
   `/home/agent/.local/bin/orbit` that executes the owner user's CLI with

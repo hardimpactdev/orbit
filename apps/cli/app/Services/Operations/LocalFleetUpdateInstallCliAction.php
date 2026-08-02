@@ -121,8 +121,8 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 echo write_agent_config
-                php -r '$decoded = base64_decode((string) getenv("ORBIT_AGENT_SERVICE_CONFIG_BASE64"), true); if (! is_string($decoded) || file_put_contents($argv[1], $decoded) === false) { exit(1); }' "$tmp/orbit-agent.toml"
-                php -r '$decoded = base64_decode((string) getenv("ORBIT_AGENT_SERVICE_CA_BASE64"), true); if (! is_string($decoded) || file_put_contents($argv[1], $decoded) === false) { exit(1); }' "$tmp/orbit-root.crt"
+                printf '%s' "$config_base64" | base64 --decode > "$tmp/orbit-agent.toml"
+                printf '%s' "$ca_base64" | base64 --decode > "$tmp/orbit-root.crt"
 
                 config_parent="$(dirname "$config_path")"
                 ca_parent="$(dirname "$ca_path")"
@@ -487,15 +487,19 @@ final readonly class LocalFleetUpdateInstallCliAction
                 check_sha256 "$ORBIT_AGENT_SHA256" "$resolved_agent_binary"
             fi
 
-            role_images_json="${ORBIT_ROLE_IMAGES_JSON:-[]}"
-            if [ "$role_images_json" != "[]" ]; then
+            role_images_lines="${ORBIT_ROLE_IMAGES_LINES:-}"
+            if [ -n "$role_images_lines" ]; then
                 if ! command -v docker >/dev/null 2>&1; then
                     echo skip_required_images_no_docker
                 else
-                    role_image_artifacts_json="${ORBIT_ROLE_IMAGE_ARTIFACTS_JSON:-[]}"
-                    if [ "$role_image_artifacts_json" != "[]" ]; then
+                    role_image_artifacts_lines="${ORBIT_ROLE_IMAGE_ARTIFACTS_LINES:-}"
+                    if [ -n "$role_image_artifacts_lines" ]; then
                         echo load_required_image_artifacts
-                        php -r '$artifacts = json_decode(getenv("ORBIT_ROLE_IMAGE_ARTIFACTS_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($artifacts as $artifact) { echo base64_encode($artifact["image"]), " ", base64_encode($artifact["url"]), " ", $artifact["sha256"], "\n"; }' | while IFS=' ' read -r image_encoded url_encoded image_sha256; do
+                        printf '%s\n' "$role_image_artifacts_lines" | while IFS=' ' read -r image_encoded url_encoded image_sha256; do
+                            if [ -z "$image_encoded" ] || [ -z "$url_encoded" ] || [ -z "$image_sha256" ]; then
+                                continue
+                            fi
+
                             image="$(printf %s "$image_encoded" | base64 --decode)"
                             image_url="$(printf %s "$url_encoded" | base64 --decode)"
                             image_archive="$tmp/role-image-$image_sha256.tar"
@@ -510,7 +514,13 @@ final readonly class LocalFleetUpdateInstallCliAction
                     fi
 
                     echo pull_required_images
-                    php -r '$images = json_decode(getenv("ORBIT_ROLE_IMAGES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($images as $image) { echo $image, "\n"; }' | while IFS= read -r image; do
+                    printf '%s\n' "$role_images_lines" | while IFS= read -r image_encoded; do
+                        if [ -z "$image_encoded" ]; then
+                            continue
+                        fi
+
+                        image="$(printf %s "$image_encoded" | base64 --decode)"
+
                         if docker image inspect "$image" >/dev/null 2>&1; then
                             echo "required_image_present $image"
                             continue
@@ -526,10 +536,14 @@ final readonly class LocalFleetUpdateInstallCliAction
                         fi
                     done
 
-                    role_image_aliases_json="${ORBIT_ROLE_IMAGE_ALIASES_JSON:-[]}"
-                    if [ "$role_image_aliases_json" != "[]" ]; then
+                    role_image_aliases_lines="${ORBIT_ROLE_IMAGE_ALIASES_LINES:-}"
+                    if [ -n "$role_image_aliases_lines" ]; then
                         echo alias_required_images
-                        php -r '$aliases = json_decode(getenv("ORBIT_ROLE_IMAGE_ALIASES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($aliases as $alias) { echo base64_encode($alias["source"]), " ", base64_encode($alias["target"]), "\n"; }' | while IFS=' ' read -r source_encoded target_encoded; do
+                        printf '%s\n' "$role_image_aliases_lines" | while IFS=' ' read -r source_encoded target_encoded; do
+                            if [ -z "$source_encoded" ] || [ -z "$target_encoded" ]; then
+                                continue
+                            fi
+
                             source_image="$(printf %s "$source_encoded" | base64 --decode)"
                             target_image="$(printf %s "$target_encoded" | base64 --decode)"
                             local_source_image="${source_image%@*}"

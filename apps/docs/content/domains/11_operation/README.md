@@ -33,6 +33,10 @@ These rules constrain all commands in the operation domain.
   one-shot runner. Host PHP and host Composer are not supported gateway update
   fallbacks; production host PHP/Composer is required only on app-role nodes
   where app-source workflows need it.
+- Workload fleet-update install must succeed on nodes that have no host PHP CLI
+  after the Orbit CLI binary, Orbit Agent binary, and Agent config/CA trust
+  files are present. Required role-image side effects on those nodes also must
+  not depend on host PHP.
 - Orbit releases are monorepo releases. The root `VERSION` file is the single
   version source for the CLI binary, core package, gateway package, gateway
   image, and release manifest. `update:all` must use a persisted release
