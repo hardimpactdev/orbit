@@ -1329,6 +1329,15 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             return $transportOptions;
         }
 
+        // force_remote_host is only meaningful for the gateway host boundary.
+        // Agent-push targets must mint ordinary token context; host-boundary
+        // normalization (cwd/APP_KEY) makes the Agent verifier reject tokens.
+        if (! GatewayHostExecution::shouldForceRemoteHostFor($node)) {
+            unset($transportOptions['force_remote_host']);
+
+            return $transportOptions;
+        }
+
         if (! array_key_exists('cwd', $transportOptions)) {
             $transportOptions['cwd'] = $this->defaultLocalExecutorHome($node);
         }

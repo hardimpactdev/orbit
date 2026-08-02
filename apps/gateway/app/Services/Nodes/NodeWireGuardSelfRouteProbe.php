@@ -66,9 +66,9 @@ final readonly class NodeWireGuardSelfRouteProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'wireguard-self-route.probe',
                 ],
-                // Host network namespace: leave the orbit-gateway container when
-                // doctor is running containerized on the gateway node.
-                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
+                // Host network namespace: leave the orbit-gateway container only
+                // when probing the gateway node itself.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'strict' => true,
                 'timeout' => 15,
             ],

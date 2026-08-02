@@ -19,6 +19,7 @@ use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Apps\RemoteAppRuntimeContainersProbe;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
@@ -191,6 +192,13 @@ final readonly class ProcessesProbe
             }
 
             if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
+                if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+                    throw new InvalidArgumentException(
+                        "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
+                        ."placement resolved to '{$node->name}' ({$node->platform}).",
+                    );
+                }
+
                 return $this->introspectLaunchd($process, $node);
             }
 
@@ -1830,15 +1838,15 @@ final readonly class ProcessesProbe
             return [];
         }
 
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return [];
+        }
+
         $units = [];
 
         foreach ($this->runtimeContexts($process) as $workspace) {
-            $node = $app->node;
-
-            if (! $node instanceof Node) {
-                continue;
-            }
-
             $runtimeUnit = $this->systemdUnitRenderer()->unitName($app, $process, $workspace);
             $content = $this->systemdUnitRenderer()->render($node, $app, $process, $workspace);
 
@@ -1889,13 +1897,20 @@ final readonly class ProcessesProbe
 
         $units = [];
 
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return [];
+        }
+
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+            throw new InvalidArgumentException(
+                "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
+                ."placement resolved to '{$node->name}' ({$node->platform}).",
+            );
+        }
+
         foreach ($this->runtimeContexts($process) as $workspace) {
-            $node = $app->node;
-
-            if (! $node instanceof Node) {
-                continue;
-            }
-
             $runtimeUnit = $this->launchdPlistRenderer()->unitName($app, $process, $workspace);
             $content = $this->launchdPlistRenderer()->render($node, $app, $process, $workspace);
 

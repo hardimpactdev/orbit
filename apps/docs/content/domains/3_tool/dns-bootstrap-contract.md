@@ -255,7 +255,7 @@ runtime fact:
 
 | Drift kind | Owner and detection | Restore | Adopt |
 | --- | --- | --- | --- |
-| `node.dns_mapping_mismatch` | Node: a source-node concrete/wildcard directive is wrong, or the gateway anchor finds an orphan directive. | Re-render only the node projection and use the shared restart path. | No |
+| `node.dns_mapping_mismatch` | Node: verified only on the DNS-serving host (gateway-coupled VPN). A source-node concrete/wildcard directive is wrong, or the gateway anchor finds an orphan directive. Non-consumer nodes are not probed for the shared projection file. | Re-render only the node projection and use the shared restart path. | No |
 | `proxy.dns_mapping_mismatch` | Proxy: `20-proxy-records.conf` differs from router/private `.orbit` and exact-backend intent. | Re-render only the proxy projection and use the shared restart path. | No |
 | `tool.dns_base_config_mismatch` | Tool: base `dnsmasq.conf` differs from `DnsmasqBaseConfigBuilder` output, or the active projection-directory bind source, destination, or read-only mode is wrong. | Rewrite only non-legacy base config, redeploy a wrong mount, and restart or update DNS. Legacy conversion remains an explicit installer migration. | No |
 | `tool.dns_container_missing` | Tool: neither the standalone `orbit-dns` container nor Swarm task is present. | Stage base config plus record-free owner placeholders when absent, then rerun the persisted stack/compose installer; Swarm restore also reconverges forwarding. | No |

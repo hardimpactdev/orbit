@@ -6,7 +6,7 @@ Orbit keeps security findings under the family that owns the protected state:
 
 | Owning family | Security issue-key section |
 | --- | --- |
-| `node` | `node.security.*` for provisioned Linux runtime-user posture, WireGuard-bound SSH, public SSH denial, unattended upgrades, sysctl, and bake-time home permissions |
+| `node` | `node.security.*` for provisioned Linux runtime-user posture, WireGuard-bound SSH, public SSH denial, unattended upgrades, sysctl, and managed home permissions (`0700`, doctor-restorable for mode-only drift) |
 | `instance` | `instance.security.*` for production app runtime isolation |
 | `workspace` | `workspace.security.*` for development workspace runtime isolation |
 | `firewall_rule` | `firewall_rule.security.*` only when the firewall family owns protected-rule representation drift |

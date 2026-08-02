@@ -91,13 +91,15 @@ These terms describe the runtime objects that Orbit derives from process definit
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
 - **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  Systemd units use `orbit_<scope>_<process>` segment names for instance/workspace
-  command processes, with project and instance slugs as separate scope
-  segments; Docker units use equivalent Orbit-owned container names.
-  Launchd labels use `dev.hardimpact.orbit.<runtimeUnit>` and plist files use
-  the same label under the configured node user's LaunchAgents directory.
-  The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
-  backend segment delimiters.
+  The canonical form is `orbit_<project>_<instance>_<workspace|main>_<process>`.
+  When that full identity exceeds the shared backend limit (64 characters for
+  the strictest consumer, launchd), Orbit deterministically bounds it by
+  retaining a readable prefix and appending a stable 12-character SHA-256
+  fragment so render, probe, and restore share one valid name. Systemd and
+  Docker use the same identity. Launchd labels use
+  `dev.hardimpact.orbit.<runtimeUnit>` and plist files use the same label under
+  the configured node user's LaunchAgents directory. The `orbit_` prefix marks
+  Orbit ownership, and underscores are reserved as backend segment delimiters.
 - **Runtime unit environment:** Predictable runtime environment exposed to
   derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
   and TLS path variables that Orbit manages. Separate from workspace lifecycle

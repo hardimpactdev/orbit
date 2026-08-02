@@ -11,6 +11,7 @@ use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SshdHardenedInstaller;
 use App\Services\Security\SysctlBaselineInstaller;
@@ -79,11 +80,24 @@ final readonly class NodeSecurityPostureProbe
             'node.security.runtime_user' => throw new RuntimeException(
                 'Runtime user drift is report-only; re-bake or migrate the node.',
             ),
-            'node.security.home_perms' => throw new RuntimeException(
-                'Home permission drift is report-only; re-bake the node.',
-            ),
+            'node.security.home_perms' => $this->restoreHomePermissions($node),
             default => throw new RuntimeException("Node security cannot restore drift key '{$entry->key}'."),
         };
+    }
+
+    private function restoreHomePermissions(Node $node): void
+    {
+        $report = app(HomeDirectoryLockdownInstaller::class)->installFor($node);
+
+        if ($report->successful) {
+            return;
+        }
+
+        throw new RuntimeException(
+            $report->summary !== ''
+                ? $report->summary
+                : "Failed to restore home permissions for node {$node->name}.",
+        );
     }
 
     private function appliesTo(Node $node): bool

@@ -17,7 +17,9 @@ The process family owns these facts:
   runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for one concrete instance and, on
   `app-dev` only, its workspaces:
-  `orbit_<project>_<instance>_<workspace|main>_<process>`;
+  `orbit_<project>_<instance>_<workspace|main>_<process>`, deterministically
+  bounded with a stable hash when the full name exceeds the shared 64-character
+  backend limit so launchd labels remain valid;
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
@@ -147,6 +149,10 @@ Doctor selects and probes app/workspace processes by current app instance and
 workspace placement, not by a possibly stale denormalized `process.node_id`. A
 process whose instance moved nodes is diagnosed on the current placement node.
 A genuinely missing runtime unit on that current node remains reportable.
+Launchd runtime units are only rendered and probed on macOS execution nodes:
+when placement resolves to a Linux node for a launchd process, Doctor reports
+`process.runtime_unit_unrenderable` rather than inventing a Linux
+`Library/LaunchAgents` path.
 
 ### Runtime artifact presence
 

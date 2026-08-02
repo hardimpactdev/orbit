@@ -68,14 +68,25 @@ describe('security installers', function (): void {
             ->toContain('sudo sysctl --system');
     });
 
-    it('locks down the orbit home directory as a bake-time invariant', function (): void {
-        $node = Node::factory()->create(['status' => 'provisioning']);
+    it('locks down the managed home directory for the node runtime user', function (): void {
+        $node = Node::factory()->create([
+            'status' => 'provisioning',
+            'user' => 'orbit',
+        ]);
         $shell = new RecordingSecurityInstallerShell;
 
         $report = app(HomeDirectoryLockdownInstaller::class)->installFor($node, $shell);
 
         expect($report->successful)
             ->toBeTrue()
+            ->and($shell->runs[0]['script'])
+            ->toContain("MANAGED_USER='orbit'")
+            ->and($shell->runs[0]['script'])
+            ->toContain("MANAGED_HOME='/home/orbit'")
+            ->and($shell->runs[0]['script'])
+            ->toContain('sudo chmod 0700 "${MANAGED_HOME}"')
+            ->and($shell->runs[0]['script'])
+            ->toContain('getent passwd')
             ->and($shell->runs[0]['script'])
             ->toContain('chmod 0700 /home/orbit /home/orbit/.ssh')
             ->and($shell->runs[0]['script'])
@@ -84,6 +95,28 @@ describe('security installers', function (): void {
             ->toContain('/home/orbit/.config/orbit/php')
             ->and($shell->runs[0]['script'])
             ->toContain('chmod 0600 /home/orbit/.ssh/authorized_keys');
+    });
+
+    it('locks down a non-orbit managed home without orbit-only bake paths', function (): void {
+        $node = Node::factory()->create([
+            'status' => 'provisioning',
+            'user' => 'agent',
+        ]);
+        $shell = new RecordingSecurityInstallerShell;
+
+        $report = app(HomeDirectoryLockdownInstaller::class)->installFor($node, $shell);
+
+        expect($report->successful)
+            ->toBeTrue()
+            ->and($shell->runs[0]['script'])
+            ->toContain("MANAGED_USER='agent'")
+            ->and($shell->runs[0]['script'])
+            ->toContain("MANAGED_HOME='/home/agent'")
+            ->and($shell->runs[0]['script'])
+            ->toContain('sudo chmod 0700 "${MANAGED_HOME}"')
+            ->and($shell->runs[0]['script'])
+            ->not->toContain('/home/orbit/.config/orbit/php')->and($shell->runs[0]['script'])
+            ->not->toContain('chmod 0600 /home/orbit/.ssh/authorized_keys');
     });
 
     it('renders hardened sshd configuration bound to wireguard and loopback', function (): void {

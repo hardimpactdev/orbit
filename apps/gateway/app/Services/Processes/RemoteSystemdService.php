@@ -107,8 +107,9 @@ final readonly class RemoteSystemdService
             'metadata' => [
                 'ORBIT_OPERATION_ID' => "process.systemd.{$action}",
             ],
-            // systemd units live on the host; leave the container when needed.
-            'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
+            // systemd units live on the host; leave the container only when the
+            // target is the gateway node.
+            'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
             'timeout' => 60,
         ];
 

@@ -302,20 +302,30 @@ it('leaves scoped DNS projection drift unresolved while a mounted runtime still 
 ]);
 
 it('keeps node DNS drift visible when post-restore verification still finds it', function (): void {
-    $node = Node::factory()->create([
-        'name' => 'database-1',
-        'tld' => 'database',
-        'wireguard_address' => '10.6.0.9',
-        'status' => 'active',
-    ]);
+    // Node DNS projection is verified only on the DNS-serving host
+    // (gateway-coupled VPN), while mismatches still name their source node.
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
     NodeRoleAssignment::factory()->create([
-        'node_id' => $node->id,
+        'node_id' => $gateway->id,
         'role' => 'vpn',
         'status' => 'active',
         'settings' => [
             'public_endpoint' => '203.0.113.10',
             'dns_ip' => '10.6.0.1',
         ],
+    ]);
+    Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
     ]);
     File::put($this->root.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
     File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
@@ -339,7 +349,7 @@ it('keeps node DNS drift visible when post-restore verification still finds it',
     app()->forgetInstance(DoctorReportRunner::class);
 
     $report = app(DoctorReportRunner::class)->run(
-        node: $node,
+        node: $gateway,
         mode: 'restore',
         families: ['node'],
         request: new DoctorRunRequest(key: 'node.dns_mapping_mismatch'),

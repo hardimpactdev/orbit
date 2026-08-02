@@ -51,10 +51,8 @@ final readonly class ProcessOwnerContext
 
     public function defaultRuntime(): ProcessRuntime
     {
-        if ($this->app instanceof Project) {
-            return ProcessRuntime::defaultForApp($this->app);
-        }
-
+        // Host-command runtime defaults follow the execution node (instance/
+        // workspace placement), not a possibly different Project::$node.
         if (NodeHostPaths::isMacosPlatform($this->node->platform)) {
             return ProcessRuntime::Launchd;
         }

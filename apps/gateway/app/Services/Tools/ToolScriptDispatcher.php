@@ -42,9 +42,10 @@ final readonly class ToolScriptDispatcher
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => "tool.{$action}",
                 ],
-                // Tool capability and host scripts must leave the containerized
-                // gateway runtime when doctor is running inside orbit-gateway.
-                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
+                // Host-owned tool scripts leave the containerized gateway only
+                // when the target is the gateway node. Agent-push targets must
+                // not mint force_remote_host token context (invalid_token).
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'strict' => false,
                 'timeout' => self::DEFAULT_TIMEOUT + self::TIMEOUT_PADDING,
                 'bind_input' => true,

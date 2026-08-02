@@ -1328,8 +1328,16 @@ final readonly class DoctorReportRunner
                 ];
                 $advance();
 
-                foreach ($this->nodeDnsProjectionProbe->drift($node) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                // Fleet node DNS projection is only consumed by the DNS runtime on
+                // the VPN/gateway host. Probe once there and attribute each source
+                // node's fragment mismatch to that source — never fan out the same
+                // shared artifact path across non-consumer nodes.
+                if ($this->shouldProbeNodeDnsProjection($node)) {
+                    foreach ($this->nodeDnsProjectionSources() as $source) {
+                        foreach ($this->nodeDnsProjectionProbe->drift($source) as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $source);
+                        }
+                    }
                 }
 
                 $advance();
@@ -2602,6 +2610,37 @@ final readonly class DoctorReportRunner
         return (
             $this->nodeRoleAssignments->nodeIsGateway($node) && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)
         );
+    }
+
+    /**
+     * Node-owned dnsmasq projection content is verified only on the DNS-serving
+     * host (gateway-coupled VPN role), matching proxy DNS projection scope.
+     */
+    private function shouldProbeNodeDnsProjection(Node $node): bool
+    {
+        return $this->shouldProbeDnsRuntime($node);
+    }
+
+    /**
+     * @return list<Node>
+     */
+    private function nodeDnsProjectionSources(): array
+    {
+        $nodes = Node::query()
+            ->with('roleAssignments')
+            ->where('status', NodeStatus::Active->value)
+            ->orderBy('id')
+            ->get();
+
+        $sources = [];
+
+        foreach ($nodes as $node) {
+            if ($node instanceof Node) {
+                $sources[] = $node;
+            }
+        }
+
+        return $sources;
     }
 
     private function shouldProbeProxyDnsProjection(Node $node, DoctorTargetScope $scope): bool
@@ -4717,6 +4756,7 @@ final readonly class DoctorReportRunner
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
             'node.security.sysctl',
+            'node.security.home_perms',
             'node.updates_config_missing',
             'node.updates_config_mismatch',
             'node.updates_dry_run_failed',

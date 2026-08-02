@@ -1019,6 +1019,7 @@ final readonly class NodesProbe
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
             'node.security.sysctl',
+            'node.security.home_perms',
         ];
 
         if (! in_array($entry->key, $fixableKeys, true)) {

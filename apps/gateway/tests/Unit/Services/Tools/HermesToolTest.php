@@ -26,10 +26,16 @@ it('declares a process-owned dashboard on port 8080 with file-loaded basic auth'
         ->toContain('SECRET_FILE="/home/agent/.hermes/dashboard.secret"')
         ->toContain('${PASSWORD_FILE}')
         ->toContain('${SECRET_FILE}')
-        ->toContain('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=orbit')
-        ->toContain('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=')
-        ->toContain('HERMES_DASHBOARD_BASIC_AUTH_SECRET=')
-        ->toContain('hermes dashboard --host 0.0.0.0 --port 8080 --no-open')
+        ->toContain('[ -s "${PASSWORD_FILE}" ]')
+        ->toContain('[ -s "${SECRET_FILE}" ]')
+        ->toContain('[ -n "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}" ]')
+        ->toContain('[ -n "${HERMES_DASHBOARD_BASIC_AUTH_SECRET}" ]')
+        ->not->toContain('[ -f "${PASSWORD_FILE}" ]')
+        ->not->toContain('[ -f "${SECRET_FILE}" ]')->toContain('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=orbit')->toContain(
+            'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=',
+        )->toContain('HERMES_DASHBOARD_BASIC_AUTH_SECRET=')->toContain(
+            'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
+        )
         ->not->toContain('--port 9119')
         ->not->toContain('--insecure')
         ->not->toMatch('/HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=[^"$\'\\s]{8,}/')
@@ -55,12 +61,15 @@ it('configures managed dashboard credentials and stops only unmanaged dashboards
             ->toContain('openssl rand')
             ->toContain('chmod 600')
             ->toContain('umask 077')
-            ->toContain('dashboard.public_url')
-            ->toContain('ORBIT_HERMES_PUBLIC_URL')
-            ->toContain('https://hermes.agent-1')
-            ->toContain('systemctl show -p ActiveState --value orbit-hermes-dashboard.service')
-            ->toContain('active|activating|reloading')
-            ->toContain('hermes dashboard --stop')
+            // Empty files must be regenerated (! -s), not preserved.
+            ->toContain('if [ ! -s "${PASSWORD_FILE}" ]')
+            ->toContain('if [ ! -s "${SECRET_FILE}" ]')
+            ->not->toContain('if [ ! -f "${PASSWORD_FILE}" ]')
+            ->not->toContain('if [ ! -f "${SECRET_FILE}" ]')->toContain('dashboard.public_url')->toContain(
+                'ORBIT_HERMES_PUBLIC_URL',
+            )->toContain('https://hermes.agent-1')->toContain(
+                'systemctl show -p ActiveState --value orbit-hermes-dashboard.service',
+            )->toContain('active|activating|reloading')->toContain('hermes dashboard --stop')
             ->not->toContain('systemctl stop orbit-hermes-dashboard')
             ->not->toContain('systemctl stop hermes-dashboard')
             ->not->toContain('<generated-password>')

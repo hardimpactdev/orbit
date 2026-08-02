@@ -26,6 +26,7 @@ use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
@@ -1993,4 +1994,118 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'config_matches' => true,
         'loaded' => true,
     ]);
+});
+
+it('reports launchd processes on linux placement as unrenderable instead of inventing Library paths', function (): void {
+    $linux = createTestAppHostNode([
+        'name' => 'beast',
+        'platform' => 'ubuntu_24-04',
+        'user' => 'nckrtl',
+    ]);
+    $app = Project::factory()
+        ->for($linux, 'node')
+        ->create([
+            'name' => 'mealou',
+            'path' => '/home/nckrtl/apps/mealou',
+        ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $linux->id,
+            node: $linux->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+    $process = Process::factory()
+        ->forOwner($app)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'node_id' => $linux->id,
+            'name' => 'dev',
+            'command' => 'npm run dev',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+
+    $snapshot = app(ProcessesProbe::class)->introspect($process);
+    $drift = app(ProcessesProbe::class)->diff($process, $snapshot);
+
+    expect($snapshot->get('dev')['runtime_unit_renderable'] ?? null)
+        ->toBeFalse()
+        ->and(collect($drift)->firstWhere('key', 'process.runtime_unit_unrenderable'))
+        ->not->toBeNull()->and(
+            (string) (collect($drift)->firstWhere('key', 'process.runtime_unit_unrenderable')?->detail['reason'] ?? ''),
+        )->toContain('macOS')->and(json_encode($drift))
+        ->not->toContain('Library/LaunchAgents')
+        ->not->toContain('/home/nckrtl/Library');
+});
+
+it('bounds long launchd unit names so they remain renderable', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'mac-app',
+        'platform' => 'macos_26-5-1',
+        'user' => 'nckrtl',
+    ]);
+    $app = Project::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'laravel-toolbar',
+            'path' => '/Users/nckrtl/apps/laravel-toolbar',
+        ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'name' => 'filament-pages-og-images',
+        'path' => $app->path.'/filament-pages-og-images',
+    ]);
+    $process = Process::factory()
+        ->forOwner($workspace)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'node_id' => $node->id,
+            'name' => 'inertia-ssr',
+            'command' => 'npm run ssr',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+
+    $shell = new ProcessesProbeRecordingRemoteShell([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: processesProbeSuccessData([
+                'available' => true,
+                'exit_code' => 0,
+                'output' => 'launchd OK',
+            ]),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: "bounded\t1\t1\t1\n",
+            stderr: '',
+            durationMs: 1,
+        ),
+    ]);
+
+    $snapshot = processesProbeWithShell($shell)->introspect($process);
+    $unit = app(\App\Services\Processes\LaunchdPlistRenderer::class)->unitName($app, $process, $workspace);
+
+    expect(ProcessRuntimeUnitName::isValid($unit))
+        ->toBeTrue()
+        ->and(strlen($unit))
+        ->toBeLessThanOrEqual(ProcessRuntimeUnitName::MaxLength)
+        ->and($snapshot->get('inertia-ssr')['runtime_unit_renderable'] ?? true)
+        ->not->toBeFalse()->and($shell->scripts[1] ?? '')->toContain($unit)
+        ->not->toContain('orbit_laravel-toolbar_development_filament-pages-og-images_inertia-ssr');
 });

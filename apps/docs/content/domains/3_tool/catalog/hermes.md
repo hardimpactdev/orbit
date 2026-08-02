@@ -94,12 +94,14 @@ immediately before exec; the stored process command never contains those
 secrets. `HERMES_DASHBOARD_PUBLIC_URL` is set from
 `/home/agent/.hermes/dashboard.public_url` when present.
 
-Install/update/reconfigure generate durable password and secret files when
-missing (mode `0600`) and write the public URL for the resolved tool route
-hostname (`hermes.<node-tld>`). They stop unmanaged listeners only when the
-Orbit unit's `ActiveState` is not `active`, `activating`, or `reloading`
-(read-only `systemctl show`), so first install frees port `8080` without
-racing a managed unit mid-start/reload. They do not run interactive
+Install/update/reconfigure generate durable password and secret files when they
+are absent or empty (zero-length files are treated as missing and securely
+regenerated with mode `0600`) and write the public URL for the resolved tool
+route hostname (`hermes.<node-tld>`). Process startup requires non-empty
+password and secret files. They stop unmanaged listeners only when the Orbit
+unit's `ActiveState` is not `active`, `activating`, or `reloading` (read-only
+`systemctl show`), so first install frees port `8080` without racing a managed
+unit mid-start/reload. They do not run interactive
 `hermes setup`.
 
 `tool:reconfigure hermes` reconverges managed dashboard credential files and

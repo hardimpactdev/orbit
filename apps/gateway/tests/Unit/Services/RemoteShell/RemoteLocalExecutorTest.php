@@ -1676,6 +1676,56 @@ describe(RemoteLocalExecutor::class, function (): void {
             config()->set('app.key', 'gateway-app-key');
         }
     });
+
+    it('strips force_remote_host for non-gateway Agent-push targets so tokens stay valid', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+
+        try {
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "agent-push-ok\n",
+                    stderr: '',
+                    durationMs: 1,
+                ),
+            );
+            $executor = remoteLocalExecutor(transport: $transport);
+            $node = remoteLocalExecutorNode(['ingress']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:executor:verify',
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000431',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)
+                ->toBe("agent-push-ok\n")
+                ->and($transport->calls)
+                ->not->toBeEmpty();
+
+            $script = (string) ($transport->calls[0]['script'] ?? '');
+
+            expect($script)
+                ->toContain('internal:executor:verify')
+                ->toContain('--operation-token=')
+                // Host-boundary normalization must not force a gateway-home cwd
+                // for Agent-push targets.
+                ->not->toContain("cd '/home/orbit'");
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
 });
 
 function remoteLocalExecutor(

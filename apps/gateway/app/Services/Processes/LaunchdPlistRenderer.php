@@ -178,7 +178,9 @@ final readonly class LaunchdPlistRenderer
 
     private function assertUnitName(string $name): string
     {
-        if (! preg_match('/^[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9])?$/', $name)) {
+        // ProcessRuntimeUnitName already bounds identity; re-assert the shared
+        // launchd contract so render/probe/restore never diverge.
+        if (! ProcessRuntimeUnitName::isValid($name)) {
             throw new InvalidArgumentException("Invalid launchd runtime unit name: {$name}");
         }
 

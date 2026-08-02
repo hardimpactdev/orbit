@@ -270,3 +270,68 @@ function node_security_posture_unused_transport(): RemoteExecutor
         }
     };
 }
+
+it('restores home_perms instead of requiring operator re-bake', function (): void {
+    expect((string) file_get_contents(app_path('Services/Nodes/NodeSecurityPostureProbe.php')))
+        ->toContain('restoreHomePermissions')
+        ->toContain('HomeDirectoryLockdownInstaller')
+        ->not->toContain('Home permission drift is report-only; re-bake the node.');
+
+    $node = Node::factory()->create([
+        'status' => 'provisioning',
+        'user' => 'agent',
+        'platform' => 'ubuntu_24-04',
+    ]);
+    $shell = new class implements \App\Contracts\RemoteShell {
+        /** @var list<string> */
+        public array $scripts = [];
+
+        public function run(Node $node, string $script, array $options = []): \App\Data\RemoteShell\RemoteShellResult
+        {
+            $this->scripts[] = $script;
+
+            return new \App\Data\RemoteShell\RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        public function start(
+            Node $node,
+            string $script,
+            array $options = [],
+        ): \Illuminate\Contracts\Process\InvokedProcess {
+            throw new RuntimeException('not used');
+        }
+    };
+
+    $report = app(\App\Services\Security\HomeDirectoryLockdownInstaller::class)->installFor($node, $shell);
+
+    expect($report->successful)
+        ->toBeTrue()
+        ->and($shell->scripts[0] ?? '')
+        ->toContain("MANAGED_HOME='/home/agent'")
+        ->toContain('sudo chmod 0700 "${MANAGED_HOME}"')
+        ->not->toContain('/home/orbit/.config/orbit/php');
+});
+
+it('keeps runtime_user restore report-only', function (): void {
+    $node = Node::factory()->create([
+        'platform' => 'ubuntu_24-04',
+        'status' => NodeStatus::Active,
+        'user' => '',
+    ]);
+
+    expect(fn () => new NodeSecurityPostureProbe()->restore(
+        $node,
+        new DriftEntry(
+            family: 'node',
+            key: 'node.security.runtime_user',
+            kind: \App\Enums\DriftKind::Divergent,
+            summary: 'missing user',
+        ),
+    ))
+        ->toThrow(RuntimeException::class, 'report-only');
+});

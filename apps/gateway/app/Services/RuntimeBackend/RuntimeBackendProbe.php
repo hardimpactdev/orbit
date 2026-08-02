@@ -30,8 +30,9 @@ final readonly class RuntimeBackendProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'runtime-backend.probe',
                 ],
-                // systemd/launchd/docker host backends live outside orbit-gateway.
-                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
+                // Host backends live outside orbit-gateway; force host boundary
+                // only when the target is the gateway node.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'timeout' => 15,
             ],
         );
