@@ -1,10 +1,10 @@
 {
     "schema_version": 2,
-    "generated_at": "2026-08-02T14:51:59+00:00",
+    "generated_at": "2026-08-02T14:52:32+00:00",
     "mode": "created",
     "archive_mode": "compact",
     "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-doctor-platform-drift/.orbit",
-    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-165159-fix-doctor-platform-drift",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-165232-codex-fix-doctor-platform-drift",
     "agent_sessions_dir": null,
     "copied_entries": [
         "evidence/doctor-platform-drift-proof.txt",

@@ -4929,9 +4929,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-08-02-165159-fix-doctor-platform-drift",
-            "slug": "fix-doctor-platform-drift",
-            "timestamp": "2026-08-02-165159",
+            "archive": "2026-08-02-165232-codex-fix-doctor-platform-drift",
+            "slug": "codex-fix-doctor-platform-drift",
+            "timestamp": "2026-08-02-165232",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",
