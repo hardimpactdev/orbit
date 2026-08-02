@@ -1348,7 +1348,7 @@ it('accepts registered command handoffs while still reporting unregistered docto
         Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
 
         ```json
-        {"success":{"meta":{"warnings":[{"code":"proxy.enactment_deferred","family":"proxy","message":"Proxy enactment is deferred.","next_command":"doctor --family=proxy --restore --node=app-1"},{"code":"firewall_rule.host_upstream_may_block","family":"firewall_rule","message":"The host firewall may block the upstream.","next_command":"firewall:allow caddy-to-host-5173 --node=app-1"},{"code":"proxy.unregistered_handoff","family":"proxy","message":"An unregistered handoff remains strict.","next_command":"doctor --family=proxy --restore --node=app-1"}]}}}
+        {"success":{"meta":{"warnings":[{"code":"proxy.enactment_failed","family":"proxy","message":"Proxy enactment failed.","next_command":"doctor --family=proxy --restore --node=app-1"},{"code":"firewall_rule.host_upstream_may_block","family":"firewall_rule","message":"The host firewall may block the upstream.","next_command":"firewall:allow caddy-to-host-5173 --node=app-1"},{"code":"proxy.unregistered_handoff","family":"proxy","message":"An unregistered handoff remains strict.","next_command":"doctor --family=proxy --restore --node=app-1"}]}}}
         ```
         MARKDOWN);
     writeOrbitDocsFile(

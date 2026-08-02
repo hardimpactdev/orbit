@@ -84,11 +84,14 @@ These terms define the types of routes that the proxy family owns and manages.
   routes are an `app-dev`-only surface and never receive an `app-prod` backend
   artifact.
 - **Route enactment state:** Persisted operation evidence attached to route
-  intent. `pending` means no operation has completed, `partial` means some
-  operations completed before a named failure, `failed` means the first
-  operation failed, and `converged` means every planned operation completed.
-  `intent_only` is custom intent deferred to doctor; `unknown` is an existing
-  row without enactment evidence.
+  intent. For one-step custom add, the normal path is `pending` then
+  `converged` on success, or `failed`/`partial` when backend/TLS apply fails
+  (Doctor repairs that partial state). `pending` means no operation has
+  completed, `partial` means some operations completed before a named failure,
+  `failed` means the first operation failed, and `converged` means every planned
+  operation completed. `intent_only` remains only for older custom rows that
+  never recorded one-step enactment evidence; new custom adds do not use it as
+  the happy path. `unknown` is an existing row without enactment evidence.
 - **Production enactment order:** Project production artifacts are applied backend
   first, router second, and ingress last. Orbit never reports convergence if
   any layer fails and records the exact layer, node, and operation for repair.

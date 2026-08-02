@@ -10,9 +10,12 @@ use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\RemoteCaddyConfig;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -106,6 +109,42 @@ describe('ProxyRouteIntent', function (): void {
         ]);
     });
 
+    it('keeps custom route and returns success proxy.enactment_failed when fixer fails', function (): void {
+        createTestAppHostNode(['name' => 'app-1']);
+        bindFailingProxyRouteFixer();
+
+        $result = app(ProxyRouteIntent::class)->add(
+            domain: 'broken.docs.test',
+            nodeName: 'app-1',
+            upstream: 'http://127.0.0.1:5173',
+            redirect: null,
+            code: null,
+            force: false,
+        );
+
+        $warning = collect($result['meta']['warnings'])->firstWhere('code', 'proxy.enactment_failed');
+        $route = ProxyRoute::query()->where('domain', 'broken.docs.test')->first();
+
+        expect($route)
+            ->toBeInstanceOf(ProxyRoute::class)
+            ->and(ProxyRouteEnactment::status(is_array($route->config) ? $route->config : []))
+            ->toBeIn(['failed', 'partial'])
+            ->and($result['data']['route']['status'])
+            ->toBeIn(['failed', 'partial'])
+            ->and($result['meta']['action'])
+            ->toBe('created')
+            ->and($warning)
+            ->toMatchArray([
+                'code' => 'proxy.enactment_failed',
+                'family' => 'proxy',
+                'domain' => 'broken.docs.test',
+                'node' => 'app-1',
+                'next_command' => 'doctor --family=proxy --restore --node=app-1',
+            ])
+            ->and(collect($result['meta']['warnings'])->pluck('code')->all())
+            ->not->toContain('proxy.enactment_deferred');
+    });
+
     it('requires force before replacing different custom intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
 
@@ -180,6 +219,41 @@ describe('ProxyRouteIntent', function (): void {
             ->toBe([])
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
             ->toBeFalse();
+    });
+
+    it('keeps registry row and returns hard proxy.cleanup_failed when cleanup throws', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'stuck.test',
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'code' => 302,
+            ],
+        ]);
+        bindFailingProxyRouteFixer();
+
+        try {
+            app(ProxyRouteIntent::class)->remove('stuck.test');
+            $this->fail('Expected GatewayApiException for cleanup failure.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('proxy.cleanup_failed')
+                ->and($exception->getMessage())
+                ->toContain('registry is intact')
+                ->and($exception->errorMeta())
+                ->toMatchArray([
+                    'domain' => 'stuck.test',
+                    'node' => 'app-1',
+                    'backend_removed' => false,
+                    'tls_removed' => false,
+                    'next_command' => 'doctor --family=proxy --restore --node=app-1',
+                ])
+                ->and(ProxyRoute::query()->where('domain', 'stuck.test')->exists())
+                ->toBeTrue();
+        }
     });
 
     it('denies removal when a workspace owner still exists', function (): void {
@@ -309,6 +383,38 @@ describe('ProxyRouteIntent', function (): void {
         );
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
 });
+
+/**
+ * Force ProxyRouteFixer backend/TLS operations to throw so intent failure paths
+ * can be proven without mutating live nodes.
+ */
+function bindFailingProxyRouteFixer(): void
+{
+    $executor = new class implements RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'simulated proxy fixer failure',
+                durationMs: 1,
+            );
+        }
+    };
+
+    app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
+    app()->instance(ProxyRouteFixer::class, new ProxyRouteFixer(
+        renderer: new ProxyRouteRenderer,
+        ca: new ProxyIntentFakeCa,
+        siteCertificateInstaller: new SiteCertificateInstallerFake,
+        caddyConfig: new RemoteCaddyConfig($executor),
+    ));
+}
 
 final class ProxyIntentRecordingRemoteShell implements RemoteShell
 {

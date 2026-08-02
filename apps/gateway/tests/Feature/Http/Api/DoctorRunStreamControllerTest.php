@@ -106,14 +106,92 @@ it('omits full doctor aggregates from intermediate compact_progress frames', fun
         ],
     )->streamedContent();
 
+    $compactFrames = doctorRunStreamFrames($compact);
+    $stepFrames = array_values(array_filter(
+        $compactFrames,
+        static fn (array $frame): bool => $frame['event'] === 'step',
+    ));
+    $terminalFrame = collect($compactFrames)->last();
+    $terminalDoctor = doctorRunStreamTerminalDoctor($terminalFrame);
+
     expect($compact)
         ->toContain('"compact_progress":true')
         ->and($compact)
         ->toContain('event: complete')
         ->and(strlen($compact))
         ->toBeLessThan(strlen($full))
-        ->and(substr_count($compact, '"issues"'))
-        ->toBeLessThan(substr_count($full, '"issues"'));
+        ->and(collect($stepFrames)->every(
+            static fn (array $frame): bool => ($frame['data']['compact_progress'] ?? null) === true
+            && ! array_key_exists('doctor', $frame['data']),
+        ))
+        ->toBeTrue()
+        ->and($terminalFrame['event'] ?? null)
+        ->toBe('complete')
+        ->and($terminalDoctor)
+        ->toBeArray()
+        ->and($terminalDoctor)
+        ->toHaveKeys(['issues', 'summary'])
+        ->and($terminalDoctor['issues'])
+        ->toBeArray()
+        ->and($terminalDoctor['summary'])
+        ->toBeArray();
+});
+
+it('includes full doctor aggregate on compact_progress error terminal frames', function (): void {
+    createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
+    createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+    createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+
+    app()->instance(RemoteShell::class, new FleetDoctorRemoteShell(failingNodeName: 'app-prod-1'));
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['proxy'],
+            'mode' => 'verify',
+            'all' => true,
+            'compact_progress' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $content = $response->streamedContent();
+    $frames = doctorRunStreamFrames($content);
+    $stepFrames = array_values(array_filter(
+        $frames,
+        static fn (array $frame): bool => $frame['event'] === 'step',
+    ));
+    $terminalFrame = collect($frames)->last();
+    $terminalDoctor = doctorRunStreamTerminalDoctor($terminalFrame);
+
+    expect($content)
+        ->toContain('"compact_progress":true')
+        ->and(collect($stepFrames)->every(
+            static fn (array $frame): bool => ($frame['data']['compact_progress'] ?? null) === true
+            && ! array_key_exists('doctor', $frame['data']),
+        ))
+        ->toBeTrue()
+        ->and($terminalFrame['event'] ?? null)
+        ->toBe('error')
+        ->and($terminalFrame['data']['data']['code'] ?? null)
+        ->toBe('drift_detected')
+        ->and($terminalDoctor)
+        ->toBeArray()
+        ->and($terminalDoctor)
+        ->toHaveKeys(['issues', 'summary'])
+        ->and($terminalDoctor['issues'])
+        ->not
+        ->toBeEmpty()
+        ->and(collect($terminalDoctor['issues'])->pluck('key')->all())
+        ->toContain('proxy.node_probe_failed');
 });
 
 it('streams doctor panel snapshots before and during node-scoped probes', function (): void {
@@ -652,6 +730,35 @@ function doctorRunStreamStepEvents(string $content): array
     }
 
     return $events;
+}
+
+/**
+ * Terminal SSE payload nesting:
+ * - complete: data.data.doctor (emitter wraps complete payload under data)
+ * - error: data.data.data.doctor (error payload has data.doctor, then emitter wraps)
+ * Intermediate compact step frames omit doctor entirely.
+ *
+ * @param  array{event?: string, data?: array<string, mixed>}|null  $frame
+ * @return array<string, mixed>|null
+ */
+function doctorRunStreamTerminalDoctor(?array $frame): ?array
+{
+    if ($frame === null || ! is_array($frame['data'] ?? null)) {
+        return null;
+    }
+
+    $payload = $frame['data'];
+    $event = $frame['event'] ?? null;
+
+    if ($event === 'complete' && is_array($payload['data']['doctor'] ?? null)) {
+        return $payload['data']['doctor'];
+    }
+
+    if ($event === 'error' && is_array($payload['data']['data']['doctor'] ?? null)) {
+        return $payload['data']['data']['doctor'];
+    }
+
+    return null;
 }
 
 /**

@@ -46,17 +46,22 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `--force` never becomes a general ownership bypass. A living project,
   instance, WebSocket, workspace, gateway, S3, or tool owner still denies
   removal with `proxy.owned_route_denied`.
-- Removes the proxy route row from gateway configuration.
-- Removes the backend route artifact from the serving node.
-- Removes TLS material that Orbit manages only when it is route-scoped.
+- Cleans backend route artifacts and Orbit-managed route-scoped TLS material
+  through the canonical `ProxyRouteFixer::removeExtra()` path first
+  (`/etc/orbit/certs/<domain>.{crt,key}` via the existing Caddy config remove path).
+- Deletes the gateway registry row only after that cleanup succeeds.
+- When cleanup fails, the registry row remains, the command returns hard
+  `error.code=proxy.cleanup_failed` with `backend_removed=false`,
+  `tls_removed=false`, and `next_command` for doctor repair, and no registry
+  deletion occurs.
 - TLS material shared by remaining proxy routes is not removed.
-- When an orphan owner is removed, the success payload includes
+- When an orphan owner is removed successfully, the success payload includes
   `removal_reason=orphan_owner` and the public owner type that was proven
   missing so operators can audit the repair.
 
 ### Destructive Consent Rules
 
-- Interactive mode requires an explicit confirmation prompt before gateway configuration is removed.
+- Interactive mode requires an explicit confirmation prompt before effects.
 - Non-interactive mode requires `--force`.
 - `--json` does not imply destructive consent.
 - Orphan-owner removal uses the same destructive consent rules as custom
@@ -97,15 +102,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
 | Owned route denied | The selected route is owned by a project, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
-| Cleanup failed | Gateway configuration was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
+| Cleanup failed | Backend route or TLS cleanup failed before registry deletion. | `error.code=proxy.cleanup_failed`; registry row remains; `error.meta.backend_removed=false`, `error.meta.tls_removed=false`, `error.meta.next_command` for doctor repair. |
 
 ## Doctor Relationship
 
-`proxy-remove` removes custom gateway proxy route configuration and, with
-destructive consent, orphan-owner registry rows that proxy doctor reports as
-`proxy.owner_invalid` (restore does not remove those rows). Backend and TLS
-cleanup owned by this command stays cleaned through ProxyRouteFixer; doctor is only for genuine cleanup failures fix mode when
-needed. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
+`proxy-remove` cleans backend and TLS through `ProxyRouteFixer` and then removes
+the registry row when cleanup succeeds. With destructive consent it may also
+remove orphan-owner registry rows that doctor reports as `proxy.owner_invalid`
+(restore does not delete those rows). Doctor is only for genuine cleanup
+failures and remaining orphan extras; it is not a mandatory second step after a
+healthy remove. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
 `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
@@ -114,4 +120,4 @@ needed. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route removal authorization, custom route deletion, orphan-owner force removal, living-owner denial, destructive consent requirement, and mutation API shape. |
 | `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:remove` force consent handling, interactive confirmation, DELETE forwarding, JSON success envelope, orphan-owner safety prose, and gateway error passthrough. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | Custom removal, orphan-owner force removal, living-owner denial, cleanup warnings, ownership checks, and authorization. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | Custom removal, orphan-owner force removal, living-owner denial, cleanup failure keeps registry, ownership checks, and authorization. |

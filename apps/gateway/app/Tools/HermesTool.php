@@ -79,17 +79,17 @@ final class HermesTool extends BaseTool
                     .'PASSWORD_FILE="/home/agent/.hermes/dashboard.password"; '
                     .'SECRET_FILE="/home/agent/.hermes/dashboard.secret"; '
                     .'PUBLIC_URL_FILE="/home/agent/.hermes/dashboard.public_url"; '
-                    // Empty files are treated as missing — process must not start
-                    // with zero-length basic-auth material.
-                    .'[ -s "${PASSWORD_FILE}" ] || { echo "hermes dashboard password missing" >&2; exit 1; }; '
-                    .'[ -s "${SECRET_FILE}" ] || { echo "hermes dashboard secret missing" >&2; exit 1; }; '
+                    // Canonical non-empty rule: missing/zero-byte/whitespace-only
+                    // credential files fail closed (same normalization as regen).
+                    .'PASSWORD="$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)"; '
+                    .'SECRET="$(tr -d "[:space:]" < "${SECRET_FILE}" 2>/dev/null || true)"; '
+                    .'[ -n "${PASSWORD}" ] || { echo "hermes dashboard password missing" >&2; exit 1; }; '
+                    .'[ -n "${SECRET}" ] || { echo "hermes dashboard secret missing" >&2; exit 1; }; '
                     ."export HERMES_DASHBOARD_BASIC_AUTH_USERNAME={$username}; "
-                    .'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="$(tr -d "\r\n" < "${PASSWORD_FILE}")"; '
-                    .'export HERMES_DASHBOARD_BASIC_AUTH_SECRET="$(tr -d "\r\n" < "${SECRET_FILE}")"; '
-                    .'[ -n "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}" ] || { echo "hermes dashboard password empty" >&2; exit 1; }; '
-                    .'[ -n "${HERMES_DASHBOARD_BASIC_AUTH_SECRET}" ] || { echo "hermes dashboard secret empty" >&2; exit 1; }; '
+                    .'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${PASSWORD}"; '
+                    .'export HERMES_DASHBOARD_BASIC_AUTH_SECRET="${SECRET}"; '
                     .'if [ -f "${PUBLIC_URL_FILE}" ]; then '
-                    .'export HERMES_DASHBOARD_PUBLIC_URL="$(tr -d "\r\n" < "${PUBLIC_URL_FILE}")"; '
+                    .'export HERMES_DASHBOARD_PUBLIC_URL="$(tr -d "[:space:]" < "${PUBLIC_URL_FILE}")"; '
                     .'fi; '
                     ."exec hermes dashboard --host 0.0.0.0 --port {$port} --no-open'",
             'runtime' => 'systemd',
@@ -213,9 +213,10 @@ final class HermesTool extends BaseTool
             .'PUBLIC_URL_FILE="${STATE_DIR}/dashboard.public_url"; '
             .'mkdir -p "${STATE_DIR}"; '
             .'umask 077; '
-            // -s: empty files are missing and must be regenerated securely.
-            .'if [ ! -s "${PASSWORD_FILE}" ]; then openssl rand -hex 24 > "${PASSWORD_FILE}"; chmod 600 "${PASSWORD_FILE}"; fi; '
-            .'if [ ! -s "${SECRET_FILE}" ]; then openssl rand -base64 32 > "${SECRET_FILE}"; chmod 600 "${SECRET_FILE}"; fi; '
+            // Canonical non-empty rule: missing, zero-byte, or whitespace-only
+            // (after stripping spaces/newlines) must be regenerated securely.
+            .'if [ -z "$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)" ]; then openssl rand -hex 24 > "${PASSWORD_FILE}"; chmod 600 "${PASSWORD_FILE}"; fi; '
+            .'if [ -z "$(tr -d "[:space:]" < "${SECRET_FILE}" 2>/dev/null || true)" ]; then openssl rand -base64 32 > "${SECRET_FILE}"; chmod 600 "${SECRET_FILE}"; fi; '
             .'printf "%s\n" "${ORBIT_HERMES_PUBLIC_URL}" > "${PUBLIC_URL_FILE}"; '
             .'chmod 600 "${PUBLIC_URL_FILE}"; '
             // Read-only unit ActiveState (no agent sudo). Treat active,

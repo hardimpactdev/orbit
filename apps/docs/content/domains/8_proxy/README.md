@@ -209,7 +209,7 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
     "managed_by": "orbit",
     "trusted_by_gateway_ca": true
   },
-  "status": "intent_only"
+  "status": "converged"
 }
 ```
 
@@ -229,7 +229,7 @@ The remaining fields describe placement, backend target, TLS, and status.
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
-| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, or `converged` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`; custom rows awaiting doctor are `intent_only`. |
+| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, or `converged` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`. Healthy custom `proxy:add` completes as `pending` then `converged`; apply failure leaves `failed` or `partial` for doctor repair. `intent_only` remains only for older custom rows without one-step enactment evidence. |
 
 ## Commands
 

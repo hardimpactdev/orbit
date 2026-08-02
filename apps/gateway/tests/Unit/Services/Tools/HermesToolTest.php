@@ -26,10 +26,11 @@ it('declares a process-owned dashboard on port 8080 with file-loaded basic auth'
         ->toContain('SECRET_FILE="/home/agent/.hermes/dashboard.secret"')
         ->toContain('${PASSWORD_FILE}')
         ->toContain('${SECRET_FILE}')
-        ->toContain('[ -s "${PASSWORD_FILE}" ]')
-        ->toContain('[ -s "${SECRET_FILE}" ]')
-        ->toContain('[ -n "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}" ]')
-        ->toContain('[ -n "${HERMES_DASHBOARD_BASIC_AUTH_SECRET}" ]')
+        ->toContain('tr -d "[:space:]"')
+        ->toContain('[ -n "${PASSWORD}" ]')
+        ->toContain('[ -n "${SECRET}" ]')
+        ->not->toContain('[ -s "${PASSWORD_FILE}" ]')
+        ->not->toContain('[ -s "${SECRET_FILE}" ]')
         ->not->toContain('[ -f "${PASSWORD_FILE}" ]')
         ->not->toContain('[ -f "${SECRET_FILE}" ]')->toContain('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=orbit')->toContain(
             'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=',
@@ -61,9 +62,12 @@ it('configures managed dashboard credentials and stops only unmanaged dashboards
             ->toContain('openssl rand')
             ->toContain('chmod 600')
             ->toContain('umask 077')
-            // Empty files must be regenerated (! -s), not preserved.
-            ->toContain('if [ ! -s "${PASSWORD_FILE}" ]')
-            ->toContain('if [ ! -s "${SECRET_FILE}" ]')
+            // Missing/zero-byte/whitespace-only files regenerate via tr -d "[:space:]".
+            ->toContain('tr -d "[:space:]"')
+            ->toContain('if [ -z "$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)" ]')
+            ->toContain('if [ -z "$(tr -d "[:space:]" < "${SECRET_FILE}" 2>/dev/null || true)" ]')
+            ->not->toContain('if [ ! -s "${PASSWORD_FILE}" ]')
+            ->not->toContain('if [ ! -s "${SECRET_FILE}" ]')
             ->not->toContain('if [ ! -f "${PASSWORD_FILE}" ]')
             ->not->toContain('if [ ! -f "${SECRET_FILE}" ]')->toContain('dashboard.public_url')->toContain(
                 'ORBIT_HERMES_PUBLIC_URL',

@@ -398,12 +398,7 @@ describe('proxy write commands', function (): void {
             'tls_removed' => true,
             'removal_reason' => 'orphan_owner',
             'owner_type' => 'workspace',
-            'warnings' => [[
-                'code' => 'proxy.cleanup_failed',
-                'family' => 'proxy',
-                'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.',
-                'next_command' => 'doctor --family=proxy --restore --node=app-1',
-            ]],
+            'warnings' => [],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
@@ -426,7 +421,17 @@ describe('proxy write commands', function (): void {
     });
 
     it('renders proxy:remove gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('proxy.cleanup_failed', 'Backend cleanup failed.'), 500);
+        fakeGateway(fakeErrorEnvelope(
+            'proxy.cleanup_failed',
+            "Proxy route 'old.test' registry is intact, but backend/TLS cleanup failed: simulated",
+            [
+                'domain' => 'old.test',
+                'node' => 'app-1',
+                'backend_removed' => false,
+                'tls_removed' => false,
+                'next_command' => 'doctor --family=proxy --restore --node=app-1',
+            ],
+        ), 422);
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
             'domain' => 'old.test',
@@ -436,7 +441,9 @@ describe('proxy write commands', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain('Backend cleanup failed')
+            ->toContain('registry is intact')
+            ->and($output)
+            ->toContain('backend/TLS cleanup failed')
             ->and($output)
             ->not->toContain('"error"');
     });

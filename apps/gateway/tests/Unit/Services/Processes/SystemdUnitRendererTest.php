@@ -77,11 +77,14 @@ it('preserves the Hermes dashboard credential shell pipeline through systemd ren
     expect($command)
         ->toContain('PASSWORD_FILE="/home/agent/.hermes/dashboard.password"')
         ->toContain('${PASSWORD_FILE}')
-        ->toContain('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="$(tr -d "\r\n" < "${PASSWORD_FILE}")"')
+        ->toContain('PASSWORD="$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)"')
+        ->toContain('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${PASSWORD}"')
         ->and($execStart)
         ->not->toBeNull()->toContain('PASSWORD_FILE="/home/agent/.hermes/dashboard.password"')->toContain(
             '$${PASSWORD_FILE}',
-        )->toContain('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="$$(tr -d "\r\n" < "$${PASSWORD_FILE}")"')->toContain(
+        )->toContain('PASSWORD="$$(tr -d "[:space:]" < "$${PASSWORD_FILE}" 2>/dev/null || true)"')->toContain(
+            'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="$${PASSWORD}"',
+        )->toContain(
             'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
         )
         ->not->toMatch('/(?<!\$)\$\{PASSWORD_FILE\}/')

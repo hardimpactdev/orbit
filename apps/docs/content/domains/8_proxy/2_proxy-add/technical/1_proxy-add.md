@@ -42,14 +42,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolves a proxy-capable serving node.
 - Validates that exactly one of `--upstream` or `--redirect` is selected.
 - Creates or updates a custom gateway proxy route row.
-- Persists custom routes with `status=intent_only`; a registry row alone is
-  not evidence that Caddy or TLS artifacts exist.
+- Persists the route with enactment `pending`, then enacts backend and TLS through
+  the canonical `ProxyRouteFixer` path in the same command.
+- On successful enactment, marks the route `converged`. A registry row alone is
+  not success evidence; `status=converged` means planned backend/TLS operations completed.
+- On enactment failure, keeps the partial route row, records enactment
+  `failed`/`partial`, and returns a **successful** command envelope whose
+  `meta.warnings[]` includes registered `proxy.enactment_failed` with
+  `next_command` prefix `doctor --family=proxy --restore`. Doctor is the repair
+  path only; it is not a mandatory second step after a healthy add.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
-- Enacts backend/TLS through the canonical fixer after persisting intent. On failure, reports `proxy.enactment_failed` with
-  `proxy` family. Its allowed next-command prefix is
-  `doctor --family=proxy --restore`; proxy backend route and Orbit-managed TLS
-  material are restored through that command.
 - When an upstream route targets a host-local service through `127.0.0.1`,
   `localhost`, or `host.docker.internal`, reports
   the registered `firewall_rule.host_upstream_may_block` command handoff in the
@@ -101,11 +104,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Domain conflict | The selected domain is owned by a project, instance, WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. | `error.code=proxy.domain_conflict` |
 | Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy.replacement_consent_required` |
-| Apply failed | Gateway configuration was written, but proxy or TLS backend apply failed. | `error.code=proxy.enactment_failed` |
+| Apply failed | Gateway configuration was written, but proxy or TLS backend apply failed. | Successful envelope with route row retained; `meta.warnings[]` contains `proxy.enactment_failed` and `next_command` for doctor repair. Route enactment status is `failed` or `partial`. |
 
 ## Doctor Relationship
 
-`proxy-add` changes custom gateway proxy route configuration and performs command-owned apply only. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative `proxy` probe, issue codes, fix map, and adopt map.
+`proxy-add` changes custom gateway proxy route configuration and enacts backend/TLS
+in the same command when apply succeeds. [`proxy-doctor.md`](../../proxy-doctor.md)
+owns the authoritative `proxy` probe, issue codes, fix map, and adopt map, and is
+the repair path when add left a partial `proxy.enactment_failed` state.
 
 ## Test Mapping
 
@@ -114,4 +120,4 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route creation authorization, custom upstream route intent, non-custom domain conflict denial, and mutation API shape. |
 | `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:add` upstream and redirect payloads, local default node resolution, required node validation, mutually exclusive target validation, and gateway error passthrough. |
 | `apps/cli/tests/Feature/Commands/Proxy/ProxyInteractiveInputModeTest.php` | Interactive `proxy:add` custom upstream prompt before contacting the gateway. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | In-memory proxy route intent DTOs, replacement consent, ownership conflicts, custom-route removal intent, authorization, and app-owned domain rejection. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | One-step enactment, replacement consent, ownership conflicts, custom-route removal, authorization, and app-owned domain rejection. |
