@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T18:40:07+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-php-free-agent-update/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-204006-codex-php-free-agent-update",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/php-free-agent-update-retained.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T182946Z-801369605d4f.json"
+    ],
+    "entry_digests": {
+        "evidence/php-free-agent-update-retained.txt": "5cf4ca7366638c4058beaf45decdd1dbc340d62e8d304535dea523d8e18d9c10",
+        "loop.md": "031bb6365fe1c8c423a8bf205d96b3b4f5351f8ca93c1055acc4392e716a76e0",
+        "quality-gates/quality-check-2026-08-02T182946Z-801369605d4f.json": "ad3987f3a39f1c70be4f3da4a2fa8bb8d1e5c846b20524c02b6cbab347bce791"
+    },
+    "branch": "codex/php-free-agent-update",
+    "candidate_commit": "692c73f65ae76819b4e24b243bc23acb2a95875b",
+    "accepted_feature_tip": "692c73f65ae76819b4e24b243bc23acb2a95875b",
+    "accepted_main_tip": "effe7a1e02b7c520553d69f4f101dcdfb1b8cd1e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

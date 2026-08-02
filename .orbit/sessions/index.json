@@ -5017,9 +5017,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-08-02-200826-codex-openclaw-default-port",
-            "slug": "codex-openclaw-default-port",
-            "timestamp": "2026-08-02-200826",
+            "archive": "2026-08-02-200838-openclaw-default-port",
+            "slug": "openclaw-default-port",
+            "timestamp": "2026-08-02-200838",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",
@@ -5039,9 +5039,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-08-02-200838-openclaw-default-port",
-            "slug": "openclaw-default-port",
-            "timestamp": "2026-08-02-200838",
+            "archive": "2026-08-02-204006-codex-php-free-agent-update",
+            "slug": "codex-php-free-agent-update",
+            "timestamp": "2026-08-02-204006",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",

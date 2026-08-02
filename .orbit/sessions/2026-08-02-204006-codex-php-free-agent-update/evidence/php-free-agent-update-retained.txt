@@ -1,0 +1,10 @@
+Retained topology proof: php-free Agent fleet-update install
+
+- Topology: dev-92f4b4
+- Kind: operator_gateway_agent
+- Host: beast
+- Feature source: exact tip synced into /home/orbit/orbit-run
+- Command: bin/orbit-cli-pest --compact tests/Feature/InternalFleetUpdateInstallCliCommandTest.php --filter='host php is unavailable'
+- Result: 2 passed, 17 assertions
+- Coverage: Agent config/CA write and role-image side effects with host PHP absent
+- Source marker: LocalFleetUpdateInstallCliAction line 490 uses ORBIT_ROLE_IMAGES_LINES
