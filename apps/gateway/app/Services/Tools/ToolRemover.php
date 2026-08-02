@@ -57,12 +57,11 @@ final readonly class ToolRemover
 
     private function isStaleStoredTool(string $tool, mixed $stored): bool
     {
-        return $stored instanceof NodeTool
+        return (
+            $stored instanceof NodeTool
             && $stored->node instanceof Node
-            && (
-                ! $this->catalog->supports($tool)
-                || ! $this->catalog->supportsNode($tool, $stored->node)
-            );
+            && (! $this->catalog->supports($tool) || ! $this->catalog->supportsNode($tool, $stored->node))
+        );
     }
 
     /**
