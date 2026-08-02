@@ -171,7 +171,7 @@ server name before rendering.
 | `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor.
+`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor. For `proxy.owner_invalid` registry rows (owner reference missing while the route row remains), remove the orphan row with [`proxy:remove --force`](3_proxy-remove/proxy-remove.md) after confirming the owner is gone; force is not a bypass for living owners.
 
 ## Proxy Adopt Map
 

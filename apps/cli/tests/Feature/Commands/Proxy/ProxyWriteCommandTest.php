@@ -355,6 +355,7 @@ describe('proxy write commands', function (): void {
         ], [
             'backend_removed' => true,
             'tls_removed' => false,
+            'removal_reason' => 'custom',
         ]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
@@ -378,6 +379,48 @@ describe('proxy write commands', function (): void {
             ->toContain('Backend cleanup: completed')
             ->and($output)
             ->toContain('TLS cleanup: skipped')
+            ->and($output)
+            ->not->toContain('{');
+    });
+
+    it('renders orphan-owner proxy:remove safety detail in human mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'route' => [
+                'domain' => 'auth.craft-starterkit-react.test',
+                'kind' => 'workspace',
+                'owner' => ['type' => 'workspace', 'name' => null],
+                'node' => 'app-1',
+                'target' => ['type' => 'workspace', 'value' => null],
+                'status' => 'removed_with_drift',
+            ],
+        ], [
+            'backend_removed' => false,
+            'tls_removed' => false,
+            'removal_reason' => 'orphan_owner',
+            'owner_type' => 'workspace',
+            'warnings' => [[
+                'code' => 'proxy.cleanup_deferred',
+                'family' => 'proxy',
+                'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.',
+                'next_command' => 'doctor --family=proxy --restore --node=app-1',
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'proxy:remove', [
+            'domain' => 'auth.craft-starterkit-react.test',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Proxy route 'auth.craft-starterkit-react.test' removed")
+            ->and($output)
+            ->toContain('Domain: auth.craft-starterkit-react.test')
+            ->and($output)
+            ->toContain('Owner: workspace (orphaned)')
+            ->and($output)
+            ->toContain('Safe because: the recorded workspace owner no longer exists')
             ->and($output)
             ->not->toContain('{');
     });
