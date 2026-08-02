@@ -60,9 +60,11 @@ include `tool:credentials`. The default agent self-grant does not include
 ## Service Endpoint
 
 `hermes` exposes an internal HTTPS proxy route owned by the tool at
-`https://hermes.<node-tld>` (for example `https://hermes.agent-1`). The route
+`https://hermes.<node-tld>` (for example `https://hermes.agent`). The route
 is internal: it is reachable only over the Orbit/WireGuard network and
-has no ingress baseline.
+has no ingress baseline. The default reverse-proxy upstream is
+`http://host.docker.internal:8080`. OpenClaw uses port `8081` on the same
+agent node so both tool UIs can co-host without colliding.
 
 ## Orbit Notes
 

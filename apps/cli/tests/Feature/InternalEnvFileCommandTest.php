@@ -12,6 +12,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * @mago-expect lint:halstead
+ * @mago-expect lint:cyclomatic-complexity
  */
 describe('internal env-file command', function (): void {
     beforeEach(function (): void {
@@ -221,7 +222,251 @@ describe('internal env-file command', function (): void {
         '/Users/nckrtl/apps/mealou/config/.env',
         '/Users/nckrtl/apps/mealou/../.env',
     ]);
+
+    it('accepts registered Codex worktree workspace env paths', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('env_file.not_found');
+    })->with([
+        'linux codex worktree' => '/home/nckrtl/.codex/worktrees/9106/dngdmt/.env',
+        'macOS codex worktree' => '/Users/nckrtl/.codex/worktrees/a59f/happie/.env',
+    ]);
+
+    it('rejects unsafe or non-workspace Codex env paths', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed');
+    })->with([
+        '/home/nckrtl/.codex/worktrees/9106/../.env',
+        '/home/nckrtl/.codex/worktrees/9106/dngdmt/config/.env',
+        '/home/nckrtl/.codex/.env',
+        '/home/nckrtl/.env',
+        '/Users/nckrtl/.codex/worktrees/a59f/happie/../.env',
+        '/Users/nckrtl/.codex/worktrees/a59f/happie/config/.env',
+        '/etc/passwd',
+        '/home/nckrtl/.codex/worktrees/9106/dngdmt/.env.bak',
+    ]);
+
+    it('reads and writes a real Codex worktree env file', function (): void {
+        $workspace = make_env_file_codex_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        file_put_contents($envPath, data: "APP_KEY=base\n");
+
+        try {
+            [$readExit, $readOutput] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'read',
+                    'path' => $envPath,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($readExit)
+                ->toBe(0)
+                ->and($readOutput)
+                ->toContain('"contents":"APP_KEY=base\\n"');
+
+            [$writeExit, $writeOutput] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'write',
+                    'path' => $envPath,
+                    'contents' => "APP_KEY=updated\n",
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($writeExit)
+                ->toBe(0)
+                ->and($writeOutput)
+                ->toContain('"bytes":16')
+                ->and(file_get_contents($envPath))
+                ->toBe("APP_KEY=updated\n");
+        } finally {
+            delete_env_file_codex_worktree_workspace($workspace);
+        }
+    });
+
+    it('rejects a Codex worktree path whose .env is a symlink escape', function (): void {
+        $workspace = make_env_file_codex_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        $outside = sys_get_temp_dir().'/orbit-env-escape-'.bin2hex(random_bytes(4));
+        file_put_contents($outside, data: "SECRET=1\n");
+        symlink($outside, $envPath);
+
+        try {
+            [$exitCode, $output] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'read',
+                    'path' => $envPath,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('validation_failed');
+        } finally {
+            if (is_link($envPath) || is_file($envPath)) {
+                unlink($envPath);
+            }
+            if (is_file($outside)) {
+                unlink($outside);
+            }
+            delete_env_file_codex_worktree_workspace($workspace);
+        }
+    });
+
+    it('rejects a Codex worktree path whose parent directory symlink escapes the allowlist', function (): void {
+        $workspace = make_env_file_codex_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        $outside = sys_get_temp_dir().'/orbit-env-parent-escape-'.bin2hex(random_bytes(4));
+        mkdir($outside);
+        file_put_contents("{$outside}/.env", data: "SECRET=1\n");
+
+        // Replace the leaf project directory with a symlink to an outside directory.
+        rmdir($workspace);
+        symlink($outside, $workspace);
+
+        try {
+            [$exitCode, $output] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'read',
+                    'path' => $envPath,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('validation_failed');
+        } finally {
+            if (is_link($workspace)) {
+                unlink($workspace);
+            }
+            if (is_file("{$outside}/.env")) {
+                unlink("{$outside}/.env");
+            }
+            if (is_dir($outside)) {
+                rmdir($outside);
+            }
+            // Parent worktree id directory may still exist under ~/.codex/worktrees.
+            $parent = dirname($workspace);
+            $grandparent = dirname($parent);
+            $parent = dirname($workspace);
+            if (is_dir($parent)) {
+                rmdir_if_empty($parent);
+            }
+        }
+    });
 });
+
+function env_file_codex_home_root(): string
+{
+    $home = getenv('HOME');
+
+    if (! is_string($home) || $home === '') {
+        $home = (string) (posix_getpwuid(posix_geteuid())['dir'] ?? '');
+    }
+
+    if (
+        ! str_starts_with($home, '/Users/')
+        && ! str_starts_with($home, '/home/')
+    ) {
+        test()->markTestSkipped('Codex worktree env tests require a /Users or /home HOME.');
+    }
+
+    return rtrim($home, characters: '/');
+}
+
+function make_env_file_codex_worktree_workspace(): string
+{
+    $id = bin2hex(random_bytes(3));
+    $workspace = env_file_codex_home_root()."/.codex/worktrees/{$id}/envtest";
+    mkdir($workspace, permissions: 0o755, recursive: true);
+
+    return $workspace;
+}
+
+function delete_env_file_codex_worktree_workspace(string $workspace): void
+{
+    if (is_file("{$workspace}/.env") || is_link("{$workspace}/.env")) {
+        unlink("{$workspace}/.env");
+    }
+
+    if (is_dir($workspace)) {
+        rmdir($workspace);
+    }
+
+    $parent = dirname($workspace);
+
+    if (is_dir($parent)) {
+        rmdir_if_empty($parent);
+    }
+}
+
+function rmdir_if_empty(string $directory): void
+{
+    $entries = scandir($directory);
+
+    if ($entries === false) {
+        return;
+    }
+
+    $children = array_values(array_filter(
+        $entries,
+        static fn (string $entry): bool => $entry !== '.' && $entry !== '..',
+    ));
+
+    if ($children === []) {
+        rmdir($directory);
+    }
+}
 
 function configureEnvFileOperationTokenGuard(): void
 {

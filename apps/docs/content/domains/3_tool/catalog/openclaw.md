@@ -23,14 +23,17 @@ model in Orbit.
 ## Capabilities
 
 `openclaw` supports `tool:install`, `tool:remove`, `tool:update`,
-`tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
-adopt. It does not declare generic lifecycle or logs verbs; any future runtime
-verb must name one exact runtime under the capability gate.
+`tool:reconfigure`, `tool:credentials`, proxy route metadata, safe doctor fix,
+and safe doctor adopt. Lifecycle and logs for the managed web runtime belong to
+the related `openclaw-gateway` process (`process:*`), not to tool lifecycle
+verbs.
 
 ## Credentials
 
-`tool:credentials openclaw` returns the web UI access metadata Orbit has
-generated for the managed OpenClaw service.
+`tool:credentials openclaw` returns the web UI access metadata for the managed
+OpenClaw gateway. Auth mode is token. The token is stored only at
+`/home/agent/.openclaw/gateway.token` and is never written into
+`openclaw.json`, process command argv, or logs.
 
 Example JSON shape:
 
@@ -43,8 +46,8 @@ Example JSON shape:
         "node": "agent-1",
         "fields": {
           "url": "https://openclaw.agent-1",
-          "username": "orbit",
-          "password": "<generated-password>"
+          "auth_mode": "token",
+          "token": "<generated-token>"
         }
       }
     },
@@ -61,9 +64,11 @@ credentials from its own CLI.
 ## Service Endpoint
 
 `openclaw` exposes an internal HTTPS proxy route owned by the tool at
-`https://openclaw.<node-tld>` (for example `https://openclaw.agent-1`). The
+`https://openclaw.<node-tld>` (for example `https://openclaw.agent`). The
 route is internal: it is reachable only over the Orbit/WireGuard network
-and has no ingress baseline.
+and has no ingress baseline. The default reverse-proxy upstream is
+`http://host.docker.internal:8081` so Hermes can keep port `8080` on the same
+agent node.
 
 ## Orbit Notes
 
@@ -72,8 +77,22 @@ shared unprivileged `agent` user, never as the privileged `orbit` maintenance
 user. `tool:update openclaw` runs OpenClaw's native update path through the
 Orbit-managed binary. The agent runtime must be able to execute
 `/home/agent/.local/bin/orbit --version --local` through the owner-user shim
-without sudo or write access to owner Orbit config or install metadata. It does
-not implicitly restart related runtime processes.
+without sudo or write access to owner Orbit config or install metadata.
+
+The managed web gateway is process-owned: `tool:install` configures a related
+`openclaw-gateway` `systemd` process that runs
+`openclaw gateway run --port 8081 --bind lan` under
+`OPENCLAW_SUPERVISOR_MODE=external` so OpenClaw's native service install is not
+used (no double supervision). The process shell loads
+`OPENCLAW_GATEWAY_TOKEN` from `/home/agent/.openclaw/gateway.token` immediately
+before exec; the stored process command never contains the secret.
+
+Install/update/reconfigure merge only managed gateway fields through
+`openclaw config set` (`gateway.mode`, `gateway.port`, `gateway.bind`,
+`gateway.auth.mode=token`, `gateway.controlUi.allowedOrigins`) and never
+rewrite the full `~/.openclaw/openclaw.json`, preserving agents, channels,
+models, and other settings. `gateway.auth.token` is unset from config when
+present so the env-file token remains the sole secret source.
 
 `tool:update openclaw` from the node itself requires `tool:update` on the
 self-grant. `tool:install openclaw`, `tool:remove openclaw`,
@@ -100,7 +119,8 @@ sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -
 ```
 
 The `--no-onboard` flag skips the interactive setup wizard so Orbit can
-converge configuration itself.
+converge configuration itself, then merges managed gateway fields and
+configures the related process.
 
 Before the tool row, proxy route, or installer is applied, Orbit verifies the
 explicit Linux platform, mandatory node TLD, existence of the `agent` user, and
@@ -133,5 +153,5 @@ sudo -u agent -H bash -lc 'openclaw gateway status'
 that managed credential metadata is present. It also checks that the OpenClaw
 binary version matches the gateway expected version when version tracking is
 enabled, and that the tool's internal proxy route metadata resolves to the
-target node's configured TLD. Runtime process lifecycle drift belongs to the process
-family.
+target node's configured TLD (default upstream port `8081`). Runtime process
+lifecycle drift belongs to the process family.

@@ -378,16 +378,24 @@ describe('ToolInstallController', function (): void {
             tool_install_api_server_headers(),
         );
 
-        $response->assertOk();
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'openclaw')
+            ->assertJsonPath('success.data.tool.process.name', 'openclaw-gateway')
+            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.tool.process.tool', 'openclaw')
+            ->assertJsonPath('success.data.tool.process.action', 'configured');
 
         expect($shell->scripts)
-            ->toHaveCount(3)
+            ->toHaveCount(5)
             ->and($shell->scripts[0])
             ->toContain("id -u 'agent'")
             ->and($shell->scripts[1])
             ->toContain('https://openclaw.ai/install.sh')
-            ->and($shell->toolRowsPresent)
-            ->toBe([false, true, true])
+            ->and($shell->scripts[1])
+            ->toContain('openclaw config set gateway.port 8081')
+            ->and($shell->toolRowsPresent[0] ?? null)
+            ->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
             ->toBeTrue();
     });

@@ -73,7 +73,7 @@ final readonly class AgentToolProxyRouteIntent
         $toolConfig = is_array($tool->config) ? $tool->config : [];
         $upstream = is_string($toolConfig['upstream'] ?? null) && $toolConfig['upstream'] !== ''
             ? $toolConfig['upstream']
-            : 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
+            : $this->defaultUpstream($tool->name);
         $config = [
             'target' => ['type' => 'upstream', 'value' => $upstream],
             'upstream' => $upstream,
@@ -121,6 +121,21 @@ final readonly class AgentToolProxyRouteIntent
         $expectedConfig = is_array($expected->config) ? $expected->config : [];
 
         return ($actualConfig['owner_name'] ?? null) !== ($expectedConfig['owner_name'] ?? null);
+    }
+
+    /**
+     * Default container-reachable upstream for agent tool web UIs.
+     * Hermes keeps port 8080; OpenClaw uses 8081 so both can co-host on one agent node.
+     */
+    private function defaultUpstream(string $toolName): string
+    {
+        $port = match ($toolName) {
+            'openclaw' => 8081,
+            'hermes' => 8080,
+            default => 8080,
+        };
+
+        return 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':'.$port;
     }
 
     public function persist(ProxyRoute $expected): ?ProxyRoute

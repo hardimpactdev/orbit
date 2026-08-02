@@ -234,11 +234,11 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         expect($route)
             ->toBeInstanceOf(ProxyRoute::class)
             ->and($route->config['upstream'])
-            ->toBe('http://host.docker.internal:8080')
+            ->toBe('http://host.docker.internal:8081')
             ->not
             ->toContain('127.0.0.1')
             ->and(new ProxyRouteRenderer()->render($route))
-            ->toContain('reverse_proxy http://host.docker.internal:8080');
+            ->toContain('reverse_proxy http://host.docker.internal:8081');
     });
 
     it('rewrites pre-existing loopback custom proxy routes when rendering them through orbit-caddy', function (): void {

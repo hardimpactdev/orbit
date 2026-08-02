@@ -854,7 +854,8 @@ function agentToolDriftEntry(string $key): DriftEntry
  */
 function toolsFixerAgentRouteConfig(string $tool): array
 {
-    $upstream = 'http://host.docker.internal:8080';
+    $port = $tool === 'openclaw' ? 8081 : 8080;
+    $upstream = "http://host.docker.internal:{$port}";
 
     return [
         'target' => ['type' => 'upstream', 'value' => $upstream],

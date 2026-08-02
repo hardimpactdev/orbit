@@ -50,7 +50,7 @@ final class PhpCliTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'update', 'safe-adopt'];
+        return ['install', 'remove', 'update', 'safe-adopt'];
     }
 
     /**
@@ -75,6 +75,46 @@ final class PhpCliTool extends BaseTool
     public function updateScript(array $config = []): string
     {
         return $this->buildScript('update', $this->normalizeConfig($config));
+    }
+
+    /**
+     * Remove only Orbit-owned static PHP CLI binaries and their managed symlinks.
+     * Does not touch distro PHP packages or unrelated /usr/local/bin/php targets.
+     */
+    #[\Override]
+    public function removeScript(array $config = []): string
+    {
+        $root = self::INSTALL_ROOT;
+        $minors = implode(' ', PhpCliArtifactCatalog::SUPPORTED_MINORS);
+
+        return <<<BASH
+            #!/usr/bin/env bash
+            # orbit remove php-cli
+            set -euo pipefail
+
+            ROOT={$root}
+
+            for minor in {$minors}; do
+              link="/usr/local/bin/php\${minor}"
+              if [ -L "\${link}" ]; then
+                target="\$(readlink "\${link}" || true)"
+                case "\${target}" in
+                  "\${ROOT}/"*) sudo rm -f "\${link}" ;;
+                esac
+              fi
+            done
+
+            if [ -L /usr/local/bin/php ]; then
+              target="\$(readlink /usr/local/bin/php || true)"
+              case "\${target}" in
+                "\${ROOT}/"*) sudo rm -f /usr/local/bin/php ;;
+              esac
+            fi
+
+            if [ -d "\${ROOT}" ]; then
+              sudo rm -rf "\${ROOT}"
+            fi
+            BASH;
     }
 
     #[\Override]

@@ -35,7 +35,15 @@ running the update script.
 
 ## Capabilities
 
-`php-cli` supports `tool:install`, `tool:update`, and safe doctor adopt.
+`php-cli` supports `tool:install`, `tool:remove`, `tool:update`, and safe
+doctor adopt.
+
+`tool:remove php-cli` removes only Orbit-owned static binaries under
+`/opt/orbit/php` and managed `/usr/local/bin/php*` symlinks that point into
+that tree. It does not uninstall distro PHP packages, Homebrew PHP, or
+unrelated `/usr/local/bin/php` targets. Removal is for retiring stale host
+toolchain state on nodes that no longer require the app-dev/app-prod PHP CLI
+baseline.
 
 `tool:install php-cli` downloads Orbit-owned statically linked PHP CLI artifacts
 for every supported minor (8.3, 8.4, 8.5) at pinned patch releases. Artifacts

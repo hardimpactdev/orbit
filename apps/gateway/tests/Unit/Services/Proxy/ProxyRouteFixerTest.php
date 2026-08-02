@@ -83,8 +83,8 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe('proxy')
             ->and($route->config)
             ->toMatchArray([
-                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
-                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8081'],
+                'upstream' => 'http://host.docker.internal:8081',
                 'owner_name' => 'openclaw',
             ])
             ->and($route->source_hash)
@@ -141,7 +141,7 @@ describe('ProxyRouteFixer', function (): void {
         expect($action['status'])
             ->toBe('completed')
             ->and($route->config['upstream'])
-            ->toBe('http://host.docker.internal:8080')
+            ->toBe('http://host.docker.internal:8081')
             ->and($route->source_hash)
             ->toBe(new ProxyRouteRenderer()->sourceHash($route));
     });

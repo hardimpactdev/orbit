@@ -37,6 +37,8 @@ direction.
 ## Decisions
 
 <!-- newest first; add new entries directly under this comment -->
+- 2026-08-02 — When OpenClaw and Hermes co-host on one `agent` node, Hermes keeps default web port `8080` and OpenClaw's managed web runtime uses port `8081` with tool-owned proxy routes `hermes.<tld>` and `openclaw.<tld>`. OpenClaw lifecycle is Orbit process-owned (`openclaw-gateway` via `openclaw gateway run` with `OPENCLAW_SUPERVISOR_MODE=external`); the gateway token is file/env-only (`OPENCLAW_GATEWAY_TOKEN`), not stored in process argv or full-config rewrites.
+
 
 - 2026-07-29 — Orbit-owned php-cli production artifacts are fleet-scoped (9 cells), not a full OS/arch cross-product: for each pinned patch 8.3.31/8.4.21/8.5.8 Orbit publishes coverage on linux-x86_64 and macos-aarch64 plus standard on linux-x86_64 only, matching the real fleet (Ubuntu app-dev, macOS ARM app-dev, Ubuntu app-prod). Production matrix no longer includes linux-aarch64, macos-x86_64, or standard macOS artifacts; role variant authority (`app-dev` coverage, `app-prod` standard) and compatibility install behavior until matrix promotion remain unchanged.
 - 2026-07-29 — Orbit-owned php-cli matrix object keys under a fixed versioned prefix are truly immutable: before `aws s3 cp`, publication runs `s3api head-object`; an existing key is re-verified via the unauthenticated consumer URL SHA-256 and skipped when identical, or fails closed (new versioned prefix/pin required) when the SHA differs — never overwrite a different artifact at an existing fixed version/variant/platform key.

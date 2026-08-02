@@ -17,15 +17,32 @@ describe('PhpCliTool', function (): void {
         expect($tool->slug())->toBe('php-cli')->and($tool->category())->toBe('runtime');
     });
 
-    it('declares install, update, and safe-adopt capabilities', function (): void {
+    it('declares install, remove, update, and safe-adopt capabilities', function (): void {
         $tool = new PhpCliTool;
 
         expect($tool->capabilities())
             ->toContain('install')
             ->and($tool->capabilities())
+            ->toContain('remove')
+            ->and($tool->capabilities())
             ->toContain('update')
             ->and($tool->capabilities())
             ->toContain('safe-adopt');
+    });
+
+    it('removeScript only targets Orbit-owned php-cli install roots and managed symlinks', function (): void {
+        $tool = new PhpCliTool;
+        $script = $tool->removeScript();
+
+        expect($script)
+            ->toContain('# orbit remove php-cli')
+            ->toContain(PhpCliTool::INSTALL_ROOT)
+            ->toContain('/usr/local/bin/php')
+            ->toContain('readlink')
+            ->toContain('sudo rm -rf')
+            ->not->toContain('apt-get')
+            ->not->toContain('brew ')
+            ->not->toContain('docker rmi');
     });
 
     it('supports Linux and macOS hosts', function (): void {
