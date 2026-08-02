@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -125,5 +126,64 @@ describe('ProxyRoute mutation API', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
+    });
+
+    it('denies force removal of a living workspace-owned route', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/feature.docs.test', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'proxy.owned_route_denied')
+            ->assertJsonPath('error.meta.owner_type', 'workspace');
+
+        expect(ProxyRoute::query()->where('domain', 'feature.docs.test')->exists())->toBeTrue();
+    });
+
+    it('force-removes an orphaned workspace-owned route and reports why it was safe', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'app_id' => $app->id,
+            'workspace_id' => null,
+            'domain' => 'auth.craft-starterkit-react.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/auth.craft-starterkit-react.test', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.route.domain', 'auth.craft-starterkit-react.test')
+            ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
+            ->assertJsonPath('success.meta.owner_type', 'workspace')
+            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.cleanup_deferred');
+
+        expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeFalse();
     });
 });
