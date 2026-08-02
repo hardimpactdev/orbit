@@ -339,7 +339,9 @@ final readonly class ProxyRouteProbe
                 printf "0\t\n"
                 exit 0
             fi
-            content=$(base64 -w0 "$source" 2>/dev/null || base64 "$source" | tr -d "\n")
+            # Prefer stdin redirection: GNU base64 accepts files or stdin; BSD/macOS
+            # base64 does not accept a bare path for encode (needs -i or stdin).
+            content=$(base64 -w0 < "$source" 2>/dev/null || base64 < "$source" | tr -d "\n")
             printf "1\t%s\n" "$content"
             BASH;
 

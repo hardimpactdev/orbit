@@ -108,8 +108,8 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists but is not healthy running, including stopped containers and Docker restart loops. Mounted route artifacts are not served. |
 | `proxy.caddy_container_detached` | The running `orbit-caddy` container is not attached to the serving node's managed Docker network. |
-| `proxy.global_config_missing` | The host-mounted global Caddyfile for `orbit-caddy` is absent. Probe and restore use the host bind source (not docker-exec into a down or restarting container). |
-| `proxy.global_config_mismatch` | The host-mounted global Caddyfile exists but is missing Orbit-managed imports or snippets. |
+| `proxy.global_config_missing` | The host-mounted global Caddyfile for `orbit-caddy` is absent. Probe and restore use the host bind source with portable stdin `base64` (GNU and BSD/macOS). |
+| `proxy.global_config_mismatch` | The host-mounted global Caddyfile exists but is missing Orbit-managed imports or snippets, or still carries the obsolete local-CA `intermediate_lifetime 3599d` override that Caddy 2.11+ rejects when remaining root life is shorter than that configured intermediate lifetime. |
 | `proxy.agent_tool_route_missing` | An installed agent tool expects an internal route under its node TLD, but the gateway proxy route row is absent. |
 | `proxy.agent_tool_route_mismatch` | The expected agent-tool route row exists for the same tool but its serving node, kind, upstream, owner shape, or source hash differs from canonical proxy intent. |
 | `proxy.agent_tool_route_conflict` | The expected agent-tool domain is occupied by a custom route or a different tool. Proxy doctor reports the conflict but does not overwrite the other owner. |
@@ -146,11 +146,11 @@ server name before rendering.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec (host global config is seeded from the managed bind source before create), then re-render the mounted Caddy config. |
-| `proxy.caddy_container_down` | With a managed caddy tool spec, apply the container: seed host global config first, start when stopped, force-recreate restart loops even when hash/network match, and finish only when the container is stably running. Without a managed record, start the existing container only. |
+| `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container from its managed spec (host global config is seeded from the managed bind source before create). Apply-container also strips exact `intermediate_lifetime 3599d` from an existing host Caddyfile without touching Caddy data or root PEMs. |
+| `proxy.caddy_container_down` | With a managed caddy tool spec, apply the container: reconcile host global config first (including stripping exact `intermediate_lifetime 3599d`), start when stopped, force-recreate restart loops even when hash/network match, and finish only when stably running. Without a managed record, start the existing container only. |
 | `proxy.caddy_container_detached` | Reconcile the `orbit-caddy` container from its managed spec so the container is recreated on the managed Docker network. |
 | `proxy.global_config_missing` | Write the expected host-mounted global Caddyfile. When a managed caddy tool spec exists, apply the container so the host file is seeded before create/recreate and repair ends only when the container is stably running with that config present. When no managed spec exists, write the host file and reload if the container can accept reload. |
-| `proxy.global_config_mismatch` | Reconcile the host-mounted global Caddyfile to include Orbit-managed imports and snippets, then reload a healthy container (or apply the managed container when reload is not possible). |
+| `proxy.global_config_mismatch` | Reconcile the host-mounted global Caddyfile: ensure Orbit-managed imports/snippets, remove exact local-CA `intermediate_lifetime 3599d` (and now-empty wrappers only), preserve unrelated custom options, then reload or apply the managed container. Never deletes root or intermediate PEMs. |
 | `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
@@ -197,8 +197,10 @@ Required test files:
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
 | `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container seeds the host-mounted global Caddyfile before create/recreate, force-recreates restarting orbit-caddy containers with matching hash/network, and still starts stopped matching containers. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Global config probe reads the host-mounted Caddyfile artifact (not docker-exec-only when the container is down). |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore for missing global config plus managed container applies host seed before container apply; healthy mismatch still write+reloads. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Global config probe reads the host-mounted Caddyfile artifact with portable stdin `base64` (GNU and BSD/macOS; not docker-exec-only when the container is down). |
+| `apps/gateway/tests/Unit/Services/Gateway/CaddyGlobalConfigTest.php` | `ensure` removes exact `intermediate_lifetime 3599d`, preserves other intermediate_lifetime values and custom options, and does not touch PEM storage. |
+| `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container strips exact `intermediate_lifetime 3599d` from an existing host Caddyfile before recreate while leaving data mounts alone. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore for missing global config plus managed container applies host seed before container apply; healthy mismatch write+reloads; `intermediate_lifetime 3599d` mismatch is rewritten without PEM deletion. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php` | Failed tool log reads keep useful stdout when stderr is empty (including docker logs redirected with `2>&1`). |
 | `apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php` | Internal tool-run payload accepts the `logs` action used by `tool:logs`. |
 | `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |

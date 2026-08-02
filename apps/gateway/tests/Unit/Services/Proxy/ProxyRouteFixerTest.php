@@ -1396,6 +1396,65 @@ describe('ProxyRouteFixer', function (): void {
             ->toBeTrue();
     });
 
+    it('rewrites the obsolete intermediate_lifetime 3599d global option without touching PEM paths', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'mini',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.30')->spec()],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell(<<<'CADDY'
+            {
+                local_certs
+                admin localhost:2019
+                pki {
+                    ca local {
+                        intermediate_lifetime 3599d
+                    }
+                }
+            }
+
+            custom.mini {
+                respond ok
+            }
+            CADDY);
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixGlobalConfig($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.global_config_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'legacy intermediate_lifetime 3599d',
+            detail: ['node' => 'mini'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'mini',
+                'key' => 'proxy.global_config_mismatch',
+                'status' => 'completed',
+            ])
+            ->and($shell->globalConfig)
+            ->not->toContain('intermediate_lifetime 3599d')
+            ->not->toContain('intermediate_lifetime')->toContain('custom.mini')->toContain(
+                'local_certs',
+            )->and(proxy_fixer_scripts_contain(
+                $shell,
+                needle: "internal:caddy-config 'write-global'",
+            ))->toBeTrue()->and(implode("\n", $shell->scripts))
+            ->not->toContain('root.crt')
+            ->not->toContain('intermediate.crt')
+            ->not->toContain('/var/lib/orbit/caddy/data/pki');
+    });
+
     it('restores missing global config through apply-container when a managed caddy spec exists', function (): void {
         $node = createTestAppHostNode([
             'name' => 'mini',

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
+use Orbit\Core\Caddy\CaddyfileLocalCaIntermediateLifetime;
+
 final readonly class CaddyGlobalConfig
 {
     /**
@@ -29,6 +31,7 @@ final readonly class CaddyGlobalConfig
     public function ensure(string $contents, array $withoutSiteDomains = []): string
     {
         $contents = new CaddyGlobalSiteBlocks()->remove($contents, $withoutSiteDomains);
+        $contents = CaddyfileLocalCaIntermediateLifetime::withoutObsoleteLocalOverride($contents);
         $contents = rtrim($contents);
 
         if ($contents === '') {

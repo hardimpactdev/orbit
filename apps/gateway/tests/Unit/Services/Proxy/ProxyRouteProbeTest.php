@@ -1786,6 +1786,21 @@ describe('proxy node-level introspection', function (): void {
             ->not->toContain('State.Status')
             ->not->toContain('docker exec');
     });
+
+    it('encodes the host-mounted global Caddyfile with portable stdin base64 for GNU and BSD/macOS', function (): void {
+        $node = createTestAppHostNode();
+        $shell = new ProxyProbeRecordingRemoteShell("1\t".base64_encode("{\n    local_certs\n}\n")."\n");
+
+        proxyProbeWithRemoteShell($shell)->introspectGlobalConfig($node);
+
+        expect($shell->scripts[0])
+            ->toContain('base64 < "$source"')
+            ->and($shell->scripts[0])
+            ->toContain('base64 -w0 < "$source"')
+            ->and($shell->scripts[0])
+            ->not->toContain('base64 "$source"')->and($shell->scripts[0])
+            ->not->toContain('base64 -w0 "$source"');
+    });
 });
 
 describe('proxy node-level diff', function (): void {

@@ -765,6 +765,92 @@ describe('internal caddy config command', function (): void {
             ->toContain("tee {$configRoot}/caddy/Caddyfile");
     });
 
+    it('strips obsolete intermediate_lifetime 3599d from an existing host Caddyfile during apply-container', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'f', times: 64);
+        $configRoot = '/Users/nckrtl/.config/orbit';
+        $dataRoot = '/var/lib/orbit/caddy/data';
+        $spec = caddy_config_container_spec($expectedHash);
+        $spec['mounts'] = [
+            [
+                'source' => "{$configRoot}/caddy/Caddyfile",
+                'target' => '/etc/caddy/Caddyfile',
+                'read_only' => true,
+            ],
+            [
+                'source' => "{$configRoot}/caddy/sites",
+                'target' => '/etc/caddy/sites',
+                'read_only' => true,
+            ],
+            [
+                'source' => $dataRoot,
+                'target' => '/data/caddy',
+                'read_only' => false,
+            ],
+        ];
+        $legacyConfig = <<<'CADDY'
+            {
+                local_certs
+                admin localhost:2019
+                pki {
+                    ca local {
+                        intermediate_lifetime 3599d
+                    }
+                }
+            }
+
+            custom.mini {
+                respond ok
+            }
+
+            CADDY;
+        $desiredConfig = <<<'CADDY'
+            {
+                local_certs
+                admin localhost:2019
+            }
+
+            import /etc/caddy/sites/*.caddy
+            CADDY;
+        file_put_contents("{$bin}/read-global.txt", $legacyConfig);
+        caddy_config_fake_container_inspect($bin, [
+            'State' => ['Status' => 'restarting', 'Running' => true, 'Restarting' => true],
+            'Config' => [
+                'Labels' => ['orbit.caddy.spec_hash' => $expectedHash],
+            ],
+            'NetworkSettings' => ['Networks' => ['orbit-network' => (object) []]],
+        ]);
+
+        [$exitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => $spec,
+                'global_config' => $desiredConfig,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+        $written = file_get_contents("{$bin}/stdin.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($written)
+            ->not->toContain('intermediate_lifetime 3599d')
+            ->not->toContain('intermediate_lifetime')->toContain('custom.mini')->toContain('local_certs')->toContain(
+                'import /etc/caddy/sites/*.caddy',
+            )->and($calls)->toContain('docker rm -f orbit-caddy')->toContain(
+                'docker run -d --pull never --name orbit-caddy',
+            )
+            ->not->toContain("rm -rf {$dataRoot}")
+            ->not->toContain("rm -f {$dataRoot}/pki")
+            ->not->toContain('root.crt')
+            ->not->toContain('intermediate.crt');
+    });
+
     it('updates an existing global Caddyfile through the declared container bind source', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'e', times: 64);

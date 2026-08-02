@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Caddy;
 
 use App\Services\Docker\LocalDockerCommandContext;
+use Orbit\Core\Caddy\CaddyfileLocalCaIntermediateLifetime;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Process;
 
@@ -714,7 +715,7 @@ final readonly class LocalCaddyConfigAction
 
     private function mergedGlobalConfig(string $currentConfig, string $desiredConfig): string
     {
-        $currentConfig = rtrim($currentConfig);
+        $currentConfig = rtrim(CaddyfileLocalCaIntermediateLifetime::withoutObsoleteLocalOverride($currentConfig));
 
         if ($currentConfig === '') {
             return $desiredConfig;
