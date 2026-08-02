@@ -63,7 +63,7 @@ it('preserves the Hermes dashboard credential shell pipeline through systemd ren
     $process = OrbitProcess::factory()
         ->forOwner($node)
         ->create([
-            'name' => 'hermes-dashboard',
+            'name' => HermesTool::PROCESS_NAME,
             'command' => $command,
             'runtime' => ProcessRuntime::Systemd,
             'restart_policy' => 'always',

@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Tools\ToolCatalog;
+use App\Tools\HermesTool;
 use App\Tools\OpenClawTool;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -133,7 +134,7 @@ final readonly class AgentToolProxyRouteIntent
     {
         $port = match ($toolName) {
             'openclaw' => OpenClawTool::WEB_PORT,
-            'hermes' => 8080,
+            'hermes' => HermesTool::WEB_PORT,
             default => 8080,
         };
 

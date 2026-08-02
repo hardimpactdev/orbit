@@ -15,6 +15,12 @@ final class HermesTool extends BaseTool
      */
     public const int WEB_PORT = 8080;
 
+    /**
+     * Orbit-owned process name. Distinct from Hermes native
+     * hermes-dashboard.service so unit ownership cannot collide.
+     */
+    public const string PROCESS_NAME = 'orbit-hermes-dashboard';
+
     public const string PASSWORD_FILE = '/home/agent/.hermes/dashboard.password';
 
     public const string SECRET_FILE = '/home/agent/.hermes/dashboard.secret';
@@ -66,7 +72,7 @@ final class HermesTool extends BaseTool
         $username = self::AUTH_USERNAME;
 
         return [
-            'name' => 'hermes-dashboard',
+            'name' => self::PROCESS_NAME,
             'command' =>
                 'sudo -u agent -H bash -lc '
                     ."'set -euo pipefail; "
@@ -182,8 +188,9 @@ final class HermesTool extends BaseTool
     }
 
     /**
-     * Ensure durable basic-auth material and stop unmanaged Hermes web listeners
-     * so the Orbit-owned hermes-dashboard process can bind port 8080 cleanly.
+     * Ensure durable basic-auth material. Stop unmanaged Hermes dashboard
+     * listeners only when the Orbit unit is not active so update/reconfigure
+     * never kill the managed process that owns port 8080.
      *
      * @param  array<array-key, mixed>  $config
      */
@@ -195,6 +202,7 @@ final class HermesTool extends BaseTool
             : 'hermes.agent';
         $publicUrl = "https://{$hostname}";
         $publicUrlEnv = "'".str_replace(search: "'", replace: "'\\''", subject: $publicUrl)."'";
+        $unit = self::PROCESS_NAME.'.service';
 
         return (
             'sudo -u agent -H env'
@@ -212,9 +220,12 @@ final class HermesTool extends BaseTool
             .'if [ ! -f "${SECRET_FILE}" ]; then openssl rand -base64 32 > "${SECRET_FILE}"; chmod 600 "${SECRET_FILE}"; fi; '
             .'printf "%s\n" "${ORBIT_HERMES_PUBLIC_URL}" > "${PUBLIC_URL_FILE}"; '
             .'chmod 600 "${PUBLIC_URL_FILE}"; '
-            // Stop unmanaged (non-systemd) dashboard listeners so port 8080 is
-            // free for the Orbit hermes-dashboard process unit.
-            .'hermes dashboard --stop 2>/dev/null || true'
+            // Read-only unit state (no agent sudo). When Orbit's unit is active
+            // the dashboard is managed — do not hermes dashboard --stop.
+            // When inactive (first install or stopped), stop unmanaged listeners.
+            ."if ! systemctl is-active --quiet {$unit} 2>/dev/null; then "
+            .'hermes dashboard --stop 2>/dev/null || true; '
+            .'fi'
             ."'"
         );
     }

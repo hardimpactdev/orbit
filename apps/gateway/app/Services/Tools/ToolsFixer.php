@@ -211,10 +211,16 @@ final readonly class ToolsFixer
             $config['variant'] = app(PhpCliVariantResolver::class)->forTool($tool)->value;
         }
 
-        return [
+        $config = [
             ...$config,
             'managed_user' => is_string($managedUser) && trim($managedUser) !== '' ? trim($managedUser) : 'orbit',
         ];
+
+        if ($tool->node instanceof Node) {
+            $config = ($this->catalog ?? app(ToolCatalog::class))->scriptConfig($tool->name, $tool->node, $config);
+        }
+
+        return $config;
     }
 
     private function containerRepairCommand(NodeTool $tool): ?string

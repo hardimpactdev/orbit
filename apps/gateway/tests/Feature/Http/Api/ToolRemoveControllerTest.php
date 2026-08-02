@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
@@ -170,6 +174,79 @@ describe('ToolRemoveController', function (): void {
             ->toBeNull()
             ->and($shell->scripts)
             ->toBeEmpty();
+    });
+
+    it('removes the related Orbit process before running the Hermes remove script', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-hermes-remove',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => HermesTool::PROCESS_NAME,
+                'command' => 'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'hermes',
+            ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.node', $node->name)
+            ->assertJsonPath('success.data.tool.process.name', HermesTool::PROCESS_NAME)
+            ->assertJsonPath('success.data.tool.process.action', 'removed');
+
+        expect(NodeTool::find($tool->id))
+            ->toBeNull()
+            ->and(Process::find($process->id))
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->not
+            ->toBeEmpty()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    static fn (string $script): bool => (
+                        str_contains($script, 'orbit remove hermes')
+                        || str_contains($script, 'rm -rf "${HOME}/.hermes"')
+                        || str_contains($script, "rm -rf \"\${HOME}/.hermes\"")
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('removes stale unsupported tool-owned proxy routes without running remote scripts', function (): void {

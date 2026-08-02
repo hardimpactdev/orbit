@@ -64,7 +64,8 @@ final readonly class ToolUpdater
         $model->config = $config === [] ? null : $config;
         $model->save();
 
-        $script = $this->catalog->updateScript($tool, $config);
+        $scriptConfig = $this->catalog->scriptConfig($tool, $node, $config);
+        $script = $this->catalog->updateScript($tool, $scriptConfig);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
@@ -73,7 +74,7 @@ final readonly class ToolUpdater
         $result = $this->runToolScriptWithGitHubAuth(
             node: $node,
             tool: $tool,
-            config: $config,
+            config: $scriptConfig,
             scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
         );
 
@@ -169,7 +170,8 @@ final readonly class ToolUpdater
             }
 
             $config = $this->resolvedConfigForUpdate($nt);
-            $script = $this->catalog->updateScript($tool, $config);
+            $scriptConfig = $this->catalog->scriptConfig($tool, $targetNode, $config);
+            $script = $this->catalog->updateScript($tool, $scriptConfig);
 
             if ($script === null) {
                 $skipped[] = [
@@ -188,7 +190,7 @@ final readonly class ToolUpdater
             $result = $this->runToolScriptWithGitHubAuth(
                 node: $targetNode,
                 tool: $tool,
-                config: $config,
+                config: $scriptConfig,
                 scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
             );
 

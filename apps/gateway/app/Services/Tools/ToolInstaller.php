@@ -140,7 +140,8 @@ final readonly class ToolInstaller
             ];
         }
 
-        $script = $this->catalog->installScript($tool, $config);
+        $scriptConfig = $this->catalog->scriptConfig($tool, $targetNode, $config);
+        $script = $this->catalog->installScript($tool, $scriptConfig);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
@@ -153,8 +154,7 @@ final readonly class ToolInstaller
         }
 
         if ($this->catalog->category($tool) === 'agent') {
-            $agentConfig = $this->agentToolConfig($tool, $targetNode, $config);
-            $routeConflict = $this->checkToolProxyRouteConflict($tool, $targetNode, $agentConfig);
+            $routeConflict = $this->checkToolProxyRouteConflict($tool, $targetNode, $scriptConfig);
 
             if ($routeConflict instanceof ToolRegistryFailure) {
                 return $routeConflict;
@@ -176,7 +176,7 @@ final readonly class ToolInstaller
         $result = $this->runToolScriptWithGitHubAuth(
             node: $targetNode,
             tool: $tool,
-            config: $config,
+            config: $scriptConfig,
             scriptFactory: fn (array $config): string => (string) $this->catalog->installScript($tool, $config),
         );
 
@@ -196,9 +196,7 @@ final readonly class ToolInstaller
             );
         }
 
-        $agentConfig = $this->agentToolConfig($tool, $targetNode, $config);
-
-        $credentialsScript = $this->catalog->credentialsScript($tool, $agentConfig);
+        $credentialsScript = $this->catalog->credentialsScript($tool, $scriptConfig);
 
         if ($credentialsScript !== null) {
             $credResult = $this->toolScriptDispatcher->runForRegistry(
@@ -370,22 +368,6 @@ final readonly class ToolInstaller
     private function phpCliRoleForNode(Node $node): ?string
     {
         return app(PhpCliVariantResolver::class)->appRoleForNode($node);
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     * @return array<string, mixed>
-     */
-    private function agentToolConfig(string $tool, Node $node, array $config): array
-    {
-        if ($this->catalog->category($tool) !== 'agent') {
-            return $config;
-        }
-
-        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
-        $hostname = $tld !== '' ? "{$tool}.{$tld}" : $tool;
-
-        return array_merge($config, ['hostname' => $hostname]);
     }
 
     /**

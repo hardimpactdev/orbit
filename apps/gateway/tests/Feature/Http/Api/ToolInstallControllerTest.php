@@ -394,10 +394,56 @@ describe('ToolInstallController', function (): void {
             ->toContain('https://openclaw.ai/install.sh')
             ->and($shell->scripts[1])
             ->toContain('openclaw config set gateway.port 18789')
+            ->and($shell->scripts[1])
+            ->toContain('https://openclaw.openclaw-agent')
             ->and($shell->toolRowsPresent[0] ?? null)
             ->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
             ->toBeTrue();
+    });
+
+    it('passes the resolved agent TLD hostname into Hermes install and configures orbit-hermes-dashboard', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'hermes-hostname-install',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'fleet-agent',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/hermes/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.process.name', 'orbit-hermes-dashboard')
+            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.tool.process.tool', 'hermes')
+            ->assertJsonPath('success.data.tool.process.action', 'configured');
+
+        $installScript = collect($shell->scripts)
+            ->first(
+                static fn (string $script): bool => str_contains($script, 'install.sh'),
+            );
+
+        expect($installScript)
+            ->not->toBeNull()->toContain('https://hermes.fleet-agent')->toContain('ORBIT_HERMES_PUBLIC_URL')->toContain(
+                'systemctl is-active --quiet orbit-hermes-dashboard.service',
+            )
+            ->not->toContain('https://hermes.agent"')->and(
+                NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists(),
+            )->toBeTrue();
     });
 
     it('configures the related singleton process by default when installing a service tool', function (): void {

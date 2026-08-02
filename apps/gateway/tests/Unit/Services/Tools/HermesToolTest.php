@@ -13,9 +13,11 @@ it('declares a process-owned dashboard on port 8080 with file-loaded basic auth'
 
     expect(HermesTool::WEB_PORT)
         ->toBe(8080)
+        ->and(HermesTool::PROCESS_NAME)
+        ->toBe('orbit-hermes-dashboard')
         ->and($tool->relatedProcess())
         ->toMatchArray([
-            'name' => 'hermes-dashboard',
+            'name' => 'orbit-hermes-dashboard',
             'runtime' => 'systemd',
             'tool' => 'hermes',
         ])
@@ -40,11 +42,11 @@ it('declares a process-owned dashboard on port 8080 with file-loaded basic auth'
         );
 });
 
-it('configures managed dashboard credentials and stops unmanaged native lifecycle', function (): void {
+it('configures managed dashboard credentials and stops only unmanaged dashboards', function (): void {
     $tool = new HermesTool;
-    $install = $tool->installScript(['hostname' => 'hermes.agent']);
-    $reconfigure = $tool->reconfigureScript(['hostname' => 'hermes.agent']);
-    $update = $tool->updateScript(['hostname' => 'hermes.agent']);
+    $install = $tool->installScript(['hostname' => 'hermes.agent-1']);
+    $reconfigure = $tool->reconfigureScript(['hostname' => 'hermes.agent-1']);
+    $update = $tool->updateScript(['hostname' => 'hermes.agent-1']);
 
     foreach ([$install, $reconfigure, $update] as $script) {
         expect($script)
@@ -55,8 +57,10 @@ it('configures managed dashboard credentials and stops unmanaged native lifecycl
             ->toContain('umask 077')
             ->toContain('dashboard.public_url')
             ->toContain('ORBIT_HERMES_PUBLIC_URL')
-            ->toContain('https://hermes.agent')
+            ->toContain('https://hermes.agent-1')
+            ->toContain('systemctl is-active --quiet orbit-hermes-dashboard.service')
             ->toContain('hermes dashboard --stop')
+            ->not->toContain('systemctl stop orbit-hermes-dashboard')
             ->not->toContain('systemctl stop hermes-dashboard')
             ->not->toContain('<generated-password>')
             ->not->toContain('hermes setup')
@@ -79,10 +83,10 @@ it('configures managed dashboard credentials and stops unmanaged native lifecycl
 });
 
 it('returns username/password credentials without embedding a generated secret in the script source', function (): void {
-    $script = new HermesTool()->credentialsScript(['hostname' => 'hermes.agent']);
+    $script = new HermesTool()->credentialsScript(['hostname' => 'hermes.agent-1']);
 
     expect($script)
-        ->toContain('https://hermes.agent')
+        ->toContain('https://hermes.agent-1')
         ->toContain('auth_mode')
         ->toContain('basic')
         ->toContain('username')

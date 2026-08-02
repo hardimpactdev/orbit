@@ -226,6 +226,26 @@ final readonly class ToolCatalog
         return $this->definition($tool)?->relatedProcess();
     }
 
+    /**
+     * Merge agent tool hostname derived from the node TLD into script config so
+     * install/update/reconfigure/credentials share the same public URL host as
+     * the tool proxy route (for example hermes.agent-1, not a generic default).
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    public function scriptConfig(string $tool, Node $node, array $config = []): array
+    {
+        if ($this->category($tool) !== 'agent') {
+            return $config;
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+        $hostname = $tld !== '' ? "{$tool}.{$tld}" : $tool;
+
+        return array_merge($config, ['hostname' => $hostname]);
+    }
+
     public function installScript(string $tool, array $config = []): ?string
     {
         if (! $this->hasCapability($tool, 'install')) {

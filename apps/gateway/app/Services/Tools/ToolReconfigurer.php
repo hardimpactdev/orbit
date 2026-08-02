@@ -48,7 +48,8 @@ final readonly class ToolReconfigurer
             $mergedConfig['password'] = $password;
         }
 
-        $script = $this->catalog->reconfigureScript($tool, $mergedConfig);
+        $scriptConfig = $this->catalog->scriptConfig($tool, $model->node, $mergedConfig);
+        $script = $this->catalog->reconfigureScript($tool, $scriptConfig);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'reconfigure');
