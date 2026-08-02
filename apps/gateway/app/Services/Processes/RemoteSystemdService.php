@@ -8,6 +8,7 @@ use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
@@ -106,6 +107,8 @@ final readonly class RemoteSystemdService
             'metadata' => [
                 'ORBIT_OPERATION_ID' => "process.systemd.{$action}",
             ],
+            // systemd units live on the host; leave the container when needed.
+            'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
             'timeout' => 60,
         ];
 

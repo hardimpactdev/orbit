@@ -33,8 +33,9 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe(RemoteLocalExecutor::class, function (): void {
-    it('runs gateway-targeted node execution through the local gateway runtime even when ssh is requested', function (): void {
+    it('runs gateway-targeted node execution through the local gateway runtime by default', function (): void {
         Http::preventStrayRequests();
         ProcessFacade::preventStrayProcesses();
         ProcessFacade::fake([
@@ -42,7 +43,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         ]);
         $sshTransport = new RemoteLocalExecutorRecordingTransport(
             static fn (): RemoteShellResult => throw new RuntimeException(
-                'SSH transport must never be called for a gateway target.',
+                'SSH transport must never be called for a gateway target by default.',
             ),
         );
         $executor =
@@ -86,6 +87,56 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         expect(DB::table('operation_runs')->value('operation_token_consumed_at'))
             ->not->toBeNull();
+    });
+
+    it('forces host-owned gateway commands onto the gateway host boundary', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:wireguard-self-route',
+                arguments: ['10.6.0.2'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000429',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-ok\n");
+            ProcessFacade::assertRan(function (PendingProcess $process): bool {
+                $command = (string) $process->command;
+
+                return (
+                    str_contains($command, 'internal:wireguard-self-route')
+                    && ! str_contains($command, 'docker exec -i')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '))
+                );
+            });
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
     });
 
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {

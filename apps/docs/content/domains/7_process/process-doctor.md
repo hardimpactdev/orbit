@@ -132,11 +132,21 @@ may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 When a node-owned service process endpoint host equals the owning node's
 WireGuard service address, the process probe runs `ip route get <wireguard-ip>`
 on Linux and expects a local route such as `local <ip> dev lo` or an equivalent
-local route. macOS reports the exact unsupported message
+local route. The probe is host-boundary work: on a containerized gateway it runs
+on the gateway host, not inside the `orbit-gateway` container. macOS reports the
+exact unsupported message
 `WireGuard self-route diagnostics are only supported on Linux.` and does not
-mutate routes. Missing, unsupported, or unverifiable self-route diagnostics are
-reported as process-family `unverifiable` drift because route mutation belongs
-to node provisioning/topology work.
+mutate routes. Unsupported platforms are **not applicable** — they produce no
+process-family drift. Missing or unverifiable self-route diagnostics on a
+**supported** Linux node are reported as process-family `unverifiable` drift
+because route mutation belongs to node provisioning/topology work.
+
+### Runtime placement
+
+Doctor selects and probes app/workspace processes by current app instance and
+workspace placement, not by a possibly stale denormalized `process.node_id`. A
+process whose instance moved nodes is diagnosed on the current placement node.
+A genuinely missing runtime unit on that current node remains reportable.
 
 ### Runtime artifact presence
 
@@ -180,7 +190,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.owner_app_invalid` | The process definition points at a missing project, missing instance, or instance whose serving node is not active. |
 | `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
 | `process.runtime_context_unresolved` | The expected main instance or same-instance workspace runtime context cannot be derived from gateway configuration. |
-| `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
+| `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but supported Linux self-route diagnostics are missing or unhealthy. Unsupported platforms are not applicable and emit no issue. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_unrenderable` | Gateway process intent is incomplete or invalid, so the expected runtime unit cannot be rendered. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact, or an active instance of a managed PHP app lacks its canonical FrankenPHP process row. |
@@ -272,7 +282,12 @@ owner validation, same-instance workspace expansion, process manager
 availability, and hibernation-aware Docker runtime liveness.
 It also covers runtime-unit identity, canonical FrankenPHP and SeaweedFS
 process rows, and Docker/Docker Swarm managed service metadata.
-WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts,
-launchd plist and loaded-state drift, restart policy drift, runtime environment
-drift, event notifier drift, and exclusion of non-process drift from issue
-codes are also covered.
+WireGuard self-route diagnostics (including unsupported-platform not-applicable
+behavior and true supported unhealthy drift), current-placement resolution after
+instance moves, missing/extra/drifted runtime artifacts, launchd plist and
+loaded-state drift, restart policy drift, runtime environment drift, event
+notifier drift, and exclusion of non-process drift from issue codes are also
+covered.
+
+`DoctorReportRunnerTest` also covers process selection by current app instance
+placement when denormalized `process.node_id` is stale.

@@ -34,7 +34,7 @@ The firewall probe reads gateway firewall rules and checks these layers:
    Public SSH policy owned by the node family remains
    `node.security.public_ssh_deny`.
 5. **Backend presence:** the expected backend rule exists when gateway configuration says it should exist.
-6. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, protocol, address family, and interface scope.
+6. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, protocol, address family, and interface scope. Host-only CIDR forms are canonicalized for comparison and convergence (`10.6.0.13/32` equals `10.6.0.13`). When intent stores address family `both` for a concrete IPv4 or IPv6 host address, the effective family is derived from that address so a matching single-family UFW rule is not treated as mismatch and is not deleted/recreated.
 7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
 
 Observed backend firewall rules without gateway firewall configuration are unmanaged node reality by default. They are not reported as drift unless the operator requested an explicit adoption scope.
@@ -97,5 +97,7 @@ Required test files:
 No current E2E test is mapped for firewall-family read-only or restore coverage.
 
 `FirewallRuleProbeTest.php` covers registry configuration, node eligibility,
-baseline policy boundaries, missing rules, mismatched rules, extra rules in
-adoption scope, and exclusion of node/proxy/app drift from firewall issue codes.
+baseline policy boundaries, missing rules, mismatched rules, host-CIDR and
+effective-family equivalence (`10.6.0.13/32`/`both` vs bare IPv4/`v4`), true
+source mismatches, extra rules in adoption scope, and exclusion of
+node/proxy/app drift from firewall issue codes.

@@ -25,6 +25,7 @@ interface RunsInternalCommands
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     public function runInternal(

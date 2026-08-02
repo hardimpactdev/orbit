@@ -241,30 +241,84 @@ final readonly class DoctorReportRunner
     /**
      * @return Collection<int, Process>
      */
+    /**
+     * @return Collection<int, Process>
+     */
     private function processesForNode(Node $node): Collection
     {
-        /** @var Collection<int, Process> $processes */
-        $processes = $this
-            ->processQueryForNode($node)
-            ->with(['owner', 'appInstance'])
+        $placement = app(WorkspacePlacement::class);
+        /** @var list<int> $placedInstanceIds */
+        $placedInstanceIds = [];
+
+        foreach (AppInstance::query()->with('app')->get() as $instance) {
+            if ($placement->nodeForInstance($instance)?->is($node) === true) {
+                $placedInstanceIds[] = $instance->id;
+            }
+        }
+
+        /** @var Collection<int, Process> $candidates */
+        $candidates = $this
+            ->processQueryForNode($node, $placedInstanceIds)
+            ->with(['owner', 'appInstance', 'node'])
             ->get();
 
-        return $processes;
+        /** @var Collection<int, Process> $filtered */
+        $filtered = $candidates
+            ->filter(fn (Process $process): bool => $this->processBelongsToNode($process, $node, $placement))
+            ->values();
+
+        return $filtered;
     }
 
     /**
+     * @param  list<int>  $placedInstanceIds
      * @return Builder<Process>
      */
-    private function processQueryForNode(Node $node): Builder
+    private function processQueryForNode(Node $node, array $placedInstanceIds = []): Builder
     {
+        // Candidate set: denormalized node_id match, or current instance
+        // placement. Final membership is decided by processBelongsToNode().
         /** @var Builder<Process> $query */
-        $query = Process::query()->where('node_id', $node->id);
+        $query = Process::query()->where(function (Builder $builder) use ($node, $placedInstanceIds): void {
+            $builder->where('node_id', $node->id);
+
+            if ($placedInstanceIds !== []) {
+                $builder->orWhereIn('app_instance_id', $placedInstanceIds);
+            }
+        });
 
         if ($this->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
         }
 
         return $query;
+    }
+
+    private function processBelongsToNode(
+        Process $process,
+        Node $node,
+        ?WorkspacePlacement $placement = null,
+    ): bool {
+        $process->loadMissing(['owner', 'appInstance']);
+        $placement ??= app(WorkspacePlacement::class);
+
+        if ($process->owner instanceof Node) {
+            return $process->owner->is($node);
+        }
+
+        if ($process->owner instanceof Workspace) {
+            $placed = $placement->nodeForWorkspace($process->owner);
+
+            return $placed instanceof Node && $placed->is($node);
+        }
+
+        if ($process->appInstance instanceof AppInstance) {
+            $placed = $placement->nodeForInstance($process->appInstance);
+
+            return $placed instanceof Node && $placed->is($node);
+        }
+
+        return $process->node_id === $node->id;
     }
 
     /**
@@ -3715,9 +3769,19 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        $placement = app(WorkspacePlacement::class);
+        /** @var list<int> $placedInstanceIds */
+        $placedInstanceIds = [];
+
+        foreach (AppInstance::query()->get() as $instance) {
+            if ($placement->nodeForInstance($instance)?->is($node) === true) {
+                $placedInstanceIds[] = $instance->id;
+            }
+        }
+
         /** @var Collection<int, Process> $processes */
         $processes = $this
-            ->processQueryForNode($node)
+            ->processQueryForNode($node, $placedInstanceIds)
             ->with(['owner', 'appInstance.app'])
             ->where('name', $processName)
             ->when(
@@ -3733,6 +3797,11 @@ final readonly class DoctorReportRunner
                 ),
             )
             ->get();
+
+        /** @var Collection<int, Process> $processes */
+        $processes = $processes
+            ->filter(fn (Process $process): bool => $this->processBelongsToNode($process, $node, $placement))
+            ->values();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
         $runtimeProcess = $this->processForRuntimeUnit($node, $processes, $runtimeUnit);
 

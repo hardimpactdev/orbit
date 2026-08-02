@@ -139,6 +139,54 @@ function createDoctorRunnerAppHostNode(array $attributes = []): Node
     return $node;
 }
 
+it('selects app processes by current placement instead of a stale process.node_id', function (): void {
+    $oldNode = createDoctorRunnerAppHostNode(['name' => 'beast']);
+    $newNode = createDoctorRunnerAppHostNode(['name' => 'nmbp']);
+    $app = Project::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $oldNode->id,
+            node: $oldNode->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($app)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'dev',
+            'command' => 'php artisan serve',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
+
+    $instance->forceFill([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $newNode->id,
+            node: $newNode->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ])->save();
+    DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
+
+    $runner = app(DoctorReportRunner::class);
+    $method = new \ReflectionMethod(DoctorReportRunner::class, 'processesForNode');
+    $method->setAccessible(true);
+
+    $onOld = $method->invoke($runner, $oldNode);
+    $onNew = $method->invoke($runner, $newNode);
+
+    expect($onOld->pluck('id')->all())
+        ->not
+        ->toContain($process->id)
+        ->and($onNew->pluck('id')->all())
+        ->toContain($process->id);
+});
+
 function markDoctorRunnerNodeSecurityBaselineClean(Node $node): void
 {
     $node->forceFill([

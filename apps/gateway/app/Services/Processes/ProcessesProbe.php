@@ -24,6 +24,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 use Throwable;
 
@@ -1050,6 +1051,11 @@ final readonly class ProcessesProbe
             return [];
         }
 
+        // Unsupported platforms and other non-diagnostic states are not drift.
+        if (($diagnostic['supported'] ?? true) === false) {
+            return [];
+        }
+
         return [
             new DriftEntry(
                 family: $this->key(),
@@ -1137,18 +1143,23 @@ final readonly class ProcessesProbe
         $runtimeUnits = [];
 
         $query = Process::query()
-            ->with('owner')
-            ->where('node_id', $node->id)
+            ->with(['owner', 'appInstance'])
             ->where('app_instance_id', $process->app_instance_id);
 
         if ($this->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
         }
 
-        $query->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
+        $query->each(function (Process $candidate) use ($app, $node, &$runtimeUnits): void {
             $candidateApp = $candidate->ownerApp();
 
             if (! $candidateApp instanceof Project || ! $candidateApp->is($app)) {
+                return;
+            }
+
+            $candidateNode = $this->processNode($candidate);
+
+            if (! $candidateNode instanceof Node || ! $candidateNode->is($node)) {
                 return;
             }
 
@@ -1520,10 +1531,28 @@ final readonly class ProcessesProbe
 
     private function processNode(Process $process): ?Node
     {
-        $process->loadMissing(['owner', 'node']);
+        $process->loadMissing(['owner', 'node', 'appInstance']);
 
         if ($process->owner instanceof Node) {
             return $process->owner;
+        }
+
+        // Prefer current instance/workspace placement over a possibly stale
+        // denormalized process.node_id after the app instance moved.
+        if ($process->owner instanceof Workspace) {
+            $placed = app(WorkspacePlacement::class)->nodeForWorkspace($process->owner);
+
+            if ($placed instanceof Node) {
+                return $placed;
+            }
+        }
+
+        if ($process->appInstance instanceof AppInstance) {
+            $placed = app(WorkspacePlacement::class)->nodeForInstance($process->appInstance);
+
+            if ($placed instanceof Node) {
+                return $placed;
+            }
         }
 
         return $process->node;
@@ -1581,6 +1610,7 @@ final readonly class ProcessesProbe
             [
                 'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
                 'platform' => $diagnostic['platform'] ?? null,
+                'supported' => $diagnostic['supported'] ?? null,
                 'reason' => $diagnostic['reason'] ?? null,
                 'message' => $diagnostic['message'] ?? null,
                 'command' => $diagnostic['command'] ?? null,

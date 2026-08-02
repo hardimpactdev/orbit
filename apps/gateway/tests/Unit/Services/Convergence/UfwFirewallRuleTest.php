@@ -186,6 +186,61 @@ it('deletes a partial match before re-applying gateway intent', function (): voi
         ->toBe('10.6.0.0/24');
 });
 
+it('canonicalizes host CIDR and both family in expected shape for convergence', function (): void {
+    $node = ufw_firewall_rule_node('10.44.0.95');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'main1-valkey',
+        'source' => '10.6.0.13/32',
+        'port' => '6379',
+        'protocol' => 'tcp',
+        'address_family' => 'both',
+    ]);
+
+    expect(UfwFirewallRule::fromRule($rule)->expectedShape())
+        ->toMatchArray([
+            'source' => '10.6.0.13',
+            'destination' => null,
+            'port' => '6379',
+            'protocol' => 'tcp',
+            'address_family' => 'v4',
+        ]);
+});
+
+it('plans ok when observed bare host IP matches host CIDR intent with both family', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.96:9477/v1/commands' => Http::response(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 6379/tcp                   ALLOW IN    10.6.0.13
+
+            OUT)),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.96');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'main1-valkey',
+        'source' => '10.6.0.13/32',
+        'port' => '6379',
+        'protocol' => 'tcp',
+        'address_family' => 'both',
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+    $shell = new UfwFirewallRuleUnusedShell;
+
+    $probe = $convergence->probe($node);
+    $plan = $convergence->plan($probe);
+
+    expect($probe->reachable)
+        ->toBeTrue()
+        ->and($probe->present)
+        ->toBeTrue()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok);
+});
+
 it('reports unreachable when ufw introspection fails', function (): void {
     Http::preventStrayRequests();
     Http::fake([

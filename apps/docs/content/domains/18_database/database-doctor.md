@@ -49,31 +49,41 @@ selected instance/workspace `.env` files and checks these layers:
    gateway-owned connection record.
 
    For instance and workspace targets on the same node as a managed Docker MySQL
-   process, expected `*_HOST` and `*_PORT` can use the process Docker service
-   alias and internal target port. This applies only when the process gateway
-   endpoint matches the stored connection record.
+   or PostgreSQL process, expected `*_HOST` and `*_PORT` use the process Docker
+   service alias and internal target port. This applies only when the process
+   gateway endpoint matches the stored connection record. Remote consumers
+   continue to use the stored WireGuard address and published port.
 
    Adoption treats that Docker alias/internal-port pair as the same canonical
    connection, so adopting a healthy app runtime env does not replace the stored
-   gateway endpoint used by `database:query`. After a managed Docker MySQL
-   process is renamed through `process:update --name=<new-slug>`, restore and
-   comparison use the renamed Docker service alias for same-node instance/workspace
-   targets while preserving the stored gateway endpoint for query commands.
+   gateway endpoint used by `database:query`. After a managed Docker MySQL or
+   PostgreSQL process is renamed through `process:update --name=<new-slug>`,
+   restore and comparison use the renamed Docker service alias for same-node
+   instance/workspace targets while preserving the stored gateway endpoint for
+   query commands.
 5. **WireGuard self-route diagnostics:** when a mapped managed database host
    equals the consuming node's own WireGuard service address, Linux nodes are
    diagnosed with `ip route get <wireguard-ip>` and must report a local route
-   such as `local <ip> dev lo` or an equivalent local route. macOS reports
-   `WireGuard self-route diagnostics are only supported on Linux.` and the
-   database family does not mutate routes.
+   such as `local <ip> dev lo` or an equivalent local route. The probe is
+   host-boundary work on containerized gateways. macOS reports
+   `WireGuard self-route diagnostics are only supported on Linux.` Unsupported
+   platforms are not applicable and emit no issue; the database family does not
+   mutate routes.
 6. **Observed env extras:** during an explicit adoption scope, supported
-   database env-prefix groups that appear in the target `.env` without a
-   matching target mapping are eligible for adoption review.
+   **network** database env-prefix groups (`mysql`/`pgsql`) that appear in the
+   target `.env` without a matching target mapping are eligible for adoption
+   review. Local SQLite groups — including `DB_CONNECTION=sqlite` alone and
+   complete local paths such as `database/database.sqlite` — are not fleet
+   database intent and are not applicable for env_extra or partial-group
+   unverifiable findings.
 7. **Observed target extras:** during an explicit adoption scope, supported
-   database env-prefix groups that are present in a selected target `.env`
-   without a matching gateway connection record are eligible for adoption.
-8. **Verifiability:** malformed, partial, unsupported env-prefix groups, or
-   unhealthy WireGuard self-route diagnostics for same-node connections are
-   reported as unverifiable instead of being guessed into gateway state.
+   network database env-prefix groups that are present in a selected target
+   `.env` without a matching gateway connection record are eligible for
+   adoption.
+8. **Verifiability:** malformed or partial **network** env-prefix groups, or
+   unhealthy WireGuard self-route diagnostics for same-node connections on
+   supported Linux, are reported as unverifiable instead of being guessed into
+   gateway state. Local SQLite is not treated as a partial fleet group.
 
 Observed `.env` keys outside the supported prefix model are not drift by
 default. They are preserved during restore unless Orbit has an explicit target
@@ -93,7 +103,7 @@ detect.
 | `database_connection.target_missing` | A gateway database connection record that should be materialized for the selected instance or workspace has no matching target mapping. |
 | `database_connection.target_extra` | During an explicit adoption scope, a selected instance or workspace has an adopted-or-mappable database target that does not yet exist in gateway target mappings. |
 | `database_connection.unverifiable` | The observed env-prefix group is partial, malformed, ambiguous, or uses unsupported fields so Orbit cannot safely compare, restore, or adopt it. |
-| `database_connection.wireguard_self_route_unavailable` | A mapped managed database host points at the consuming node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
+| `database_connection.wireguard_self_route_unavailable` | A mapped managed database host points at the consuming node's own WireGuard service address, but supported Linux self-route diagnostics are missing or unhealthy. Unsupported platforms are not applicable and emit no issue. |
 
 ## Database Fix Map
 
@@ -144,8 +154,8 @@ Required implementation test coverage:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php` | In-memory `.env` diff behavior, supported-prefix parsing, unverifiable groups, same-node WireGuard self-route diagnostics, and exclusion of unrelated `.env` keys from drift. |
-| `apps/gateway/tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php` | Read-only Linux/macOS WireGuard self-route diagnostics used by database and process doctors. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php` | In-memory `.env` diff behavior, supported-prefix parsing, unverifiable network groups, local SQLite not-applicable extras, same-node managed Docker MySQL/PostgreSQL aliases, same-node WireGuard self-route diagnostics, and exclusion of unrelated `.env` keys from drift. |
+| `apps/gateway/tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php` | Read-only Linux/macOS WireGuard self-route diagnostics used by database and process doctors; unsupported platforms emit no drift. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php` | `.env` rewrite behavior, mapped-prefix updates, preservation of unrelated keys/comments, and no deletion without explicit target mapping. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php` | Supported-prefix adoption, existing instance/workspace rollout adoption, connection/target upsert behavior, and encrypted credential storage for passwords. |
 

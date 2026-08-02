@@ -322,7 +322,7 @@ describe('WireGuard self-route diagnostics', function (): void {
         expect(issue($drift, 'process.wireguard_self_route_unavailable'))->toBeNull();
     });
 
-    it('reports macOS as unsupported for process self-route diagnostics without route commands', function (): void {
+    it('treats macOS unsupported self-route diagnostics as not applicable without drift', function (): void {
         $node = Node::factory()
             ->database()
             ->create([
@@ -350,14 +350,56 @@ describe('WireGuard self-route diagnostics', function (): void {
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
-            ->toMatchArray([
-                'platform' => 'macos_15-4',
-                'reason' => 'unsupported_platform',
-                'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-            ])
+        expect(issue($drift, 'process.wireguard_self_route_unavailable'))
+            ->toBeNull()
             ->and($shell->scripts)
             ->toBe([]);
+    });
+
+    it('still reports supported Linux self-route drift when the local route is unhealthy', function (): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'endpoint' => [
+                        'name' => 'valkey',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
+                ],
+            ]);
+        app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'exit_code' => 0,
+                    'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]));
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
+            ->toMatchArray([
+                'reason' => 'self_route_missing',
+                'supported' => true,
+            ]);
     });
 });
 
@@ -1700,6 +1742,51 @@ describe('docker runtime probe scope', function (): void {
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
         expect(issue($drift, 'process.record_incomplete')?->kind)->toBe(DriftKind::Missing);
+    });
+});
+
+describe('process placement after instance move', function (): void {
+    it('probes moved app processes on the current placement node and not the stale node_id', function (): void {
+        $oldNode = createTestAppHostNode(['name' => 'beast']);
+        $newNode = createTestAppHostNode(['name' => 'nmbp']);
+        $app = Project::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $oldNode->id,
+                node: $oldNode->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        $process = Process::factory()
+            ->forOwner($app)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'dev',
+                'command' => 'php artisan serve',
+                'runtime' => ProcessRuntime::Docker,
+            ]);
+
+        // Instance placement moved; denormalized process.node_id is intentionally stale.
+        $instance->forceFill([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $newNode->id,
+                node: $newNode->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ])->save();
+        DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
+        $process->refresh();
+
+        $method = new \ReflectionMethod(ProcessesProbe::class, 'processNode');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($this->probe, $process);
+
+        expect($resolved?->is($newNode))->toBeTrue()->and($process->node_id)->toBe($oldNode->id);
     });
 });
 

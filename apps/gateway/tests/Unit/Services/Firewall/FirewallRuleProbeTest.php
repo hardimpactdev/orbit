@@ -228,6 +228,56 @@ describe('firewall backend UFW reality', function (): void {
         expect($drift)->toBe([]);
     });
 
+    it('treats host CIDR and bare host IP with derived family as equivalent', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'main1-valkey',
+            'source' => '10.6.0.13/32',
+            'port' => '6379',
+            'protocol' => 'tcp',
+            'address_family' => 'both',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 6379/tcp                   ALLOW IN    10.6.0.13
+            UFW);
+
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
+
+        expect($drift)->toBe([]);
+    });
+
+    it('still reports a true source mismatch for non-equivalent host addresses', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'main1-valkey',
+            'source' => '10.6.0.13/32',
+            'port' => '6379',
+            'protocol' => 'tcp',
+            'address_family' => 'both',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 6379/tcp                   ALLOW IN    10.6.0.14
+            UFW);
+
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
+        $issue = firewallProbeIssue($drift, 'firewall_rule.rule_mismatch');
+
+        expect($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['observed']['source'] ?? null)
+            ->toBe('10.6.0.14');
+    });
+
     it('matches node security baseline rules rendered with concrete UFW interfaces', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $publicDeny = FirewallRule::factory()->create([

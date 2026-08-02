@@ -80,8 +80,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     #[\Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        unset($options['force_remote_host']);
-
         return $this->runInternal(
             node: $node,
             commandName: $script,
@@ -107,6 +105,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     public function runInternal(
@@ -174,7 +173,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 timeoutSeconds: $this->timeoutSeconds($transportOptions),
             );
             $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
+            $forceRemoteHost = ($transportOptions['force_remote_host'] ?? false) === true;
             $result = match ($transport) {
+                // Host-owned gateway checks (systemd, host Caddy, self-route,
+                // node-exporter tooling) force the host boundary when requested.
                 NodeTransport::GatewayOnly => $this->runGatewayLocal(
                     node: $node,
                     commandName: $commandName,
@@ -182,6 +184,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     commandOptions: $commandOptions,
                     dispatch: $dispatch,
                     transportOptions: $transportOptions,
+                    forceRemoteHost: $forceRemoteHost,
                 ),
                 NodeTransport::AgentPush => $this->runAgentPush(
                     node: $node,
@@ -308,6 +311,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     public function streamInternal(
@@ -498,6 +502,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     public function startInternal(
@@ -599,6 +604,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function logDispatching(
@@ -751,6 +757,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function transportExceptionMessageSummary(
@@ -786,6 +793,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -823,6 +831,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function shouldSuppressExceptionMessage(array $transportOptions): bool
@@ -894,6 +903,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function redactExceptionText(
@@ -924,6 +934,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function redactCommandOptionSecrets(string $value, array $transportOptions, array $commandOptions): string
@@ -959,6 +970,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -1004,6 +1016,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function redactExceptionMetadataValue(
@@ -1129,6 +1142,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      * @return list<string>
      */
@@ -1173,6 +1187,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      */
     private function operationId(array $transportOptions): string
@@ -1201,6 +1216,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      * @return array{
      *     cwd?: string,
@@ -1210,6 +1226,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }
      */
     private function transportDispatchOptions(Node $node, array $transportOptions): array
@@ -1323,6 +1340,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
      *
      * @mago-expect lint:excessive-parameter-list
@@ -1334,6 +1352,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $commandOptions,
         array $dispatch,
         array $transportOptions,
+        bool $forceRemoteHost = false,
     ): RemoteShellResult {
         $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
             compactToken: $dispatch['operationToken'],
@@ -1346,16 +1365,30 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             ...($dispatchOptions['environment'] ?? []),
             ...$trustedExecution->environment(),
         ];
+        $script = $this->commands->build(
+            targetNode: $node,
+            commandName: $commandName,
+            arguments: $arguments,
+            options: $commandOptions,
+            operationToken: $dispatch['operationToken'],
+        );
+
+        if ($forceRemoteHost) {
+            $dispatchOptions['force_remote_host'] = true;
+
+            // Host-owned gateway doctor checks leave the orbit-gateway container via
+            // the host substrate executor (same lane as SshRemoteShell host work).
+            // @orbit-ssh-lane provisioning-ssh
+            return app(RemoteHostExecutor::class)->run(
+                node: $node,
+                script: $script,
+                options: $dispatchOptions,
+            );
+        }
 
         return app(RemoteOrbitGatewayExecutor::class)->run(
             node: $node,
-            script: $this->commands->build(
-                targetNode: $node,
-                commandName: $commandName,
-                arguments: $arguments,
-                options: $commandOptions,
-                operationToken: $dispatch['operationToken'],
-            ),
+            script: $script,
             options: $dispatchOptions,
         );
     }

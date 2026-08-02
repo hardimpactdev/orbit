@@ -7,6 +7,7 @@ namespace App\Services\Tools;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -41,6 +42,9 @@ final readonly class ToolScriptDispatcher
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => "tool.{$action}",
                 ],
+                // Tool capability and host scripts must leave the containerized
+                // gateway runtime when doctor is running inside orbit-gateway.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
                 'strict' => false,
                 'timeout' => self::DEFAULT_TIMEOUT + self::TIMEOUT_PADDING,
                 'bind_input' => true,

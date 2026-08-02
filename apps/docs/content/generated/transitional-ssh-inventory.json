@@ -64,6 +64,12 @@
             "edge": "ssh-builder.enforce-for-node"
         },
         {
+            "path": "apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php",
+            "call_line": 1382,
+            "marker_line": 1381,
+            "edge": "remote-host-executor.run"
+        },
+        {
             "path": "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php",
             "call_line": 29,
             "marker_line": 28,

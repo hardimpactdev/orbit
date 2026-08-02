@@ -169,6 +169,11 @@ final readonly class DatabaseConnectionProbe
             return null;
         }
 
+        // Unsupported platforms and other non-diagnostic states are not drift.
+        if ($diagnostic['supported'] === false) {
+            return null;
+        }
+
         return $this->issue('database_connection.wireguard_self_route_unavailable', 'unverifiable', $target, [
             'connection' => $connection->slug,
             'node' => $targetNode->name,
@@ -251,6 +256,7 @@ final readonly class DatabaseConnectionProbe
             [
                 'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
                 'platform' => $diagnostic['platform'] ?? null,
+                'supported' => $diagnostic['supported'] ?? null,
                 'reason' => $diagnostic['reason'] ?? null,
                 'message' => $diagnostic['message'] ?? null,
                 'command' => $diagnostic['command'] ?? null,
@@ -363,6 +369,15 @@ final readonly class DatabaseConnectionProbe
                 ];
 
             if (in_array($this->detailKey($detail), $scannedTargets, true)) {
+                continue;
+            }
+
+            // Local app SQLite is not fleet database intent. Partial groups
+            // (DB_CONNECTION=sqlite only) and complete local paths must not
+            // become unverifiable or env_extra drift for doctor/adoption.
+            $observedDriver = $values["{$prefix}_CONNECTION"] ?? null;
+
+            if ($observedDriver === 'sqlite') {
                 continue;
             }
 

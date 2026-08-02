@@ -7,6 +7,7 @@ namespace App\Services\RuntimeBackend;
 use App\Data\RuntimeBackend\RuntimeBackendProbeResult;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
@@ -29,6 +30,8 @@ final readonly class RuntimeBackendProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'runtime-backend.probe',
                 ],
+                // systemd/launchd/docker host backends live outside orbit-gateway.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHost(),
                 'timeout' => 15,
             ],
         );
