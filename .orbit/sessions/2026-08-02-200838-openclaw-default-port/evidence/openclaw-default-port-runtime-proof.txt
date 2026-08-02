@@ -1,0 +1,26 @@
+Retained Incus runtime proof — OpenClaw default port 18789
+
+Tip: 3a40b2b244d61daffe98b8e9da59879ab2c2141c
+Topology: dev-92f4b4
+Kind: operator_gateway_agent
+Host: Beast
+Checkout: /home/orbit/orbit-run (exact candidate source synced)
+
+Source identity
+- apps/gateway/app/Tools/OpenClawTool.php WEB_PORT=18789 on synced tip
+
+Retained agent-1 openclaw-gateway
+- Recreated systemd process with OPENCLAW_SUPERVISOR_MODE=external,
+  token file /home/agent/.openclaw/gateway.token, and
+  openclaw gateway run --port 18789 --bind lan
+- Direct http://10.6.0.6:18789 returned HTTP 200
+- process:restart returned running
+- After 8 seconds, http://10.6.0.6:18789 returned HTTP 200 again
+
+Live supporting note (production Agent)
+- OpenClaw process manually recreated on 18789; logs show gateway ready
+- Final tool-owned proxy convergence deferred until candidate deployment
+
+Ops note (nonblocking)
+- Existing stored process rows are sticky; explicit recreate required
+  (already done on retained topology and production Agent)
