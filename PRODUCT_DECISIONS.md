@@ -37,6 +37,8 @@ direction.
 ## Decisions
 
 <!-- newest first; add new entries directly under this comment -->
+- 2026-08-02 — OpenClaw's managed web runtime uses OpenClaw's documented default gateway port `18789` (not Orbit Caddy private backend `8081`); when OpenClaw and Hermes co-host on one `agent` node, Hermes keeps `8080` and OpenClaw stays on `18789` with tool-owned proxy routes `hermes.<tld>` → `host.docker.internal:8080` and `openclaw.<tld>` → `host.docker.internal:18789`. OpenClaw lifecycle remains Orbit process-owned (`openclaw-gateway` via `openclaw gateway run` with `OPENCLAW_SUPERVISOR_MODE=external`); the gateway token is file/env-only (`OPENCLAW_GATEWAY_TOKEN`), not stored in process argv or full-config rewrites. Supersedes the same-day `8081` OpenClaw port choice.
+
 - 2026-08-02 — When OpenClaw and Hermes co-host on one `agent` node, Hermes keeps default web port `8080` and OpenClaw's managed web runtime uses port `8081` with tool-owned proxy routes `hermes.<tld>` and `openclaw.<tld>`. OpenClaw lifecycle is Orbit process-owned (`openclaw-gateway` via `openclaw gateway run` with `OPENCLAW_SUPERVISOR_MODE=external`); the gateway token is file/env-only (`OPENCLAW_GATEWAY_TOKEN`), not stored in process argv or full-config rewrites.
 
 

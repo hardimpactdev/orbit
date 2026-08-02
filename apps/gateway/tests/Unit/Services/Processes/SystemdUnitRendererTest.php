@@ -81,7 +81,7 @@ it('preserves the OpenClaw gateway token shell pipeline through systemd renderin
         ->not->toBeNull()->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')->toContain(
             '$${TOKEN_FILE}',
         )->toContain('OPENCLAW_GATEWAY_TOKEN="$$(tr -d "\r\n" < "$${TOKEN_FILE}")"')->toContain(
-            'openclaw gateway run --port 8081 --bind lan',
+            'openclaw gateway run --port 18789 --bind lan',
         )
         // Unescaped shell vars must not appear in the unit file payload.
         ->not->toMatch('/(?<!\$)\$\{TOKEN_FILE\}/')

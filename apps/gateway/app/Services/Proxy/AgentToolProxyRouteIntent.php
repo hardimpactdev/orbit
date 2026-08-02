@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Tools\ToolCatalog;
+use App\Tools\OpenClawTool;
 
 /** @mago-expect lint:cyclomatic-complexity */
 final readonly class AgentToolProxyRouteIntent
@@ -125,12 +126,13 @@ final readonly class AgentToolProxyRouteIntent
 
     /**
      * Default container-reachable upstream for agent tool web UIs.
-     * Hermes keeps port 8080; OpenClaw uses 8081 so both can co-host on one agent node.
+     * Hermes keeps port 8080; OpenClaw uses its documented default 18789 so both
+     * can co-host without colliding with Orbit Caddy's private backend on 8081.
      */
     private function defaultUpstream(string $toolName): string
     {
         $port = match ($toolName) {
-            'openclaw' => 8081,
+            'openclaw' => OpenClawTool::WEB_PORT,
             'hermes' => 8080,
             default => 8080,
         };

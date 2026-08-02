@@ -393,7 +393,7 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts[1])
             ->toContain('https://openclaw.ai/install.sh')
             ->and($shell->scripts[1])
-            ->toContain('openclaw config set gateway.port 8081')
+            ->toContain('openclaw config set gateway.port 18789')
             ->and($shell->toolRowsPresent[0] ?? null)
             ->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())

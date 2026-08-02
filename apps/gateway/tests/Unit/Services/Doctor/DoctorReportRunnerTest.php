@@ -632,7 +632,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($route->config['upstream'])
-            ->toBe('http://host.docker.internal:8081');
+            ->toBe('http://host.docker.internal:18789');
     });
 
     it('restores missing process runtime units through restore mode family dispatch', function (): void {

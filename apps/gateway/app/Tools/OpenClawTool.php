@@ -10,9 +10,10 @@ namespace App\Tools;
 final class OpenClawTool extends BaseTool
 {
     /**
-     * Managed web runtime port when Hermes occupies 8080 on the same agent node.
+     * OpenClaw's documented default gateway port (not Orbit Caddy's private 8081).
+     * Co-hosts cleanly with Hermes on 8080 on the same agent node.
      */
-    public const int WEB_PORT = 8081;
+    public const int WEB_PORT = 18789;
 
     public const string TOKEN_FILE = '/home/agent/.openclaw/gateway.token';
 

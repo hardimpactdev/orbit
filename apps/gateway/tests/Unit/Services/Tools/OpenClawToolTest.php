@@ -7,11 +7,13 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('declares a process-owned gateway on port 8081 with external supervision', function (): void {
+it('declares a process-owned gateway on OpenClaw default port 18789 with external supervision', function (): void {
     $tool = new OpenClawTool;
     $command = $tool->relatedProcess()['command'];
 
-    expect($tool->relatedProcess())
+    expect(OpenClawTool::WEB_PORT)
+        ->toBe(18789)
+        ->and($tool->relatedProcess())
         ->toMatchArray([
             'name' => 'openclaw-gateway',
             'runtime' => 'systemd',
@@ -23,7 +25,8 @@ it('declares a process-owned gateway on port 8081 with external supervision', fu
         ->toContain('OPENCLAW_GATEWAY_TOKEN=')
         ->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')
         ->toContain('${TOKEN_FILE}')
-        ->toContain('openclaw gateway run --port 8081 --bind lan')
+        ->toContain('openclaw gateway run --port 18789 --bind lan')
+        ->not->toContain('--port 8081')
         ->not->toContain('gateway install')
         ->not->toMatch('/OPENCLAW_GATEWAY_TOKEN=[0-9a-f]{32,}/')
         ->not->toContain('config set gateway.auth.token')->and($tool->capabilities())->toContain(
@@ -44,7 +47,7 @@ it('configures secure gateway intent without printing tokens or installing a nat
         ->toContain('openclaw.ai/install.sh')
         ->toContain('--no-onboard')
         ->toContain('openclaw config set gateway.mode local')
-        ->toContain('openclaw config set gateway.port 8081 --strict-json')
+        ->toContain('openclaw config set gateway.port 18789 --strict-json')
         ->toContain('openclaw config set gateway.bind lan')
         ->toContain('openclaw config set gateway.auth.mode token')
         ->toContain('openclaw config unset gateway.auth.token')
@@ -55,11 +58,12 @@ it('configures secure gateway intent without printing tokens or installing a nat
         ->toContain('openssl rand -hex 32')
         ->toContain('gateway.token')
         ->toContain('OPENCLAW_SUPERVISOR_MODE=external')
+        ->not->toContain('gateway.port 8081')
         ->not->toContain('openclaw gateway install')
         ->not->toContain('openclaw config set gateway.auth.token')
         ->not->toContain('echo "$TOKEN"')
         ->not->toContain('echo "${TOKEN}"')->and($reconfigure)->toContain(
-            'openclaw config set gateway.port 8081 --strict-json',
+            'openclaw config set gateway.port 18789 --strict-json',
         )->toContain('https://openclaw.agent')
         ->not->toContain('openclaw config set gateway.auth.token')
         ->not->toContain('openclaw gateway install')->and($tool->probeMetadata())->toMatchArray([
@@ -80,10 +84,11 @@ it('never clobbers the full OpenClaw config file when converging managed gateway
     foreach ($scripts as $script) {
         expect($script)
             ->toContain('openclaw config set gateway.mode local')
-            ->toContain('openclaw config set gateway.port 8081 --strict-json')
+            ->toContain('openclaw config set gateway.port 18789 --strict-json')
             ->toContain('openclaw config set gateway.bind lan')
             ->toContain('openclaw config set gateway.auth.mode token')
             ->toContain('openclaw config set gateway.controlUi.allowedOrigins')
+            ->not->toContain('gateway.port 8081')
             ->not->toContain('openclaw config set gateway.auth.token')
             ->not->toContain('cat > "${CONFIG}"')
             ->not->toContain('cat > "${STATE_DIR}/openclaw.json"')

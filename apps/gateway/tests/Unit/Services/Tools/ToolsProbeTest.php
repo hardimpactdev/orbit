@@ -104,7 +104,7 @@ function toolsProbeLocalExecutor(): RemoteLocalExecutor
  */
 function toolsProbeAgentRouteConfig(string $tool): array
 {
-    $port = $tool === 'openclaw' ? 8081 : 8080;
+    $port = $tool === 'openclaw' ? 18789 : 8080;
     $upstream = "http://host.docker.internal:{$port}";
 
     return [

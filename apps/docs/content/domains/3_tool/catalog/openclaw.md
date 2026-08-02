@@ -67,8 +67,9 @@ credentials from its own CLI.
 `https://openclaw.<node-tld>` (for example `https://openclaw.agent`). The
 route is internal: it is reachable only over the Orbit/WireGuard network
 and has no ingress baseline. The default reverse-proxy upstream is
-`http://host.docker.internal:8081` so Hermes can keep port `8080` on the same
-agent node.
+`http://host.docker.internal:18789` (OpenClaw's documented default gateway
+port) so Hermes can keep port `8080` on the same agent node without colliding
+with Orbit Caddy's private backend on `8081`.
 
 ## Orbit Notes
 
@@ -81,7 +82,7 @@ without sudo or write access to owner Orbit config or install metadata.
 
 The managed web gateway is process-owned: `tool:install` configures a related
 `openclaw-gateway` `systemd` process that runs
-`openclaw gateway run --port 8081 --bind lan` under
+`openclaw gateway run --port 18789 --bind lan` under
 `OPENCLAW_SUPERVISOR_MODE=external` so OpenClaw's native service install is not
 used (no double supervision). The process shell loads
 `OPENCLAW_GATEWAY_TOKEN` from `/home/agent/.openclaw/gateway.token` immediately
@@ -153,5 +154,5 @@ sudo -u agent -H bash -lc 'openclaw gateway status'
 that managed credential metadata is present. It also checks that the OpenClaw
 binary version matches the gateway expected version when version tracking is
 enabled, and that the tool's internal proxy route metadata resolves to the
-target node's configured TLD (default upstream port `8081`). Runtime process
+target node's configured TLD (default upstream port `18789`). Runtime process
 lifecycle drift belongs to the process family.

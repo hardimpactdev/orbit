@@ -185,7 +185,7 @@ describe('proxy registry probe foundation', function (): void {
             ->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
-                'expected_upstream' => 'http://host.docker.internal:8081',
+                'expected_upstream' => 'http://host.docker.internal:18789',
                 'observed_upstream' => 'http://127.0.0.1:9999',
             ]);
     });
@@ -238,8 +238,8 @@ describe('proxy registry probe foundation', function (): void {
             'expected_state' => 'installed',
         ]);
         $config = [
-            'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8081'],
-            'upstream' => 'http://host.docker.internal:8081',
+            'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:18789'],
+            'upstream' => 'http://host.docker.internal:18789',
             'owner_name' => 'openclaw',
         ];
         $intent = new ProxyRoute([
