@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T19:33:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-hermes-managed-dashboard/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-213357-codex-hermes-managed-dashboard",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/dev-92f4b4-hermes-managed-dashboard-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T191905Z-b250c137471e.json"
+    ],
+    "entry_digests": {
+        "evidence/dev-92f4b4-hermes-managed-dashboard-runtime-proof.md": "76575ceae369c485b85350e48cf3b286312a21efca80a927b2b1a99155bd5197",
+        "loop.md": "70b42238dea35cc8cc5a00f2e8cf2d3c82baf1bf138e8632ba4bff7e2f979c09",
+        "quality-gates/quality-check-2026-08-02T191905Z-b250c137471e.json": "c93018baa6ad6bd6acaa3554c5cd38c44b4700f93a1ac607d31ce6af20e043ab"
+    },
+    "branch": "codex/hermes-managed-dashboard",
+    "candidate_commit": "4ef1aee14c8d6737f362279cd0dc616182abf7f8",
+    "accepted_feature_tip": "4ef1aee14c8d6737f362279cd0dc616182abf7f8",
+    "accepted_main_tip": "72f07fd48846cc0c71ee52ad34de0b4329f25761",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
