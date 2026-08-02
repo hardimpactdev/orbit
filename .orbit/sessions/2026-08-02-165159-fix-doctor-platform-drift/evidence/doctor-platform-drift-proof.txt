@@ -1,0 +1,44 @@
+Doctor live-drift correctness slice proof
+Date: 2026-08-02
+Branch: codex/fix-doctor-platform-drift
+Worktree: /Users/nckrtl/orbit/.worktrees/codex-fix-doctor-platform-drift
+Live topology mutation: none
+
+Focused Pest (passing):
+- macOS unsupported self-route => no process/database drift
+- supported Linux unhealthy self-route => unverifiable drift
+- firewall host CIDR/family equivalence (10.6.0.13/32 + both vs 10.6.0.13 + v4)
+- true firewall source mismatch still reported
+- UfwFirewallRule expectedShape host CIDR + both family equivalence (convergence path)
+- process selection by current placement when process.node_id is stale
+- processNode resolves moved app-instance placement
+- gateway force_remote_host uses host boundary (no docker exec)
+- managed Docker postgres same-node service alias acceptance
+- local sqlite connection-only and complete groups not-applicable
+- partial non-sqlite groups still unverifiable
+- isolated FeatureFinalizationGateTest => 128 passed (~32s)
+
+Shared firewall canonicalization:
+- apps/gateway/app/Services/Firewall/FirewallRuleShapeCanonicalizer.php
+- single static path: canonicalizeHostCidr + effectiveAddressFamily
+- used by FirewallRuleProbe (detection) and UfwFirewallRule (convergence)
+
+Broader suites (passing):
+- DatabaseConnectionProbeTest, FirewallRuleProbeTest, NodeWireGuardSelfRouteProbeTest
+- ProcessesProbeTest, RemoteLocalExecutorTest, RemoteHostExecutorTest
+- DoctorReportRunnerTest, ProxyRouteProbeTest, ProxyRouteFixerTest, UfwFirewallRuleTest
+
+Full official gate (conservative exact):
+- command: ORBIT_QUALITY_CHECK_CPU_BUDGET=2 composer quality-check
+- exit: 0
+- artifact: .orbit/quality-gates/quality-check-2026-08-02T144332Z-2ab2e7942544.json
+- profile: .orbit/quality-gates/profiles/2026-08-02T14-39-38Z-f6d18e0faf64
+- gateway_pest: 5351 passed (31516 assertions), Parallel: 1 process, ~214s
+- FeatureFinalizationGate covered in gate junit (128 tests, 0 failures)
+- note: default parallel gateway_pest (--processes=8) deadlocked worker_07 on
+  FeatureFinalizationGateTest; budget=2 maps to GATEWAY_PEST_PROCESSES=1 and
+  serial static subgates without changing harness code
+
+Runtime venue:
+- in-memory Pest + docs/lint gates are the automated real-surface for this
+  probe/transport correctness slice; no live topology mutation was performed.
