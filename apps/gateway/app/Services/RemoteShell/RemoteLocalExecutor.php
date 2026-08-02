@@ -115,6 +115,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $commandOptions = [],
         array $transportOptions = [],
     ): RemoteShellResult {
+        $transportOptions = $this->normalizeForceRemoteHostTransportOptions($node, $transportOptions);
         $operationId = $this->operationId($transportOptions);
         $trustedArgv = $this->commands->buildArgv(
             targetNode: $node,
@@ -322,6 +323,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $commandOptions = [],
         array $transportOptions = [],
     ): void {
+        $transportOptions = $this->normalizeForceRemoteHostTransportOptions($node, $transportOptions);
         $operationId = $this->operationId($transportOptions);
         $trustedArgv = $this->commands->buildArgv(
             targetNode: $node,
@@ -1260,9 +1262,16 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     {
         $environment = $this->transportEnvironment($transportOptions);
         $home = $environment['HOME'] ?? $this->defaultLocalExecutorHome($node);
+        $forceRemoteHost = ($transportOptions['force_remote_host'] ?? false) === true;
 
         $environment['HOME'] = $home;
-        $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
+
+        // force_remote_host dispatches over SSH. Process::env only affects the local
+        // SSH client, so inventing ORBIT_CONFIG_PATH here would bind a context key
+        // the remote host CLI never observes. Caller-supplied keys remain allowed.
+        if (! $forceRemoteHost) {
+            $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
+        }
 
         if (! $node->hasActiveRole('gateway')) {
             $environment['ORBIT_BIN_PATH'] = FleetUpdateNodeCliLauncher::binPath($node);
@@ -1275,6 +1284,61 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         return $environment;
+    }
+
+    /**
+     * force_remote_host leaves the gateway container over SSH. The host CLI is the
+     * sole token consumer and rebuilds verification context from real remote
+     * getcwd()/environment. Normalize mint inputs so they match that payload:
+     * explicit host-home cwd (composed script cds there) and no APP_KEY bind.
+     *
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment?: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     *     bind_application_key?: bool,
+     *     bind_input?: bool,
+     *     force_remote_host?: bool,
+     * }  $transportOptions
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment?: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     *     bind_application_key?: bool,
+     *     bind_input?: bool,
+     *     force_remote_host?: bool,
+     * }
+     */
+    private function normalizeForceRemoteHostTransportOptions(Node $node, array $transportOptions): array
+    {
+        if (($transportOptions['force_remote_host'] ?? false) !== true) {
+            return $transportOptions;
+        }
+
+        if (! array_key_exists('cwd', $transportOptions)) {
+            $transportOptions['cwd'] = $this->defaultLocalExecutorHome($node);
+        }
+
+        // Never place APP_KEY into force_remote_host token context. RemoteHostExecutor
+        // Process::env does not export to the remote shell, and secrets must not ride
+        // the SSH command line either.
+        $transportOptions[self::BIND_APPLICATION_KEY_OPTION] = false;
+
+        return $transportOptions;
     }
 
     private function defaultLocalExecutorHome(Node $node): string
