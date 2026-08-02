@@ -107,7 +107,14 @@ final readonly class DoctorRunController implements Loggable
             }
 
             if ($this->wantsEventStream($request)) {
-                return $this->streamFleet($streams, $runner, $vocabulary, $families, $key);
+                return $this->streamFleet(
+                    $streams,
+                    $runner,
+                    $vocabulary,
+                    $families,
+                    $key,
+                    $this->wantsCompactProgress($request),
+                );
             }
 
             $doctor = $runner->probeFleet(families: $families, key: $key);
@@ -201,6 +208,7 @@ final readonly class DoctorRunController implements Loggable
                 $families,
                 $key,
                 $scope,
+                $this->wantsCompactProgress($request),
             );
         }
 
@@ -222,6 +230,9 @@ final readonly class DoctorRunController implements Loggable
 
     /**
      * @param  list<string>  $families
+     * @mago-expect lint:halstead
+     * @mago-expect lint:excessive-parameter-list
+     * @mago-expect lint:no-boolean-flag-parameter
      */
     private function stream(
         ProgressEventStreamResponseFactory $streams,
@@ -232,6 +243,7 @@ final readonly class DoctorRunController implements Loggable
         array $families,
         ?string $key,
         DoctorTargetScope $scope,
+        bool $compactProgress = false,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -241,6 +253,7 @@ final readonly class DoctorRunController implements Loggable
             $families,
             $key,
             $scope,
+            $compactProgress,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
@@ -249,21 +262,28 @@ final readonly class DoctorRunController implements Loggable
             /** @var list<array<string, mixed>> $issues */
             $issues = [];
 
-            $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
-                'doctor' => $vocabulary->publicReport($progressReports->report(
-                    target: $target,
-                    mode: 'verify',
-                    families: $renderedFamilies,
-                    key: $key,
-                    issues: $issues,
-                    actions: [],
-                    familyStatuses: $familyStatuses,
-                    familyCheckCounts: $familyCheckCounts,
-                    app: $scope->app,
-                    workspace: $scope->workspace,
-                    appInstance: $scope->appInstance,
-                )),
-            ]);
+            $events->stepEvent(
+                '__doctor_panel',
+                'running',
+                'Doctor queued',
+                $compactProgress
+                    ? ['compact_progress' => true]
+                    : [
+                        'doctor' => $vocabulary->publicReport($progressReports->report(
+                            target: $target,
+                            mode: 'verify',
+                            families: $renderedFamilies,
+                            key: $key,
+                            issues: $issues,
+                            actions: [],
+                            familyStatuses: $familyStatuses,
+                            familyCheckCounts: $familyCheckCounts,
+                            app: $scope->app,
+                            workspace: $scope->workspace,
+                            appInstance: $scope->appInstance,
+                        )),
+                    ],
+            );
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
                     'key' => $vocabulary->publicFamily($family),
@@ -287,6 +307,7 @@ final readonly class DoctorRunController implements Loggable
                 $key,
                 $renderedFamilies,
                 $scope,
+                $compactProgress,
                 &$familyStatuses,
                 &$familyCheckCounts,
                 &$issues,
@@ -317,21 +338,27 @@ final readonly class DoctorRunController implements Loggable
                     $phase === 'running'
                         ? "Checking {$vocabulary->publicFamily($family)}"
                         : "{$vocabulary->publicFamily($family)} checked",
-                    [
-                        'doctor' => $vocabulary->publicReport($progressReports->report(
-                            target: $target,
-                            mode: 'verify',
-                            families: $renderedFamilies,
-                            key: $key,
-                            issues: $issues,
-                            actions: [],
-                            familyStatuses: $familyStatuses,
-                            familyCheckCounts: $familyCheckCounts,
-                            app: $scope->app,
-                            workspace: $scope->workspace,
-                            appInstance: $scope->appInstance,
-                        )),
-                    ],
+                    $compactProgress
+                        ? [
+                            'compact_progress' => true,
+                            'family' => $vocabulary->publicFamily($family),
+                            'phase' => $phase,
+                        ]
+                        : [
+                            'doctor' => $vocabulary->publicReport($progressReports->report(
+                                target: $target,
+                                mode: 'verify',
+                                families: $renderedFamilies,
+                                key: $key,
+                                issues: $issues,
+                                actions: [],
+                                familyStatuses: $familyStatuses,
+                                familyCheckCounts: $familyCheckCounts,
+                                app: $scope->app,
+                                workspace: $scope->workspace,
+                                appInstance: $scope->appInstance,
+                            )),
+                        ],
                 );
             };
 
@@ -365,6 +392,9 @@ final readonly class DoctorRunController implements Loggable
 
     /**
      * @param  list<string>  $families
+     * @mago-expect lint:halstead
+     * @mago-expect lint:excessive-parameter-list
+     * @mago-expect lint:no-boolean-flag-parameter
      */
     private function streamFleet(
         ProgressEventStreamResponseFactory $streams,
@@ -372,12 +402,14 @@ final readonly class DoctorRunController implements Loggable
         DoctorPublicVocabulary $vocabulary,
         array $families,
         ?string $key,
+        bool $compactProgress = false,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
             $vocabulary,
             $families,
             $key,
+            $compactProgress,
         ): void {
             $targets = $runner->fleetTargetsForFamilies($families);
             $events->tree(
@@ -397,11 +429,20 @@ final readonly class DoctorRunController implements Loggable
                 onNodeProgress: function (Node $node, string $phase, ?array $partialFleetReport = null) use (
                     $events,
                     $vocabulary,
+                    $compactProgress,
                 ): void {
                     /** @var array<string, mixed>|null $partialFleetReport */
-                    $extra = $partialFleetReport !== null
-                        ? ['doctor' => $vocabulary->publicReport($partialFleetReport)]
-                        : [];
+                    if ($compactProgress) {
+                        $extra = [
+                            'compact_progress' => true,
+                            'node' => $node->name,
+                            'phase' => $phase,
+                        ];
+                    } else {
+                        $extra = $partialFleetReport !== null
+                            ? ['doctor' => $vocabulary->publicReport($partialFleetReport)]
+                            : [];
+                    }
 
                     $events->stepEvent(
                         $node->name,
@@ -430,6 +471,11 @@ final readonly class DoctorRunController implements Loggable
                 'footer' => 'Doctor detected drift.',
             ]);
         });
+    }
+
+    private function wantsCompactProgress(Request $request): bool
+    {
+        return $request->boolean('compact_progress');
     }
 
     private function wantsEventStream(Request $request): bool

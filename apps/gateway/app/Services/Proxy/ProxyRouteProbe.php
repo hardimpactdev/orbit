@@ -572,9 +572,17 @@ final readonly class ProxyRouteProbe
      */
     public function diff(ProxyRoute $route, ProbeSnapshot $snapshot): array
     {
+        // A missing owner is one conceptual orphan. Suppress record_incomplete
+        // and backend/TLS sub-findings for the same doomed row so restore/remove
+        // paths see a single owner_invalid issue.
+        $ownerDrift = $this->checkOwnerEligibility($route);
+
+        if ($ownerDrift !== []) {
+            return $ownerDrift;
+        }
+
         $drift = [
             ...$this->checkRecordCompleteness($route),
-            ...$this->checkOwnerEligibility($route),
             ...$this->checkNodeEligibility($route),
             ...$this->checkCustomDomainConflict($route),
             ...$this->checkBackendReality($route, $snapshot),
@@ -1120,7 +1128,7 @@ final readonly class ProxyRouteProbe
      */
     private function checkEnactmentState(ProxyRoute $route): array
     {
-        if ($route->owner_type !== 'app') {
+        if (! in_array($route->owner_type, ['app', 'custom'], true)) {
             return [];
         }
 

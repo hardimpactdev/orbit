@@ -37,6 +37,10 @@ direction.
 ## Decisions
 
 <!-- newest first; add new entries directly under this comment -->
+- 2026-08-03 — Custom `proxy:add` and `proxy:remove --force` are one-step lifecycle commands: add persists then enacts backend/TLS through the canonical ProxyRouteFixer path (failed apply keeps partial intent and returns `proxy.enactment_failed` with `next_command`); force-remove cleans backend and `/etc/orbit/certs/<domain>.{crt,key}` through ProxyRouteFixer::removeExtra before registry deletion (failed cleanup returns `proxy.cleanup_failed` without deleting the row). Doctor remains the repair path for partial failures and orphan extras; it does not silently delete custom routes. Supersedes the deferred-to-doctor custom proxy enactment/cleanup direction.
+
+- 2026-08-03 — Machine-mode Doctor streams (`--json` and `--stream-json`) request `compact_progress=true` so intermediate gateway progress frames omit the full aggregate doctor report; terminal complete/error frames remain full. Human Doctor mode continues to receive full intermediate snapshots for the bordered panel.
+
 - 2026-08-03 — Node Doctor may restore `node.security.home_perms` by setting only the managed runtime user's home directory (`/home/{nodes.user}`) to mode `0700` through the authenticated node execution path after ownership and passwd-home validation; runtime-user absence remains report-only and re-bake is no longer required for chmod-safe home mode drift.
 
 - 2026-08-02 — OpenClaw's managed web runtime uses OpenClaw's documented default gateway port `18789` (not Orbit Caddy private backend `8081`); when OpenClaw and Hermes co-host on one `agent` node, Hermes keeps `8080` and OpenClaw stays on `18789` with tool-owned proxy routes `hermes.<tld>` → `host.docker.internal:8080` and `openclaw.<tld>` → `host.docker.internal:18789`. OpenClaw lifecycle remains Orbit process-owned (`openclaw-gateway` via `openclaw gateway run` with `OPENCLAW_SUPERVISOR_MODE=external`); the gateway token is file/env-only (`OPENCLAW_GATEWAY_TOKEN`), not stored in process argv or full-config rewrites. Supersedes the same-day `8081` OpenClaw port choice.

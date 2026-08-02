@@ -122,6 +122,10 @@ final readonly class ProxyRouteFixer
         $route->loadMissing('node');
 
         if ($entry->key === 'proxy.enactment_incomplete') {
+            if ($route->owner_type === 'custom') {
+                return $this->reenactCustomRoute($route, $entry);
+            }
+
             return $this->reenactAppRoute($route, $entry);
         }
 
@@ -176,6 +180,45 @@ final readonly class ProxyRouteFixer
             'mode' => 'fix',
             'status' => 'completed',
             'summary' => $this->publicRouteSummary($route, $entry),
+            'details' => [
+                'route' => $route->domain,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function reenactCustomRoute(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $applied = $this->fix(
+            $route,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.route_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Custom proxy route {$route->domain} requires re-enactment.",
+            ),
+        );
+
+        if ($applied === null) {
+            return null;
+        }
+
+        $route->refresh();
+        $config = is_array($route->config) ? $route->config : [];
+        $route->forceFill([
+            'config' => ProxyRouteEnactment::converged($config),
+        ])->save();
+
+        return [
+            'family' => 'proxy',
+            'node' => $route->node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Re-enacted custom proxy route {$route->domain} from gateway intent.",
             'details' => [
                 'route' => $route->domain,
             ],

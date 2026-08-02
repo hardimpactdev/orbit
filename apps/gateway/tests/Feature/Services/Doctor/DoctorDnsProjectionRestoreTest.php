@@ -363,3 +363,41 @@ it('keeps node DNS drift visible when post-restore verification still finds it',
         ->and(collect($report['actions'])->firstWhere('key', 'node.dns_mapping_mismatch')['status'] ?? null)
         ->toBe('failed');
 });
+
+it('does not probe node DNS projection on non-DNS-consumer nodes', function (): void {
+    $workload = Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+    // VPN capability exists elsewhere so DNS is required fleet-wide, but this
+    // node is not the gateway+VPN DNS consumer.
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => '203.0.113.10',
+            'dns_ip' => '10.6.0.1',
+        ],
+    ]);
+    File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
+    app()->forgetInstance(DoctorReportRunner::class);
+
+    $report = app(DoctorReportRunner::class)->probe(
+        $workload,
+        families: ['node'],
+        key: 'node.dns_mapping_mismatch',
+    );
+
+    expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
+});

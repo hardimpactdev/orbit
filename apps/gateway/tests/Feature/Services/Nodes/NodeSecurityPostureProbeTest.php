@@ -271,23 +271,29 @@ function node_security_posture_unused_transport(): RemoteExecutor
     };
 }
 
-it('restores home_perms instead of requiring operator re-bake', function (): void {
-    expect((string) file_get_contents(app_path('Services/Nodes/NodeSecurityPostureProbe.php')))
-        ->toContain('restoreHomePermissions')
-        ->toContain('HomeDirectoryLockdownInstaller')
-        ->not->toContain('Home permission drift is report-only; re-bake the node.');
+it('restores home_perms through SecurityInstallerTransport for managed agent nodes', function (): void {
+    $node = Node::factory()
+        ->managed()
+        ->create([
+            'platform' => 'ubuntu_24-04',
+            'status' => NodeStatus::Active,
+            'wireguard_address' => '10.44.0.84',
+            'user' => 'agent',
+            'name' => 'agent-home',
+        ]);
 
-    $node = Node::factory()->create([
-        'status' => 'provisioning',
-        'user' => 'agent',
-        'platform' => 'ubuntu_24-04',
-    ]);
-    $shell = new class implements \App\Contracts\RemoteShell {
-        /** @var list<string> */
-        public array $scripts = [];
+    $scripts = [];
+    $shell = new class($scripts) implements \App\Contracts\RemoteShell {
+        /** @param list<string> $scripts */
+        public function __construct(
+            public array &$scripts,
+        ) {}
 
-        public function run(Node $node, string $script, array $options = []): \App\Data\RemoteShell\RemoteShellResult
-        {
+        public function run(
+            \App\Models\Node $node,
+            string $script,
+            array $options = [],
+        ): \App\Data\RemoteShell\RemoteShellResult {
             $this->scripts[] = $script;
 
             return new \App\Data\RemoteShell\RemoteShellResult(
@@ -299,22 +305,31 @@ it('restores home_perms instead of requiring operator re-bake', function (): voi
         }
 
         public function start(
-            Node $node,
+            \App\Models\Node $node,
             string $script,
             array $options = [],
         ): \Illuminate\Contracts\Process\InvokedProcess {
             throw new RuntimeException('not used');
         }
     };
+    app()->instance(\App\Contracts\RemoteShell::class, $shell);
 
-    $report = app(\App\Services\Security\HomeDirectoryLockdownInstaller::class)->installFor($node, $shell);
+    new NodeSecurityPostureProbe()->restore(
+        $node,
+        new DriftEntry(
+            family: 'node',
+            key: 'node.security.home_perms',
+            kind: \App\Enums\DriftKind::Divergent,
+            summary: 'home perms weak',
+            detail: ['check' => 'home_perms'],
+        ),
+    );
 
-    expect($report->successful)
-        ->toBeTrue()
-        ->and($shell->scripts[0] ?? '')
-        ->toContain("MANAGED_HOME='/home/agent'")
-        ->toContain('sudo chmod 0700 "${MANAGED_HOME}"')
-        ->not->toContain('/home/orbit/.config/orbit/php');
+    expect($scripts)
+        ->not->toBeEmpty()->and(implode("\n", $scripts))->toContain("MANAGED_HOME='/home/agent'")->toContain(
+            'sudo chmod 0700',
+        )
+        ->not->toContain('sudo install -d')->toContain('managed home missing');
 });
 
 it('keeps runtime_user restore report-only', function (): void {

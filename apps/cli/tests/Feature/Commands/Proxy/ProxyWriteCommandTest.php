@@ -194,11 +194,11 @@ describe('proxy write commands', function (): void {
             'route' => [
                 'domain' => 'old.test',
                 'node' => 'app-1',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ],
         ], [
-            'backend_removed' => false,
-            'tls_removed' => false,
+            'backend_removed' => true,
+            'tls_removed' => true,
             'warnings' => [],
         ]));
 
@@ -221,7 +221,7 @@ describe('proxy write commands', function (): void {
             ),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['status'])->toBe('removed_with_drift');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['status'])->toBe('removed');
     });
 
     it('prompts before removing a proxy route without force in interactive mode', function (): void {
@@ -229,11 +229,11 @@ describe('proxy write commands', function (): void {
             'route' => [
                 'domain' => 'old.test',
                 'node' => 'app-1',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ],
         ], [
-            'backend_removed' => false,
-            'tls_removed' => false,
+            'backend_removed' => true,
+            'tls_removed' => true,
             'warnings' => [],
         ]));
 
@@ -354,7 +354,7 @@ describe('proxy write commands', function (): void {
             ],
         ], [
             'backend_removed' => true,
-            'tls_removed' => false,
+            'tls_removed' => true,
             'removal_reason' => 'custom',
         ]));
 
@@ -378,7 +378,7 @@ describe('proxy write commands', function (): void {
             ->and($output)
             ->toContain('Backend cleanup: completed')
             ->and($output)
-            ->toContain('TLS cleanup: skipped')
+            ->toContain('TLS cleanup: completed')
             ->and($output)
             ->not->toContain('{');
     });
@@ -391,15 +391,15 @@ describe('proxy write commands', function (): void {
                 'owner' => ['type' => 'workspace', 'name' => null],
                 'node' => 'app-1',
                 'target' => ['type' => 'workspace', 'value' => null],
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ],
         ], [
-            'backend_removed' => false,
-            'tls_removed' => false,
+            'backend_removed' => true,
+            'tls_removed' => true,
             'removal_reason' => 'orphan_owner',
             'owner_type' => 'workspace',
             'warnings' => [[
-                'code' => 'proxy.cleanup_deferred',
+                'code' => 'proxy.cleanup_failed',
                 'family' => 'proxy',
                 'message' => 'Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.',
                 'next_command' => 'doctor --family=proxy --restore --node=app-1',

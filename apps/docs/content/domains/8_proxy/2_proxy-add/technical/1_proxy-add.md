@@ -46,7 +46,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   not evidence that Caddy or TLS artifacts exist.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
-- Reports the registered `proxy.enactment_deferred` command handoff in the
+- Enacts backend/TLS through the canonical fixer after persisting intent. On failure, reports `proxy.enactment_failed` with
   `proxy` family. Its allowed next-command prefix is
   `doctor --family=proxy --restore`; proxy backend route and Orbit-managed TLS
   material are restored through that command.

@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
+use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\GatewayApiException;
+use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -27,7 +33,18 @@ function grantProxyRouteIntentAccess(Node $caller, Node $servingNode): void
 }
 
 describe('ProxyRouteIntent', function (): void {
-    it('creates custom upstream intent with runtime enactment warning', function (): void {
+    beforeEach(function (): void {
+        // Enactment uses ProxyRouteFixer; bind shell + TLS fakes like fixer unit tests.
+        new ProxyIntentRecordingRemoteShell;
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(ProxyRouteFixer::class, new ProxyRouteFixer(
+            renderer: new ProxyRouteRenderer,
+            ca: new ProxyIntentFakeCa,
+            siteCertificateInstaller: new SiteCertificateInstallerFake,
+        ));
+    });
+
+    it('creates custom upstream route and enacts backend/TLS in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
 
         $result = app(ProxyRouteIntent::class)->add(
@@ -46,13 +63,14 @@ describe('ProxyRouteIntent', function (): void {
                 'owner' => ['type' => 'custom', 'name' => null],
                 'node' => 'app-1',
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
-                'status' => 'intent_only',
+                'status' => 'converged',
             ])
             ->and($result['meta']['action'])
             ->toBe('created')
-            ->and($result['meta']['warnings'][0]['code'])
-            ->toBe('proxy.enactment_deferred')
-            ->and($result['meta']['warnings'][1])
+            ->and(collect($result['meta']['warnings'])->pluck('code')->all())
+            ->not
+            ->toContain('proxy.enactment_deferred')
+            ->and(collect($result['meta']['warnings'])->firstWhere('code', 'firewall_rule.host_upstream_may_block'))
             ->toMatchArray([
                 'code' => 'firewall_rule.host_upstream_may_block',
                 'family' => 'firewall_rule',
@@ -60,8 +78,6 @@ describe('ProxyRouteIntent', function (): void {
                 'port' => '5173',
                 'upstream' => 'http://127.0.0.1:5173',
             ])
-            ->and($result['meta']['warnings'][1]['next_command'])
-            ->toContain('firewall:allow caddy-to-host-5173 --node=app-1 --port=5173')
             ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())
             ->toBeTrue();
 
@@ -136,7 +152,7 @@ describe('ProxyRouteIntent', function (): void {
         );
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
 
-    it('removes only custom route intent and returns cleanup warning', function (): void {
+    it('removes custom route backend and TLS through the fixer in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -152,14 +168,16 @@ describe('ProxyRouteIntent', function (): void {
             ->toMatchArray([
                 'domain' => 'old.test',
                 'kind' => 'redirect',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ])
             ->and($result['meta']['backend_removed'])
-            ->toBeFalse()
+            ->toBeTrue()
+            ->and($result['meta']['tls_removed'])
+            ->toBeTrue()
             ->and($result['meta']['removal_reason'])
             ->toBe('custom')
-            ->and($result['meta']['warnings'][0]['code'])
-            ->toBe('proxy.cleanup_deferred')
+            ->and($result['meta']['warnings'])
+            ->toBe([])
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
             ->toBeFalse();
     });
@@ -199,14 +217,18 @@ describe('ProxyRouteIntent', function (): void {
         expect($result['data']['route'])
             ->toMatchArray([
                 'domain' => 'auth.craft-starterkit-react.test',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ])
             ->and($result['meta']['removal_reason'])
             ->toBe('orphan_owner')
             ->and($result['meta']['owner_type'])
             ->toBe('workspace')
-            ->and($result['meta']['warnings'][0]['code'])
-            ->toBe('proxy.cleanup_deferred')
+            ->and($result['meta']['backend_removed'])
+            ->toBeTrue()
+            ->and($result['meta']['tls_removed'])
+            ->toBeTrue()
+            ->and($result['meta']['warnings'])
+            ->toBe([])
             ->and(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())
             ->toBeFalse();
     });
@@ -287,3 +309,45 @@ describe('ProxyRouteIntent', function (): void {
         );
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
 });
+
+final class ProxyIntentRecordingRemoteShell implements RemoteShell
+{
+    public function __construct()
+    {
+        app()->instance(RemoteShell::class, $this);
+    }
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final readonly class ProxyIntentFakeCa extends OrbitCaService
+{
+    #[\Override]
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    #[\Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $dir = sys_get_temp_dir().'/orbit-proxy-intent-ca';
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $cert = "{$dir}/{$host}.crt";
+        $key = "{$dir}/{$host}.key";
+        file_put_contents($cert, "fake-cert-for-{$host}");
+        file_put_contents($key, "fake-key-for-{$host}");
+
+        return ['cert' => $cert, 'key' => $key];
+    }
+}

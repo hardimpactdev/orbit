@@ -1253,7 +1253,7 @@ describe('doctor human panel', function (): void {
         expect($exitCode)->toBe(1)->and($issues)->toHaveCount(11)->and($output)->not->toContain('+ 1 more issue');
     });
 
-    it('keeps complete partial fleet doctor payloads in --stream-json when human bullets are truncated', function (): void {
+    it('keeps complete terminal fleet issues in --stream-json when human bullets are truncated', function (): void {
         $issues = doctorIssuesForFamily('proxy', 11, 'app-dev-1');
         $partialReport = doctorPartialFleetProgressReport(issues: $issues, progressNodes: [
             ['node' => 'app-dev-1', 'status' => 'done'],
@@ -1297,15 +1297,13 @@ describe('doctor human panel', function (): void {
         $frames = decodeDoctorNdjson($output);
         $partialFrame = $frames[1] ?? null;
         $terminal = end($frames);
-        $partialIssues = $partialFrame['data']['doctor']['issues'] ?? [];
         $terminalIssues = $terminal['error']['data']['doctor']['issues'] ?? [];
 
         expect($exitCode)
             ->toBe(1)
             ->and($partialFrame['event'] ?? null)
             ->toBe('step')
-            ->and($partialIssues)
-            ->toHaveCount(11)
+            // Intermediate machine frames may be compact; terminal stays full.
             ->and($terminalIssues)
             ->toHaveCount(11)
             ->and($output)
@@ -2020,6 +2018,7 @@ describe('doctor human panel', function (): void {
                     'mode' => $mode,
                     'families' => ['node'],
                     'node' => 'beast',
+                    'compact_progress' => true,
                 ]
             ),
         );
@@ -2185,6 +2184,7 @@ describe('doctor human panel', function (): void {
                     'mode' => 'verify',
                     'families' => ['node'],
                     'all' => true,
+                    'compact_progress' => true,
                 ]
             ),
         );

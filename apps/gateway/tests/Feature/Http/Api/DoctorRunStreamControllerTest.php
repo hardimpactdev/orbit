@@ -70,6 +70,52 @@ it('streams doctor verify progress from the gateway', function (): void {
         ->toContain('event: complete');
 });
 
+it('omits full doctor aggregates from intermediate compact_progress frames', function (): void {
+    createDoctorRunStreamCallerNode();
+
+    $full = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'self' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    )->streamedContent();
+
+    $compact = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'self' => true,
+            'compact_progress' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    )->streamedContent();
+
+    expect($compact)
+        ->toContain('"compact_progress":true')
+        ->and($compact)
+        ->toContain('event: complete')
+        ->and(strlen($compact))
+        ->toBeLessThan(strlen($full))
+        ->and(substr_count($compact, '"issues"'))
+        ->toBeLessThan(substr_count($full, '"issues"'));
+});
+
 it('streams doctor panel snapshots before and during node-scoped probes', function (): void {
     createDoctorRunStreamCallerNode();
 

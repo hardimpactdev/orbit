@@ -939,6 +939,10 @@ final class DoctorCommand extends GatewayCommand
 
         $self = (bool) $this->option('self') || $this->usesCallerNodeFallback($node);
 
+        // Machine modes omit full intermediate doctor snapshots on the wire.
+        // Human mode keeps full progress snapshots for the bordered panel.
+        $machineMode = $this->wantsJson() || $this->wantsStreamJson();
+
         return $this->filledQuery([
             'mode' => $mode,
             'families' => $this->families(),
@@ -949,6 +953,7 @@ final class DoctorCommand extends GatewayCommand
             'instance' => $this->stringOption('instance'),
             'workspace' => $this->stringOption('workspace'),
             'dry_run' => (bool) $this->option('dry-run') ? true : null,
+            'compact_progress' => $machineMode ? true : null,
         ]);
     }
 

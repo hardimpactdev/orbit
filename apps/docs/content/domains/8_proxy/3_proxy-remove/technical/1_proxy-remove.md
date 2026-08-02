@@ -104,7 +104,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `proxy-remove` removes custom gateway proxy route configuration and, with
 destructive consent, orphan-owner registry rows that proxy doctor reports as
 `proxy.owner_invalid` (restore does not remove those rows). Backend and TLS
-cleanup owned by this command stays deferred to proxy doctor fix mode when
+cleanup owned by this command stays cleaned through ProxyRouteFixer; doctor is only for genuine cleanup failures fix mode when
 needed. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
 `proxy` probe, issue codes, fix map, and adopt map.
 

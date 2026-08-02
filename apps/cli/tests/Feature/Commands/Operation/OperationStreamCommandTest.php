@@ -39,6 +39,7 @@ describe('Operation stream commands', function (): void {
                     'families' => ['node'],
                     'key' => 'node.record_incomplete',
                     'self' => true,
+                    'compact_progress' => true,
                 ]
             ),
         );
@@ -75,6 +76,7 @@ describe('Operation stream commands', function (): void {
                     'families' => ['app'],
                     'node' => 'app-1',
                     'dry_run' => true,
+                    'compact_progress' => true,
                 ]
             ),
         );

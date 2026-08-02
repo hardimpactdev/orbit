@@ -87,7 +87,7 @@ final readonly class NodeSecurityPostureProbe
 
     private function restoreHomePermissions(Node $node): void
     {
-        $report = app(HomeDirectoryLockdownInstaller::class)->installFor($node);
+        $report = app(HomeDirectoryLockdownInstaller::class)->restoreFor($node);
 
         if ($report->successful) {
             return;

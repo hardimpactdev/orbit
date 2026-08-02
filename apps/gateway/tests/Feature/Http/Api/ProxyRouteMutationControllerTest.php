@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
+use App\Services\Proxy\ProxyRouteFixer;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
@@ -39,6 +46,22 @@ function grantProxyRouteMutationAccess(Node $caller, Node $servingNode): void
 }
 
 describe('ProxyRoute mutation API', function (): void {
+    beforeEach(function (): void {
+        $shell = new class implements RemoteShell {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+            }
+        };
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(ProxyRouteFixer::class, new ProxyRouteFixer(
+            renderer: new ProxyRouteRenderer,
+            ca: new ProxyMutationFakeCa,
+            siteCertificateInstaller: new SiteCertificateInstallerFake,
+        ));
+    });
+
     it('stores custom upstream route intent for authorized callers', function (): void {
         $caller = createProxyRouteMutationCallerNode();
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
@@ -56,7 +79,9 @@ describe('ProxyRoute mutation API', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'vite.docs.test')
             ->assertJsonPath('success.meta.action', 'created')
-            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.enactment_deferred');
+            ->assertJsonPath('success.data.route.status', 'converged');
+        $codes = collect($response->json('success.meta.warnings') ?? [])->pluck('code')->all();
+        expect($codes)->not->toContain('proxy.enactment_deferred');
     });
 
     it('denies domain conflicts for non-custom routes', function (): void {
@@ -108,8 +133,8 @@ describe('ProxyRoute mutation API', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'old.test')
-            ->assertJsonPath('success.data.route.status', 'removed_with_drift')
-            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.cleanup_deferred');
+            ->assertJsonPath('success.data.route.status', 'removed')
+            ->assertJsonPath('success.meta.backend_removed', true);
 
         expect(ProxyRoute::query()->where('domain', 'old.test')->exists())->toBeFalse();
     });
@@ -182,8 +207,37 @@ describe('ProxyRoute mutation API', function (): void {
             ->assertJsonPath('success.data.route.domain', 'auth.craft-starterkit-react.test')
             ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
             ->assertJsonPath('success.meta.owner_type', 'workspace')
-            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.cleanup_deferred');
+            ->assertJsonPath('success.meta.backend_removed', true);
 
         expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeFalse();
     });
 });
+
+final readonly class ProxyMutationFakeCa extends OrbitCaService
+{
+    #[\Override]
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    #[\Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $dir = sys_get_temp_dir().'/orbit-proxy-mutation-ca';
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $cert = "{$dir}/{$host}.crt";
+        $key = "{$dir}/{$host}.key";
+        file_put_contents($cert, "fake-cert-for-{$host}");
+        file_put_contents($key, "fake-key-for-{$host}");
+
+        return ['cert' => $cert, 'key' => $key];
+    }
+}

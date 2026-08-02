@@ -84,6 +84,8 @@ describe('security installers', function (): void {
             ->and($shell->runs[0]['script'])
             ->toContain("MANAGED_HOME='/home/orbit'")
             ->and($shell->runs[0]['script'])
+            ->toContain('sudo install -d -m 0700')
+            ->and($shell->runs[0]['script'])
             ->toContain('sudo chmod 0700 "${MANAGED_HOME}"')
             ->and($shell->runs[0]['script'])
             ->toContain('getent passwd')
