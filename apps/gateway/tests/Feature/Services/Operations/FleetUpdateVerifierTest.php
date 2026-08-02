@@ -613,6 +613,7 @@ it('emits terminal success only after runner verification passes', function (): 
             ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'running'],
+            ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'done'],
             ['workload-nodes',       'done'],
             ['verification',         'running'],

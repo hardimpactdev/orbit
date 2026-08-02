@@ -266,6 +266,20 @@ The expected target shape per calling context:
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command
   exits successfully.
+- Workload installs that need Agent config, Agent artifacts, or role-image work
+  use a two-stage `internal:fleet-update:install-cli` contract.
+  - Stage 1 invokes the currently installed CLI with a CLI-only payload:
+    artifact URL/hash, install root, and launcher path only. It omits
+    `agent_artifact`, `agent_service`, `role_images`, `role_image_artifacts`, and
+    `role_image_aliases` so the candidate CLI binary is installed atomically by
+    the still-running process that received the dispatch.
+  - Stage 2 invokes the same internal command again through the newly installed
+    CLI with the full original payload so Agent config, Agent binary, and
+    role-image work run under the candidate implementation.
+  - Self-update disconnect handling and empty exit code `255` retry remain per
+    stage. Final result validation still requires Agent install confirmation
+    when the full payload includes an Agent artifact.
+  - A CLI-only payload (no Agent or role-image work) stays a single install call.
 - When an Orbit Agent artifact is selected, the remote update verifies the
   installed owner-user local `orbit-agent` hash and restarts a managed
   `orbit-agent` service when one is present, but only after required role image

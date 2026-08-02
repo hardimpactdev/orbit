@@ -71,10 +71,14 @@ orbit update:all --stream-json
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
    The same immutable update plan selects both the CLI artifact and Orbit Agent
-   artifact for supported Agent-eligible Linux and macOS/Darwin nodes. The
-   signed internal installer replaces the node-local `orbit-agent` binary,
-   restarts an existing managed service when present, falls back to replacing
-   an unmanaged listener when one is running, and records installed artifact
+   artifact for supported Agent-eligible Linux and macOS/Darwin nodes.
+   When a node also needs Agent config or role-image work, the gateway uses a
+   two-stage install. First the currently running CLI receives a CLI-only
+   payload. Then the newly installed CLI receives the full payload so PHP-free
+   Agent config and role-image steps run under the candidate binary.
+   The signed internal installer replaces the node-local `orbit-agent` binary,
+   restarts an existing managed service when present, falls back to replacing an
+   unmanaged listener when one is running, and records installed artifact
    identity for future drift checks.
 5. Each persisted operation event carries a monotonic journal cursor. This
    command still follows an exact-marked transitional Server-Sent Events

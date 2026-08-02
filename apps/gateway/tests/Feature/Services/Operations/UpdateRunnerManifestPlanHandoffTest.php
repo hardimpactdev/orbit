@@ -109,14 +109,31 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
         ->and($gatewayUpdater->manifestSnapshots)
         ->toBe([$manifest])
         ->and($updateScripts)
-        ->toHaveCount(1)
+        ->toHaveCount(2)
         ->and($updateScripts[0]['script'])
+        ->toContain('internal:fleet-update:install-cli')
+        ->and($updateScripts[1]['script'])
         ->toContain('internal:fleet-update:install-cli')
         ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64');
 
-    $installPayload = json_decode($updateScripts[0]['options']['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+    $bootstrapPayload = json_decode(
+        $updateScripts[0]['options']['input'],
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $installPayload = json_decode($updateScripts[1]['options']['input'], associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($installPayload)
+    expect($bootstrapPayload)
+        ->toMatchArray([
+            'artifact_url' => 'http://gateway.test/artifacts/linux-amd64',
+            'sha256' => str_repeat('e', 64),
+            'agent_artifact' => null,
+            'agent_service' => null,
+            'role_images' => [],
+            'role_image_artifacts' => [],
+            'role_image_aliases' => [],
+        ])
+        ->and($installPayload)
         ->toMatchArray([
             'artifact_url' => 'http://gateway.test/artifacts/linux-amd64',
             'sha256' => str_repeat('e', 64),
