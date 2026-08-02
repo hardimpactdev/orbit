@@ -12249,7 +12249,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php"
             ],
             "verification_hints": [
                 {
@@ -12265,6 +12266,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolLogReaderTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolLogReaderTest.php"
                 }
             ],
             "p4_mapping": {
