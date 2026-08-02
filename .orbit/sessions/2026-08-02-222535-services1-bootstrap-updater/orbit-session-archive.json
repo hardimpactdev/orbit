@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T20:25:36+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-services1-bootstrap-updater/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-222535-services1-bootstrap-updater",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/dev-92f4b4-services1-bootstrap-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T195844Z-ebab59af4aac.json"
+    ],
+    "entry_digests": {
+        "evidence/dev-92f4b4-services1-bootstrap-runtime-proof.md": "14e2da2183e40a549941bfe53406551d302ef7d726c2f1f813925f47898d7b73",
+        "loop.md": "f0b496eb72c58529d227a2bcf732a8e5f0c25622adb63a74c69948f636e7b61b",
+        "quality-gates/quality-check-2026-08-02T195844Z-ebab59af4aac.json": "edc74dd1a5d34ae95cfce8fdd56c9d92787ff3ae0bf566f9e9a13e1884ecdaff"
+    },
+    "branch": "codex/services1-bootstrap-updater",
+    "candidate_commit": "ff39519d91874160f952231efb96fce0627b682a",
+    "accepted_feature_tip": "ff39519d91874160f952231efb96fce0627b682a",
+    "accepted_main_tip": "ded4d32960033840415ed9ed96ee96dab28dd04c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
