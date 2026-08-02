@@ -56,12 +56,16 @@ final class OpenClawTool extends BaseTool
     {
         $port = self::WEB_PORT;
 
+        // Use an explicit agent path for the token file so the command does not
+        // depend on outer systemd Environment=HOME (node user, usually orbit).
+        // Shell variables still use `$` and survive systemd via SystemdUnitRenderer
+        // `$$` escaping of ExecStart.
         return [
             'name' => 'openclaw-gateway',
             'command' =>
                 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc '
                     ."'set -euo pipefail; "
-                    .'TOKEN_FILE="${HOME}/.openclaw/gateway.token"; '
+                    .'TOKEN_FILE="/home/agent/.openclaw/gateway.token"; '
                     .'[ -f "${TOKEN_FILE}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; '
                     .'export OPENCLAW_GATEWAY_TOKEN="$(tr -d "\r\n" < "${TOKEN_FILE}")"; '
                     ."exec openclaw gateway run --port {$port} --bind lan'",

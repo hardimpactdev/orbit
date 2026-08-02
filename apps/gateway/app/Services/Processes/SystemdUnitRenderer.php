@@ -65,7 +65,7 @@ final readonly class SystemdUnitRenderer
             "User={$user}",
             'WorkingDirectory='.$this->workingDirectory($node, $app, $process, $workspace, $home),
             ...$this->environmentLines($app, $node, $workspace, $home),
-            'ExecStart=/bin/bash -lc '.escapeshellarg($process->command),
+            'ExecStart=/bin/bash -lc '.$this->execStartCommand($process->command),
             'Restart='.$process->restart_policy->toSystemd(),
             'RestartSec=2',
             '',
@@ -132,6 +132,16 @@ final readonly class SystemdUnitRenderer
             )
             ->values()
             ->all();
+    }
+
+    /**
+     * Systemd expands `$VAR` / `${VAR}` / `$(...)` in unit values before the
+     * ExecStart program runs. Escape each `$` as `$$` so shell variables and
+     * command substitutions in process commands reach `/bin/bash -lc` intact.
+     */
+    private function execStartCommand(string $command): string
+    {
+        return str_replace('$', '$$', escapeshellarg($command));
     }
 
     private function escapeEnvironmentValue(string $value): string
