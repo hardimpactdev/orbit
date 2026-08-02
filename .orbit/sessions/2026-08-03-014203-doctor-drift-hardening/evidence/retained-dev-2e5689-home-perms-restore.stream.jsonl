@@ -1,0 +1,9 @@
+{"event":"step","data":{"key":"__doctor_panel","status":"running","compact_progress":true,"message":"Doctor queued"}}
+{"event":"tree","data":{"title":"Running Doctor","steps":[{"key":"node","label":"restore node"}]}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"restore node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"restore node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"restore node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"restore node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"restore node"}}
+{"event":"step","data":{"key":"node","status":"done","compact_progress":true,"family":"node","phase":"done","message":"node restore complete"}}
+{"event":"complete","success":{"data":{"doctor":{"healthy":true,"mode":"restore","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.security.home_perms"},"summary":{"issues":0,"fixed":1,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[{"family":"node","node":"agent-1","code":"node.security.home_perms","key":"node.security.home_perms","mode":"restore","status":"completed","summary":"Node agent-1 failed security check home_perms.","details":{"check":"home_perms","observed":false}}]}},"meta":{"exit_code":0}}}
