@@ -23,14 +23,19 @@ model in Orbit.
 ## Capabilities
 
 `hermes` supports `tool:install`, `tool:remove`, `tool:update`,
-`tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
-adopt. It does not declare generic lifecycle or logs verbs; any future runtime
-verb must name one exact runtime under the capability gate.
+`tool:reconfigure`, `tool:credentials`, proxy route metadata, safe doctor fix,
+and safe doctor adopt. Lifecycle and logs for the managed web dashboard belong
+to the related `hermes-dashboard` process (`process:*`), not to tool lifecycle
+verbs.
 
 ## Credentials
 
-`tool:credentials hermes` returns the web UI access metadata Orbit has
-generated for the managed Hermes service.
+`tool:credentials hermes` returns the web UI access metadata for the managed
+Hermes dashboard. Auth mode is basic (username/password) per Hermes' June 2026
+gated-mode requirement for non-loopback binds. The password is stored only at
+`/home/agent/.hermes/dashboard.password` and the session-signing secret only at
+`/home/agent/.hermes/dashboard.secret`. Neither secret is written into process
+command argv, logs, or gateway intent rows.
 
 Example JSON shape:
 
@@ -43,6 +48,7 @@ Example JSON shape:
         "node": "agent-1",
         "fields": {
           "url": "https://hermes.agent-1",
+          "auth_mode": "basic",
           "username": "orbit",
           "password": "<generated-password>"
         }
@@ -73,8 +79,25 @@ Hermes is a first-party autonomous agent tool. Orbit installs it for the shared
 unprivileged `agent` user. `tool:update hermes` runs Hermes's native update
 path through the Orbit-managed binary. The agent runtime must be able to execute
 `/home/agent/.local/bin/orbit --version --local` through the owner-user shim
-without sudo or write access to owner Orbit config or install metadata. It does
-not implicitly restart related runtime processes.
+without sudo or write access to owner Orbit config or install metadata.
+
+The managed web dashboard is process-owned: `tool:install` configures a related
+`hermes-dashboard` `systemd` process that runs
+`hermes dashboard --host 0.0.0.0 --port 8080 --no-open`. Binding `0.0.0.0`
+engages Hermes' auth gate and accepts reverse-proxy Host headers such as
+`hermes.agent`. The process shell loads
+`HERMES_DASHBOARD_BASIC_AUTH_USERNAME`,
+`HERMES_DASHBOARD_BASIC_AUTH_PASSWORD`, and
+`HERMES_DASHBOARD_BASIC_AUTH_SECRET` from agent-home credential files
+immediately before exec; the stored process command never contains those
+secrets. `HERMES_DASHBOARD_PUBLIC_URL` is set from
+`/home/agent/.hermes/dashboard.public_url` when present.
+
+Install/update/reconfigure generate durable password and secret files when
+missing (mode `0600`), write the public URL for the tool route hostname, and
+run `hermes dashboard --stop` so unmanaged native dashboard listeners release
+port `8080` before the Orbit unit binds it. They do not run interactive
+`hermes setup`.
 
 `tool:update hermes` from the node itself requires `tool:update` on the
 self-grant. `tool:install hermes`, `tool:remove hermes`,
@@ -104,6 +127,9 @@ explicit Linux platform, mandatory node TLD, existence of the `agent` user, and
 that the user is unprivileged. A failed check returns
 `tool.constraint_unsatisfied` with stable constraint metadata.
 
+After install, Orbit converges dashboard credentials and configures the related
+`hermes-dashboard` process by default.
+
 ## Update Command
 
 `tool:update hermes` runs Hermes's native self-update path:
@@ -112,14 +138,19 @@ that the user is unprivileged. A failed check returns
 sudo -u agent -H bash -lc 'hermes update'
 ```
 
+Then reconverges managed dashboard credential files and public URL.
+
 ## Verify Commands
 
 `doctor --family=tool` and `tool:show hermes` use this verification
 command:
 
 ```bash
-sudo -u agent -H bash -lc 'hermes doctor'
+sudo -u agent -H bash -lc 'hermes --version'
 ```
+
+Runtime process lifecycle for the web dashboard belongs to the process family
+(`hermes-dashboard`).
 
 ## Doctor Relationship
 
