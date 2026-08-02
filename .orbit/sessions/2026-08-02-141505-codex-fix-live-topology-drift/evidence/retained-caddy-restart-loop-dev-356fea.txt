@@ -1,0 +1,78 @@
+=== retained topology proof 2026-08-02T11:42:08Z ===
+topology_id=dev-356fea
+kind=operator_gateway_app-dev
+provider=incus host=beast
+instances=operator:orbit-e2e-dev-356fea-operator gateway:orbit-e2e-dev-356fea-gateway dev:orbit-e2e-dev-356fea-dev
+feature_tip=096c453a6719115d3951f11874d8190e141ae71b
+
+=== operator launcher identity ===
+/home/orbit/orbit-run
+-rwxr-xr-x 1 ubuntu ubuntu 1404 Aug  2 11:08 ./apps/cli/orbit
+Version       0.1.190
+Released at   unknown
+Installed at  02-08-2026 - 11:08
+orbit is /home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+
+=== operator node:list ===
+{"success":{"data":{"nodes":[{"name":"app-dev-1","tld":"test","host":"10.6.0.4","addresses":{"wireguard":"10.6.0.4"},"platform":"ubuntu","status":"active","roles":[{"role":"app-dev","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-02T11:40:25.000000Z"},{"role":"database","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-02T11:40:56.000000Z"}]},{"name":"gateway","tld":"gateway","host":"10.6.0.2","addresses":{"wireguard":"10.6.0.2"},"platform":"ubuntu","status":"active","roles":[{"role":"gateway","status":"active","settings":[],"last_error":null,"converged_at":null},{"role":"router","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-02T11:39:43.000000Z"},{"role":"vpn","status":"active","settings":{"public_endpoint":"10.232.1.143","wireguard_cidr":"10.6.0.0/24","wireguard_port":51820,"dns_ip":"10.6.0.1"},"last_error":null,"converged_at":"2026-08-02T11:39:43.000000Z"}]},{"name":"operator-1","tld":"operator","host":"10.6.0.3","addresses":{"wireguard":"10.6.0.3"},"platform":"ubuntu","status":"active","roles":[]}]},"meta":[]}}
+
+=== app-dev caddy inspect before ===
+NAMES         STATUS
+orbit-caddy   Up About a minute
+status=running running=true restarting=false hash=12471484ba33c658d327adf5c2219fa4c36a162ea6c6d93eb5d5530f5340bb85
+
+=== operator tool:show caddy on app-dev-1 ===
+{"success":{"data":{"tool":{"name":"caddy","node":"app-dev-1","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]}},"meta":[]}}
+
+=== operator doctor proxy check before fault ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"verify","scope":{"families":["proxy"],"node":"app-dev-1","role":"app-dev","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}}}}
+
+=== inject same-spec restart loop on app-dev ===
+hash=12471484ba33c658d327adf5c2219fa4c36a162ea6c6d93eb5d5530f5340bb85 network=orbit-network
+orbit-caddy
+Unable to find image 'alpine:3.20' locally
+3.20: Pulling from library/alpine
+25f1d6b1951a: Pulling fs layer
+25f1d6b1951a: Download complete
+3a030ca3f633: Download complete
+25f1d6b1951a: Pull complete
+d4050d56ebf2: Download complete
+Digest: sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+Status: Downloaded newer image for alpine:3.20
+8441097b40c6e206ead283fa8f2c7daf12731ee83d3ddb1d2cfc7b12d68569e0
+NAMES         STATUS
+orbit-caddy   Restarting (1) Less than a second ago
+status=restarting running=true restarting=true hash=12471484ba33c658d327adf5c2219fa4c36a162ea6c6d93eb5d5530f5340bb85 networks=orbit-network 
+
+=== operator doctor proxy after fault (expect down) ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["proxy"],"node":"app-dev-1","role":"app-dev","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":2,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"proxy","node":"app-dev-1","key":"proxy.caddy_container_down","kind":"divergent","summary":"Proxy runtime container orbit-caddy is not running on app-dev-1.","detail":{"container":"orbit-caddy","node":"app-dev-1"},"code":"proxy.caddy_container_down","restorable":true,"adoptable":false},{"family":"proxy","node":"app-dev-1","key":"proxy.global_config_missing","kind":"missing","summary":"Global orbit-caddy config is missing on app-dev-1.","detail":{"node":"app-dev-1"},"code":"proxy.global_config_missing","restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+
+=== operator doctor proxy restore ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"restore","scope":{"families":["proxy"],"node":"app-dev-1","role":"app-dev","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":0,"fixed":2,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[{"family":"proxy","node":"app-dev-1","code":"proxy.caddy_container_down","key":"proxy.caddy_container_down","mode":"restore","status":"completed","summary":"Restored orbit-caddy container on app-dev-1.","details":{"container":"orbit-caddy"}},{"family":"proxy","node":"app-dev-1","code":"proxy.global_config_missing","key":"proxy.global_config_missing","mode":"restore","status":"completed","summary":"Reconciled global orbit-caddy config on app-dev-1.","details":{"node":"app-dev-1"}}]}}}}
+
+=== app-dev caddy inspect after restore ===
+NAMES         STATUS         IMAGE
+orbit-caddy   Up 6 seconds   caddy:2-alpine
+status=running running=true restarting=false hash=12471484ba33c658d327adf5c2219fa4c36a162ea6c6d93eb5d5530f5340bb85 image=caddy:2-alpine
+
+=== operator doctor proxy verify after restore ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"verify","scope":{"families":["proxy"],"node":"app-dev-1","role":"app-dev","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}}}}
+
+=== tool:logs success baseline ===
+{"error":{"code":"tool.remote_action_failed","message":"Tool 'caddy' logs failed on node 'app-dev-1'.","meta":{"tool":"caddy","node":"app-dev-1","action":"logs","exit_code":1,"stderr":"{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}"}}}
+
+=== induce log read failure (rename container) ===
+
+=== tool:logs failure should surface docker output ===
+{"error":{"code":"tool.remote_action_failed","message":"Tool 'caddy' logs failed on node 'app-dev-1'.","meta":{"tool":"caddy","node":"app-dev-1","action":"logs","exit_code":1,"stderr":"{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}"}}}
+
+=== restore container name and doctor heal if needed ===
+orbit-caddy Up 28 seconds
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"restore","scope":{"families":["proxy"],"node":"app-dev-1","role":"app-dev","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}}}}
+
+=== RESULT SUMMARY ===
+restart_loop_recovery=PASS
+tool_logs_failure_output=see above
+evidence=.orbit/evidence/retained-caddy-restart-loop-dev-356fea.txt
+released_at=2026-08-02T11:44:31Z release=composer e2e:incus -- --stop --id=dev-356fea
