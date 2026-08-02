@@ -689,6 +689,21 @@ final readonly class LocalCaddyConfigAction
 
     private function writeGlobalCaddyfile(string $globalCaddyfile, string $globalConfig): void
     {
+        $this->ensureHostDirectory(
+            $this->accessibleHostPath($this->hostPreparationPath(dirname($globalCaddyfile))),
+        );
+
+        // Docker creates a directory at a missing file bind source; replace it
+        // so tee can write the Caddyfile before the container is (re)created.
+        $isDirectory = $this->runPrivilegedProcess(['test', '-d', $globalCaddyfile]);
+
+        if ($isDirectory['exit_code'] === 0) {
+            $this->mustRunPrivileged(
+                ['rm', '-rf', $globalCaddyfile],
+                'caddy_container.global_config_failed',
+            );
+        }
+
         $this->mustRunPrivilegedWithInput(
             ['tee', $globalCaddyfile],
             $globalConfig,

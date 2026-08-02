@@ -1758,7 +1758,28 @@ describe('proxy node-level introspection', function (): void {
                 'hash' => hash('sha256', $contents),
             ])
             ->and($shell->scripts[0])
-            ->toContain('/etc/caddy/Caddyfile');
+            ->toContain('/etc/caddy/Caddyfile')
+            ->and($shell->scripts[0])
+            ->not->toContain('docker exec')
+            ->and($shell->scripts[0])
+            ->toContain('.Mounts');
+    });
+
+    it('reads host-mounted global config even when the container is not running', function (): void {
+        $node = createTestAppHostNode();
+        $contents = "{\n    local_certs\n}\n";
+        $shell = new ProxyProbeRecordingRemoteShell("1\t".base64_encode($contents)."\n");
+
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectGlobalConfig($node);
+
+        expect($snapshot->get('global_caddy_config'))
+            ->toMatchArray([
+                'exists' => true,
+                'content' => $contents,
+            ])
+            ->and($shell->scripts[0])
+            ->not->toContain('State.Status')
+            ->not->toContain('docker exec');
     });
 });
 

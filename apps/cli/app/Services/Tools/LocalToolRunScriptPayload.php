@@ -31,6 +31,7 @@ final readonly class LocalToolRunScriptPayload
         'start',
         'stop',
         'restart',
+        'logs',
         'credentials',
     ];
 

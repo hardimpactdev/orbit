@@ -36,8 +36,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Requires the selected tool definition to declare `logs`.
 - Resolves exactly one direct tool-owned runtime or exactly one process row
   whose canonical `tool` value matches the selected tool.
-- A direct remote runtime reads through Agent push. A process-backed runtime
-  uses the native process log reader.
+- A direct remote runtime reads through Agent push via
+  `internal:tool:run-script` with action `logs` (an allowed tool-run action). A
+  process-backed runtime uses the native process log reader.
 - The gateway-local `dns` runtime reads `orbit-dns` directly on the active
   serving gateway. A non-gateway caller requires a grant on that gateway;
   gateway identity remains implicit. No remote target is accepted.
@@ -79,3 +80,4 @@ process doctor owns drift in a resolved process row.
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI target, lines, human output, and JSON envelope behavior. |
 | `apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php` | Gateway-local DNS logs, serving-gateway grants, wrong-permission denial, and capability-gated runtime resolution. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php` | Failed log reads preserve useful stdout when stderr is empty (including `docker logs ... 2>&1`). |
+| `apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php` | `internal:tool:run-script` accepts action `logs` so remote `tool:logs` payloads validate. |

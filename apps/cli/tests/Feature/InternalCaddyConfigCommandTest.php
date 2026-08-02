@@ -727,6 +727,44 @@ describe('internal caddy config command', function (): void {
             ->not->toContain('tee /etc/caddy/Caddyfile');
     });
 
+    it('replaces a docker-created directory at the global Caddyfile bind source before writing', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'a', times: 64);
+        $configRoot = '/Users/nckrtl/.config/orbit';
+        $spec = caddy_config_container_spec($expectedHash);
+        $spec['mounts'][0]['source'] = "{$configRoot}/caddy/Caddyfile";
+        $spec['mounts'][1]['source'] = "{$configRoot}/caddy/sites";
+        // Parent dirs may be missing; the Caddyfile path itself is a directory
+        // (default test -d succeeds) while test -f fails (MISSING_FILES).
+        $missingDirectories = "{$configRoot}/caddy:{$configRoot}/caddy/sites";
+        $missingFiles = "{$configRoot}/caddy/Caddyfile";
+        putenv("ORBIT_CADDY_CONFIG_MISSING_DIRS={$missingDirectories}");
+        putenv("ORBIT_CADDY_CONFIG_MISSING_FILES={$missingFiles}");
+        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS'] = $missingDirectories;
+        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_FILES'] = $missingFiles;
+
+        [$exitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => $spec,
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($calls)
+            ->toContain("test -d {$configRoot}/caddy/Caddyfile")
+            ->toContain("rm -rf {$configRoot}/caddy/Caddyfile")
+            ->toContain("tee {$configRoot}/caddy/Caddyfile");
+    });
+
     it('updates an existing global Caddyfile through the declared container bind source', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'e', times: 64);

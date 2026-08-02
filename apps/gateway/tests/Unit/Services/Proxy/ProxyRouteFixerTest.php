@@ -1396,6 +1396,47 @@ describe('ProxyRouteFixer', function (): void {
             ->toBeTrue();
     });
 
+    it('restores missing global config through apply-container when a managed caddy spec exists', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'mini',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.30')->spec()],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixGlobalConfig($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.global_config_missing',
+            kind: DriftKind::Missing,
+            summary: 'global config missing',
+            detail: ['node' => 'mini'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'mini',
+                'key' => 'proxy.global_config_missing',
+                'status' => 'completed',
+                'summary' => 'Restored host global orbit-caddy config and container on mini.',
+            ])
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'apply-container'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeFalse()
+            ->and($shell->scripts[0])
+            ->toContain('global_config');
+    });
+
     it('reloads the e2e caddy container scoped to the serving node', function (): void {
         $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
         $nodeContainer = getenv('ORBIT_NODE_CONTAINER');

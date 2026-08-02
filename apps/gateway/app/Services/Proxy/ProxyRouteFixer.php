@@ -806,10 +806,40 @@ final readonly class ProxyRouteFixer
     }
 
     /**
+     * Restore the host-mounted global Caddyfile. When the file is missing and a
+     * managed orbit-caddy tool spec exists, apply the container so the host
+     * bind source is seeded before create/recreate and repair ends only after
+     * the container is stably running. Healthy mismatch still writes the host
+     * artifact and reloads.
+     *
      * @return array<string, mixed>
      */
     public function fixGlobalConfig(Node $node, DriftEntry $entry): array
     {
+        $spec = $this->managedCaddyContainerSpec($node);
+
+        if ($entry->key === 'proxy.global_config_missing' && $spec !== null) {
+            $result = $this->caddyConfig()->applyContainer($node, $spec);
+            $this->ensureSuccessful(
+                $result,
+                "Failed to restore host global orbit-caddy config and container on {$node->name}",
+            );
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => "Restored host global orbit-caddy config and container on {$node->name}.",
+                'details' => [
+                    'node' => $node->name,
+                    'container' => $this->caddyContainerNameFromSpec($spec, $node),
+                ],
+            ];
+        }
+
         $content = $this->caddyConfig()->readGlobal($node);
 
         if ($content === null) {
@@ -822,7 +852,19 @@ final readonly class ProxyRouteFixer
             $write = $this->caddyConfig()->writeGlobal($node, $updated);
             $this->ensureSuccessful($write, "Failed to write global orbit-caddy config on {$node->name}");
 
-            $this->reloadCaddy($node);
+            try {
+                $this->reloadCaddy($node);
+            } catch (RuntimeException $exception) {
+                if ($spec === null) {
+                    throw $exception;
+                }
+
+                $result = $this->caddyConfig()->applyContainer($node, $spec);
+                $this->ensureSuccessful(
+                    $result,
+                    "Failed to apply orbit-caddy container after writing global config on {$node->name}",
+                );
+            }
         }
 
         return [

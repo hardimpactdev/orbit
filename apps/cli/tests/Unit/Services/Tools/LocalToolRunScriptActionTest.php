@@ -67,3 +67,29 @@ it('rejects unsupported tool run actions including unknown probe variants', func
     ]))
         ->toThrow(\InvalidArgumentException::class, 'Tool run payload action is invalid.');
 });
+
+it('accepts the logs action used by tool:logs remote run payloads', function (): void {
+    $payload = LocalToolRunScriptPayload::fromArray([
+        'tool' => 'caddy',
+        'action' => 'logs',
+        'script' => 'docker logs --tail 100 orbit-caddy 2>&1',
+    ]);
+
+    expect($payload->tool)
+        ->toBe('caddy')
+        ->and($payload->action)
+        ->toBe('logs');
+
+    $result = new LocalToolRunScriptAction()->run([
+        'tool' => 'caddy',
+        'action' => 'logs',
+        'script' => "printf 'caddy-log-line'",
+    ]);
+
+    expect($result)
+        ->toMatchArray([
+            'exit_code' => 0,
+            'stdout' => 'caddy-log-line',
+            'stderr' => '',
+        ]);
+});

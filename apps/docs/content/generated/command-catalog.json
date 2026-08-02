@@ -12249,6 +12249,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php"
             ],
@@ -12259,6 +12260,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",

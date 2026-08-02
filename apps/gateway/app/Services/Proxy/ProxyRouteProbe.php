@@ -317,22 +317,29 @@ final readonly class ProxyRouteProbe
 
     public function introspectGlobalConfig(Node $node): ProbeSnapshot
     {
+        // Host-mounted Caddyfile is the source of truth. Resolve the bind source
+        // via docker inspect (works for restarting containers) and fall back to
+        // the default host path when the container is absent — never require a
+        // healthy docker-exec target to decide whether the global config exists.
         $script = <<<'BASH'
             set -euo pipefail
-            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
+            container=orbit-caddy
+            source=$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{println}}{{end}}{{end}}' "$container" 2>/dev/null | head -n1 || true)
+            if [ -z "${source}" ]; then
+                base=$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy"}}{{.Source}}{{println}}{{end}}{{end}}' "$container" 2>/dev/null | head -n1 || true)
+                if [ -n "${base}" ]; then
+                    source="${base}/Caddyfile"
+                fi
+            fi
+            if [ -z "${source}" ]; then
+                source="/etc/caddy/Caddyfile"
+            fi
+            if [ ! -f "$source" ]; then
                 printf "0\t\n"
                 exit 0
             fi
-            docker exec orbit-caddy sh -c '
-                path="/etc/caddy/Caddyfile"
-                if [ ! -f "$path" ]; then
-                    printf "0\t\n"
-                    exit 0
-                fi
-
-                content=$(base64 -w0 "$path" 2>/dev/null || base64 "$path" | tr -d "\n")
-                printf "1\t%s\n" "$content"
-            '
+            content=$(base64 -w0 "$source" 2>/dev/null || base64 "$source" | tr -d "\n")
+            printf "1\t%s\n" "$content"
             BASH;
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
