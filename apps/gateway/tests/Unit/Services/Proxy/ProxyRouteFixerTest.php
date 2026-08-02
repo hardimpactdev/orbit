@@ -1215,6 +1215,7 @@ describe('ProxyRouteFixer', function (): void {
                 'node' => 'app-1',
                 'key' => 'proxy.caddy_container_down',
                 'status' => 'completed',
+                'summary' => 'Restored orbit-caddy container on app-1.',
             ])
             ->and($shell->nodes[0]->is($node))
             ->toBeTrue()
@@ -1223,7 +1224,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])
             ->toContain('expected_hash=')
             ->and($shell->scripts[0])
-            ->toContain('docker start')
+            ->toContain('apply-container')
             ->and($shell->scripts[0])
             ->not->toContain('systemctl')->and($shell->scripts[0])
             ->not->toContain('caddy.service');

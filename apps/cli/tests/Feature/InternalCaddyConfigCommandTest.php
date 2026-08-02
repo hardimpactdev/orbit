@@ -500,24 +500,20 @@ describe('internal caddy config command', function (): void {
             ->toContain("test -d {$runPhpHostSource}")
             ->toContain("sudo -n test -d {$runPhpHostSource}")
             ->toContain("install -d -m 0755 {$runPhpHostSource}")
-            ->not
-            ->toContain('sudo test -d')
-            ->toContain('docker image inspect caddy:2-alpine')
-            ->toContain('docker network inspect orbit-network')
-            ->toContain(
+            ->not->toContain('sudo test -d')->toContain('docker image inspect caddy:2-alpine')->toContain(
+                'docker network inspect orbit-network',
+            )->toContain(
                 'docker run -d --pull never --name orbit-caddy --restart unless-stopped --network orbit-network',
-            )
-            ->toContain('--publish 10.6.0.50:80:80')
-            ->toContain('--add-host host.docker.internal:host-gateway')
-            ->toContain('--network-alias orbit-caddy')
-            ->toContain('--label orbit.container.kind=caddy')
-            ->toContain('--label orbit.managed=true')
-            ->toContain("--label orbit.caddy.spec_hash={$expectedHash}")
-            ->toContain("--mount type=bind,source={$globalCaddyfileSource},target=/etc/caddy/Caddyfile,readonly")
-            ->toContain("--mount type=bind,source={$sitesSource},target=/etc/caddy/sites,readonly")
-            ->toContain("--mount type=bind,source={$runPhpSource},target=/run/php")
-            ->toContain('caddy:2-alpine')
-            ->toContain('docker start orbit-caddy');
+            )->toContain('--publish 10.6.0.50:80:80')->toContain(
+                '--add-host host.docker.internal:host-gateway',
+            )->toContain('--network-alias orbit-caddy')->toContain('--label orbit.container.kind=caddy')->toContain(
+                '--label orbit.managed=true',
+            )->toContain("--label orbit.caddy.spec_hash={$expectedHash}")->toContain(
+                "--mount type=bind,source={$globalCaddyfileSource},target=/etc/caddy/Caddyfile,readonly",
+            )->toContain("--mount type=bind,source={$sitesSource},target=/etc/caddy/sites,readonly")->toContain(
+                "--mount type=bind,source={$runPhpSource},target=/run/php",
+            )->toContain('caddy:2-alpine')
+            ->not->toContain('docker start orbit-caddy');
     });
 
     it('pulls a missing declared Caddy image before applying the container', function (): void {
@@ -550,7 +546,7 @@ describe('internal caddy config command', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'a', times: 64);
         caddy_config_fake_container_inspect($bin, [
-            'State' => ['Status' => 'running', 'Running' => true],
+            'State' => ['Status' => 'running', 'Running' => true, 'Restarting' => false],
             'Config' => [
                 'Labels' => ['orbit.caddy.spec_hash' => $expectedHash],
             ],
@@ -579,6 +575,82 @@ describe('internal caddy config command', function (): void {
             ->and($calls)
             ->toContain('docker rm -f orbit-caddy')
             ->toContain('docker run -d --pull never --name orbit-caddy');
+    });
+
+    it('recreates a matching Caddy container stuck in a Docker restart loop', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'a', times: 64);
+        caddy_config_fake_container_inspect($bin, [
+            'State' => ['Status' => 'restarting', 'Running' => true, 'Restarting' => true],
+            'Config' => [
+                'Labels' => ['orbit.caddy.spec_hash' => $expectedHash],
+            ],
+            'NetworkSettings' => ['Networks' => ['orbit-network' => (object) []]],
+        ]);
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['outcome'] ?? null)
+            ->toBe('recreated')
+            ->and($payload['success']['data']['changed'] ?? null)
+            ->toBeTrue()
+            ->and($calls)
+            ->toContain('docker rm -f orbit-caddy')
+            ->toContain('docker run -d --pull never --name orbit-caddy')
+            ->not->toContain('docker start orbit-caddy');
+    });
+
+    it('starts a stopped matching Caddy container without recreating it', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'a', times: 64);
+        caddy_config_fake_container_inspect($bin, [
+            'State' => ['Status' => 'exited', 'Running' => false, 'Restarting' => false],
+            'Config' => [
+                'Labels' => ['orbit.caddy.spec_hash' => $expectedHash],
+            ],
+            'NetworkSettings' => ['Networks' => ['orbit-network' => (object) []]],
+        ]);
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['outcome'] ?? null)
+            ->toBe('started')
+            ->and($payload['success']['data']['changed'] ?? null)
+            ->toBeTrue()
+            ->and($calls)
+            ->toContain('docker start orbit-caddy')
+            ->not->toContain('docker rm -f orbit-caddy')
+            ->not->toContain('docker run -d --pull never --name orbit-caddy');
     });
 
     it('treats an existing Docker network as converged while applying the Caddy container', function (): void {
@@ -975,6 +1047,14 @@ function install_caddy_config_fake_bin(
 
         if [ "${1:-}" = pull ]; then
             touch "$dir/image-pulled"
+        fi
+
+        if [ "${1:-}" = rm ]; then
+            __REAL_RM__ -f "$dir/container-inspect.json"
+        fi
+
+        if [ "${1:-}" = run ] || [ "${1:-}" = start ]; then
+            printf '%s\n' '{"State":{"Status":"running","Running":true,"Restarting":false},"Config":{"Labels":{}},"NetworkSettings":{"Networks":{"orbit-network":{}}},"Mounts":[]}' >"$dir/container-inspect.json"
         fi
 
         if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then

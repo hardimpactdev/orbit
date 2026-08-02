@@ -78,3 +78,4 @@ process doctor owns drift in a resolved process row.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI target, lines, human output, and JSON envelope behavior. |
 | `apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php` | Gateway-local DNS logs, serving-gateway grants, wrong-permission denial, and capability-gated runtime resolution. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php` | Failed log reads preserve useful stdout when stderr is empty (including `docker logs ... 2>&1`). |

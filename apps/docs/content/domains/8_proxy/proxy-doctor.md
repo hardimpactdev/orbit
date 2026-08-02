@@ -106,7 +106,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.domain_conflict` | A custom route claims a domain owned by a project, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
-| `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
+| `proxy.caddy_container_down` | The `orbit-caddy` container exists but is not healthy running, including stopped containers and Docker restart loops. Mounted route artifacts are not served. |
 | `proxy.caddy_container_detached` | The running `orbit-caddy` container is not attached to the serving node's managed Docker network. |
 | `proxy.agent_tool_route_missing` | An installed agent tool expects an internal route under its node TLD, but the gateway proxy route row is absent. |
 | `proxy.agent_tool_route_mismatch` | The expected agent-tool route row exists for the same tool but its serving node, kind, upstream, owner shape, or source hash differs from canonical proxy intent. |
@@ -145,7 +145,7 @@ server name before rendering.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
-| `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
+| `proxy.caddy_container_down` | With a managed caddy tool spec, apply the container: start when stopped, force-recreate restart loops even when hash/network match. Without a managed record, start the existing container only. |
 | `proxy.caddy_container_detached` | Reconcile the `orbit-caddy` container from its managed spec so the container is recreated on the managed Docker network. |
 | `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
@@ -192,6 +192,8 @@ Required test files:
 | `apps/gateway/tests/Unit/Services/Doctor/ProxyDnsProjectionProbeTest.php` | Router/private `.orbit`, exact backend projection, and `proxy.dns_mapping_mismatch`. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
+| `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container force-recreates restarting orbit-caddy containers with matching hash/network and still starts stopped matching containers. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php` | Failed tool log reads keep useful stdout when stderr is empty (including docker logs redirected with `2>&1`). |
 | `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |
 
 No current E2E test is mapped for proxy-family doctor coverage.

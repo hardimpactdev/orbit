@@ -90,7 +90,7 @@ final readonly class ToolLogReader
                     $target->node->name,
                     'logs',
                     $result->exitCode() ?? 1,
-                    trim($result->errorOutput()),
+                    $this->failureOutput($result->output(), $result->errorOutput()),
                 );
             }
 
@@ -113,7 +113,7 @@ final readonly class ToolLogReader
                     $target->node->name,
                     'logs',
                     $result->exitCode,
-                    trim($result->stderr),
+                    $this->failureOutput($result->stdout, $result->stderr),
                 );
             }
 
@@ -155,6 +155,21 @@ final readonly class ToolLogReader
             'validation_failed',
             ['process' => $process->name],
         );
+    }
+
+    /**
+     * Prefer stderr, but keep stdout when commands redirect with 2>&1 (for
+     * example `docker logs ... 2>&1`) so failure reports stay useful.
+     */
+    private function failureOutput(string $stdout, string $stderr): string
+    {
+        $stderr = trim($stderr);
+
+        if ($stderr !== '') {
+            return $stderr;
+        }
+
+        return trim($stdout);
     }
 
     /**

@@ -424,10 +424,13 @@ final readonly class LocalCaddyConfigAction
         $changed = false;
         $outcome = 'unchanged';
 
+        // Restart loops keep matching labels/network while remaining unhealthy.
+        // Force replacement so doctor restore can escape a same-spec crash loop.
         if (
             $hadExistingContainer
             && (! hash_equals($spec['expected_hash'], $observedHash ?? '')
-            || ! $this->containerUsesNetwork($inspection, $spec['network']))
+            || ! $this->containerUsesNetwork($inspection, $spec['network'])
+            || $this->containerIsRestarting($inspection))
         ) {
             $this->mustRun(['docker', 'rm', '-f', $spec['name']], 'caddy_container.remove_failed');
             $inspection = null;
@@ -441,10 +444,14 @@ final readonly class LocalCaddyConfigAction
             $outcome = $hadExistingContainer ? 'recreated' : 'created';
         }
 
-        if (! $this->containerIsRunning($spec['name'])) {
+        if (! $this->containerIsHealthy($this->inspectContainer($spec['name']))) {
             $this->mustRun(['docker', 'start', $spec['name']], 'caddy_container.start_failed');
             $changed = true;
             $outcome = $outcome === 'unchanged' ? 'started' : $outcome;
+        }
+
+        if ($changed) {
+            $this->ensureStableRunning($spec['name']);
         }
 
         return [
@@ -1053,11 +1060,66 @@ final readonly class LocalCaddyConfigAction
         return is_string($hash) ? $hash : null;
     }
 
-    private function containerIsRunning(string $container): bool
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function containerIsRestarting(?array $inspection): bool
     {
-        $inspect = $this->runProcess(['docker', 'container', 'inspect', '--format', '{{.State.Running}}', $container]);
+        $state = $inspection['State'] ?? null;
 
-        return $inspect['exit_code'] === 0 && trim($inspect['output']) === 'true';
+        if (! is_array($state)) {
+            return false;
+        }
+
+        return ($state['Restarting'] ?? false) === true;
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function containerIsHealthy(?array $inspection): bool
+    {
+        $state = $inspection['State'] ?? null;
+
+        if (! is_array($state)) {
+            return false;
+        }
+
+        return ($state['Running'] ?? false) === true && ($state['Restarting'] ?? false) !== true;
+    }
+
+    private function ensureStableRunning(string $container): void
+    {
+        $deadline = microtime(true) + 3.0;
+        $consecutiveHealthy = 0;
+
+        do {
+            $inspection = $this->inspectContainer($container);
+
+            if (! $this->containerIsHealthy($inspection)) {
+                $consecutiveHealthy = 0;
+                usleep(150_000);
+
+                continue;
+            }
+
+            $consecutiveHealthy++;
+
+            if ($consecutiveHealthy >= 2) {
+                return;
+            }
+
+            usleep(150_000);
+        } while (microtime(true) < $deadline);
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: 'caddy_container.unstable',
+            message: 'Caddy container did not reach a stable running state.',
+            meta: [
+                'container' => $container,
+                'restarting' => $this->containerIsRestarting($this->inspectContainer($container)),
+            ],
+        );
     }
 
     /**

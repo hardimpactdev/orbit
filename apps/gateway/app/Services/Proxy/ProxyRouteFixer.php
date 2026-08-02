@@ -677,9 +677,11 @@ final readonly class ProxyRouteFixer
 
     /**
      * Restore the orbit-caddy container on a serving node when proxy probing
-     * reports the container is missing, stopped, or detached from its managed
-     * network. A stopped container is started, while missing and detached
-     * containers are reconciled from the managed spec.
+     * reports the container is missing, stopped, restarting, or detached from
+     * its managed network. With a managed tool spec, apply-container starts a
+     * stopped container and force-recreates restart loops even when the stored
+     * spec hash and network match. Without a managed record, only docker start
+     * is attempted for the container-down path.
      *
      * @return array<string, mixed>|null
      */
@@ -693,7 +695,7 @@ final readonly class ProxyRouteFixer
                 ? $this->caddyConfig()->startContainer($node, $caddyName)
                 : $this->caddyConfig()->applyContainer($node, $spec);
 
-            $this->ensureSuccessful($result, "Failed to start orbit-caddy container on {$node->name}");
+            $this->ensureSuccessful($result, "Failed to restore orbit-caddy container on {$node->name}");
 
             return [
                 'family' => 'proxy',
@@ -702,7 +704,9 @@ final readonly class ProxyRouteFixer
                 'key' => $entry->key,
                 'mode' => 'fix',
                 'status' => 'completed',
-                'summary' => "Started orbit-caddy container on {$node->name}.",
+                'summary' => $spec === null
+                    ? "Started orbit-caddy container on {$node->name}."
+                    : "Restored orbit-caddy container on {$node->name}.",
                 'details' => [
                     'container' => $caddyName,
                 ],
