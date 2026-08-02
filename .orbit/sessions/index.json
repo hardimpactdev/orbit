@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 182,
+    "record_count": 183,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -5096,6 +5096,28 @@
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-02-230413-codex-orphaned-workspace-route-repair",
+            "slug": "codex-orphaned-workspace-route-repair",
+            "timestamp": "2026-08-02-230413",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "state": "land",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "valid",
                 "event_count": 0,
                 "raw_count": 0,
                 "promoted_count": 0,
