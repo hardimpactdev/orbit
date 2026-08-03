@@ -13,8 +13,10 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
+use App\Enums\DoctorIssueDisposition;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
+use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
@@ -1194,6 +1196,15 @@ final readonly class DoctorReportRunner
             return $this->finalize($probe, $mode, $this->plannedActions($mode, $probe['issues'] ?? []), dryRun: true);
         }
 
+        if ($mode === 'restore') {
+            return $this->runRestoreConvergence(
+                $node,
+                $probe,
+                $families,
+                new DoctorRunRequest($key, dryRun: false, scope: $scope),
+            );
+        }
+
         $actions = $mode === 'adopt'
             ? (
                 $key === 'node.updates'
@@ -1213,9 +1224,9 @@ final readonly class DoctorReportRunner
             ];
         }
 
-        if (in_array($mode, ['restore', 'adopt'], true)) {
+        if ($mode === 'adopt') {
             // No mutation receipts: the first probe is already current. Re-probe only
-            // when apply/adopt produced any action (including skipped/unsupported).
+            // when adopt produced any action (including skipped/unsupported).
             if ($actions === []) {
                 return $this->finalize($probe, $mode, $actions);
             }
@@ -1230,6 +1241,137 @@ final readonly class DoctorReportRunner
         }
 
         return $this->finalize($probe, $mode, $actions);
+    }
+
+    /**
+     * Bounded multi-pass restore: re-apply genuine drift until clean, no progress,
+     * or max passes. Scope fences (families/key/instance/workspace) are preserved
+     * on every probe and apply.
+     *
+     * @param  array<string, mixed>  $initialProbe
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    private function runRestoreConvergence(
+        Node $node,
+        array $initialProbe,
+        array $families,
+        DoctorRunRequest $request,
+    ): array {
+        $scope = $request->targetScope();
+        $convergence = new DoctorRestoreConvergence;
+        $result = $convergence->run(
+            probe: function () use ($node, $families, $request, $initialProbe): array {
+                static $first = true;
+
+                if ($first) {
+                    $first = false;
+
+                    return $initialProbe;
+                }
+
+                return $this->probe(
+                    $node,
+                    $families,
+                    $request->key,
+                    scope: $request->targetScope(),
+                );
+            },
+            apply: fn (array $issues): array => $this->apply($node, 'restore', $issues),
+            isRestorable: fn (array $issue): bool => $this->issueSupportsMode($issue, 'restore'),
+        );
+
+        $actions = $result['actions'];
+        $finalProbe = $result['probe'];
+        $finalIssues = $this->issuesFromProbe($finalProbe);
+        $actions = [
+            ...$actions,
+            ...$this->actionsForUnsupportedMode('restore', $finalIssues, $actions),
+        ];
+
+        if ($actions === [] && $result['stop_reason'] === 'no_restorable') {
+            return $this->finalizeWithConvergence(
+                probe: $initialProbe,
+                mode: 'restore',
+                actions: $actions,
+                passes: 0,
+                stopReason: 'no_restorable',
+                authoritativeObservation: false,
+            );
+        }
+
+        $annotatedActions = $this->annotateRestoreActionsWithRemainingDrift(
+            $actions,
+            $finalIssues,
+        );
+
+        return $this->finalizeWithConvergence(
+            probe: $finalProbe,
+            mode: 'restore',
+            actions: $annotatedActions,
+            passes: $result['passes'],
+            stopReason: $result['stop_reason'],
+            authoritativeObservation: true,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @param  list<array<string, mixed>>  $actions
+     * @return array<string, mixed>
+     */
+    private function finalizeWithConvergence(
+        array $probe,
+        string $mode,
+        array $actions,
+        int $passes,
+        string $stopReason,
+        bool $authoritativeObservation,
+    ): array {
+        $result = $this->finalize(
+            probe: $probe,
+            mode: $mode,
+            actions: $actions,
+            authoritativeObservation: $authoritativeObservation,
+        );
+        $result['convergence'] = [
+            'passes' => $passes,
+            'stop_reason' => $stopReason,
+            'max_passes' => DoctorRestoreConvergence::MAX_PASSES,
+        ];
+        $result['summary'] = [
+            ...($result['summary'] ?? []),
+            'passes' => $passes,
+            'stop_reason' => $stopReason,
+        ];
+
+        return $result;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return array<string, int>
+     */
+    private function dispositionCounts(array $issues): array
+    {
+        $counts = [
+            DoctorIssueDisposition::GenuineDrift->value => 0,
+            DoctorIssueDisposition::BlockedInspection->value => 0,
+            DoctorIssueDisposition::InvalidIntent->value => 0,
+            DoctorIssueDisposition::RuntimeIncident->value => 0,
+        ];
+
+        foreach ($issues as $issue) {
+            $disposition = is_string($issue['disposition'] ?? null)
+                ? $issue['disposition']
+                : null;
+
+            if ($disposition !== null && array_key_exists($disposition, $counts)) {
+                $counts[$disposition]++;
+            }
+        }
+
+        return $counts;
     }
 
     /**
@@ -1780,6 +1922,7 @@ final readonly class DoctorReportRunner
 
         $issues = $this->filterIssuesByKey($issues, $key);
         $summary = $this->summary('verify', $issues, []);
+        $summary['dispositions'] = $this->dispositionCounts($issues);
 
         return [
             'healthy' => $issues === [],
@@ -1816,6 +1959,7 @@ final readonly class DoctorReportRunner
         );
         $issues = $this->filterIssuesByKey([$issue], $key);
         $summary = $this->summary('verify', $issues, []);
+        $summary['dispositions'] = $this->dispositionCounts($issues);
 
         return [
             'healthy' => false,
@@ -2281,11 +2425,13 @@ final readonly class DoctorReportRunner
                 $issues[] = $this->annotateIssue([
                     'family' => 'proxy',
                     'node' => $node->name,
+                    'code' => 'proxy.route_extra',
                     'key' => $domain,
                     'kind' => 'extra',
                     'summary' => $entry->summary,
                     'detail' => [
                         'domain' => $domain,
+                        'code' => 'proxy.route_extra',
                     ],
                 ]);
             }
@@ -2534,6 +2680,7 @@ final readonly class DoctorReportRunner
             ? $issues
             : $this->remainingIssues($issues, $actions);
         $summary = $this->summary($mode, $remainingIssues, $actions);
+        $summary['dispositions'] = $this->dispositionCounts($remainingIssues);
 
         $result = [
             ...$probe,
@@ -2621,7 +2768,7 @@ final readonly class DoctorReportRunner
     private function issuePayload(DriftEntry $entry, Node $node): array
     {
         $detail = $entry->detail ?? [];
-        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+        $code = $this->driftEntryCatalogCode($entry);
 
         return $this->annotateIssue([
             'family' => 'node',
@@ -2640,7 +2787,7 @@ final readonly class DoctorReportRunner
     private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): array
     {
         $detail = $entry->detail ?? [];
-        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+        $code = $this->driftEntryCatalogCode($entry);
 
         return $this->annotateIssue([
             'family' => $entry->family,
@@ -2658,10 +2805,13 @@ final readonly class DoctorReportRunner
      */
     private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
     {
+        $code = $this->driftEntryCatalogCode($entry);
+
         return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $route->node->name,
             'key' => $entry->key,
+            'code' => $code,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => [
@@ -2669,6 +2819,22 @@ final readonly class DoctorReportRunner
                 'domain' => $route->domain,
             ],
         ]);
+    }
+
+    private function driftEntryCatalogCode(DriftEntry $entry): string
+    {
+        $detail = $entry->detail ?? [];
+        $explicit = is_string($detail['code'] ?? null) ? $detail['code'] : '';
+
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if (DoctorIssueCatalog::has($entry->key)) {
+            return $entry->key;
+        }
+
+        throw DoctorUncataloguedIssueException::forCode($entry->key);
     }
 
     /**
@@ -4937,98 +5103,17 @@ final readonly class DoctorReportRunner
     {
         $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
         $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
-        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
         $kind = is_string($issue['kind'] ?? null) ? $issue['kind'] : '';
-        $restorableKeys = [
-            'proxy.route_missing',
-            'proxy.route_mismatch',
-            'proxy.public_route_missing',
-            'proxy.public_route_mismatch',
-            'proxy.router_route_missing',
-            'proxy.router_route_mismatch',
-            'proxy.backend_route_missing',
-            'proxy.backend_route_mismatch',
-            'proxy.tls_missing',
-            'proxy.tls_mismatch',
-            'proxy.enactment_incomplete',
-            'proxy.caddy_container_missing',
-            'proxy.caddy_container_down',
-            'proxy.caddy_container_detached',
-            'proxy.global_config_missing',
-            'proxy.global_config_mismatch',
-            'proxy.dns_mapping_mismatch',
-            'proxy.agent_tool_route_missing',
-            'proxy.agent_tool_route_mismatch',
-            WebSocketProxyDoctorProbe::RouterRouteKey,
-            WebSocketProxyDoctorProbe::PublicRouteKey,
-            S3ProxyDoctorProbe::RouterRouteKey,
-            S3ProxyDoctorProbe::RouterBackendKey,
-            S3ProxyDoctorProbe::PublicRouteKey,
-            AnalyticsProxyDoctorProbe::RouterRouteKey,
-            AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
-            AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY,
-            'workspace.security.system_user',
-            'workspace.security.fs_permissions',
-            'app.runtime_config_missing',
-            'app.runtime_config_mismatch',
-            'app.runtime_config_extra',
-            'app.security.system_user',
-            'app.security.fs_permissions',
-            'firewall_rule.rule_missing',
-            'firewall_rule.rule_mismatch',
-            'process.runtime_unit_missing',
-            'process.runtime_unit_mismatch',
-            'process.runtime_unit_down',
-            'process.runtime_unit_extra',
-            'process.runtime_unit_unrenderable',
-            'process.restart_policy_mismatch',
-            'process.runtime_environment_mismatch',
-            'process.event_notifier_missing',
-            'process.event_notifier_mismatch',
-            'tool.capability_missing',
-            'tool.container_missing',
-            'tool.container_not_running',
-            'tool.container_spec_mismatch',
-            'tool.version_mismatch',
-            'tool.config_missing',
-            'tool.config_mismatch',
-            'tool.credentials_missing',
-            'tool.credentials_mismatch',
-            'tool.dns_container_missing',
-            'tool.dns_port_not_listening',
-            'tool.dns_base_config_mismatch',
-            'tool.dns_client_dns_drift',
-            'tool.dns_forwarding_missing',
-            'schedule.scheduler_missing',
-            'schedule.scheduler_stopped',
-            'schedule.scheduler_image_mismatch',
-            'schedule.scheduler_replicas_mismatch',
-            'schedule.lock_stuck',
-            'node.role_convergence_failed',
-            'node.role_baseline_mismatch',
-            'node.dns_mapping_mismatch',
-            'node.websocket.backend_cert_missing',
-            'node.websocket.bind_public_interface',
-            'node.security.sshd_config',
-            'node.security.sshd_listen',
-            'node.security.public_ssh_deny',
-            'node.security.sysctl',
-            'node.security.home_perms',
-            'node.updates_config_missing',
-            'node.updates_config_mismatch',
-            'node.updates_dry_run_failed',
-            'node.updates_last_run_failed',
-            'node.updates_unverifiable',
-            'database_connection.env_missing',
-            'database_connection.env_mismatch',
-            'database_connection.target_missing',
-        ];
+        $code = $this->catalogCodeForIssue($issue);
+        $definition = DoctorIssueCatalog::require($code);
+        $restorable = DoctorIssueCatalog::isRestorable($code);
 
         return [
             ...$issue,
             'code' => $code,
-            'restorable' =>
-                in_array($code, $restorableKeys, true) || $family === 'proxy' && $kind === DriftKind::Extra->value,
+            'disposition' => $definition->disposition->value,
+            'restore_action' => $definition->restoreAction,
+            'restorable' => $restorable,
             'adoptable' =>
                 ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value
                     || $family === 'database_connection'
@@ -5042,6 +5127,35 @@ final readonly class DoctorReportRunner
                         true,
                     ),
         ];
+    }
+
+    /**
+     * Resolve the catalogued issue code. Resource-scoped keys (for example a
+     * proxy domain) must emit an explicit `code`; only registered catalog keys
+     * may use key-as-code. Unknown codes never invent a disposition.
+     *
+     * @param  array<string, mixed>  $issue
+     */
+    private function catalogCodeForIssue(array $issue): string
+    {
+        $explicit = is_string($issue['code'] ?? null) ? $issue['code'] : '';
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $detailCode = is_string($detail['code'] ?? null) ? $detail['code'] : '';
+        $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
+
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if ($detailCode !== '') {
+            return $detailCode;
+        }
+
+        if ($key !== '' && DoctorIssueCatalog::has($key)) {
+            return $key;
+        }
+
+        throw DoctorUncataloguedIssueException::forCode($key !== '' ? $key : '(missing code)');
     }
 
     /**

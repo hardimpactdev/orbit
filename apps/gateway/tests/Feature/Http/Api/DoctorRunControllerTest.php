@@ -485,19 +485,33 @@ describe('DoctorRunController', function (): void {
             doctor_run_explicit_fallback_server(),
         );
 
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.doctor.healthy', false)
-            ->assertJsonPath('success.data.doctor.summary.fixed', 0)
-            ->assertJsonPath('success.data.doctor.summary.failed', 1)
-            ->assertJsonPath('success.data.doctor.issues.0.key', 'proxy.route_mismatch')
-            ->assertJsonPath('success.data.doctor.issues.0.detail.expected_hash', $expectedHash)
-            ->assertJsonPath('success.data.doctor.actions.0.status', 'failed')
-            ->assertJsonPath('success.data.doctor.actions.0.details.node', 'ingress-1')
-            ->assertJsonPath(
-                'success.data.doctor.actions.0.details.operation',
-                'verify proxy.route_mismatch',
-            );
+        $response->assertOk();
+        $doctor = $response->json('success.data.doctor');
+        $mismatchActions = collect($doctor['actions'] ?? [])
+            ->where('key', 'proxy.route_mismatch')
+            ->where('status', 'failed')
+            ->values();
+
+        expect($doctor['healthy'] ?? null)
+            ->toBeFalse()
+            ->and($doctor['summary']['fixed'] ?? null)
+            ->toBe(0)
+            ->and($doctor['summary']['failed'] ?? null)
+            ->toBe(4)
+            ->and($doctor['convergence']['passes'] ?? null)
+            ->toBe(3)
+            ->and($doctor['convergence']['stop_reason'] ?? null)
+            ->toBe('no_progress')
+            ->and(collect($doctor['issues'] ?? [])->pluck('key')->all())
+            ->toContain('proxy.route_mismatch')
+            ->and(collect($doctor['issues'] ?? [])->firstWhere('key', 'proxy.route_mismatch')['detail']['expected_hash'] ?? null)
+            ->toBe($expectedHash)
+            ->and($mismatchActions)
+            ->not->toBeEmpty()
+            ->and($mismatchActions[0]['details']['node'] ?? null)
+            ->toBe('ingress-1')
+            ->and($mismatchActions[0]['details']['operation'] ?? null)
+            ->toBe('verify proxy.route_mismatch');
     });
 
     it('dry-runs API restore without applying fixers', function (): void {

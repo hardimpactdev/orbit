@@ -635,6 +635,7 @@ final class DoctorPanelRenderer
 
                 return [
                     "{$issueCount} among {$nodeCount}",
+                    ...$this->dispositionSummaryLines($report),
                     'Run doctor --fix manually or through an LLM to resolve issues',
                 ];
             }
@@ -643,6 +644,7 @@ final class DoctorPanelRenderer
 
             return [
                 $count,
+                ...$this->dispositionSummaryLines($report),
                 'Run doctor --fix manually or through an LLM to resolve issues',
             ];
         }
@@ -659,16 +661,72 @@ final class DoctorPanelRenderer
         $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
         $failed = $this->intValue($summary, 'failed');
         $completed = $this->intValue($summary, 'fixed') + $this->intValue($summary, 'adopted');
+        $lines = [];
 
         if ($failed > 0) {
-            return ["{$failed} actions failed; review remaining issues"];
+            $lines[] = "{$failed} actions failed; review remaining issues";
+        } elseif ($totalIssues === 0) {
+            $lines[] = "No issues remaining; {$completed} actions completed";
+        } else {
+            $lines[] = "{$totalIssues} issues remaining";
         }
 
-        if ($totalIssues === 0) {
-            return ["No issues remaining; {$completed} actions completed"];
+        $stopReason = is_string($summary['stop_reason'] ?? null) ? $summary['stop_reason'] : null;
+        $passes = is_int($summary['passes'] ?? null) ? $summary['passes'] : null;
+
+        if ($stopReason !== null && $passes !== null && $this->mode($report) === 'restore') {
+            $lines[] = "Restore convergence: {$passes} pass(es), stop={$stopReason}";
         }
 
-        return ["{$totalIssues} issues remaining"];
+        return [
+            ...$lines,
+            ...$this->dispositionSummaryLines($report),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function dispositionSummaryLines(array $report): array
+    {
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $dispositions = is_array($summary['dispositions'] ?? null) ? $summary['dispositions'] : null;
+
+        if ($dispositions === null) {
+            $counts = [
+                'genuine_drift' => 0,
+                'blocked_inspection' => 0,
+                'invalid_intent' => 0,
+                'runtime_incident' => 0,
+            ];
+
+            foreach ($this->issues($report) as $issue) {
+                $disposition = is_string($issue['disposition'] ?? null) ? $issue['disposition'] : '';
+
+                if (array_key_exists($disposition, $counts)) {
+                    $counts[$disposition]++;
+                }
+            }
+
+            $dispositions = $counts;
+        }
+
+        $parts = [];
+
+        foreach (['genuine_drift', 'blocked_inspection', 'invalid_intent', 'runtime_incident'] as $disposition) {
+            $count = is_int($dispositions[$disposition] ?? null) ? $dispositions[$disposition] : 0;
+
+            if ($count > 0) {
+                $parts[] = "{$disposition}={$count}";
+            }
+        }
+
+        if ($parts === []) {
+            return [];
+        }
+
+        return ['Dispositions: '.implode(' ', $parts)];
     }
 
     private function actionRunningText(string $mode): string
@@ -964,12 +1022,34 @@ final class DoctorPanelRenderer
     {
         $summary = $this->issueSummary($issue);
         $resource = $this->issueResourceLabel($issue);
+        $disposition = $this->issueDispositionLabel($issue);
+        $body = $summary;
 
-        if ($resource === '' || str_contains(strtolower($summary), strtolower($resource))) {
-            return $summary;
+        if ($resource !== '' && ! str_contains(strtolower($summary), strtolower($resource))) {
+            $body = "{$resource}: {$summary}";
         }
 
-        return "{$resource}: {$summary}";
+        if ($disposition === '') {
+            return $body;
+        }
+
+        return "[{$disposition}] {$body}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function issueDispositionLabel(array $issue): string
+    {
+        $disposition = is_string($issue['disposition'] ?? null) ? $issue['disposition'] : '';
+
+        return match ($disposition) {
+            'genuine_drift' => 'genuine_drift',
+            'blocked_inspection' => 'blocked_inspection',
+            'invalid_intent' => 'invalid_intent',
+            'runtime_incident' => 'runtime_incident',
+            default => '',
+        };
     }
 
     /**

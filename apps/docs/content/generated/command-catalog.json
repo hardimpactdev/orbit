@@ -2482,7 +2482,9 @@
                 "apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php",
                 "apps/gateway/tests/Feature/Http/Api/DoctorRunStreamControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php",
-                "apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+                "apps/gateway/tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php",
+                "apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php",
+                "apps/gateway/tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php"
             ],
             "verification_hints": [
                 {
@@ -2521,11 +2523,25 @@
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php"
                 },
                 {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php"
+                },
+                {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php"
                 }
             ],
             "p4_mapping": {

@@ -59,6 +59,16 @@ both the gateway-daemon problem and any reachability problems.
 
 ## Schedule Issue Codes
 
+
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 The table below lists every issue code the schedule probe may emit and the condition that triggers it.
 
 | Code | Detected when |

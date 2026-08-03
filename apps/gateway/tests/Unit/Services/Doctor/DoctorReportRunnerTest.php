@@ -1869,8 +1869,14 @@ describe('DoctorReportRunner', function (): void {
             ->toBeNull()
             ->and($issue['restorable'] ?? null)
             ->toBeTrue()
+            ->and($issue['disposition'] ?? null)
+            ->toBe('genuine_drift')
+            ->and($issue['restore_action'] ?? null)
+            ->not->toBeNull()
             ->and($issue['code'] ?? null)
-            ->toBe($key);
+            ->toBe($key)
+            ->and($report['summary']['dispositions']['genuine_drift'] ?? null)
+            ->toBeGreaterThanOrEqual(1);
     })->with([
         'restart policy' => [
             'process.restart_policy_mismatch',
@@ -1921,7 +1927,10 @@ describe('DoctorReportRunner', function (): void {
                 durationMs: 1,
             ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]);
+        ], whenExhausted: fn (Node $node, string $script): ?RemoteShellResult => doctorRunnerProcessHealthyObservation(
+            $script,
+            ['node-exporter'],
+        ));
         app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
@@ -1931,6 +1940,8 @@ describe('DoctorReportRunner', function (): void {
                 'fixed' => 1,
                 'skipped' => 0,
             ])
+            ->and($report['actions'])
+            ->toHaveCount(1)
             ->and($report['actions'][0])
             ->toMatchArray([
                 'family' => 'process',

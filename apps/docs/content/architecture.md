@@ -668,22 +668,43 @@ These names are how Orbit thinks about each thing. The tools behind them — `or
 
 ### Keeping nodes in sync
 
-Reality drifts. The gateway tracks configuration; a node is meant to match it; over time those can fall apart. **Drift** can be a config mismatch (a proxy route is missing on the node, a process definition has changed), a pending update (security patches the node hasn't installed), or a runtime problem (an app that should be responding isn't).
+Gateway configuration must converge with node reality. Over time the two can
+diverge after a partial apply, manual host change, migration, or restored
+gateway database. Not every Doctor finding is restorable genuine drift.
 
-`orbit doctor` is how you catch and resolve all of those. It runs across a single family, a single node, or the whole fleet, and reports everything that isn't in the expected state.
+`orbit doctor` is how Orbit reports those conditions and, for node-scoped
+restore, deterministically repairs supported genuine drift. It runs across a
+single family, a single node, or the whole fleet (verify-only with `--all`).
+
+Every emitted Doctor issue code carries an explicit public **disposition**
+owned by its state family:
+
+| Disposition | Meaning |
+|---|---|
+| `genuine_drift` | Gateway intent is valid and a safe deterministic restore action exists. Node-scoped `--restore` repairs it and re-probes until the finding is gone or progress stops. |
+| `blocked_inspection` | A probe or control path cannot complete; report the exact prerequisite/root blocker. Not repaired by guessing. |
+| `invalid_intent` | Gateway configuration itself is incomplete or illegal; never auto-repaired by inventing intent. |
+| `runtime_incident` | Runtime failure without a safe deterministic Doctor recovery path; report only. |
+
+Generic issue `kind` (`missing`, `extra`, `divergent`, `unverifiable`) remains for
+compatibility; disposition is the stable automation outcome classification.
 
 Doctor has four modes. Without any flag it only reports. The other three modes are selected by mutually-exclusive flags:
 
 | Mode | Flag | Meaning |
 |---|---|---|
 | Verify | *(none)* | Default. Compare gateway configuration and node reality; report only. |
-| Interactive | `--fix` | Prompt per drifted item: restore, adopt, skip, or view details. |
-| Restore | `--restore` | Force-restore non-interactively. The gateway is right; re-apply gateway configuration on every drifted item. |
-| Adopt | `--adopt` | Force-adopt non-interactively. The node is right; record observed node reality into gateway configuration for every drifted item. |
+| Interactive | `--fix` | Prompt per finding: restore, adopt, skip, or view details when the family declares those actions safe. |
+| Restore | `--restore` | Node-scoped only. Bounded multi-pass convergence: re-apply every supported genuine-drift restorer under the exact scope fence, re-probe, and continue until clean, no-progress, or max passes. Fresh observation stays authoritative. |
+| Adopt | `--adopt` | Explicit disaster-recovery bulk adopt of family-declared compatible observations into gateway configuration. Not widened into general intent invention. |
 
 The mode names are also used by the doctor permission registry: `doctor:verify`, `doctor:restore`, and `doctor:adopt` are the permission strings that gate access to each mode.
 
-Restore is the common case: you fix a node by pushing the gateway's version of the world back onto it. Adopt is the recovery case — a manual host setup, a migration, a disaster recovery — where the node holds the right answer and the gateway needs to learn it.
+Restore is the common case for genuine drift: push gateway intent onto the
+node until no further supported repair is possible. Adopt is the recovery case
+where the node holds the right answer and the gateway must learn it. Fleet
+`--all` remains verify-only in this model; Doctor does not SSH or run
+arbitrary-shell repair paths.
 
 Doctor is safe to run often, and safe to scope. Running it after every deploy and on a daily schedule is the simplest way to catch problems early.
 

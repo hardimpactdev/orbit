@@ -219,6 +219,16 @@ is `removing`, or the baseline convergence path when the assignment is `error`.
 
 ## Node Issue Codes
 
+
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 Each code below identifies a specific kind of node-family drift that `doctor --family=node` may report.
 
 | Code | Detected when |

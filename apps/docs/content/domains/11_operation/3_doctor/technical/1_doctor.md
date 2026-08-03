@@ -158,15 +158,18 @@ an authorization concern, not repairable drift in that record.
 
 ### Result Classification Rules
 
-- After the selected mode completes with no remaining drift or probe errors, return healthy success.
+- After the selected mode completes with no remaining issues or probe errors, return healthy success.
 - After the mode completes with remaining issues, return a drift failure.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
-- After every real non-dry-run `restore` or `adopt` mutation, re-probe the same
-  selected node/families/key/target scope before classifying the result.
-- That fresh observation is authoritative. An earlier action receipt with
+- For node-scoped `restore`, Orbit runs a bounded multi-pass loop: after each
+  apply pass, re-probe the same selected node/families/key/instance/workspace
+  fence and apply any newly restorable genuine drift. Stop when no restorable
+  genuine drift remains, when the restorable set is unchanged after a pass
+  (`stop_reason=no_progress`), or when `max_passes` is reached.
+- That final fresh observation is authoritative. An earlier action receipt with
   `status=completed`, `created`, or `updated` must not remove freshly observed
-  remaining drift or allow `healthy=true` while issues remain.
+  remaining findings or allow `healthy=true` while issues remain.
 - Restore may attach richer per-family action annotations (for example proxy,
   WebSocket, or DNS verification summaries) that mark matching actions as
   failed when drift remains. Those annotations never hide fresh issues.
@@ -174,8 +177,28 @@ an authorization concern, not repairable drift in that record.
 - A family probe error prevents a healthy result. Remote-shell failures and
   agent-push or local-executor transport exceptions both count: the failed
   family emits an Unverifiable `*.probe_failed` issue (or a family-specific
-  equivalent), and later families continue for the same target.
+  equivalent) with disposition `blocked_inspection`, and later families continue for the same target.
 - Exception: a family contract may define more specific recoverable behavior for that family's probe errors.
+- Every emitted issue code must be registered in the family-owned Doctor issue
+  catalog with disposition and family ownership. Genuine drift must declare a
+  restore action. Unknown codes fail closed and never invent classification
+  from name or substring heuristics.
+
+### Issue Dispositions
+
+Public issue disposition is independent of generic `kind`. Automation uses
+disposition and `restore_action`, not summary prose.
+
+| Disposition | Value | Restore behavior |
+| --- | --- | --- |
+| Genuine drift | `genuine_drift` | Safe deterministic restore is declared; node-scoped `--restore` may apply it across multi-pass convergence. |
+| Blocked inspection/control | `blocked_inspection` | Report the blocker/prerequisite; do not invent a repair. |
+| Invalid gateway intent | `invalid_intent` | Report only; never auto-repair by guessing intent. |
+| Runtime incident | `runtime_incident` | Report only when no safe deterministic Doctor recovery path exists. |
+
+Generic issue kinds remain:
+
+- `missing`, `extra`, `divergent`, `unverifiable`
 
 ### Scope Boundaries
 
@@ -225,6 +248,8 @@ Generic doctor issue kinds describe the relationship between gateway configurati
 - `unverifiable`: doctor cannot determine reality because a prerequisite is unavailable.
 
 Family doctor contracts define the family-specific cases that produce these kinds.
+Disposition (above) is the public outcome classification; kinds alone do not
+decide restore eligibility.
 
 ## Renderer Contracts
 
@@ -287,7 +312,9 @@ Required contract tests:
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for instance/workspace/proxy families. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php` | Additive `roles` arrays on single-node scope and fleet node summaries while preserving primary `role` and fleet `scope.role=fleet`. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, multi-pass restore convergence with precise action counts, and family dispatch through the in-process runner. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php` | Family-owned issue catalog inventory: every family-doctor doc code is classified, genuine drift has a restore action, unknown codes fail closed, and no name-heuristic fallback remains. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php` | Bounded multi-pass restore loop: continues until clean, stops on no-progress, and respects max passes. |
 
 Test mapping for each family lives in its family doctor contract, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).

@@ -651,6 +651,10 @@ final readonly class ProxyRouteProbe
                 key: $domain,
                 kind: DriftKind::Extra,
                 summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+                detail: [
+                    'domain' => $domain,
+                    'code' => 'proxy.route_extra',
+                ],
             );
         }
 
@@ -798,6 +802,7 @@ final readonly class ProxyRouteProbe
                 detail: [
                     'domain' => $domain,
                     'source' => 'global_caddy_config',
+                    'code' => 'proxy.route_extra',
                 ],
             );
         }

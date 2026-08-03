@@ -137,12 +137,23 @@ The gateway authorizes each run against the resolved target node. Verify mode
 requires `doctor:verify`; resolution actions require `doctor:restore` or
 `doctor:adopt` for the selected direction.
 
-After every real non-dry-run restore or adopt mutation, Doctor re-probes the
-same selected node, families, key, and target scope. The fresh observation is
-authoritative: an action receipt that says completed, created, or updated never
-hides remaining drift or produces a healthy result while issues remain. Probe
-errors are Unverifiable findings and also prevent healthy. Dry-run and verify
-do not apply mutations or re-probe for resolution verification.
+Node-scoped `--restore` is convergence-complete for supported genuine drift.
+It applies family-declared restore actions, re-probes the same selected node,
+families, key, instance, and workspace fence, and continues multi-pass repair
+while new restorable genuine drift appears. It stops when the scope is clean,
+when the restorable set makes no progress (repeated findings), or when the
+bounded pass cap is reached. Structured `convergence` / `summary` metadata
+records passes and stop reason. Action receipts never hide remaining findings;
+the final fresh observation is authoritative.
+
+Every issue carries an explicit catalog `disposition`
+(`genuine_drift`, `blocked_inspection`, `invalid_intent`, `runtime_incident`)
+and, for genuine drift, a declared `restore_action`. Unknown issue codes fail
+closed. Generic `kind` remains for compatibility. Probe errors are
+`blocked_inspection` / Unverifiable findings and prevent healthy. Dry-run and
+verify do not apply mutations or re-probe for resolution verification.
+`--all` stays verify-only. `--adopt` remains explicit disaster-recovery and is
+not widened. Invalid gateway intent is never repaired by guessing.
 
 On supported macOS Agent-eligible nodes, a restore or adopt action that needs
 protected local work may trigger the OS privilege prompt through the
