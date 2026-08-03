@@ -255,7 +255,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.security.runtime_user` | A persisted managed node record has no Orbit owner/runtime user, or that user is absent on the host. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
-| `node.security.home_perms` | The managed user's home directory permissions are weaker than the bake-time baseline (`0700`). |
+| `node.security.home_perms` | Managed home is weaker than owner `0700`-equivalent posture. Linux may keep managed Agent traversal ACL `u:agent:--x` (mask `--x`); broader ACLs or group/world access remain findings. |
 | `node.updates_config_missing` | A supported update driver found that `unattended-upgrades` or required apt auto-upgrade config is absent. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_config_mismatch` | A supported update driver found apt auto-upgrade config that differs from Orbit's expected policy. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_dry_run_failed` | A supported update driver found that `sudo unattended-upgrade --dry-run` failed. The issue object uses `key=node.updates` and this value as `code`. |
@@ -290,7 +290,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
-| `node.security.home_perms` | Through the authenticated node execution path, set only the managed runtime user's home directory (`/home/{nodes.user}`) to mode `0700` after validating that the user exists, the path is that user's passwd home, and ownership matches. No arbitrary path input is accepted. Runtime-user absence remains report-only. |
+| `node.security.home_perms` | Through the authenticated node path, chmod only `/home/{nodes.user}` to `0700` after passwd-home and ownership checks. Runtime-user absence is report-only. Does not run against a correctly ACL-hardened Agent home (owner `0700` bits plus managed `u:agent:--x`), so restore cannot fight role-baseline ACL repair. |
 | `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,

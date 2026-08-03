@@ -37,6 +37,8 @@ direction.
 ## Decisions
 
 <!-- newest first; add new entries directly under this comment -->
+- 2026-08-03 — Node Doctor `node.security.home_perms` accepts owner `0700`-equivalent managed home posture plus the narrowly managed Linux Agent consumer traversal ACL (`u:agent:--x` with POSIX mask `--x`) applied by agent role baseline repair; it still rejects broader named users, agent read/write, named groups, default ACLs, and group/world access. Restore remains mode-`0700` for weak base drift only and must not report/repair a correctly ACL-hardened Agent home (avoids the ACL vs chmod repair loop with `node.role_baseline_mismatch`).
+
 - 2026-08-03 — Custom `proxy:add` and `proxy:remove --force` are one-step lifecycle commands: add persists then enacts backend/TLS through the canonical ProxyRouteFixer path (failed apply keeps partial intent and returns `proxy.enactment_failed` with `next_command`); force-remove cleans backend and `/etc/orbit/certs/<domain>.{crt,key}` through ProxyRouteFixer::removeExtra before registry deletion (failed cleanup returns `proxy.cleanup_failed` without deleting the row). Doctor remains the repair path for partial failures and orphan extras; it does not silently delete custom routes. Supersedes the deferred-to-doctor custom proxy enactment/cleanup direction.
 
 - 2026-08-03 — Machine-mode Doctor streams (`--json` and `--stream-json`) request `compact_progress=true` so intermediate gateway progress frames omit the full aggregate doctor report; terminal complete/error frames remain full. Human Doctor mode continues to receive full intermediate snapshots for the bordered panel.
