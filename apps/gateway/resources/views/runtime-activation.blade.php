@@ -64,11 +64,19 @@
             .'<path fill="white" d="'.$markPath.'"/></svg>';
         $maskDataUri = 'data:image/svg+xml,'.rawurlencode($maskSvg);
 
+        // Favicon: black rounded square with the same mark in white.
+        $faviconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+            .'<rect width="64" height="64" rx="10" fill="#000"/>'
+            .'<path fill="#fff" transform="translate(8 8) scale(.48)" d="'.$markPath.'"/>'
+            .'</svg>';
+        $faviconDataUri = 'data:image/svg+xml,'.rawurlencode($faviconSvg);
+
         // 36% trail BEHIND the head for +clockwise rotate: transparent ahead (0–64%),
         // fade transparent→white into the 100%/0° seam (opaque leading edge).
         $trailPct = 36;
         $trailStartPct = 100 - $trailPct;
     @endphp
+    <link rel="icon" type="image/svg+xml" sizes="any" href="{{ $faviconDataUri }}">
     <style>
         :root {
             color-scheme: dark;
