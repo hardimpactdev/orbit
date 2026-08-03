@@ -4988,28 +4988,31 @@ final readonly class DoctorReportRunner
     {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
 
-        if (in_array(
-            $key,
-            [
-                'schedule.scheduler_missing',
-                'schedule.scheduler_stopped',
-                'schedule.scheduler_image_mismatch',
-                'schedule.scheduler_replicas_mismatch',
-                'schedule.lock_stuck',
-            ],
-            true,
-        )) {
+        if (in_array($key, DoctorRestoreSupport::scheduleGatewayCodes(), true)) {
             $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
             $schedule = $scheduleKey === null
                 ? null
                 : Schedule::query()->where('schedule_key', $scheduleKey)->first();
 
             try {
-                return $this->schedulesFixer->fixGateway(
+                $fixed = $this->schedulesFixer->fixGateway(
                     $gatewayNode,
                     $this->driftEntryFromStoredParts('schedule', $key, $detail, $issue),
                     $schedule instanceof Schedule ? $schedule : null,
                 );
+
+                return $fixed ?? [
+                    'family' => 'schedule',
+                    'node' => $gatewayNode->name,
+                    'code' => $key,
+                    'key' => $key,
+                    'mode' => 'restore',
+                    'status' => 'skipped',
+                    'summary' => "No restore action is registered for {$key}.",
+                    'details' => [
+                        'reason' => 'mode_not_supported',
+                    ],
+                ];
             } catch (Throwable $e) {
                 return [
                     'family' => 'schedule',
@@ -5105,12 +5108,15 @@ final readonly class DoctorReportRunner
         $code = $this->catalogCodeForIssue($issue);
         $definition = DoctorIssueCatalog::require($code);
         $restorable = DoctorIssueCatalog::isRestorable($code);
+        $restoreAction = $restorable
+            ? DoctorRestoreSupport::actionId($code)
+            : null;
 
         return [
             ...$issue,
             'code' => $code,
             'disposition' => $definition->disposition->value,
-            'restore_action' => $definition->restoreAction,
+            'restore_action' => $restoreAction,
             'restorable' => $restorable,
             'adoptable' =>
                 ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value

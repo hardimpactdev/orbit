@@ -276,6 +276,8 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-dev` node. |
 | `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
+`node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent.
+
 ## Node Fix Map
 
 This table describes what `doctor --restore --family=node` does for each resolvable issue code.

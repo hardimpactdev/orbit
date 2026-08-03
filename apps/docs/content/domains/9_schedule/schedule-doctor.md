@@ -89,6 +89,8 @@ The table below lists every issue code the schedule probe may emit and the condi
 | `schedule.target_unreachable` | The gateway cannot reach the schedule's target node through agent-push/local-executor verification. Dispatch will fail until reachability is restored. |
 | `schedule.run_stuck` | The latest `schedule_runs` row for an enabled schedule has been in `running` state past the configured threshold. |
 
+`schedule.heartbeat_stale` is not restorable via doctor (runtime_incident); restart or diagnose the scheduler path outside restore.
+
 ## Schedule Fix Map
 
 The table below lists what `doctor --restore` does for each issue code.

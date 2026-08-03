@@ -206,9 +206,32 @@ final class E2ECurrentCheckout
         array $users,
         ?E2EPhaseTimer $timer,
     ): array {
+        // Operator (and other dependents) fetch the gateway CA during
+        // checkout.gateway-settings. Install gateway first so that endpoint is
+        // ready before dependent roles run in parallel.
+        $paths = [];
+        $parallelRoles = $roles;
+
+        if (in_array('gateway', $roles, true) && count($roles) > 1) {
+            $paths['gateway'] = self::installTopologyRole(
+                $topology,
+                'gateway',
+                $users,
+                $timer?->child('gateway'),
+            );
+            $parallelRoles = array_values(array_filter(
+                $roles,
+                static fn (string $role): bool => $role !== 'gateway',
+            ));
+        }
+
+        if ($parallelRoles === []) {
+            return $paths;
+        }
+
         $workers = [];
 
-        foreach ($roles as $role) {
+        foreach ($parallelRoles as $role) {
             $resultPath = tempnam(sys_get_temp_dir(), 'orbit-checkout-role-');
 
             if (! is_string($resultPath)) {
@@ -220,7 +243,10 @@ final class E2ECurrentCheckout
             if ($pid === -1) {
                 @unlink($resultPath);
 
-                return self::installTopologyRolesSequentially($topology, $roles, $users, $timer);
+                return [
+                    ...$paths,
+                    ...self::installTopologyRolesSequentially($topology, $parallelRoles, $users, $timer),
+                ];
             }
 
             if ($pid === 0) {
@@ -239,7 +265,10 @@ final class E2ECurrentCheckout
             ];
         }
 
-        return self::collectTopologyRoleInstallWorkers($workers, $timer);
+        return [
+            ...$paths,
+            ...self::collectTopologyRoleInstallWorkers($workers, $timer),
+        ];
     }
 
     /**

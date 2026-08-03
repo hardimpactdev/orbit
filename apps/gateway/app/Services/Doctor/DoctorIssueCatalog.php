@@ -79,14 +79,24 @@ final class DoctorIssueCatalog
                     );
                 }
 
-                if (
-                    $definition->disposition === DoctorIssueDisposition::GenuineDrift
-                    && (! is_string($definition->restoreAction)
-                    || $definition->restoreAction === '')
-                ) {
-                    throw new \LogicException(
-                        "Genuine drift '{$definition->code}' is missing a restore action.",
-                    );
+                if ($definition->disposition === DoctorIssueDisposition::GenuineDrift) {
+                    if (! is_string($definition->restoreAction) || $definition->restoreAction === '') {
+                        throw new \LogicException(
+                            "Genuine drift '{$definition->code}' is missing a restore action.",
+                        );
+                    }
+
+                    if (! DoctorRestoreSupport::supports($definition->code)) {
+                        throw new \LogicException(
+                            "Genuine drift '{$definition->code}' is not registered in DoctorRestoreSupport.",
+                        );
+                    }
+
+                    if ($definition->restoreAction !== DoctorRestoreSupport::actionId($definition->code)) {
+                        throw new \LogicException(
+                            "Genuine drift '{$definition->code}' restore_action must match DoctorRestoreSupport.",
+                        );
+                    }
                 }
 
                 $definitions[$definition->code] = $definition;
@@ -131,11 +141,11 @@ final class DoctorIssueCatalog
     {
         $definition = self::definition($code);
 
-        return (
-            $definition instanceof DoctorIssueDefinition
+        return $definition instanceof DoctorIssueDefinition
             && $definition->disposition === DoctorIssueDisposition::GenuineDrift
+            && DoctorRestoreSupport::supports($code)
             && is_string($definition->restoreAction)
             && $definition->restoreAction !== ''
-        );
+            && $definition->restoreAction === DoctorRestoreSupport::actionId($code);
     }
 }

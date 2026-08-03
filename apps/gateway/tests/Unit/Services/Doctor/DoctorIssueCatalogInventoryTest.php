@@ -6,6 +6,7 @@ use App\Enums\DoctorIssueDisposition;
 use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Services\Doctor\DoctorIssueCatalog;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorRestoreSupport;
 
 /**
  * Protection inventory: every emitted Doctor issue code must be explicitly
@@ -22,32 +23,47 @@ it('classifies every family-doctor contract issue code explicitly', function ():
         ->toBeEmpty('Uncatalogued family-doctor issue codes: '.implode(', ', $missing));
 });
 
-it('requires a declared restore action for every genuine-drift catalog entry', function (): void {
-    $missingRestorers = [];
+it('requires DoctorRestoreSupport dispatch for every genuine-drift catalog entry', function (): void {
+    $missing = [];
+    $mismatched = [];
 
     foreach (DoctorIssueCatalog::definitions() as $code => $definition) {
         if ($definition->disposition !== DoctorIssueDisposition::GenuineDrift) {
             continue;
         }
 
-        if (! is_string($definition->restoreAction) || $definition->restoreAction === '') {
-            $missingRestorers[] = $code;
+        if (! DoctorRestoreSupport::supports($code)) {
+            $missing[] = $code;
+
+            continue;
+        }
+
+        if ($definition->restoreAction !== DoctorRestoreSupport::actionId($code)) {
+            $mismatched[] = $code;
         }
     }
 
-    expect($missingRestorers)
-        ->toBeEmpty('Genuine drift without restore action: '.implode(', ', $missingRestorers));
+    expect($missing)
+        ->toBeEmpty('Genuine drift without DoctorRestoreSupport: '.implode(', ', $missing))
+        ->and($mismatched)
+        ->toBeEmpty('restore_action mismatch: '.implode(', ', $mismatched));
 });
 
-it('marks only genuine-drift catalog entries restorable', function (): void {
+it('marks codes restorable only when catalog genuine and DoctorRestoreSupport agrees', function (): void {
     foreach (DoctorIssueCatalog::definitions() as $code => $definition) {
         $restorable = DoctorIssueCatalog::isRestorable($code);
+        $expected = $definition->disposition === DoctorIssueDisposition::GenuineDrift
+            && DoctorRestoreSupport::supports($code);
 
-        if ($definition->disposition === DoctorIssueDisposition::GenuineDrift) {
-            expect($restorable)->toBeTrue("Expected {$code} to be restorable");
-        } else {
-            expect($restorable)->toBeFalse("Expected {$code} not to be restorable");
-        }
+        expect($restorable)->toBe($expected, "Unexpected restorable flag for {$code}");
+    }
+
+    foreach (DoctorRestoreSupport::codes() as $code) {
+        $definition = DoctorIssueCatalog::require($code);
+        expect($definition->disposition)
+            ->toBe(DoctorIssueDisposition::GenuineDrift)
+            ->and(DoctorIssueCatalog::isRestorable($code))
+            ->toBeTrue();
     }
 });
 

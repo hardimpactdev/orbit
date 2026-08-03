@@ -17,8 +17,12 @@ final class ScheduleDoctorIssueDefinitions implements DoctorIssueDefinitionProvi
     public function definitions(): array
     {
         return [
-            self::genuine('schedule.heartbeat_stale', 'schedule', 'restore_schedule_heartbeat_stale'),
-            self::genuine('schedule.lock_stuck', 'schedule', 'restore_schedule_lock_stuck'),
+            self::incident('schedule.heartbeat_stale', 'schedule'),
+            self::genuine(
+                'schedule.lock_stuck',
+                'schedule',
+                'restore_schedule_lock_stuck',
+            ),
             self::invalid('schedule.record_incomplete', 'schedule'),
             self::blocked('schedule.remote_shell_probe_failed', 'schedule'),
             self::incident('schedule.run_stuck', 'schedule'),
@@ -43,14 +47,26 @@ final class ScheduleDoctorIssueDefinitions implements DoctorIssueDefinitionProvi
                 'schedule',
                 'restore_schedule_runtime_hibernator_stopped',
             ),
-            self::genuine('schedule.scheduler_image_mismatch', 'schedule', 'restore_schedule_scheduler_image_mismatch'),
-            self::genuine('schedule.scheduler_missing', 'schedule', 'restore_schedule_scheduler_missing'),
+            self::genuine(
+                'schedule.scheduler_image_mismatch',
+                'schedule',
+                'restore_schedule_scheduler_image_mismatch',
+            ),
+            self::genuine(
+                'schedule.scheduler_missing',
+                'schedule',
+                'restore_schedule_scheduler_missing',
+            ),
             self::genuine(
                 'schedule.scheduler_replicas_mismatch',
                 'schedule',
                 'restore_schedule_scheduler_replicas_mismatch',
             ),
-            self::genuine('schedule.scheduler_stopped', 'schedule', 'restore_schedule_scheduler_stopped'),
+            self::genuine(
+                'schedule.scheduler_stopped',
+                'schedule',
+                'restore_schedule_scheduler_stopped',
+            ),
             self::invalid('schedule.target_invalid', 'schedule'),
             self::blocked('schedule.target_unreachable', 'schedule'),
         ];
