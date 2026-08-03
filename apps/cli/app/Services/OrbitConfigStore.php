@@ -40,8 +40,10 @@ use Symfony\Component\Process\Process;
  * the owner config through a read-only ACL, but writes still require owner-user control.
  *
  * Agent-node durability: when the managed `agent` runtime user exists, atomic saves re-apply
- * the exact named ACL `u:agent:r--` (with effective mask read). Permission validation accepts
- * that narrow extended ACL when traditional group bits only reflect the ACL mask, and still
+ * the exact named ACLs after owner-only mode tighten — `u:agent:--x` on the config directory
+ * (chmod 0700 otherwise zeroes the directory ACL mask so `test -e config.json` fails for agent)
+ * and `u:agent:r--` on the config file after rename. Permission validation accepts the file's
+ * narrow extended ACL when traditional group bits only reflect the ACL mask, and still
  * rejects ordinary group/other exposure. Do not broadly allow mode 0640.
  *
  * Precedence (D13): env vars override JSON values. The precedence chain lives inside
@@ -68,6 +70,10 @@ final readonly class OrbitConfigStore
 
     public const int FILE_MODE = 0600;
 
+    /** Exact LocalAgentAclEnsure directory traversal exception for config dirs. */
+    public const string AGENT_CONFIG_DIRECTORY_ACL_SPEC = 'u:agent:--x';
+
+    /** Exact LocalAgentAclEnsure config file read exception. */
     public const string AGENT_CONFIG_ACL_SPEC = 'u:agent:r--';
 
     /**
@@ -167,8 +173,9 @@ final readonly class OrbitConfigStore
     /**
      * Write the config file atomically. Creates parent directories with mode 0700 and the
      * file with mode 0600. Refuses to write when an existing file is owned by another user
-     * (D8 owner-only model). On agent nodes, re-applies the exact named agent read ACL
-     * after the rename so routine config-writing commands do not revoke agent access.
+     * (D8 owner-only model). On agent nodes, re-applies exact named agent ACLs after
+     * owner-only directory chmod and file rename so routine config-writing commands do not
+     * revoke agent directory traversal or config read.
      *
      * @param  array<string, mixed>  $config
      */
@@ -188,6 +195,11 @@ final readonly class OrbitConfigStore
         }
 
         @chmod($directory, self::DIRECTORY_MODE);
+
+        // chmod 0700 zeroes the ACL mask; restore exact agent directory traversal.
+        if ($preserveAgentReadAcl) {
+            $this->applyAgentConfigDirectoryAcl($directory);
+        }
 
         if (is_file($path)) {
             $this->assertOwnerAndPermissions($path, forWrite: true);
@@ -558,12 +570,36 @@ final readonly class OrbitConfigStore
         return $this->configAclAssessor()->isManagedAgentReadOnly($process->getOutput());
     }
 
+    private function applyAgentConfigDirectoryAcl(string $directory): void
+    {
+        $this->applyNamedAgentAcl(
+            $directory,
+            self::AGENT_CONFIG_DIRECTORY_ACL_SPEC,
+            "Failed to re-apply agent directory ACL on config directory: {$directory}",
+            'config_agent_directory_acl_failed',
+        );
+    }
+
     private function applyAgentConfigReadAcl(string $path): void
     {
+        $this->applyNamedAgentAcl(
+            $path,
+            self::AGENT_CONFIG_ACL_SPEC,
+            "Failed to re-apply agent read ACL on config file: {$path}",
+            'config_agent_acl_failed',
+        );
+    }
+
+    private function applyNamedAgentAcl(
+        string $path,
+        string $spec,
+        string $failureMessage,
+        string $errorCode,
+    ): void {
         $process = $this->runProcess([
             'setfacl',
             '-m',
-            self::AGENT_CONFIG_ACL_SPEC,
+            $spec,
             $path,
         ], timeout: 10);
 
@@ -571,10 +607,7 @@ final readonly class OrbitConfigStore
             return;
         }
 
-        throw new OrbitConfigStoreException(
-            "Failed to re-apply agent read ACL on config file: {$path}",
-            'config_agent_acl_failed',
-        );
+        throw new OrbitConfigStoreException($failureMessage, $errorCode);
     }
 
     private function configAclAssessor(): ManagedConfigAgentReadAclAssessor
