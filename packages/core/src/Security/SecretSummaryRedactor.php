@@ -25,12 +25,15 @@ final class SecretSummaryRedactor
      */
     private const array FORBIDDEN_KEYS = [
         'app_key',
+        'app-key',
         'appkey',
         'application_key',
+        'application-key',
         'operation_token',
         'executor_secret',
         'password',
         'password_hash',
+        'password-hash',
         'secret',
         'token',
         'api_key',
@@ -130,17 +133,21 @@ final class SecretSummaryRedactor
 
     public function isForbiddenKey(string $key): bool
     {
-        $normalized = strtolower($key);
+        // Treat hyphen and underscore forms as one key policy so command-option
+        // keys like app-key match app_key without caller-side normalization.
+        $normalized = strtolower(str_replace('-', '_', $key));
 
-        if (in_array($normalized, self::FORBIDDEN_KEYS, true)) {
-            return true;
+        foreach (self::FORBIDDEN_KEYS as $forbidden) {
+            if ($normalized === str_replace('-', '_', strtolower($forbidden))) {
+                return true;
+            }
         }
 
         // Suffix-shaped sibling secrets (user_password, reverb_app_key) without
         // matching ordinary keys like secretary or token_count.
         return (
             preg_match(
-                '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key|pre[_-]?shared[_-]?key|bearer(?:[_-]?token)?)$/',
+                '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api_?key|api_?token|access_?token|refresh_?token|private_?key|pre_?shared_?key|bearer(?:_?token)?)$/',
                 $normalized,
             ) === 1
         );

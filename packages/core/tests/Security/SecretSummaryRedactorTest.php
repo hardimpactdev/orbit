@@ -146,3 +146,28 @@ it('does not treat ordinary words containing secret substrings as keys', functio
         ->and($redactor->redactString('secretary=active token_count=3 status=ok'))
         ->toBe('secretary=active token_count=3 status=ok');
 });
+
+it('treats hyphenated app-key as a forbidden key for structured payloads', function (): void {
+    $redactor = new SecretSummaryRedactor;
+    $secret = 'base64:HyphenatedAppKeySecret==';
+
+    expect($redactor->isForbiddenKey('app-key'))
+        ->toBeTrue()
+        ->and($redactor->isForbiddenKey('APP-KEY'))
+        ->toBeTrue()
+        ->and($redactor->isForbiddenKey('app_key'))
+        ->toBeTrue()
+        ->and($redactor->isForbiddenKey('application-key'))
+        ->toBeTrue()
+        ->and($redactor->isForbiddenKey('password-hash'))
+        ->toBeTrue()
+        ->and($redactor->redactArray([
+            'app-key' => $secret,
+            'public-key' => 'peer-public',
+            'status' => 'ok',
+        ]))->toMatchArray([
+            'app-key' => '<redacted>',
+            'public-key' => 'peer-public',
+            'status' => 'ok',
+        ]);
+});
