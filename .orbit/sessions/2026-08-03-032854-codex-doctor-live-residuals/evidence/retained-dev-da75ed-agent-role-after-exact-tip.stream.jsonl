@@ -1,0 +1,9 @@
+{"event":"step","data":{"key":"__doctor_panel","status":"running","compact_progress":true,"message":"Doctor queued"}}
+{"event":"tree","data":{"title":"Running Doctor","steps":[{"key":"node","label":"Check node"}]}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"Checking node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"Checking node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"Checking node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"Checking node"}}
+{"event":"step","data":{"key":"node","status":"running","compact_progress":true,"family":"node","phase":"running","message":"Checking node"}}
+{"event":"step","data":{"key":"node","status":"done","compact_progress":true,"family":"node","phase":"done","message":"node checked"}}
+{"event":"complete","success":{"data":{"doctor":{"healthy":true,"mode":"verify","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.role_baseline_mismatch"},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}},"meta":{"exit_code":0}}}

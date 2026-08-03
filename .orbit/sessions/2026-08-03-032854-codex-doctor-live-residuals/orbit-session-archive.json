@@ -1,0 +1,35 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T01:28:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-doctor-live-residuals/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-032854-codex-doctor-live-residuals",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-dev-da75ed-agent-role-after-exact-tip.stream.jsonl",
+        "evidence/retained-dev-da75ed-doctor-all.stream.jsonl",
+        "evidence/retained-dev-da75ed-gateway-process-final-tip.stream.jsonl",
+        "evidence/retained-dev-da75ed-gateway-proxy-after-write-exact-tip.stream.jsonl",
+        "evidence/retained-dev-da75ed-gateway-proxy-final-tip.stream.jsonl",
+        "evidence/retained-dev-da75ed-gateway-proxy-restore-exact-tip.stream.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T012142Z-07726b3a8871.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-dev-da75ed-agent-role-after-exact-tip.stream.jsonl": "73dd8b26309ae1336c4e3d5d5d479bd2ac32d54cfa0e8b4e2b68c71c9cfae591",
+        "evidence/retained-dev-da75ed-doctor-all.stream.jsonl": "eafeaab9c3e8445957eb344181463f7537d171968b0534ca44e5872586e91cbc",
+        "evidence/retained-dev-da75ed-gateway-process-final-tip.stream.jsonl": "b2cb43c781ecad7f01560759af9489f5c6432a57ad5c84456ef0b6d3f05850dd",
+        "evidence/retained-dev-da75ed-gateway-proxy-after-write-exact-tip.stream.jsonl": "c61fc7bbb5cac95cf40bef7e4665948202e796057c763f2c6de813d61b2a2016",
+        "evidence/retained-dev-da75ed-gateway-proxy-final-tip.stream.jsonl": "318bc9842af59f711875b81ec864d0bfb806aefb641a48ccc0945d400d1ab085",
+        "evidence/retained-dev-da75ed-gateway-proxy-restore-exact-tip.stream.jsonl": "529e7aa512848295a3e8ce0ff81bd79adef555971fbc95237d8e070ac47528f5",
+        "loop.md": "48895414c502f8490237bd2240ccebc4cdeec4e468f3ca6a2fb132501a255b07",
+        "quality-gates/quality-check-2026-08-03T012142Z-07726b3a8871.json": "1dae2ab50e62889aa79e33dc0b7a1d4ac86c790208d921c451e165f0a953b51a"
+    },
+    "branch": "codex/doctor-live-residuals",
+    "candidate_commit": "1d7452df1432248d83dd00ba97e4b7f807fd9a54",
+    "accepted_feature_tip": "1d7452df1432248d83dd00ba97e4b7f807fd9a54",
+    "accepted_main_tip": "231b7024b9c948f306c63fc5b8313f15486b5c81",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

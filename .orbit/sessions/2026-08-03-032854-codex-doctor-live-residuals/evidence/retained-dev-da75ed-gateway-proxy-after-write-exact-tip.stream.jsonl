@@ -1,0 +1,13 @@
+{"event":"step","data":{"key":"__doctor_panel","status":"running","compact_progress":true,"message":"Doctor queued"}}
+{"event":"tree","data":{"title":"Running Doctor","steps":[{"key":"proxy","label":"Check proxy"}]}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"running","compact_progress":true,"family":"proxy","phase":"running","message":"Checking proxy"}}
+{"event":"step","data":{"key":"proxy","status":"done","compact_progress":true,"family":"proxy","phase":"done","message":"proxy checked"}}
+{"event":"error","error":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["proxy"],"node":"gateway","role":"gateway","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":1,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"proxy","node":"gateway","key":"proxy.caddy_container_missing","kind":"missing","summary":"Proxy runtime container orbit-caddy is missing on gateway.","detail":{"container":"orbit-caddy","node":"gateway"},"code":"proxy.caddy_container_missing","restorable":true,"adoptable":false}],"actions":[]}}}}
