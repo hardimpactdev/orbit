@@ -9,6 +9,8 @@ namespace App\Services\Executor;
  * payload the command later consumes. Piped force_remote_host work delivers
  * bound input on the host CLI process stdin; verification must not leave the
  * command with an empty stream after hashing that payload.
+ *
+ * @mago-expect lint:cyclomatic-complexity
  */
 final class OperationStdinBuffer
 {
@@ -47,7 +49,7 @@ final class OperationStdinBuffer
         }
 
         $contents = stream_get_contents($stream);
-        $this->contents = (is_string($contents) && $contents !== '') ? $contents : null;
+        $this->contents = is_string($contents) && $contents !== '' ? $contents : null;
     }
 
     /**

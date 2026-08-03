@@ -424,7 +424,7 @@ describe('InternalExecutorCommand base', function (): void {
 
         $token = signInternalExecutorToken(command: 'test:internal-executor-stdin');
 
-        [$exitCode, $output] = runTestInternalExecutorStdinCommand([
+        [$exitCode, $output] = run_test_internal_executor_stdin_command([
             '--operation-token' => $token,
             '--json' => true,
         ], $boundInput);
@@ -439,11 +439,13 @@ describe('InternalExecutorCommand base', function (): void {
             ->toBe($boundInput);
 
         Http::assertSent(static function (Request $request) use ($token, $boundInput): bool {
+            $operationToken = $request['operation_token'] ?? null;
             $input = $request['input'] ?? null;
 
             return (
                 $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
-                && ($request['operation_token'] ?? null) === $token
+                && is_string($operationToken)
+                && hash_equals($token, $operationToken)
                 && ($request['command'] ?? null) === 'test:internal-executor-stdin'
                 && is_string($input)
                 && hash_equals($boundInput, $input)
@@ -456,9 +458,10 @@ describe('InternalExecutorCommand base', function (): void {
  * @param  array<string, mixed>  $parameters
  * @return array{int, string}
  */
-function runTestInternalExecutorStdinCommand(array $parameters = [], string $stdin = ''): array
+function run_test_internal_executor_stdin_command(array $parameters = [], string $stdin = ''): array
 {
-    app(Kernel::class)->registerCommand(new TestInternalExecutorStdinCommand);
+    $command = new TestInternalExecutorStdinCommand;
+    app(Kernel::class)->registerCommand($command);
 
     $stream = fopen(filename: 'php://temp', mode: 'r+');
     fwrite($stream, $stdin);
@@ -468,14 +471,6 @@ function runTestInternalExecutorStdinCommand(array $parameters = [], string $std
     $input->setStream($stream);
 
     $output = new BufferedOutput;
-    $command = app(Kernel::class)->all()['test:internal-executor-stdin']
-        ?? app(TestInternalExecutorStdinCommand::class);
-
-    if (! $command instanceof TestInternalExecutorStdinCommand) {
-        $command = new TestInternalExecutorStdinCommand;
-        app(Kernel::class)->registerCommand($command);
-    }
-
     $exitCode = $command->run($input, $output);
 
     return [$exitCode, trim($output->fetch())];

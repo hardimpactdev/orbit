@@ -14,9 +14,8 @@ describe('internal command stdin boundary', function (): void {
         $basePath = app_path('Commands/Internal/InternalExecutorCommand.php');
         $base = file_get_contents($basePath);
 
+        expect($base)->toBeString();
         expect($base)
-            ->not->toBeFalse()
-            ->and($base)
             ->toContain('OperationStdinBuffer')
             ->and($base)
             ->toContain('protected function stdin(): string')
@@ -30,7 +29,7 @@ describe('internal command stdin boundary', function (): void {
         $directory = app_path('Commands/Internal');
         $violations = [];
 
-        foreach (glob($directory.'/*.php') ?: [] as $path) {
+        foreach (glob($directory.'/*.php') ?? [] as $path) {
             $basename = basename((string) $path);
 
             if ($basename === 'InternalExecutorCommand.php') {
@@ -45,29 +44,32 @@ describe('internal command stdin boundary', function (): void {
                 continue;
             }
 
-            foreach ([
+            $needles = [
                 'stream_get_contents',
                 'STDIN',
                 'StreamableInputInterface',
                 'private function stdin(',
                 'protected function stdin(',
-            ] as $needle) {
-                if (str_contains($contents, $needle)) {
-                    $violations[] = "{$basename}: contains {$needle}";
+            ];
+
+            foreach ($needles as $needle) {
+                if (! str_contains($contents, $needle)) {
+                    continue;
                 }
+
+                $violations[] = "{$basename}: contains {$needle}";
             }
         }
 
-        expect($violations)->toBe([]);
+        expect($violations)->toBeEmpty();
     });
 
     it('keeps OperationStdinBuffer as the sole process-STDIN capture helper', function (): void {
         $bufferPath = app_path('Services/Executor/OperationStdinBuffer.php');
         $buffer = file_get_contents($bufferPath);
 
+        expect($buffer)->toBeString();
         expect($buffer)
-            ->not->toBeFalse()
-            ->and($buffer)
             ->toContain('stream_get_contents')
             ->and($buffer)
             ->toContain('captureFromProcessStdin')

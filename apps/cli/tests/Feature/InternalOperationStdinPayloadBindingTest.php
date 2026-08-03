@@ -32,15 +32,15 @@ describe('internal operation stdin payload binding', function (): void {
             'script' => 'printf bound-after-verify',
         ], JSON_THROW_ON_ERROR);
 
-        $token = signed_internal_operation_token('internal:tool:run-script');
+        $token = signed_internal_operation_token(command: 'internal:tool:run-script');
 
         [$exitCode, $output] = run_internal_command_with_stdin(
-            'internal:tool:run-script',
-            [
+            commandName: 'internal:tool:run-script',
+            parameters: [
                 '--operation-token' => $token,
                 '--json' => true,
             ],
-            $payload,
+            stdin: $payload,
         );
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -50,7 +50,11 @@ describe('internal operation stdin payload binding', function (): void {
             ->and($decoded['success']['data']['stdout'] ?? null)
             ->toBe('bound-after-verify');
 
-        assert_verify_request_bound_input($token, 'internal:tool:run-script', $payload);
+        assert_verify_request_bound_input(
+            token: $token,
+            command: 'internal:tool:run-script',
+            boundInput: $payload,
+        );
     });
 
     it('delivers the original payload to internal:firewall-rule validation after token verification', function (): void {
@@ -68,15 +72,15 @@ describe('internal operation stdin payload binding', function (): void {
             ],
         ], JSON_THROW_ON_ERROR);
 
-        $token = signed_internal_operation_token('internal:firewall-rule');
+        $token = signed_internal_operation_token(command: 'internal:firewall-rule');
 
         [$exitCode, $output] = run_internal_command_with_stdin(
-            'internal:firewall-rule',
-            [
+            commandName: 'internal:firewall-rule',
+            parameters: [
                 '--operation-token' => $token,
                 '--json' => true,
             ],
-            $payload,
+            stdin: $payload,
         );
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -89,7 +93,11 @@ describe('internal operation stdin payload binding', function (): void {
             ->and($decoded['error']['message'] ?? null)
             ->toBe('Firewall rule shape is invalid.');
 
-        assert_verify_request_bound_input($token, 'internal:firewall-rule', $payload);
+        assert_verify_request_bound_input(
+            token: $token,
+            command: 'internal:firewall-rule',
+            boundInput: $payload,
+        );
     });
 
     it('delivers the original payload to internal:schedule:run after token verification', function (): void {
@@ -100,15 +108,15 @@ describe('internal operation stdin payload binding', function (): void {
             'timeout' => 60,
         ], JSON_THROW_ON_ERROR);
 
-        $token = signed_internal_operation_token('internal:schedule:run');
+        $token = signed_internal_operation_token(command: 'internal:schedule:run');
 
         [$exitCode, $output] = run_internal_command_with_stdin(
-            'internal:schedule:run',
-            [
+            commandName: 'internal:schedule:run',
+            parameters: [
                 '--operation-token' => $token,
                 '--json' => true,
             ],
-            $payload,
+            stdin: $payload,
         );
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -118,7 +126,11 @@ describe('internal operation stdin payload binding', function (): void {
             ->and($decoded['success']['data']['stdout'] ?? null)
             ->toBe('schedule-bound');
 
-        assert_verify_request_bound_input($token, 'internal:schedule:run', $payload);
+        assert_verify_request_bound_input(
+            token: $token,
+            command: 'internal:schedule:run',
+            boundInput: $payload,
+        );
     });
 });
 
@@ -126,8 +138,8 @@ function signed_internal_operation_token(string $command): string
 {
     return new OperationTokenSigner()
         ->sign(
-            secret: implode('-', ['gateway', 'secret']),
-            id: 'stdin-bind-'.str_replace(':', '-', $command),
+            secret: implode(separator: '-', array: ['gateway', 'secret']),
+            id: 'stdin-bind-'.str_replace(search: ':', replace: '-', subject: $command),
             node: 'app-dev',
             command: $command,
             issuedAt: time() - 10,
@@ -161,14 +173,20 @@ function run_internal_command_with_stdin(string $commandName, array $parameters,
     return [$exitCode, trim($output->fetch())];
 }
 
-function assert_verify_request_bound_input(string $token, string $command, string $boundInput): void
-{
+function assert_verify_request_bound_input(
+    #[SensitiveParameter]
+    string $token,
+    string $command,
+    string $boundInput,
+): void {
     Http::assertSent(static function (Request $request) use ($token, $command, $boundInput): bool {
+        $operationToken = $request['operation_token'] ?? null;
         $input = $request['input'] ?? null;
 
         return (
             $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
-            && ($request['operation_token'] ?? null) === $token
+            && is_string($operationToken)
+            && hash_equals($token, $operationToken)
             && ($request['command'] ?? null) === $command
             && is_string($input)
             && hash_equals($boundInput, $input)
