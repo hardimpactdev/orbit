@@ -79,7 +79,7 @@ it('tokenizes OpenClaw relatedProcess as one full bash -lc script that parses', 
         ->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')
         ->toContain('openclaw gateway token missing')
         ->toContain('export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"')
-        ->toContain('exec openclaw gateway run --port 18789 --bind lan')
+        ->toContain('exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan')
         ->and(substr_count($script, 'openclaw gateway token missing'))
         ->toBe(1);
 

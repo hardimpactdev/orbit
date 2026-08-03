@@ -92,23 +92,24 @@ Orbit-managed binary. The agent runtime must be able to execute
 without sudo or write access to owner Orbit config or install metadata.
 
 The managed web gateway is process-owned: `tool:install` configures a related
-`openclaw-gateway` `systemd` process that runs
-`openclaw gateway run --port 18789 --bind lan` under
+`openclaw-gateway` `systemd` process that runs the local-prefix binary
+`/home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan` under
 `OPENCLAW_SUPERVISOR_MODE=external` so OpenClaw's native service install is not
-used (no double supervision). The process shell loads
-`OPENCLAW_GATEWAY_TOKEN` from `/home/agent/.openclaw/gateway.token` immediately
-before exec only when the file content is non-empty after trim; the stored
-process command never contains the secret, and blank or missing token material
-fails the unit closed.
+used (no double supervision). Ambient PATH and any pre-existing global npm
+install are unused by Orbit process/configure/probe paths. The process shell
+loads `OPENCLAW_GATEWAY_TOKEN` from `/home/agent/.openclaw/gateway.token`
+immediately before exec only when the file content is non-empty after trim; the
+stored process command never contains the secret, and blank or missing token
+material fails the unit closed.
 
-Install/update/reconfigure merge only managed gateway fields through
-`openclaw config set` (`gateway.mode`, `gateway.port`, `gateway.bind`,
-`gateway.auth.mode=token`, `gateway.controlUi.allowedOrigins`) and never
-rewrite the full `~/.openclaw/openclaw.json`, preserving agents, channels,
-models, and other settings. `gateway.auth.token` is unset from config when
-present so the file-backed token remains the sole secret source. By default,
-those lifecycle scripts regenerate blank `gateway.token` material before
-converge completes so zero-byte or whitespace-only files do not remain.
+Install/update/reconfigure merge only managed gateway fields through the
+local-prefix binary's `config set` (`gateway.mode`, `gateway.port`,
+`gateway.bind`, `gateway.auth.mode=token`, `gateway.controlUi.allowedOrigins`)
+and never rewrite the full `~/.openclaw/openclaw.json`, preserving agents,
+channels, models, and other settings. `gateway.auth.token` is unset from config
+when present so the file-backed token remains the sole secret source. By
+default, those lifecycle scripts regenerate blank `gateway.token` material
+before converge completes so zero-byte or whitespace-only files do not remain.
 
 `tool:update openclaw` from the node itself requires `tool:update` on the
 self-grant. `tool:install openclaw`, `tool:remove openclaw`,
@@ -127,16 +128,22 @@ node identity. Orbit does not claim per-tool sub-identities.
 
 ## Install Command
 
-`tool:install openclaw` runs the official OpenClaw installer as the
-shared `agent` user:
+`tool:install openclaw` installs through the official **local-prefix** installer
+as the shared `agent` user. Orbit does **not** use `install.sh`, which provisions
+system Node and requires administrator privileges; the unprivileged `agent`
+account cannot sudo, so that path fails on managed agent nodes. `install-cli.sh`
+keeps OpenClaw and its Node runtime under `$HOME/.openclaw` without a system-wide
+Node dependency:
 
 ```bash
-sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
+sudo -u agent -H bash -lc 'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"'
 ```
 
 The `--no-onboard` flag skips the interactive setup wizard so Orbit can
 converge configuration itself, then merges managed gateway fields and
-configures the related process.
+configures the related process. HTTPS transport uses `--proto '=https'
+--tlsv1.2` against the official OpenClaw URL (no weaker than prior curl
+install).
 
 Before the tool row, proxy route, or installer is applied, Orbit verifies the
 explicit Linux platform, mandatory node TLD, existence of the `agent` user, and
@@ -145,22 +152,22 @@ that the user is unprivileged. A failed check returns
 
 ## Update Command
 
-`tool:update openclaw` upgrades the OpenClaw binary through its native
-npm path:
+`tool:update openclaw` re-runs the same local-prefix installer into
+`$HOME/.openclaw` (idempotent), then re-applies managed gateway fields. It does
+not use `npm install -g`.
 
 ```bash
-sudo -u agent -H bash -lc 'npm install -g openclaw@latest'
+sudo -u agent -H bash -lc 'curl -fsSL --proto "=https" --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"'
 ```
 
 ## Verify Commands
 
-`doctor --family=tool` and `tool:show openclaw` use these verification
-commands:
+`doctor --family=tool` and `tool:show openclaw` use the local-prefix binary:
 
 ```bash
-sudo -u agent -H bash -lc 'openclaw --version'
-sudo -u agent -H bash -lc 'openclaw doctor'
-sudo -u agent -H bash -lc 'openclaw gateway status'
+sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw --version'
+sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw doctor'
+sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw gateway status'
 ```
 
 ## Doctor Relationship

@@ -10,7 +10,6 @@ uses(TestCase::class);
 it('declares a process-owned gateway on OpenClaw default port 18789 with external supervision', function (): void {
     $tool = new OpenClawTool;
     $command = $tool->relatedProcess()['command'];
-
     expect(OpenClawTool::WEB_PORT)
         ->toBe(18789)
         ->and($tool->relatedProcess())
@@ -27,7 +26,8 @@ it('declares a process-owned gateway on OpenClaw default port 18789 with externa
         ->toContain('${TOKEN_FILE}')
         ->toContain('tr -d "[:space:]"')
         ->toContain('[ -n "${TOKEN}" ]')
-        ->toContain('openclaw gateway run --port 18789 --bind lan')
+        ->toContain('exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan')
+        ->not->toContain('exec openclaw gateway run')
         ->not->toContain('--port 8081')
         ->not->toContain('gateway install')
         ->not->toMatch('/OPENCLAW_GATEWAY_TOKEN=[0-9a-f]{32,}/')
@@ -40,20 +40,46 @@ it('declares a process-owned gateway on OpenClaw default port 18789 with externa
         );
 });
 
+it('installs via local-prefix install-cli without agent self-sudo or system Node', function (): void {
+    $tool = new OpenClawTool;
+    $install = $tool->installScript(['hostname' => 'openclaw.agent']);
+    $update = $tool->updateScript(['hostname' => 'openclaw.agent']);
+    $remove = $tool->removeScript();
+
+    expect($install)
+        ->toContain('https://openclaw.ai/install-cli.sh')
+        // Quote-once wrapping yields shell-safe --proto '=https' inside bash -lc.
+        ->toContain("--proto '\\''=https'\\''")
+        ->toContain('--tlsv1.2')
+        ->toContain('--no-onboard')
+        ->toContain('--prefix "$HOME/.openclaw"')
+        ->not->toContain('openclaw.ai/install.sh')
+        ->not->toContain('npm install -g openclaw')
+        ->not->toMatch('/sudo -u agent -H bash -lc \'[^\']*sudo /')->and($update)->toContain(
+            'https://openclaw.ai/install-cli.sh',
+        )->toContain('--no-onboard')->toContain('--prefix "$HOME/.openclaw"')
+        ->not->toContain('npm install -g openclaw')->and($remove)->toContain('rm -rf "${HOME}/.openclaw"')
+        ->not->toContain('npm uninstall -g openclaw')->and($tool->probeMetadata())->toMatchArray([
+            'binary' => '/home/agent/.openclaw/bin/openclaw',
+        ])->and($tool->probeMetadata()['version_command'] ?? null)->toContain(
+            '/home/agent/.openclaw/bin/openclaw --version',
+        );
+});
+
 it('configures secure gateway intent without printing tokens or installing a native service', function (): void {
     $tool = new OpenClawTool;
     $install = $tool->installScript(['hostname' => 'openclaw.agent']);
     $reconfigure = $tool->reconfigureScript(['hostname' => 'openclaw.agent']);
 
     expect($install)
-        ->toContain('openclaw.ai/install.sh')
+        ->toContain('openclaw.ai/install-cli.sh')
         ->toContain('--no-onboard')
-        ->toContain('openclaw config set gateway.mode local')
-        ->toContain('openclaw config set gateway.port 18789 --strict-json')
-        ->toContain('openclaw config set gateway.bind lan')
-        ->toContain('openclaw config set gateway.auth.mode token')
-        ->toContain('openclaw config unset gateway.auth.token')
-        ->toContain('openclaw config set gateway.controlUi.allowedOrigins')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.mode local')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.port 18789 --strict-json')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.bind lan')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.auth.mode token')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config unset gateway.auth.token')
+        ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.controlUi.allowedOrigins')
         ->toContain('ORBIT_OPENCLAW_ALLOWED_ORIGINS=')
         ->toContain('https://openclaw.agent')
         ->toContain('--strict-json')
@@ -69,11 +95,11 @@ it('configures secure gateway intent without printing tokens or installing a nat
         ->not->toContain('openclaw config set gateway.auth.token')
         ->not->toContain('echo "$TOKEN"')
         ->not->toContain('echo "${TOKEN}"')->and($reconfigure)->toContain(
-            'openclaw config set gateway.port 18789 --strict-json',
+            '/home/agent/.openclaw/bin/openclaw config set gateway.port 18789 --strict-json',
         )->toContain('https://openclaw.agent')
         ->not->toContain('openclaw config set gateway.auth.token')
         ->not->toContain('openclaw gateway install')->and($tool->probeMetadata())->toMatchArray([
-            'binary' => 'openclaw',
+            'binary' => '/home/agent/.openclaw/bin/openclaw',
         ])
         ->not->toHaveKey('repair_commands')
         ->not->toHaveKey('service');
@@ -89,11 +115,11 @@ it('never clobbers the full OpenClaw config file when converging managed gateway
 
     foreach ($scripts as $script) {
         expect($script)
-            ->toContain('openclaw config set gateway.mode local')
-            ->toContain('openclaw config set gateway.port 18789 --strict-json')
-            ->toContain('openclaw config set gateway.bind lan')
-            ->toContain('openclaw config set gateway.auth.mode token')
-            ->toContain('openclaw config set gateway.controlUi.allowedOrigins')
+            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.mode local')
+            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.port 18789 --strict-json')
+            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.bind lan')
+            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.auth.mode token')
+            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.controlUi.allowedOrigins')
             ->not->toContain('gateway.port 8081')
             ->not->toContain('openclaw config set gateway.auth.token')
             ->not->toContain('cat > "${CONFIG}"')
@@ -111,7 +137,7 @@ it('uses executable shell quoting for allowed-origins without nested single quot
     expect($script)
         ->toContain("ORBIT_OPENCLAW_ALLOWED_ORIGINS='[\"https://openclaw.agent\"]'")
         ->toContain(
-            'openclaw config set gateway.controlUi.allowedOrigins "${ORBIT_OPENCLAW_ALLOWED_ORIGINS}" --strict-json',
+            '/home/agent/.openclaw/bin/openclaw config set gateway.controlUi.allowedOrigins "${ORBIT_OPENCLAW_ALLOWED_ORIGINS}" --strict-json',
         )
         ->not->toMatch("/bash -lc '.*'\[\\\\?\"https:/");
 

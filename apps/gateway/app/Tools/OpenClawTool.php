@@ -24,6 +24,12 @@ final class OpenClawTool extends BaseTool
     public const string TOKEN_FILE = '/home/agent/.openclaw/gateway.token';
 
     /**
+     * Local-prefix OpenClaw CLI installed by install-cli.sh under the agent home.
+     * Absolute path so process/configure/probe never depend on ambient PATH.
+     */
+    public const string PREFIX_BIN = '/home/agent/.openclaw/bin/openclaw';
+
+    /**
      * @var list<string>
      */
     protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
@@ -62,6 +68,7 @@ final class OpenClawTool extends BaseTool
     public function relatedProcess(): array
     {
         $port = self::WEB_PORT;
+        $prefixBin = self::PREFIX_BIN;
 
         // Use an explicit agent path for the token file so the command does not
         // depend on outer systemd Environment=HOME (node user, usually orbit).
@@ -79,7 +86,7 @@ final class OpenClawTool extends BaseTool
                 missingMessage: 'openclaw gateway token missing',
             )
             .'export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"; '
-            ."exec openclaw gateway run --port {$port} --bind lan";
+            ."exec {$prefixBin} gateway run --port {$port} --bind lan";
 
         return [
             'name' => 'openclaw-gateway',
@@ -94,12 +101,13 @@ final class OpenClawTool extends BaseTool
     public function installScript(array $config = []): string
     {
         $configure = $this->configureManagedGatewayScript($config);
+        $prefixInstall = $this->localPrefixInstallCommand();
 
         return <<<BASH
             #!/usr/bin/env bash
             # orbit install openclaw
             set -euo pipefail
-            sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
+            {$prefixInstall}
             {$configure}
             BASH;
     }
@@ -110,7 +118,6 @@ final class OpenClawTool extends BaseTool
             #!/usr/bin/env bash
             # orbit remove openclaw
             set -e
-            sudo -u agent -H bash -lc 'npm uninstall -g openclaw 2>/dev/null || true'
             sudo -u agent -H bash -lc 'rm -rf "${HOME}/.openclaw" 2>/dev/null || true'
             BASH;
     }
@@ -118,12 +125,13 @@ final class OpenClawTool extends BaseTool
     public function updateScript(array $config = []): string
     {
         $configure = $this->configureManagedGatewayScript($config);
+        $prefixInstall = $this->localPrefixInstallCommand();
 
         return <<<BASH
             #!/usr/bin/env bash
             # orbit update openclaw
             set -euo pipefail
-            sudo -u agent -H bash -lc 'npm install -g openclaw@latest'
+            {$prefixInstall}
             {$configure}
             BASH;
     }
@@ -169,17 +177,32 @@ final class OpenClawTool extends BaseTool
     #[\Override]
     public function probeMetadata(): array
     {
+        $prefixBin = self::PREFIX_BIN;
+
         return [
-            'binary' => 'openclaw',
-            'version_command' => 'sudo -u agent -H bash -lc "openclaw --version"',
+            'binary' => $prefixBin,
+            'version_command' => 'sudo -u agent -H bash -lc '.ManagedToolShell::singleQuote("{$prefixBin} --version"),
             'update_command' => $this->updateScript(),
         ];
     }
 
     /**
+     * Local-prefix installer under the agent home so Node/OpenClaw do not need
+     * system Node or agent self-sudo (install.sh requires admin privileges).
+     */
+    private function localPrefixInstallCommand(): string
+    {
+        // Quote-once the full agent-local install line; no nested sudo as agent.
+        return 'sudo -u agent -H bash -lc '
+        .ManagedToolShell::singleQuote(
+            'curl -fsSL --proto \'=https\' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"',
+        );
+    }
+
+    /**
      * Merge only Orbit-managed gateway fields into the existing OpenClaw config.
-     * Uses `openclaw config set` so agents/channels/models/settings are preserved.
-     * Auth token stays only in gateway.token and is never passed as config-set argv.
+     * Uses absolute prefix binary + `config set` so agents/channels/models/settings
+     * are preserved. Auth token stays only in gateway.token and is never argv.
      *
      * @param  array<array-key, mixed>  $config
      */
@@ -191,6 +214,7 @@ final class OpenClawTool extends BaseTool
             : 'openclaw.agent';
         $origin = "https://{$hostname}";
         $port = self::WEB_PORT;
+        $prefixBin = self::PREFIX_BIN;
         $allowedOriginsJson = json_encode([$origin], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $allowedOriginsEnv = ManagedToolShell::singleQuote($allowedOriginsJson);
         $ensureToken = ManagedToolShell::ensureNonEmptySecretFile(
@@ -212,12 +236,12 @@ final class OpenClawTool extends BaseTool
             .'mkdir -p "${STATE_DIR}"; '
             .'umask 077; '
             .$ensureToken
-            .'openclaw config set gateway.mode local; '
-            ."openclaw config set gateway.port {$port} --strict-json; "
-            .'openclaw config set gateway.bind lan; '
-            .'openclaw config set gateway.auth.mode token; '
-            .'openclaw config unset gateway.auth.token >/dev/null 2>&1 || true; '
-            .'openclaw config set gateway.controlUi.allowedOrigins "${ORBIT_OPENCLAW_ALLOWED_ORIGINS}" --strict-json'
+            ."{$prefixBin} config set gateway.mode local; "
+            ."{$prefixBin} config set gateway.port {$port} --strict-json; "
+            ."{$prefixBin} config set gateway.bind lan; "
+            ."{$prefixBin} config set gateway.auth.mode token; "
+            ."{$prefixBin} config unset gateway.auth.token >/dev/null 2>&1 || true; "
+            ."{$prefixBin} config set gateway.controlUi.allowedOrigins \"\${ORBIT_OPENCLAW_ALLOWED_ORIGINS}\" --strict-json"
             ."'"
         );
     }
