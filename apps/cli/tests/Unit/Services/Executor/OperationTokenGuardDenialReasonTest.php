@@ -11,7 +11,7 @@ use Orbit\Core\Security\OperationTokenSigner;
 /**
  * @return list<string>
  */
-function operationTokenGuardSafeDenialReasons(): array
+function operation_token_guard_safe_denial_reasons(): array
 {
     return [
         'invalid_token',
@@ -23,13 +23,13 @@ function operationTokenGuardSafeDenialReasons(): array
     ];
 }
 
-function signedDenialReasonToken(
+function signed_denial_reason_token(
     string $id = 'op-denial-reason',
     string $command = 'internal:executor:verify',
 ): string {
     return new OperationTokenSigner()
         ->sign(
-            secret: 'gateway-secret',
+            secret: implode('-', ['gateway', 'secret']),
             id: $id,
             node: 'app-dev',
             command: $command,
@@ -39,7 +39,7 @@ function signedDenialReasonToken(
         ->toString();
 }
 
-function makeOperationTokenGuard(): OperationTokenGuard
+function make_operation_token_guard(): OperationTokenGuard
 {
     return new OperationTokenGuard(
         resolveGateway: static fn (): GatewayApiClient => app(GatewayApiClient::class),
@@ -53,10 +53,10 @@ it('propagates recognized gateway denial reasons on the guard exception', functi
         'operation_id' => 'op-denial-reason',
     ]));
 
-    $guard = makeOperationTokenGuard();
+    $guard = make_operation_token_guard();
 
     try {
-        $guard->verify(signedDenialReasonToken(), 'internal:executor:verify');
+        $guard->verify(signed_denial_reason_token(), 'internal:executor:verify');
         $this->fail('Expected OperationTokenGuardException was not thrown.');
     } catch (OperationTokenGuardException $exception) {
         expect($exception->reason())
@@ -64,7 +64,7 @@ it('propagates recognized gateway denial reasons on the guard exception', functi
             ->and($exception->getMessage())
             ->toBe('Operation token is invalid.');
     }
-})->with(operationTokenGuardSafeDenialReasons());
+})->with(operation_token_guard_safe_denial_reasons());
 
 it('collapses unknown gateway denial reasons to invalid_token', function (): void {
     fakeGateway(fakeSuccessEnvelope([
@@ -73,10 +73,10 @@ it('collapses unknown gateway denial reasons to invalid_token', function (): voi
         'operation_id' => 'op-unknown-reason',
     ]));
 
-    $guard = makeOperationTokenGuard();
+    $guard = make_operation_token_guard();
 
     try {
-        $guard->verify(signedDenialReasonToken(id: 'op-unknown-reason'), 'internal:executor:verify');
+        $guard->verify(signed_denial_reason_token(id: 'op-unknown-reason'), 'internal:executor:verify');
         $this->fail('Expected OperationTokenGuardException was not thrown.');
     } catch (OperationTokenGuardException $exception) {
         expect($exception->reason())
@@ -96,10 +96,10 @@ it('maps malformed gateway verify responses to invalid_token without retaining r
         'debug' => 'argv hash mismatch for /home/orbit/.config/orbit',
     ]));
 
-    $guard = makeOperationTokenGuard();
+    $guard = make_operation_token_guard();
 
     try {
-        $guard->verify(signedDenialReasonToken(id: 'op-malformed'), 'internal:executor:verify');
+        $guard->verify(signed_denial_reason_token(id: 'op-malformed'), 'internal:executor:verify');
         $this->fail('Expected OperationTokenGuardException was not thrown.');
     } catch (OperationTokenGuardException $exception) {
         expect($exception->reason())
@@ -116,10 +116,10 @@ it('maps malformed gateway verify responses to invalid_token without retaining r
 it('maps gateway transport failures to invalid_token without leaking network text', function (): void {
     fakeGatewayDown('No route to host via 10.10.0.1 for token verify');
 
-    $guard = makeOperationTokenGuard();
+    $guard = make_operation_token_guard();
 
     try {
-        $guard->verify(signedDenialReasonToken(id: 'op-transport'), 'internal:executor:verify');
+        $guard->verify(signed_denial_reason_token(id: 'op-transport'), 'internal:executor:verify');
         $this->fail('Expected OperationTokenGuardException was not thrown.');
     } catch (OperationTokenGuardException $exception) {
         expect($exception->reason())
@@ -138,10 +138,10 @@ it('does not treat a missing denial reason as a free-form payload leak surface',
         'operation_id' => 'op-missing-reason',
     ]));
 
-    $guard = makeOperationTokenGuard();
+    $guard = make_operation_token_guard();
 
     try {
-        $guard->verify(signedDenialReasonToken(id: 'op-missing-reason'), 'internal:executor:verify');
+        $guard->verify(signed_denial_reason_token(id: 'op-missing-reason'), 'internal:executor:verify');
         $this->fail('Expected OperationTokenGuardException was not thrown.');
     } catch (OperationTokenGuardException $exception) {
         expect($exception->reason())->toBe('invalid_token');

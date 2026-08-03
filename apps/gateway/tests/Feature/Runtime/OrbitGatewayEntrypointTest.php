@@ -98,8 +98,7 @@ it('owns a host-prefix config root with host home uid:gid instead of the image o
         ->and($chownLog)
         ->toContain("-R {$hostOwner} {$state['config_root']}")
         ->and($chownLog)
-        ->not->toContain("-R {$imageOwner} ")
-        ->and($chownLog)
+        ->not->toContain("-R {$imageOwner} ")->and($chownLog)
         ->not->toContain('orbit:orbit');
 
     File::deleteDirectory($state['root']);
@@ -261,34 +260,34 @@ function run_gateway_entrypoint_ownership_fixture(
     File::put(
         "{$bin}/id",
         <<<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-if [ "${1:-}" = "orbit" ]; then
-    exit 0
-fi
+            if [ "${1:-}" = "orbit" ]; then
+                exit 0
+            fi
 
-if [ "${1:-}" = "-u" ] && [ "${2:-}" = "orbit" ]; then
-    printf '999\n'
-    exit 0
-fi
+            if [ "${1:-}" = "-u" ] && [ "${2:-}" = "orbit" ]; then
+                printf '999\n'
+                exit 0
+            fi
 
-if [ "${1:-}" = "-g" ] && [ "${2:-}" = "orbit" ]; then
-    printf '999\n'
-    exit 0
-fi
+            if [ "${1:-}" = "-g" ] && [ "${2:-}" = "orbit" ]; then
+                printf '999\n'
+                exit 0
+            fi
 
-exit 1
-BASH
+            exit 1
+            BASH,
     );
     File::put(
         "{$bin}/chown",
         <<<BASH
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "\$*" >> "{$chownLog}"
-exit 0
-BASH
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "\$*" >> "{$chownLog}"
+            exit 0
+            BASH,
     );
     File::chmod("{$bin}/php", 0o755);
     File::chmod("{$bin}/id", 0o755);
@@ -312,7 +311,12 @@ BASH
 
     // Run the real entrypoint path(s) through bash so restart-style reentry is exercised.
     $script = implode(' && ', array_map(
-        static fn (): string => escapeshellarg('/bin/bash').' '.escapeshellarg(repo_path('docker/orbit-gateway/entrypoint.sh')).' artisan about',
+        static fn (): string => (
+            escapeshellarg('/bin/bash')
+            .' '
+            .escapeshellarg(repo_path('docker/orbit-gateway/entrypoint.sh'))
+            .' artisan about'
+        ),
         range(1, max(1, $invokeCount)),
     ));
 

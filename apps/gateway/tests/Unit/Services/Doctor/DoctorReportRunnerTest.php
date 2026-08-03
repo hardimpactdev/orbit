@@ -1646,7 +1646,10 @@ describe('DoctorReportRunner', function (): void {
             ->toBeTrue();
     });
 
-    it('marks node-owned process restart and environment mismatches as restorable', function (string $key, string $probeRow): void {
+    it('marks node-owned process restart and environment mismatches as restorable', function (
+        string $key,
+        string $probeRow,
+    ): void {
         $node = Node::factory()
             ->database()
             ->create([
@@ -1677,7 +1680,8 @@ describe('DoctorReportRunner', function (): void {
         $issue = collect($report['issues'])->firstWhere('key', $key);
 
         expect($issue)
-            ->not->toBeNull()
+            ->not
+            ->toBeNull()
             ->and($issue['restorable'] ?? null)
             ->toBeTrue()
             ->and($issue['code'] ?? null)
@@ -1693,7 +1697,10 @@ describe('DoctorReportRunner', function (): void {
         ],
     ]);
 
-    it('restores node-owned process restart and environment mismatches by re-rendering the Orbit unit', function (string $key, string $probeRow): void {
+    it('restores node-owned process restart and environment mismatches by re-rendering the Orbit unit', function (
+        string $key,
+        string $probeRow,
+    ): void {
         $node = Node::factory()
             ->database()
             ->create([
@@ -1723,7 +1730,8 @@ describe('DoctorReportRunner', function (): void {
                     'exists' => true,
                     'hash' => 'stale',
                     'enabled' => true,
-                ], JSON_THROW_ON_ERROR)."\n",
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
                 stderr: '',
                 durationMs: 1,
             ),
