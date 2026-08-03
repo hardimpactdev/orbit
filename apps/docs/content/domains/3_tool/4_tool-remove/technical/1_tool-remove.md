@@ -88,17 +88,18 @@ to `LegacyOpenClawRuntimeCleanup` instead of the normal catalog remove path:
 2. Remove process intent named `openclaw-gateway` or `tool=openclaw` when present
    (typed `RemoveProcess`, including runtime unit teardown).
 3. Run the fixed host cleanup script via `internal:tool:run-script` action
-   `remove`: stop/disable Orbit and native OpenClaw units, kill listeners on
-   port `18789`, pkill residual agent openclaw processes, `rm -rf
-   /home/agent/.openclaw`.
-4. Remove tool-owned proxy domains with `owner_name=openclaw` via
-   `ProxyRouteFixer::removeExtra` then registry delete.
-5. Delete any remaining `NodeTool` row named `openclaw`.
+   `remove`: stop/disable Orbit and native OpenClaw units, enumerate and kill
+   listeners with **`sudo ss`** on port `18789` (privileged PID visibility),
+   pkill residual agent openclaw processes, remove agent OpenClaw home state,
+   then **verify** port/process/home are absent (nonzero stderr on residue).
+4. Only after verified host success: remove tool-owned proxy domains with
+   `owner_name=openclaw` via `ProxyRouteFixer::removeExtra` then registry
+   delete, and delete any remaining `NodeTool` row named `openclaw`.
 
 JSON success includes `legacy_runtime_cleanup=true`, `stale_record=true`,
 `routes_removed`, and `tool_row_removed`. Failed host cleanup returns
-`tool.remote_action_failed` and must be retried. This is not install or
-product support.
+`tool.remote_action_failed` and must be retried; proxy/tool rows are not
+removed after a failed script. This is not install or product support.
 
 ## Renderer Contracts
 

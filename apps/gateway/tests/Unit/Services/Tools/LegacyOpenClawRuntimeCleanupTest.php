@@ -18,7 +18,7 @@ it('applies only to the openclaw tool slug', function (): void {
         ->toBeFalse();
 });
 
-it('ships a removal-only host script that stops units, kills port listeners, and deletes agent state', function (): void {
+it('ships a removal-only host script that uses privileged ss and verifies absence before success', function (): void {
     $script = app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript();
 
     expect($script)
@@ -26,14 +26,23 @@ it('ships a removal-only host script that stops units, kills port listeners, and
         ->toContain('removal-only migration')
         ->toContain('openclaw-gateway.service')
         ->toContain('openclaw.service')
-        ->toContain('sport = :18789')
+        ->toContain('sudo ss -lptn')
+        ->toContain('listener_pids')
         ->toContain('kill -TERM')
         ->toContain('kill -KILL')
-        ->toContain("pkill -u agent -f '/home/agent/.openclaw/bin/openclaw'")
-        ->toContain("pkill -u agent -f 'openclaw gateway'")
-        ->toContain('rm -rf "${HOME}/.openclaw"')
+        ->toContain('openclaw_process_present')
+        ->toContain('legacy openclaw cleanup incomplete: port')
+        ->toContain('still exists')
+        ->toContain('openclaw process still running')
         ->not->toContain('install-cli')
         ->not->toContain('install.sh')
         ->not->toContain('gateway run')
         ->not->toContain('tool:install');
+
+    // Verified success checks must appear after the kill/teardown section.
+    $killPos = strpos($script, 'kill -KILL');
+    $verifyPos = strpos($script, 'legacy openclaw cleanup incomplete');
+    expect($killPos)
+        ->not->toBeFalse()->and($verifyPos)
+        ->not->toBeFalse()->and($verifyPos)->toBeGreaterThan($killPos);
 });

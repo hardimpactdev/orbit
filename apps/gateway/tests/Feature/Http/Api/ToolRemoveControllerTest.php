@@ -10,10 +10,14 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Tools\LegacyOpenClawRuntimeCleanup;
 use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
+use Symfony\Component\Process\Process as SymfonyProcess;
+
+require_once __DIR__.'/../../../Support/LegacyOpenClawCleanupHarness.php';
 
 uses(RefreshDatabase::class);
 
@@ -464,9 +468,10 @@ describe('ToolRemoveController', function (): void {
             ->not
             ->toBeNull()
             ->and($legacyScript)
-            ->toContain('sport = :18789')
+            ->toContain('sudo ss -lptn')
+            ->toContain('OPENCLAW_PORT')
             ->toContain('openclaw-gateway.service')
-            ->toContain('rm -rf "${HOME}/.openclaw"')
+            ->toContain('legacy openclaw cleanup incomplete')
             ->and($shell->proxyRemoveSiteObservations)
             ->toBe([[
                 'domain' => 'openclaw.agent',
@@ -474,7 +479,7 @@ describe('ToolRemoveController', function (): void {
             ]]);
     });
 
-    it('legacy openclaw removal clears process intent and fails closed when host cleanup script fails', function (): void {
+    it('legacy openclaw removal fails closed when the real cleanup script cannot kill a detached listener', function (): void {
         $caller = createToolRemoveApiCallerNode();
         NodeRoleAssignment::factory()->create([
             'node_id' => $caller->id,
@@ -506,7 +511,23 @@ describe('ToolRemoveController', function (): void {
                 'runtime' => ProcessRuntime::Systemd,
                 'tool' => 'openclaw',
             ]);
-        $shell = new ToolRemoveApiRecordingShell(failLegacyOpenClawScript: true);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'openclaw',
+                'upstream' => 'http://host.docker.internal:18789',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://host.docker.internal:18789',
+                ],
+            ],
+        ]);
+        $harness = openclaw_cleanup_harness_root();
+        openclaw_cleanup_write_stubs($harness, unkillableListener: true);
+        $shell = new ToolRemoveApiExecutingLegacyScriptShell(harnessRoot: $harness);
         app()->instance(RemoteShell::class, $shell);
 
         $response = test()->call(
@@ -522,8 +543,8 @@ describe('ToolRemoveController', function (): void {
             tool_remove_api_server_headers(),
         );
 
-        // Process intent is removed before the host cleanup script. A failed
-        // cleanup script must not report overall success so operators retry.
+        // Process intent may already be removed; host verification failure must
+        // not delete proxy/tool rows after the script step.
         $response
             ->assertBadRequest()
             ->assertJsonPath('error.code', 'tool.remote_action_failed');
@@ -531,11 +552,8 @@ describe('ToolRemoveController', function (): void {
         expect(Process::find($process->id))
             ->toBeNull()
             ->and(NodeTool::find($tool->id))
-            ->not
-            ->toBeNull()
-            ->and(collect($shell->scripts)
-                ->contains(static fn (string $script): bool => str_contains($script, 'orbit legacy-remove openclaw')))
-            ->toBeTrue();
+            ->not->toBeNull()->and(ProxyRoute::find($route->id))
+            ->not->toBeNull()->and($shell->lastLegacyStderr)->toContain('port 18789 still listening');
     });
 
     it('keeps the tool-owned proxy registry row when backend cleanup fails', function (): void {
@@ -754,7 +772,7 @@ describe('ToolRemoveController', function (): void {
     });
 });
 
-final class ToolRemoveApiRecordingShell implements RemoteShell
+class ToolRemoveApiRecordingShell implements RemoteShell
 {
     /**
      * @var list<string>
@@ -770,7 +788,6 @@ final class ToolRemoveApiRecordingShell implements RemoteShell
 
     public function __construct(
         public bool $failRemoveSite = false,
-        public bool $failLegacyOpenClawScript = false,
     ) {}
 
     /**
@@ -779,15 +796,6 @@ final class ToolRemoveApiRecordingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
-
-        if ($this->failLegacyOpenClawScript && str_contains($script, 'orbit legacy-remove openclaw')) {
-            return new RemoteShellResult(
-                exitCode: 1,
-                stdout: '',
-                stderr: 'legacy openclaw runtime cleanup failed',
-                durationMs: 1,
-            );
-        }
 
         if (str_contains($script, "internal:caddy-config 'remove-site'")) {
             $payload = tool_remove_decode_shell_input($options['input'] ?? null);
@@ -847,4 +855,49 @@ function tool_remove_shell_success(array $data): RemoteShellResult
         stderr: '',
         durationMs: 1,
     );
+}
+
+/**
+ * Executes the generated legacy OpenClaw cleanup script under PATH stubs so the
+ * API path exercises real verified-success/failure semantics without host sudo.
+ */
+final class ToolRemoveApiExecutingLegacyScriptShell extends ToolRemoveApiRecordingShell
+{
+    public string $lastLegacyStderr = '';
+
+    public function __construct(
+        public string $harnessRoot,
+    ) {
+        parent::__construct();
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (str_contains($script, 'orbit legacy-remove openclaw')) {
+            $this->scripts[] = $script;
+            $env = [
+                'PATH' => $this->harnessRoot.'/bin:'.(getenv('PATH') ?: '/usr/bin:/bin'),
+                'ORBIT_LEGACY_OPENCLAW_HARNESS_STATE' => $this->harnessRoot.'/state',
+                'ORBIT_LEGACY_OPENCLAW_HOME' => $this->harnessRoot.'/home/.openclaw',
+                'ORBIT_LEGACY_OPENCLAW_USER' => 'agent',
+                'ORBIT_LEGACY_OPENCLAW_PORT' => (string) LegacyOpenClawRuntimeCleanup::LISTEN_PORT,
+                'ORBIT_LEGACY_OPENCLAW_KILL_WAIT' => '0',
+            ];
+            $process = new SymfonyProcess(['bash', '-c', $script], null, $env);
+            $process->run();
+            $this->lastLegacyStderr = $process->getErrorOutput();
+
+            return new RemoteShellResult(
+                exitCode: $process->getExitCode() ?? 1,
+                stdout: $process->getOutput(),
+                stderr: $this->lastLegacyStderr,
+                durationMs: 1,
+            );
+        }
+
+        return parent::run($node, $script, $options);
+    }
 }

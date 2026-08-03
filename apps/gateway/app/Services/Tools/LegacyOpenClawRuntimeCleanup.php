@@ -53,17 +53,34 @@ final readonly class LegacyOpenClawRuntimeCleanup
 
     /**
      * Host cleanup script for detached/orphan OpenClaw runtime residue.
-     * Idempotent: missing units/processes are ignored.
+     *
+     * Best-effort stop/kill steps ignore missing targets, but final success is
+     * verified: port listeners, residual openclaw processes, and agent home
+     * state must be gone. Test harnesses may override home/user/port via
+     * ORBIT_LEGACY_OPENCLAW_* env vars and stub PATH commands (sudo/ss/...).
      */
     public function cleanupScript(): string
     {
-        $port = self::LISTEN_PORT;
+        $defaultPort = self::LISTEN_PORT;
         $processUnit = self::PROCESS_NAME.'.service';
 
         return <<<BASH
             #!/usr/bin/env bash
             # orbit legacy-remove openclaw (removal-only migration; not product support)
             set -u
+            OPENCLAW_HOME="\${ORBIT_LEGACY_OPENCLAW_HOME:-/home/agent/.openclaw}"
+            OPENCLAW_USER="\${ORBIT_LEGACY_OPENCLAW_USER:-agent}"
+            OPENCLAW_PORT="\${ORBIT_LEGACY_OPENCLAW_PORT:-{$defaultPort}}"
+            # Privileged ss is required so orbit can read agent-owned PIDs.
+            listener_pids() {
+              sudo ss -lptn "sport = :\${OPENCLAW_PORT}" 2>/dev/null \\
+                | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' \\
+                | sort -u
+            }
+            openclaw_process_present() {
+              sudo pgrep -u "\${OPENCLAW_USER}" -f "\${OPENCLAW_HOME}/bin/openclaw" >/dev/null 2>&1 \\
+                || sudo pgrep -u "\${OPENCLAW_USER}" -f 'openclaw gateway' >/dev/null 2>&1
+            }
             stop_unit() {
               local unit="\$1"
               sudo systemctl stop "\${unit}" >/dev/null 2>&1 || true
@@ -74,25 +91,42 @@ final readonly class LegacyOpenClawRuntimeCleanup
             stop_unit '{$processUnit}'
             stop_unit 'openclaw.service'
             # Agent-scoped user units OpenClaw may have enabled historically.
-            sudo -u agent -H bash -lc 'systemctl --user stop openclaw-gateway.service openclaw.service >/dev/null 2>&1 || true' || true
-            sudo -u agent -H bash -lc 'systemctl --user disable openclaw-gateway.service openclaw.service >/dev/null 2>&1 || true' || true
+            sudo -u "\${OPENCLAW_USER}" -H bash -lc 'systemctl --user stop openclaw-gateway.service openclaw.service >/dev/null 2>&1 || true' || true
+            sudo -u "\${OPENCLAW_USER}" -H bash -lc 'systemctl --user disable openclaw-gateway.service openclaw.service >/dev/null 2>&1 || true' || true
             sudo systemctl daemon-reload >/dev/null 2>&1 || true
             # Terminate anything still listening on the historical OpenClaw port.
-            if command -v ss >/dev/null 2>&1; then
-              for pid in \$(ss -lptn "sport = :{$port}" 2>/dev/null | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | sort -u); do
-                sudo kill -TERM "\${pid}" >/dev/null 2>&1 || true
-              done
-              sleep 1
-              for pid in \$(ss -lptn "sport = :{$port}" 2>/dev/null | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | sort -u); do
-                sudo kill -KILL "\${pid}" >/dev/null 2>&1 || true
-              done
-            fi
+            for pid in \$(listener_pids); do
+              sudo kill -TERM "\${pid}" >/dev/null 2>&1 || true
+            done
+            sleep "\${ORBIT_LEGACY_OPENCLAW_KILL_WAIT:-1}"
+            for pid in \$(listener_pids); do
+              sudo kill -KILL "\${pid}" >/dev/null 2>&1 || true
+            done
             # Residual agent-owned OpenClaw binaries/commands not under systemd.
-            sudo pkill -u agent -f '/home/agent/.openclaw/bin/openclaw' >/dev/null 2>&1 || true
-            sudo pkill -u agent -f 'openclaw gateway' >/dev/null 2>&1 || true
-            sudo -u agent -H bash -lc 'rm -rf "\${HOME}/.openclaw" 2>/dev/null || true'
+            sudo pkill -u "\${OPENCLAW_USER}" -f "\${OPENCLAW_HOME}/bin/openclaw" >/dev/null 2>&1 || true
+            sudo pkill -u "\${OPENCLAW_USER}" -f 'openclaw gateway' >/dev/null 2>&1 || true
+            # Home/state teardown (override path is for harnesses only).
+            if [ "\${OPENCLAW_HOME}" = '/home/agent/.openclaw' ]; then
+              sudo -u "\${OPENCLAW_USER}" -H bash -lc 'rm -rf "\${HOME}/.openclaw" 2>/dev/null || true'
+            else
+              rm -rf "\${OPENCLAW_HOME}" 2>/dev/null || true
+            fi
             # Optional world shim from older install paths (may be absent).
             sudo rm -f /usr/local/bin/openclaw 2>/dev/null || true
+            # Verified success: refuse false-positive exit 0 when residue remains.
+            remaining_pids="\$(listener_pids | tr '\\n' ' ' | sed 's/[[:space:]]*\$//')"
+            if [ -n "\${remaining_pids}" ]; then
+              echo "legacy openclaw cleanup incomplete: port \${OPENCLAW_PORT} still listening (pids: \${remaining_pids})" >&2
+              exit 1
+            fi
+            if openclaw_process_present; then
+              echo "legacy openclaw cleanup incomplete: openclaw process still running for user \${OPENCLAW_USER}" >&2
+              exit 1
+            fi
+            if [ -e "\${OPENCLAW_HOME}" ]; then
+              echo "legacy openclaw cleanup incomplete: \${OPENCLAW_HOME} still exists" >&2
+              exit 1
+            fi
             exit 0
             BASH;
     }
