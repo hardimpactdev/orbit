@@ -535,6 +535,36 @@ describe('proxy registry probe foundation', function (): void {
             ->toMatchArray(['owner_type' => 'tool']);
     });
 
+    it('does not classify tool-owned routes as owner invalid when the matching NodeTool is installed', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid'))
+            ->toBeNull();
+    });
+
     it('requires active gateway or app serving nodes', function (callable $createNode): void {
         $node = $createNode();
         $route = ProxyRoute::factory()->create([

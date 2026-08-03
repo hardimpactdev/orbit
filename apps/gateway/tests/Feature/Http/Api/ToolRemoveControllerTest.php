@@ -372,6 +372,73 @@ describe('ToolRemoveController', function (): void {
             ->toBeEmpty();
     });
 
+    it('cleans orphan tool-owned proxy rows for a removed catalog tool without a NodeTool row', function (): void {
+        // Residual shape after a successful tool remove that left a proxy row:
+        // no NodeTool, tool no longer in catalog, tool-owned route still present.
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-orphan-proxy',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'openclaw',
+                'upstream' => 'http://host.docker.internal:18789',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://host.docker.internal:18789',
+                ],
+            ],
+        ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        expect(app(\App\Services\Tools\ToolCatalog::class)->supports('openclaw'))->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())->toBeFalse();
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/openclaw',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'openclaw')
+            ->assertJsonPath('success.data.tool.node', $node->name)
+            ->assertJsonPath('success.data.tool.stale_record', true)
+            ->assertJsonPath('success.data.tool.stale_routes_removed', 1);
+
+        expect(ProxyRoute::find($route->id))
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBeEmpty();
+    });
+
     it('records explicit destructive consent source for a streamed human removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
         $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
