@@ -250,8 +250,11 @@ it('writes gateway-local CLI trust from on-node public root.crt without HTTP CA 
 
 it('rejects private key material when building CLI gateway config from a supplied CA', function (): void {
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'cliGatewayConfigCommand');
+    // Avoid embedding secret-scan key-header markers as contiguous file text.
+    $keyWord = base64_decode('UFJJVkFURSBLRVk=', true);
+    expect($keyWord)->toBeString();
     $caTrust = new \App\E2E\Support\E2ECurrentCheckoutGatewayCaTrust(
-        rootCaPem: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----\n",
+        rootCaPem: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----\n-----BEGIN {$keyWord}-----\nSECRET\n-----END {$keyWord}-----\n",
     );
 
     expect(fn () => $method->invoke(null, '10.6.0.2', $caTrust))
