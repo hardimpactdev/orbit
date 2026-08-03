@@ -274,7 +274,7 @@ it('keeps prepared Incus role assignment seeding out of retarget scripts', funct
         ->not->toContain("'role' => 'gateway',\n        'environment' => null")->and($providerSource)
         ->not->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate')->and(
             $providerSource,
-        )->toContain('writeOperatorCliConfig($operator, $config, $sshKeyPair');
+        )->toContain('writeOrbitRuntimeCliConfig(')->toContain("runtimeUser: \$config->operatorUser");
 });
 
 it('retargets artifact-backed Incus gateway nodes through the gateway image instead of a source checkout', function (): void {

@@ -557,31 +557,39 @@ it('prepares managed agent runtime user and CLI access before product proof on a
     $joined = implode("\n", $commands());
     $launcher = strpos($joined, '/home/orbit/.local/bin/orbit');
     $agentBake = strpos($joined, 'orbit:internal:bake-agent-node');
+    $agentConfig = strpos($joined, '/home/orbit/.config/orbit/config.json');
     $agentUserEnsure = strpos($joined, 'LocalAgentUserEnsure');
     $agentAclEnsure = strpos($joined, 'LocalAgentAclEnsure');
-    $agentCli = strpos($joined, 'sudo -n -u agent -H env');
+    $agentRuntimeProbe = strpos($joined, 'LocalAgentRuntimeProbe');
 
-    // LocalAgentAclEnsure requires config.json (stage=config_acl). Bake writes
-    // agent node config, so readiness must run after bake-agent-node.
+    // bake-agent-node only registers the gateway row; the topology writer must
+    // place the canonical orbit CLI config before fail-closed ACL ensure.
     expect($launcher)
         ->toBeInt()
         ->and($agentBake)
+        ->toBeInt()
+        ->and($agentConfig)
         ->toBeInt()
         ->and($agentUserEnsure)
         ->toBeInt()
         ->and($agentAclEnsure)
         ->toBeInt()
-        ->and($agentCli)
+        ->and($agentRuntimeProbe)
         ->toBeInt()
         ->and($launcher)
         ->toBeLessThan($agentBake)
         ->and($agentBake)
+        ->toBeLessThan($agentConfig)
+        ->and($agentConfig)
         ->toBeLessThan($agentUserEnsure)
         ->and($agentUserEnsure)
         ->toBeLessThan($agentAclEnsure)
+        ->and($agentAclEnsure)
+        ->toBeLessThan($agentRuntimeProbe)
         ->and($joined)
-        ->toContain("incus exec 'clone-agent'")
-        ->toContain('/home/agent/.local/bin/orbit');
+        ->toContain("incus exec 'clone-agent' -- runuser -u 'orbit'")
+        ->toContain('test -f /home/orbit/.config/orbit/config.json')
+        ->toMatch("/incus exec 'clone-agent' -- runuser -u 'orbit' -- bash -lc 'mkdir -p/");
 });
 
 it('restores standalone wg-easy when post-convergence handoff cleanup fails', function (): void {
