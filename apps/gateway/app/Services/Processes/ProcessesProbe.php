@@ -636,18 +636,25 @@ final readonly class ProcessesProbe
                             restart_matches=1
                         fi
 
-                        environment_matches=1
+                        # Exact Environment= multiset match: every expected line must
+                        # appear with the same multiplicity, and no extras are allowed.
+                        # Order is normalized via sort so renderer reordering is not drift.
+                        expected_environment=$(
+                            for environment_line in "$@"; do
+                                if [ "$environment_line" = "" ]; then
+                                    continue
+                                fi
 
-                        for environment_line in "$@"; do
-                            if [ "$environment_line" = "" ]; then
-                                continue
-                            fi
+                                printf '%s\n' "$environment_line"
+                            done | LC_ALL=C sort
+                        )
+                        actual_environment=$(
+                            grep -E '^Environment=' "$unit_path" 2>/dev/null | LC_ALL=C sort || true
+                        )
 
-                            if ! line_exists "$unit_path" "$environment_line"; then
-                                environment_matches=0
-                                break
-                            fi
-                        done
+                        if [ "$expected_environment" = "$actual_environment" ]; then
+                            environment_matches=1
+                        fi
                     fi
 
                     printf '%s\t%s\t%s\t%s\t%s\n' "$unit_name" "$exists" "$matches" "$restart_matches" "$environment_matches"

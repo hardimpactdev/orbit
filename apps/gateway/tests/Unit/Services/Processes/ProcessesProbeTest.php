@@ -44,9 +44,10 @@ beforeEach(function (): void {
     $this->probe = new ProcessesProbe;
 });
 
-function processesProbeWithShell(ProcessesProbeRecordingRemoteShell $shell): ProcessesProbe
+function processesProbeWithShell(RemoteShell&RunsInternalCommands $shell): ProcessesProbe
 {
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     return new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
 }
@@ -830,6 +831,118 @@ describe('systemd unit restart and environment reality', function (): void {
 
         expect(issue($drift, 'process.runtime_environment_mismatch')?->kind)->toBe(DriftKind::Divergent);
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
+    });
+
+    it('flags extra Environment lines as process.runtime_environment_mismatch for node-owned systemd units', function (): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'gateway',
+                'user' => 'orbit',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'tld' => 'gateway',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+                'runtime' => ProcessRuntime::Systemd,
+                'restart_policy' => ProcessRestartPolicy::Always,
+                'crash_notification' => ProcessCrashNotification::None,
+                'sort_order' => 1,
+            ]);
+
+        $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
+        $surrogateApp = new Project([
+            'name' => $node->name,
+            'path' => '/home/orbit',
+            'node_id' => $node->id,
+        ]);
+        $surrogateApp->setRelation('node', $node);
+        $expectedUnit = $renderer->render($node, $surrogateApp, $process);
+        $runtimeUnit = $renderer->unitName($surrogateApp, $process);
+        $canonicalPath = $renderer->unitPath($runtimeUnit);
+
+        $root = sys_get_temp_dir().'/orbit-process-probe-env-'.bin2hex(random_bytes(6));
+        $unitPath = "{$root}/{$runtimeUnit}.service";
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($root);
+        \Illuminate\Support\Facades\File::put(
+            $unitPath,
+            $expectedUnit."Environment=\"APP_URL=https://gateway.stale\"\n",
+        );
+
+        $shell = new ProcessesProbeExecutingSystemdRemoteShell(
+            unitPathMap: [$canonicalPath => $unitPath],
+        );
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
+        $observed = $snapshot->get('node-exporter')['runtime_units'][$runtimeUnit] ?? null;
+
+        $probeScript = collect($shell->scripts)
+            ->first(
+                static fn (string $script): bool => str_contains($script, 'probe_unit'),
+            ) ?? '';
+
+        expect($probeScript)
+            ->toContain('actual_environment=')
+            ->toContain("grep -E '^Environment='")
+            ->and($observed)
+            ->toMatchArray([
+                'config_exists' => true,
+                'config_matches' => false,
+                'restart_policy_matches' => true,
+                'environment_matches' => false,
+            ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_environment_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'process.runtime_unit_mismatch'))
+            ->toBeNull();
+
+        \Illuminate\Support\Facades\File::deleteDirectory($root);
+    });
+
+    it('keeps matching Environment multisets green for app-owned systemd units', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Systemd,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+        $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
+        $node = $app->node;
+        $expectedUnit = $renderer->render($node, $app, $process);
+        $runtimeUnit = $renderer->unitName($app, $process);
+        $canonicalPath = $renderer->unitPath($runtimeUnit);
+
+        $root = sys_get_temp_dir().'/orbit-process-probe-env-app-'.bin2hex(random_bytes(6));
+        $unitPath = "{$root}/{$runtimeUnit}.service";
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($root);
+        \Illuminate\Support\Facades\File::put($unitPath, $expectedUnit);
+
+        $shell = new ProcessesProbeExecutingSystemdRemoteShell(
+            unitPathMap: [$canonicalPath => $unitPath],
+        );
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
+        $observed = $snapshot->get('vite')['runtime_units'][$runtimeUnit] ?? null;
+
+        expect($observed)
+            ->toMatchArray([
+                'config_exists' => true,
+                'config_matches' => true,
+                'restart_policy_matches' => true,
+                'environment_matches' => true,
+            ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_environment_mismatch'))->toBeNull();
+
+        \Illuminate\Support\Facades\File::deleteDirectory($root);
     });
 });
 
@@ -1835,6 +1948,101 @@ function processFor(Project $app, array $overrides = []): Process
             'sort_order' => 1,
             ...$overrides,
         ]);
+}
+
+/**
+ * Executes real systemd probe scripts against fixture unit paths so environment
+ * multiset matching is proven end-to-end, not only via canned probe rows.
+ */
+final class ProcessesProbeExecutingSystemdRemoteShell implements RemoteShell, RunsInternalCommands
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  array<string, string>  $unitPathMap  canonical unit path => fixture path
+     */
+    public function __construct(
+        private array $unitPathMap,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if (str_contains($script, 'probe_unit')) {
+            foreach ($this->unitPathMap as $canonicalPath => $fixturePath) {
+                $script = str_replace($canonicalPath, $fixturePath, $script);
+            }
+
+            $process = new \Symfony\Component\Process\Process(['/bin/bash', '-c', $script]);
+            $process->run();
+
+            return new RemoteShellResult(
+                exitCode: (int) $process->getExitCode(),
+                stdout: $process->getOutput(),
+                stderr: $process->getErrorOutput(),
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName === 'internal:runtime-backend:probe') {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'available' => true,
+                    'exit_code' => 0,
+                    'output' => 'systemd OK',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if ($commandName === 'internal:tool:run-script') {
+            $payload = json_decode(
+                (string) ($transportOptions['input'] ?? ''),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+            $result = $this->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => ['data' => [
+                        'exit_code' => $result->exitCode,
+                        'stdout' => $result->stdout,
+                        'stderr' => $result->stderr,
+                        'duration_ms' => $result->durationMs,
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: $result->durationMs,
+            );
+        }
+
+        return $this->run(
+            $node,
+            implode(' ', [
+                $commandName,
+                ...array_map(static fn (mixed $argument): string => escapeshellarg((string) $argument), $arguments),
+            ]),
+            $transportOptions,
+        );
+    }
 }
 
 final class ProcessesProbeRecordingRemoteShell implements RemoteShell, RunsInternalCommands
