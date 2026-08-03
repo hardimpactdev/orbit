@@ -556,11 +556,16 @@ it('prepares managed agent runtime user and CLI access before product proof on a
 
     $joined = implode("\n", $commands());
     $launcher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $agentBake = strpos($joined, 'orbit:internal:bake-agent-node');
     $agentUserEnsure = strpos($joined, 'LocalAgentUserEnsure');
     $agentAclEnsure = strpos($joined, 'LocalAgentAclEnsure');
     $agentCli = strpos($joined, 'sudo -n -u agent -H env');
 
+    // LocalAgentAclEnsure requires config.json (stage=config_acl). Bake writes
+    // agent node config, so readiness must run after bake-agent-node.
     expect($launcher)
+        ->toBeInt()
+        ->and($agentBake)
         ->toBeInt()
         ->and($agentUserEnsure)
         ->toBeInt()
@@ -569,7 +574,11 @@ it('prepares managed agent runtime user and CLI access before product proof on a
         ->and($agentCli)
         ->toBeInt()
         ->and($launcher)
+        ->toBeLessThan($agentBake)
+        ->and($agentBake)
         ->toBeLessThan($agentUserEnsure)
+        ->and($agentUserEnsure)
+        ->toBeLessThan($agentAclEnsure)
         ->and($joined)
         ->toContain("incus exec 'clone-agent'")
         ->toContain('/home/agent/.local/bin/orbit');

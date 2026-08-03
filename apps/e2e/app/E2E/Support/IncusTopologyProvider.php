@@ -804,13 +804,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             ));
         }
 
-        if (isset($instances['agent'])) {
-            $timer->measure('agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
-                $instances,
-                $timer,
-            ));
-        }
-
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances, $timer));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances, $timer));
         $startGatewayApiBeforeBake = $options->startGatewayApi && isset($instances['gateway'])
@@ -829,6 +822,17 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $timer,
             $startGatewayApiBeforeBake,
         ));
+
+        // Agent user/ACL ensure requires /home/orbit/.config/orbit/config.json
+        // (LocalAgentAclEnsure stage=config_acl). That file is written by agent
+        // bake/retarget, so readiness must run after retarget — not before.
+        if (isset($instances['agent'])) {
+            $timer->measure('agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                $instances,
+                $timer,
+            ));
+        }
+
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config, $timer));
 
         return $primaryUsers;
@@ -1012,13 +1016,6 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 ));
             }
 
-            if (isset($instances['agent'])) {
-                $cycleTimer->measure('reset.agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
-                    $instances,
-                    $cycleTimer,
-                ));
-            }
-
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances, $cycleTimer));
             $cycleTimer->measure('reset.gateway-ssh-access', fn () => $this->seedGatewaySshAccess(
                 $instances,
@@ -1040,6 +1037,14 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer,
                 $startGatewayApiBeforeBake,
             ));
+
+            if (isset($instances['agent'])) {
+                $cycleTimer->measure('reset.agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                    $instances,
+                    $cycleTimer,
+                ));
+            }
+
             $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes(
                 $instances,
                 $this->config,

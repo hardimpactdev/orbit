@@ -196,6 +196,38 @@ it('fails closed when required config.json ACL fails', function (): void {
         ->toThrow(RuntimeException::class, 'stage=config_acl');
 });
 
+it('fails closed when required config.json is missing before setfacl', function (): void {
+    $setfaclConfigCalls = 0;
+
+    $ensure = new LocalAgentAclEnsure(
+        directoryExists: static fn (string $path): bool => true,
+        pathExists: static fn (string $path): bool => $path === '/home/orbit/.local/bin/orbit',
+        runner: function (array $command) use (&$setfaclConfigCalls): Process {
+            $line = implode(' ', $command);
+
+            if ($line === 'setfacl --version') {
+                return process_with_exit_code(0);
+            }
+
+            if ($line === 'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json') {
+                $setfaclConfigCalls++;
+
+                return process_with_exit_code(0);
+            }
+
+            return process_with_exit_code(0);
+        },
+    );
+
+    expect(fn () => $ensure->ensure())
+        ->toThrow(
+            RuntimeException::class,
+            'stage=config_acl). Required path is missing: /home/orbit/.config/orbit/config.json',
+        )
+        ->and($setfaclConfigCalls)
+        ->toBe(0);
+});
+
 function process_with_exit_code(int $exitCode): Process
 {
     return new class($exitCode) extends Process {

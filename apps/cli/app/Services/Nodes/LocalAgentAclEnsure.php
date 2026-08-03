@@ -163,6 +163,14 @@ final readonly class LocalAgentAclEnsure
      */
     private function applyConfigAcls(): array
     {
+        foreach (self::REQUIRED_CONFIG_PATHS as $path) {
+            if (! $this->pathExists($path)) {
+                throw new RuntimeException(
+                    "Could not ensure Orbit agent runtime ACLs (stage=config_acl). Required path is missing: {$path}",
+                );
+            }
+        }
+
         $configAcl = $this->run([
             'sudo',
             'setfacl',

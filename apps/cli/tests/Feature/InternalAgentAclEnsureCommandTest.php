@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Nodes\LocalAgentAclEnsure;
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -9,6 +10,15 @@ use Orbit\Core\Security\OperationTokenSigner;
 describe('internal agent acl ensure command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        // Host workstations rarely have production agent paths; control
+        // path existence while still executing real setfacl argv via PATH fakes.
+        app()->instance(LocalAgentAclEnsure::class, new LocalAgentAclEnsure(
+            directoryExists: static fn (string $path): bool => ! str_starts_with($path, '/home/orbit/orbit'),
+            pathExists: static fn (string $path): bool => match ($path) {
+                '/home/orbit/.config/orbit/config.json', '/home/orbit/.local/bin/orbit' => true,
+                default => false,
+            },
+        ));
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
@@ -18,6 +28,7 @@ describe('internal agent acl ensure command', function (): void {
 
     afterEach(function (): void {
         putenv('PATH='.($_ENV['ORBIT_AGENT_ACL_ORIGINAL_PATH'] ?? ''));
+        app()->forgetInstance(LocalAgentAclEnsure::class);
 
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-agent-acl-bin-*');
 
