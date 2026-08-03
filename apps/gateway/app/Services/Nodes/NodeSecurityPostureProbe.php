@@ -181,18 +181,38 @@ final readonly class NodeSecurityPostureProbe
                     'throw' => false,
                 ],
             );
-        } catch (Throwable) {
-            return [];
+        } catch (Throwable $exception) {
+            return [
+                $this->postureProbeFailed(
+                    $node,
+                    reason: 'exception',
+                    error: $exception->getMessage(),
+                ),
+            ];
         }
 
         if (! $result->successful()) {
-            return [];
+            return [
+                $this->postureProbeFailed(
+                    $node,
+                    reason: 'non_success',
+                    error: $this->summarizeDiagnostic($result->stderr !== '' ? $result->stderr : $result->stdout),
+                    exitCode: $result->exitCode,
+                ),
+            ];
         }
 
         $posture = $this->successData($result->stdout);
 
         if ($posture === []) {
-            return [];
+            return [
+                $this->postureProbeFailed(
+                    $node,
+                    reason: 'malformed_payload',
+                    error: 'empty or malformed posture probe payload',
+                    exitCode: $result->exitCode,
+                ),
+            ];
         }
 
         $checks = [
@@ -225,6 +245,45 @@ final readonly class NodeSecurityPostureProbe
         return $drift;
     }
 
+    private function postureProbeFailed(
+        Node $node,
+        string $reason,
+        string $error,
+        ?int $exitCode = null,
+    ): DriftEntry {
+        $detail = [
+            'reason' => $reason,
+            'error' => $this->summarizeDiagnostic($error),
+        ];
+
+        if ($exitCode !== null) {
+            $detail['exit_code'] = $exitCode;
+        }
+
+        return new DriftEntry(
+            family: 'node',
+            key: 'node.security.posture_probe_failed',
+            kind: DriftKind::Unverifiable,
+            summary: "Node {$node->name} security posture could not be inspected.",
+            detail: $detail,
+        );
+    }
+
+    private function summarizeDiagnostic(string $value): string
+    {
+        $normalized = trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+
+        if ($normalized === '') {
+            return 'probe failed';
+        }
+
+        if (strlen($normalized) > 240) {
+            return substr($normalized, 0, 237).'...';
+        }
+
+        return $normalized;
+    }
+
     private function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RunsInternalCommands::class);
@@ -246,6 +305,11 @@ final readonly class NodeSecurityPostureProbe
             return [];
         }
 
+        // Failure envelopes must never be read as empty healthy success data.
+        if (array_key_exists('error', $payload)) {
+            return [];
+        }
+
         if (! array_key_exists('success', $payload) || ! is_array($payload['success'])) {
             return [];
         }
@@ -257,6 +321,10 @@ final readonly class NodeSecurityPostureProbe
         }
 
         $data = $success['data'];
+
+        if ($data === []) {
+            return [];
+        }
 
         foreach (array_keys($data) as $key) {
             if (! is_string($key)) {

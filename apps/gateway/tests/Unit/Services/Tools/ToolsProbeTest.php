@@ -1625,6 +1625,154 @@ describe('ToolsProbe', function (): void {
             ),
         );
     });
+
+    it('reports unverifiable agent runtime when inspection raises', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                throw new RuntimeException('agent runtime unavailable');
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail)
+            ->toMatchArray([
+                'tool' => 'openclaw',
+                'reason' => 'exception',
+                'error' => 'agent runtime unavailable',
+            ]);
+    });
+
+    it('reports unverifiable agent runtime when inspection returns non-success', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 3,
+                    stdout: '',
+                    stderr: 'id: agent: no such user',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail)
+            ->toMatchArray([
+                'reason' => 'non_success',
+                'error' => 'id: agent: no such user',
+                'exit_code' => 3,
+            ]);
+    });
+
+    it('reports unverifiable agent runtime when inspection payload is empty or malformed', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '{not-valid',
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail['reason'] ?? null)
+            ->toBe('malformed_payload');
+    });
+
+    it('reports unverifiable agent runtime for failure JSON envelopes with exit zero', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: json_encode([
+                        'error' => [
+                            'code' => 'probe_failed',
+                            'message' => 'runtime probe refused',
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_user_missing'))
+            ->toBeNull();
+    });
 });
 
 final readonly class ToolsProbeScriptExecutor implements RunsInternalCommands

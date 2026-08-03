@@ -391,14 +391,15 @@ final class DoctorFixController implements Loggable
         ?string $key,
         DoctorTargetScope $scope,
     ): array {
-        $probe = $runner->probe($target, $families, $key, scope: $scope);
         $actions = $runner->apply($target, $mode, $issues);
 
-        if ($runner->restoreRequiresVerification($mode, $key, $probe)) {
-            return $runner->finalizeRestore($target, $families, $key, $scope, $actions);
-        }
-
-        return $runner->finalize($probe, $mode, $actions);
+        return $runner->finalizeResolution(
+            $target,
+            $mode,
+            $actions,
+            $families,
+            new DoctorRunRequest($key, dryRun: false, scope: $scope),
+        );
     }
 
     private function resolveTarget(

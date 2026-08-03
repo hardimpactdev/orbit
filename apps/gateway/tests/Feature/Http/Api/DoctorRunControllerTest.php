@@ -1169,6 +1169,72 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
 
+    it('applies selected issues through doctor fix and treats post-mutation re-probe as authoritative', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-selected-1', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'expected_version' => '2.9',
+        ]);
+        // Selected-issues path skips the pre-apply probe: mutation first, then
+        // finalizeResolution re-probes. Keep the post-mutation observation divergent
+        // so the response cannot claim health from the completed action receipt alone.
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            '',
+            perRouteStdouts: [
+                // Apply/update mutation succeeds.
+                '',
+                // Re-probe still observes the mismatched version.
+                "/usr/bin/caddy\t2.8.4\tstopped\n",
+            ],
+        ));
+        bind_tool_script_dispatcher_to_remote_shell();
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'restore',
+                'families' => ['tool'],
+                'node' => 'app-selected-1',
+                'key' => 'tool.version_mismatch',
+                'issues' => [[
+                    'family' => 'tool',
+                    'node' => 'app-selected-1',
+                    'key' => 'tool.version_mismatch',
+                    'kind' => 'divergent',
+                    'restorable' => true,
+                    'summary' => 'Tool caddy version differs from gateway intent.',
+                    'detail' => [
+                        'tool' => 'caddy',
+                        'expected_version' => '2.9',
+                        'observed_version' => '2.8.4',
+                    ],
+                ]],
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'restore')
+            ->assertJsonPath('success.data.doctor.scope.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.scope.families', ['tool'])
+            ->assertJsonPath('success.data.doctor.scope.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.actions.0.family', 'tool')
+            ->assertJsonPath('success.data.doctor.actions.0.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.actions.0.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'completed')
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.issues.0.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.issues.0.family', 'tool');
+    });
+
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);

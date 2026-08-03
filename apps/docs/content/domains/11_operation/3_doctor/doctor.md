@@ -137,6 +137,13 @@ The gateway authorizes each run against the resolved target node. Verify mode
 requires `doctor:verify`; resolution actions require `doctor:restore` or
 `doctor:adopt` for the selected direction.
 
+After every real non-dry-run restore or adopt mutation, Doctor re-probes the
+same selected node, families, key, and target scope. The fresh observation is
+authoritative: an action receipt that says completed, created, or updated never
+hides remaining drift or produces a healthy result while issues remain. Probe
+errors are Unverifiable findings and also prevent healthy. Dry-run and verify
+do not apply mutations or re-probe for resolution verification.
+
 On supported macOS Agent-eligible nodes, a restore or adopt action that needs
 protected local work may trigger the OS privilege prompt through the
 node-local Orbit Agent. V1 has no separate Orbit approval UI or pending/approve

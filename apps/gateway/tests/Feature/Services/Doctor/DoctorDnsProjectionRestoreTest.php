@@ -102,17 +102,9 @@ it('marks a completed tool DNS action failed when live runtime drift remains aft
     $runner = app(DoctorReportRunner::class);
     $probe = $runner->probe($gateway, families: ['tool'], key: 'tool.dns_base_config_mismatch');
 
-    expect($runner->restoreRequiresVerification(
-        'restore',
-        'tool.dns_base_config_mismatch',
-        $probe,
-    ))->toBeTrue();
-
-    $report = $runner->finalizeRestore(
+    $report = $runner->finalizeResolution(
         $gateway,
-        ['tool'],
-        'tool.dns_base_config_mismatch',
-        \App\Data\Doctor\DoctorTargetScope::none(),
+        'restore',
         [[
             'family' => 'tool',
             'node' => 'gateway',
@@ -122,6 +114,8 @@ it('marks a completed tool DNS action failed when live runtime drift remains aft
             'summary' => 'Restored DNS base configuration.',
             'details' => [],
         ]],
+        families: ['tool'],
+        request: new \App\Data\Doctor\DoctorRunRequest(key: 'tool.dns_base_config_mismatch'),
     );
 
     expect($report['healthy'])

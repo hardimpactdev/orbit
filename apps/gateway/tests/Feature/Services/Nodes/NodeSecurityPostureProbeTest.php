@@ -170,6 +170,143 @@ it('reports remote node security drift from the posture script', function (): vo
     ));
 });
 
+it('reports unverifiable posture when the remote probe raises', function (): void {
+    $node = node_security_posture_managed_node();
+    $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            throw new RuntimeException('agent transport exploded');
+        }
+    };
+
+    $drift = new NodeSecurityPostureProbe(localExecutor: $executor)->diff($node);
+    $issue = collect($drift)->first(
+        fn (DriftEntry $entry): bool => $entry->key === 'node.security.posture_probe_failed',
+    );
+
+    expect($issue)
+        ->not
+        ->toBeNull()
+        ->and($issue?->kind)
+        ->toBe(\App\Enums\DriftKind::Unverifiable)
+        ->and($issue?->detail)
+        ->toMatchArray([
+            'reason' => 'exception',
+            'error' => 'agent transport exploded',
+        ]);
+});
+
+it('reports unverifiable posture when the remote probe returns non-success', function (): void {
+    $node = node_security_posture_managed_node();
+    $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            return new RemoteShellResult(
+                exitCode: 7,
+                stdout: '',
+                stderr: "permission denied reading sshd\n",
+                durationMs: 1,
+            );
+        }
+    };
+
+    $drift = new NodeSecurityPostureProbe(localExecutor: $executor)->diff($node);
+    $issue = collect($drift)->first(
+        fn (DriftEntry $entry): bool => $entry->key === 'node.security.posture_probe_failed',
+    );
+
+    expect($issue)
+        ->not
+        ->toBeNull()
+        ->and($issue?->kind)
+        ->toBe(\App\Enums\DriftKind::Unverifiable)
+        ->and($issue?->detail)
+        ->toMatchArray([
+            'reason' => 'non_success',
+            'error' => 'permission denied reading sshd',
+            'exit_code' => 7,
+        ]);
+});
+
+it('reports unverifiable posture when the remote probe payload is empty or malformed', function (): void {
+    $node = node_security_posture_managed_node();
+    $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: 'not-json',
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+    };
+
+    $drift = new NodeSecurityPostureProbe(localExecutor: $executor)->diff($node);
+    $issue = collect($drift)->first(
+        fn (DriftEntry $entry): bool => $entry->key === 'node.security.posture_probe_failed',
+    );
+
+    expect($issue)
+        ->not
+        ->toBeNull()
+        ->and($issue?->kind)
+        ->toBe(\App\Enums\DriftKind::Unverifiable)
+        ->and($issue?->detail['reason'] ?? null)
+        ->toBe('malformed_payload');
+});
+
+it('reports unverifiable posture for failure JSON envelopes with exit zero', function (): void {
+    $node = node_security_posture_managed_node();
+    $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'error' => [
+                        'code' => 'probe_failed',
+                        'message' => 'posture script refused',
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+    };
+
+    $drift = new NodeSecurityPostureProbe(localExecutor: $executor)->diff($node);
+    $issue = collect($drift)->first(
+        fn (DriftEntry $entry): bool => $entry->key === 'node.security.posture_probe_failed',
+    );
+
+    expect($issue)
+        ->not->toBeNull()->and($issue?->kind)->toBe(\App\Enums\DriftKind::Unverifiable)->and(
+            collect($drift)->pluck('key')->all(),
+        )
+        ->not->toContain('node.security.sshd_config');
+});
+
 it('never scans target SSH while snapshotting or adopting node security posture', function (): void {
     $node = Node::factory()->create([
         'host' => '203.0.113.44',
@@ -192,6 +329,46 @@ it('never scans target SSH while snapshotting or adopting node security posture'
         ->toBe([]);
     Process::assertNothingRan();
 });
+
+function node_security_posture_managed_node(): Node
+{
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'platform' => 'ubuntu_24-04',
+            'status' => NodeStatus::Active,
+            'wireguard_address' => '10.44.0.84',
+            'user' => 'orbit',
+            'host_key_type' => 'ssh-ed25519',
+            'host_key_public' => 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests',
+            'host_key_fingerprint' => 'SHA256:test',
+            'host_key_pin_mode' => 'verified',
+            'host_key_pinned_at' => now(),
+        ]);
+    FirewallRule::factory()->create([
+        'node_id' => $node->id,
+        'address_family' => 'v4',
+        'owner' => 'node-security',
+        'protected' => true,
+        'port' => '22',
+        'action' => 'deny',
+        'direction' => 'incoming',
+        'interface' => 'public',
+    ]);
+    FirewallRule::factory()->create([
+        'node_id' => $node->id,
+        'address_family' => 'v6',
+        'owner' => 'node-security',
+        'protected' => true,
+        'port' => '22',
+        'action' => 'deny',
+        'direction' => 'incoming',
+        'interface' => 'public',
+    ]);
+
+    return $node;
+}
 
 /**
  * @param  array<string, mixed>  $data

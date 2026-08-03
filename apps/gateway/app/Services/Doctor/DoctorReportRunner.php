@@ -1211,80 +1211,59 @@ final readonly class DoctorReportRunner
             ];
         }
 
-        if ($this->restoreRequiresVerification($mode, $key, $probe)) {
-            return $this->finalizeRestore($node, $families, $key, $scope, $actions);
+        if (in_array($mode, ['restore', 'adopt'], true)) {
+            // No mutation receipts: the first probe is already current. Re-probe only
+            // when apply/adopt produced any action (including skipped/unsupported).
+            if ($actions === []) {
+                return $this->finalize($probe, $mode, $actions);
+            }
+
+            return $this->finalizeResolution(
+                $node,
+                $mode,
+                $actions,
+                $families,
+                new DoctorRunRequest($key, dryRun: false, scope: $scope),
+            );
         }
 
         return $this->finalize($probe, $mode, $actions);
     }
 
     /**
-     * @param  list<string>  $families
+     * Re-probe the selected scope after a real restore/adopt mutation and treat
+     * the fresh observation as authoritative for remaining issues and health.
+     *
      * @param  list<array<string, mixed>>  $actions
+     * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    public function finalizeRestore(
+    public function finalizeResolution(
         Node $node,
-        array $families,
-        ?string $key,
-        DoctorTargetScope $scope,
+        string $mode,
         array $actions,
+        array $families = [],
+        ?DoctorRunRequest $request = null,
     ): array {
-        $probe = $this->probe($node, $families, $key, scope: $scope);
+        $request ??= DoctorRunRequest::none();
+        $probe = $this->probe(
+            $node,
+            $families,
+            $request->key,
+            scope: $request->targetScope(),
+        );
+        $freshIssues = $this->issuesFromProbe($probe);
+        // Fresh observation decides remaining issues for every resolution mode.
+        // Richer per-family failure annotations are restore-only and never hide issues.
+        $annotatedActions = $mode === 'restore'
+            ? $this->annotateRestoreActionsWithRemainingDrift($actions, $freshIssues)
+            : $actions;
 
         return $this->finalize(
-            $probe,
-            'restore',
-            $this->markVerifiedRestoreActionsWithRemainingDriftAsFailed(
-                $actions,
-                $this->issuesFromProbe($probe),
-            ),
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $probe
-     */
-    public function restoreRequiresVerification(string $mode, ?string $key, array $probe): bool
-    {
-        if ($mode !== 'restore') {
-            return false;
-        }
-
-        if ($key === 'node.updates') {
-            return true;
-        }
-
-        $scope = is_array($probe['scope'] ?? null) ? $probe['scope'] : [];
-        $families = is_array($scope['families'] ?? null) ? $scope['families'] : [];
-
-        if (in_array('proxy', $families, true)) {
-            return true;
-        }
-
-        if (is_string($key) && in_array($key, self::VERIFIED_WEBSOCKET_RESTORE_KEYS, true)) {
-            return true;
-        }
-
-        if ($key === 'node.dns_mapping_mismatch') {
-            return true;
-        }
-
-        if (is_string($key) && in_array($key, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)) {
-            return true;
-        }
-
-        return array_any(
-            $this->issuesFromProbe($probe),
-            fn (array $issue): bool => (
-                ($issue['key'] ?? null) === 'node.dns_mapping_mismatch'
-                || in_array($issue['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)
-                || in_array(
-                    $issue['key'] ?? null,
-                    self::VERIFIED_WEBSOCKET_RESTORE_KEYS,
-                    true,
-                )
-            ),
+            probe: $probe,
+            mode: $mode,
+            actions: $annotatedActions,
+            authoritativeObservation: true,
         );
     }
 
@@ -1369,13 +1348,13 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'node',
                         $exception,
@@ -1412,13 +1391,13 @@ final readonly class DoctorReportRunner
                         $advance,
                     );
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'app',
                         $exception,
@@ -1455,13 +1434,13 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'workspace',
                         $exception,
@@ -1515,13 +1494,13 @@ final readonly class DoctorReportRunner
 
                     $advance();
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'process',
                         $exception,
@@ -1557,13 +1536,13 @@ final readonly class DoctorReportRunner
                 function (callable $advance) use ($node, $proxyRoutes, $scope, &$issues): void {
                     $this->probeProxyFamily($node, $proxyRoutes, $scope, $issues, $advance);
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'proxy',
                         $exception,
@@ -1598,13 +1577,13 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'firewall_rule',
                         $exception,
@@ -1673,13 +1652,13 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'tool',
                         $exception,
@@ -1732,13 +1711,13 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'schedule',
                         $exception,
@@ -1773,13 +1752,13 @@ final readonly class DoctorReportRunner
 
                     $advance();
                 },
-                function (RemoteShellFailed $exception) use (
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
                     &$issues,
                     $familyIssueOffset,
                     $onFamilyProgress,
                 ): void {
-                    $this->appendFamilyRemoteShellFailure(
+                    $this->appendFamilyProbeFailure(
                         $node,
                         'database_connection',
                         $exception,
@@ -1910,6 +1889,34 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
+    private function familyProbeFailedIssue(
+        Node $node,
+        string $family,
+        string $key,
+        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
+        string $summary,
+    ): array {
+        $detail = [
+            'error' => $exception->getMessage(),
+        ];
+
+        if ($exception instanceof RemoteShellFailed) {
+            $detail['exit_code'] = $exception->result->exitCode;
+        }
+
+        return $this->annotateIssue([
+            'family' => $family,
+            'node' => $node->name,
+            'key' => $key,
+            'kind' => DriftKind::Unverifiable->value,
+            'summary' => $summary,
+            'detail' => $detail,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function remoteShellProbeFailedIssue(
         Node $node,
         string $family,
@@ -1917,17 +1924,7 @@ final readonly class DoctorReportRunner
         RemoteShellFailed $exception,
         string $summary,
     ): array {
-        return $this->annotateIssue([
-            'family' => $family,
-            'node' => $node->name,
-            'key' => $key,
-            'kind' => DriftKind::Unverifiable->value,
-            'summary' => $summary,
-            'detail' => [
-                'error' => $exception->getMessage(),
-                'exit_code' => $exception->result->exitCode,
-            ],
-        ]);
+        return $this->familyProbeFailedIssue($node, $family, $key, $exception, $summary);
     }
 
     /**
@@ -2303,26 +2300,26 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  callable(callable(): void): void  $runner
-     * @param  (callable(RemoteShellFailed): void)|null  $onRemoteShellFailed
+     * @param  (callable(RemoteShellFailed|RemoteLocalExecutorTransportFailed): void)|null  $onFamilyProbeFailed
      */
     private function runFamilyCheckPlan(
         ?callable $onFamilyProgress,
         string $family,
         int $total,
         callable $runner,
-        ?callable $onRemoteShellFailed = null,
+        ?callable $onFamilyProbeFailed = null,
     ): void {
         if ($total === 0) {
             $this->reportFamilyProgress($onFamilyProgress, $family, 'running');
 
             try {
                 $runner(static function (): void {});
-            } catch (RemoteShellFailed $exception) {
-                if ($onRemoteShellFailed === null) {
+            } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
+                if ($onFamilyProbeFailed === null) {
                     throw $exception;
                 }
 
-                $onRemoteShellFailed($exception);
+                $onFamilyProbeFailed($exception);
             }
 
             return;
@@ -2361,22 +2358,22 @@ final readonly class DoctorReportRunner
 
         try {
             $runner($advance);
-        } catch (RemoteShellFailed $exception) {
-            if ($onRemoteShellFailed === null) {
+        } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
+            if ($onFamilyProbeFailed === null) {
                 throw $exception;
             }
 
-            $onRemoteShellFailed($exception);
+            $onFamilyProbeFailed($exception);
         }
     }
 
     /**
      * @param  list<array<string, mixed>>  $issues
      */
-    private function appendFamilyRemoteShellFailure(
+    private function appendFamilyProbeFailure(
         Node $node,
         string $family,
-        RemoteShellFailed $exception,
+        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
         array &$issues,
         int $familyIssueOffset,
     ): void {
@@ -2390,7 +2387,7 @@ final readonly class DoctorReportRunner
             return;
         }
 
-        $issues[] = $this->remoteShellProbeFailedIssue(
+        $issues[] = $this->familyProbeFailedIssue(
             node: $node,
             family: $family,
             key: $family === 'proxy' ? 'proxy.node_probe_failed' : "{$family}.remote_shell_probe_failed",
@@ -2506,11 +2503,19 @@ final readonly class DoctorReportRunner
      * @param  list<array<string, mixed>>  $actions
      * @return array<string, mixed>
      */
-    public function finalize(array $probe, string $mode, array $actions, bool $dryRun = false): array
-    {
+    public function finalize(
+        array $probe,
+        string $mode,
+        array $actions,
+        bool $dryRun = false,
+        bool $authoritativeObservation = false,
+    ): array {
         $issues = $probe['issues'] ?? [];
         $issues = is_array($issues) ? array_values(array_filter($issues, is_array(...))) : [];
-        $remainingIssues = $this->remainingIssues($issues, $actions);
+        /** @var list<array<string, mixed>> $remainingIssues */
+        $remainingIssues = $authoritativeObservation
+            ? $issues
+            : $this->remainingIssues($issues, $actions);
         $summary = $this->summary($mode, $remainingIssues, $actions);
 
         $result = [
@@ -4235,10 +4240,6 @@ final readonly class DoctorReportRunner
      */
     private function applyAppIssue(Node $node, string $key, array $detail): ?array
     {
-        if ($key === 'app.runtime_config_probe_failed') {
-            return $this->handleAppRuntimeConfigProbeFailed($node);
-        }
-
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
 
         if ($appName === null) {
@@ -4313,64 +4314,6 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
-    }
-
-    /**
-     * Re-probe the managed runtime config directory after a permission/probe
-     * failure. If the probe now succeeds the drift clears; if it still fails
-     * the doctor run emits the probe-failed drift again so the operator can
-     * investigate the underlying daemon/permission issue.
-     *
-     * @return array<string, mixed>
-     */
-    private function handleAppRuntimeConfigProbeFailed(Node $node): array
-    {
-        try {
-            $probe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_config_probe_failed',
-                'key' => 'app.runtime_config_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to re-probe managed runtime config directory on {$node->name}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        if ($probe->status === NodeRuntimeConfigsProbeStatus::Error) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_config_probe_failed',
-                'key' => 'app.runtime_config_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Managed runtime config directory probe still failing on {$node->name}.",
-                'details' => [
-                    'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                    'error' => $probe->error,
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'app',
-            'node' => $node->name,
-            'code' => 'app.runtime_config_probe_failed',
-            'key' => 'app.runtime_config_probe_failed',
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Re-probed managed runtime config directory on {$node->name}.",
-            'details' => [
-                'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                'status' => $probe->status->value,
-            ],
-        ];
     }
 
     /**
@@ -5012,7 +4955,6 @@ final readonly class DoctorReportRunner
             'app.runtime_config_missing',
             'app.runtime_config_mismatch',
             'app.runtime_config_extra',
-            'app.runtime_config_probe_failed',
             'app.security.system_user',
             'app.security.fs_permissions',
             'firewall_rule.rule_missing',
@@ -5146,18 +5088,22 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * Enrich restore action receipts when family-specific re-probe still finds
+     * matching drift. Does not filter issues; fresh observation remains
+     * authoritative in finalizeResolution.
+     *
      * @param  list<array<string, mixed>>  $actions
      * @param  list<array<string, mixed>>  $remainingIssues
      * @return list<array<string, mixed>>
      */
-    private function markVerifiedRestoreActionsWithRemainingDriftAsFailed(
+    private function annotateRestoreActionsWithRemainingDrift(
         array $actions,
         array $remainingIssues,
     ): array {
-        $verifiedActions = [];
+        $annotatedActions = [];
 
         foreach ($actions as $action) {
-            $verifiedActions[] = $this->verifyCompletedDnsToolAction(
+            $annotatedActions[] = $this->verifyCompletedDnsToolAction(
                 $this->verifyCompletedWebSocketAction(
                     $this->verifyCompletedNodeDnsAction(
                         $this->verifyCompletedProxyAction($action, $remainingIssues),
@@ -5169,7 +5115,7 @@ final readonly class DoctorReportRunner
             );
         }
 
-        return $verifiedActions;
+        return $annotatedActions;
     }
 
     /**

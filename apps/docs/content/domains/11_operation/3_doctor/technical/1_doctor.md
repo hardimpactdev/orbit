@@ -162,8 +162,19 @@ an authorization concern, not repairable drift in that record.
 - After the mode completes with remaining issues, return a drift failure.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
-- In dry-run mode, record planned actions with `status=planned`, leave issues unresolved, and return command success because no mutation was attempted.
-- A family probe error prevents a healthy result.
+- After every real non-dry-run `restore` or `adopt` mutation, re-probe the same
+  selected node/families/key/target scope before classifying the result.
+- That fresh observation is authoritative. An earlier action receipt with
+  `status=completed`, `created`, or `updated` must not remove freshly observed
+  remaining drift or allow `healthy=true` while issues remain.
+- Restore may attach richer per-family action annotations (for example proxy,
+  WebSocket, or DNS verification summaries) that mark matching actions as
+  failed when drift remains. Those annotations never hide fresh issues.
+- In dry-run mode, record planned actions with `status=planned`, leave issues unresolved, and return command success because no mutation was attempted. Dry-run and verify must not apply fixers/adopters or re-probe for resolution verification.
+- A family probe error prevents a healthy result. Remote-shell failures and
+  agent-push or local-executor transport exceptions both count: the failed
+  family emits an Unverifiable `*.probe_failed` issue (or a family-specific
+  equivalent), and later families continue for the same target.
 - Exception: a family contract may define more specific recoverable behavior for that family's probe errors.
 
 ### Scope Boundaries
@@ -175,7 +186,8 @@ an authorization concern, not repairable drift in that record.
 - Create new fleet membership, projects, instances, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.
-- Hide remaining drift after a failed restore/adopt action.
+- Hide remaining drift after a restore/adopt action receipt, including when the
+  action reports completed, created, or updated.
 
 Successful update commands are not doctor convergence; `doctor` must run its own selected family probes before reporting a healthy result.
 

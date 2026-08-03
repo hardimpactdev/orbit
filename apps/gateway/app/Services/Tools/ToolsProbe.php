@@ -1641,42 +1641,112 @@ final readonly class ToolsProbe
                     'throw' => false,
                 ],
             );
-            $data = $this->successData($result->stdout);
+        } catch (Throwable $exception) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'exception',
+                    error: $exception->getMessage(),
+                ),
+            ];
+        }
 
-            if (($data['runtime_user'] ?? null) !== true) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'tool.agent_user_missing',
-                        kind: DriftKind::Missing,
-                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
-                        detail: [
-                            'tool' => $tool->name,
-                            'node' => $tool->node->name,
-                        ],
-                    ),
-                ];
-            }
+        if (! $result->successful()) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'non_success',
+                    error: $this->summarizeDiagnostic($result->stderr !== '' ? $result->stderr : $result->stdout),
+                    exitCode: $result->exitCode,
+                ),
+            ];
+        }
 
-            if (($data['orbit_cli'] ?? null) !== true) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'tool.agent_orbit_cli_inaccessible',
-                        kind: DriftKind::Divergent,
-                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
-                        detail: [
-                            'tool' => $tool->name,
-                            'node' => $tool->node->name,
-                        ],
-                    ),
-                ];
-            }
-        } catch (Throwable) {
-            return [];
+        $data = $this->successData($result->stdout);
+
+        if ($data === []) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'malformed_payload',
+                    error: 'empty or malformed agent runtime probe payload',
+                    exitCode: $result->exitCode,
+                ),
+            ];
+        }
+
+        if (($data['runtime_user'] ?? null) !== true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_user_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                    ],
+                ),
+            ];
+        }
+
+        if (($data['orbit_cli'] ?? null) !== true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_orbit_cli_inaccessible',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                    ],
+                ),
+            ];
         }
 
         return [];
+    }
+
+    private function agentRuntimeProbeFailed(
+        NodeTool $tool,
+        string $reason,
+        string $error,
+        ?int $exitCode = null,
+    ): DriftEntry {
+        $detail = [
+            'tool' => $tool->name,
+            'node' => $tool->node?->name,
+            'reason' => $reason,
+            'error' => $this->summarizeDiagnostic($error),
+        ];
+
+        if ($exitCode !== null) {
+            $detail['exit_code'] = $exitCode;
+        }
+
+        return new DriftEntry(
+            family: $this->key(),
+            key: 'tool.agent_runtime_probe_failed',
+            kind: DriftKind::Unverifiable,
+            summary: "Tool {$tool->name} agent runtime could not be inspected.",
+            detail: $detail,
+        );
+    }
+
+    private function summarizeDiagnostic(string $value): string
+    {
+        $normalized = trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+
+        if ($normalized === '') {
+            return 'probe failed';
+        }
+
+        if (strlen($normalized) > 240) {
+            return substr($normalized, 0, 237).'...';
+        }
+
+        return $normalized;
     }
 
     private function localExecutor(): RunsInternalCommands
@@ -1705,6 +1775,11 @@ final readonly class ToolsProbe
             return [];
         }
 
+        // Failure envelopes must never be read as empty healthy success data.
+        if (array_key_exists('error', $payload)) {
+            return [];
+        }
+
         /** @var mixed $success */
         $success = $payload['success'] ?? null;
 
@@ -1715,7 +1790,7 @@ final readonly class ToolsProbe
         /** @var mixed $data */
         $data = $success['data'] ?? null;
 
-        if (! is_array($data)) {
+        if (! is_array($data) || $data === []) {
             return [];
         }
 

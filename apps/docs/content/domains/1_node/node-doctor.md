@@ -256,6 +256,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
 | `node.security.home_perms` | Managed home is weaker than owner `0700`-equivalent posture. Linux may keep managed Agent traversal ACL `u:agent:--x` (mask `--x`); broader ACLs or group/world access remain findings. |
+| `node.security.posture_probe_failed` | The remote node security posture probe raised, returned non-success, or produced an empty/malformed payload, so posture drift is unverifiable for this run. |
 | `node.updates_config_missing` | A supported update driver found that `unattended-upgrades` or required apt auto-upgrade config is absent. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_config_mismatch` | A supported update driver found apt auto-upgrade config that differs from Orbit's expected policy. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_dry_run_failed` | A supported update driver found that `sudo unattended-upgrade --dry-run` failed. The issue object uses `key=node.updates` and this value as `code`. |
@@ -298,6 +299,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
 `node.runtime_missing`, `node.security.runtime_user`,
+`node.security.posture_probe_failed`,
 `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
 

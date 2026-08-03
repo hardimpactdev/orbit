@@ -390,7 +390,7 @@ fleet failures are Orbit-handled command failures.
 - Run `doctor --family=<family>` after updates to verify convergence for a specific family.
 - A remote update failure may leave a node on a different Orbit version.
 - Such a version mismatch creates node-family drift.
-- Node doctor owns any later reachability or readiness diagnosis once its contract is converted in this repo.
+- Node doctor owns later reachability or readiness diagnosis for those nodes.
 
 ## Activity Logging
 
