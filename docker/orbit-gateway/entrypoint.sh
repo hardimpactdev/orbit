@@ -18,17 +18,113 @@ read_env_value() {
 set_env_value() {
     local key="${1}"
     local value="${2}"
-    local escaped_value="${value//\\/\\\\}"
-
-    escaped_value="${escaped_value//&/\\&}"
+    local tmp
 
     if grep -qE "^${key}=" "$env_path"; then
-        sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$env_path"
+        tmp="$(mktemp)"
+        awk -F= -v key="$key" -v value="$value" '
+            $1 == key {
+                print key "=" value
+                next
+            }
+            { print }
+        ' "$env_path" > "$tmp"
+        mv "$tmp" "$env_path"
 
         return
     fi
 
     printf '%s=%s\n' "$key" "$value" >> "$env_path"
+}
+
+#
+# Resolve numeric ownership for the bind-mounted gateway config root.
+#
+# Production Swarm mounts host /home read-only at ${ORBIT_HOST_PATH_PREFIX}/home
+# and sets ORBIT_HOST_PATH_PREFIX. Config roots live at <home>/.config/orbit, so
+# the host install user's uid:gid is taken from the host view of that home path.
+# Never use the image's orbit username/uid for host bind mounts: image uid 999
+# maps to an unrelated host account and breaks host CLI access.
+#
+# Fail closed when a host path prefix is configured but identity cannot be
+# resolved. Without a host path prefix (image-local / dev), fall back to the
+# image orbit user when present.
+#
+resolve_config_root_owner() {
+    local host_prefix="${ORBIT_HOST_PATH_PREFIX:-}"
+    local home_dir
+    local host_identity_path
+    local owner
+
+    host_prefix="${host_prefix%/}"
+
+    if [ -n "$host_prefix" ]; then
+        if [[ "$host_prefix" != /* ]] || [[ "$host_prefix" == *'..'* ]]; then
+            echo "Gateway host path prefix is invalid." >&2
+
+            return 1
+        fi
+
+        case "$config_root" in
+            */.config/orbit)
+                home_dir="${config_root%/.config/orbit}"
+                ;;
+            *)
+                home_dir="$(dirname -- "$config_root")"
+                ;;
+        esac
+
+        if [[ "$home_dir" != /* ]]; then
+            echo "Unable to resolve host ownership for gateway config root." >&2
+
+            return 1
+        fi
+
+        host_identity_path="${host_prefix}${home_dir}"
+
+        if [ ! -d "$host_identity_path" ]; then
+            echo "Unable to resolve host ownership for gateway config root at ${host_identity_path}." >&2
+
+            return 1
+        fi
+
+        owner="$(stat -c '%u:%g' "$host_identity_path" 2>/dev/null || true)"
+
+        # BSD stat fallback for local macOS fixture runs; Linux containers use GNU stat.
+        if [[ ! "$owner" =~ ^[0-9]+:[0-9]+$ ]]; then
+            owner="$(stat -f '%u:%g' "$host_identity_path" 2>/dev/null || true)"
+        fi
+
+        if [[ ! "$owner" =~ ^[0-9]+:[0-9]+$ ]]; then
+            echo "Unable to resolve host ownership for gateway config root at ${host_identity_path}." >&2
+
+            return 1
+        fi
+
+        printf '%s\n' "$owner"
+
+        return 0
+    fi
+
+    if id -u orbit >/dev/null 2>&1; then
+        printf '%s:%s\n' "$(id -u orbit)" "$(id -g orbit)"
+
+        return 0
+    fi
+
+    return 0
+}
+
+apply_config_root_ownership() {
+    local owner
+
+    owner="$(resolve_config_root_owner)" || return 1
+
+    if [ -z "$owner" ]; then
+        return 0
+    fi
+
+    chown -R "$owner" "$config_root"
 }
 
 ensure_gateway_state() {
@@ -61,9 +157,7 @@ ensure_gateway_state() {
     set_env_value "DB_JOURNAL_MODE" "${DB_JOURNAL_MODE:-wal}"
     set_env_value "DB_SYNCHRONOUS" "${DB_SYNCHRONOUS:-NORMAL}"
 
-    if id orbit >/dev/null 2>&1; then
-        chown -R orbit:orbit "$config_root"
-    fi
+    apply_config_root_ownership
 
     if [ -z "$(read_env_value APP_KEY)" ]; then
         (cd "$app_root" && php artisan key:generate --force --no-interaction >/dev/null)
