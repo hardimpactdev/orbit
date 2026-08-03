@@ -605,8 +605,8 @@ describe('agent tool fixes', function (): void {
             'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
-            'source_hash' => toolsFixerAgentRouteSourceHash($node, 'hermes'),
-            'config' => toolsFixerAgentRouteConfig('hermes'),
+            'source_hash' => toolsFixerAgentRouteSourceHash($node, tool: 'hermes'),
+            'config' => toolsFixerAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $fixer = new ToolsFixer(
@@ -644,7 +644,7 @@ describe('agent tool fixes', function (): void {
             'domain' => 'hermes.agent',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => toolsFixerAgentRouteConfig('hermes'),
+            'config' => toolsFixerAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $fixer = new ToolsFixer(

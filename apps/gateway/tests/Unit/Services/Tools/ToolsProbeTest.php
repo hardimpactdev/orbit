@@ -783,7 +783,7 @@ describe('ToolsProbe', function (): void {
         $binary = '/home/agent/.hermes/bin/hermes';
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'hermes']);
-        $catalog = toolsProbeOwnerScopedCatalog('hermes', [
+        $catalog = toolsProbeOwnerScopedCatalog(slug: 'hermes', metadata: [
             'binary' => $binary,
             'binary_as_user' => 'agent',
             'version_command' => "sudo -u agent -H bash -lc '{$binary} --version'",
@@ -1764,8 +1764,8 @@ describe('ToolsProbe', function (): void {
             'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
-            'source_hash' => toolsProbeAgentRouteSourceHash($node, 'hermes'),
-            'config' => toolsProbeAgentRouteConfig('hermes'),
+            'source_hash' => toolsProbeAgentRouteSourceHash($node, tool: 'hermes'),
+            'config' => toolsProbeAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
@@ -1805,7 +1805,7 @@ describe('ToolsProbe', function (): void {
             'owner_type' => 'tool',
             'kind' => 'upstream',
             'source_hash' => str_repeat('a', 64),
-            'config' => toolsProbeAgentRouteConfig('hermes'),
+            'config' => toolsProbeAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));

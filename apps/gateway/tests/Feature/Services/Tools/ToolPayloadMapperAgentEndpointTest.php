@@ -68,6 +68,6 @@ it('does not require persisted endpoint copies for agent tools', function (): vo
 });
 
 it('does not register openclaw as a supported agent tool endpoint', function (): void {
-    expect(app(\App\Services\Tools\ToolCatalog::class)->supports('openclaw'))
+    expect(app(\App\Services\Tools\ToolCatalog::class)->supports(tool: 'openclaw'))
         ->toBeFalse();
 });

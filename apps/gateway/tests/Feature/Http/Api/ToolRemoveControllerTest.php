@@ -410,8 +410,10 @@ describe('ToolRemoveController', function (): void {
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        expect(app(\App\Services\Tools\ToolCatalog::class)->supports('openclaw'))->toBeFalse()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())->toBeFalse();
+        expect(app(\App\Services\Tools\ToolCatalog::class)->supports(tool: 'openclaw'))
+            ->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+            ->toBeFalse();
 
         $response = test()->call(
             'DELETE',

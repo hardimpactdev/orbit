@@ -26268,11 +26268,6 @@ code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
-[[issues]]
-file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'openclaw'` should be passed as a named argument for clarity."
-count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
@@ -26400,11 +26395,6 @@ code = "literal-named-argument"
 message = "Literal argument `'0644'` should be passed as a named argument for clarity."
 count = 5
 
-[[issues]]
-file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'openclaw'` should be passed as a named argument for clarity."
-count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"

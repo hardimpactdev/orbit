@@ -7470,11 +7470,6 @@ code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 2
 
-[[issues]]
-file = "app/Tools/OpenClawTool.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
 
 [[issues]]
 file = "app/Tools/OpenCodeCliTool.php"
