@@ -130,6 +130,136 @@ function toolsProbeCapabilityStdout(string $path, string $version = '', string $
     return implode("\t", [$path, $version, $state, '', '', '', '', '', '', ''])."\n";
 }
 
+/**
+ * Absolute path that does not exist on the test host so bare `[ -x "$binary" ]` fails.
+ */
+function toolsProbeInaccessibleOwnerBinaryPath(): string
+{
+    return '/home/agent/.openclaw/bin/openclaw-owner-probe-'.bin2hex(random_bytes(4));
+}
+
+/**
+ * Install a PATH-first fake `sudo` that only supports owner-scoped probe shapes.
+ *
+ * @param  array{allow_user?: string, test_x_ok?: bool, binary?: string, version_line?: string}  $config
+ * @return array{dir: string, path_prefix: string}
+ */
+function toolsProbeInstallFakeSudo(array $config = []): array
+{
+    $dir = sys_get_temp_dir().'/orbit-fake-sudo-'.bin2hex(random_bytes(8));
+    mkdir($dir, 0700, true);
+
+    $allowUser = $config['allow_user'] ?? 'agent';
+    $testXOk = $config['test_x_ok'] ?? true ? '1' : '0';
+    $binary = $config['binary'] ?? '';
+    $versionLine = $config['version_line'] ?? 'OpenClaw 2026.7.1-2 (owner-probe)';
+
+    $script = <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        user=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -u)
+                    user="${2:-}"
+                    shift 2
+                    ;;
+                -H|-n|-S|-k|-E|-A)
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -*)
+                    shift
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        expected_user="${ORBIT_FAKE_SUDO_ALLOW_USER:-agent}"
+        if [ "$user" != "$expected_user" ]; then
+            printf 'fake-sudo: unexpected user %s\n' "$user" >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = "test" ] && [ "${2:-}" = "-x" ]; then
+            target="${3:-}"
+            if [ "${ORBIT_FAKE_SUDO_TEST_X_OK:-1}" != "1" ]; then
+                exit 1
+            fi
+            if [ -n "${ORBIT_FAKE_SUDO_BINARY:-}" ] && [ "$target" != "${ORBIT_FAKE_SUDO_BINARY}" ]; then
+                exit 1
+            fi
+            if [ -z "$target" ]; then
+                exit 1
+            fi
+            exit 0
+        fi
+
+        if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-lc" ]; then
+            cmd="${3:-}"
+            case "$cmd" in
+                *--version*)
+                    printf '%s\n' "${ORBIT_FAKE_SUDO_VERSION_LINE:-OpenClaw 1.0.0}"
+                    exit 0
+                    ;;
+            esac
+            exit 0
+        fi
+
+        printf 'fake-sudo: unsupported argv: %s\n' "$*" >&2
+        exit 1
+        BASH;
+
+    $path = $dir.'/sudo';
+    file_put_contents($path, $script);
+    chmod($path, 0755);
+
+    return [
+        'dir' => $dir,
+        'path_prefix' => $dir,
+        'env' => [
+            'ORBIT_FAKE_SUDO_ALLOW_USER' => $allowUser,
+            'ORBIT_FAKE_SUDO_TEST_X_OK' => $testXOk,
+            'ORBIT_FAKE_SUDO_BINARY' => $binary,
+            'ORBIT_FAKE_SUDO_VERSION_LINE' => $versionLine,
+        ],
+    ];
+}
+
+/**
+ * @param  array{binary: string, binary_as_user?: string, version_command?: string}  $metadata
+ */
+function toolsProbeOwnerScopedCatalog(string $slug, array $metadata): ToolCatalog
+{
+    return new ToolCatalog(new ToolDefinitionRegistry([
+        new class($slug, $metadata) extends BaseTool {
+            /**
+             * @param  array{binary: string, binary_as_user?: string, version_command?: string}  $metadata
+             */
+            public function __construct(
+                private string $toolSlug,
+                private array $metadata,
+            ) {}
+
+            public function slug(): string
+            {
+                return $this->toolSlug;
+            }
+
+            public function probeMetadata(): array
+            {
+                return $this->metadata;
+            }
+        },
+    ]));
+}
+
 function toolsProbeDockerProviderStdout(
     string $path,
     string $version = 'Docker version 27.0.0',
@@ -517,6 +647,167 @@ describe('ToolsProbe', function (): void {
             ->toMatchArray([
                 'installed' => false,
             ]);
+    });
+
+    it('observes owner-scoped absolute binaries via sudo -u test -x in single capability probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $version = 'OpenClaw 2026.7.1-2 (owner-probe-single)';
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => true,
+            'binary' => $binary,
+            'version_line' => $version,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $shell = new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']);
+        $probe = toolsProbeWithRemoteShell($shell, $catalog);
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($snapshot->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => $binary,
+                'version' => $version,
+            ]);
+    });
+
+    it('marks owner-scoped absolute binaries absent when sudo -u test -x fails in single probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => false,
+            'binary' => $binary,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($snapshot->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
+    it('observes owner-scoped absolute binaries via sudo -u test -x in batch capability probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $version = 'OpenClaw 2026.7.1-2 (owner-probe-batch)';
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => true,
+            'binary' => $binary,
+            'version_line' => $version,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshots = $probe->introspectMany([$tool]);
+
+        expect($snapshots['owner-probe-tool']->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => $binary,
+                'version' => $version,
+            ]);
+    });
+
+    it('marks owner-scoped absolute binaries absent when sudo -u test -x fails in batch probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => false,
+            'binary' => $binary,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshots = $probe->introspectMany([$tool]);
+
+        expect($snapshots['owner-probe-tool']->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
+    it('emits owner-scoped test -x for absolute binaries with binary_as_user in single and batch scripts', function (): void {
+        $binary = '/home/agent/.openclaw/bin/openclaw';
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'openclaw']);
+        $catalog = toolsProbeOwnerScopedCatalog('openclaw', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => "sudo -u agent -H bash -lc '{$binary} --version'",
+        ]);
+
+        $singleShell = new RecordingToolsProbeRemoteShell(exitCode: 1, stdout: '');
+        toolsProbeWithRemoteShell($singleShell, $catalog)->introspect($tool);
+
+        expect($singleShell->script)
+            ->toContain('# orbit-tool-probe:capability')
+            ->toContain('binary_as_user=')
+            ->toContain('sudo -u')
+            ->toContain('test -x')
+            ->toContain($binary);
+
+        $batchShell = new RecordingToolsProbeRemoteShell;
+        toolsProbeWithRemoteShell($batchShell, $catalog)->introspectMany([$tool]);
+
+        expect($batchShell->script)
+            ->toContain('# orbit-tool-probe:capability-batch')
+            ->toContain('binary_as_user=')
+            ->toContain('sudo -u')
+            ->toContain('test -x')
+            ->toContain($binary);
+    });
+
+    it('keeps bare absolute [ -x ] when binary_as_user is absent', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'bare-abs-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('bare-abs-tool', [
+            'binary' => '/usr/local/bin/example-tool',
+            'version_command' => '/usr/local/bin/example-tool --version',
+        ]);
+        $shell = new RecordingToolsProbeRemoteShell(exitCode: 1, stdout: '');
+        toolsProbeWithRemoteShell($shell, $catalog)->introspect($tool);
+
+        expect($shell->script)
+            ->toContain('[ -x "$binary" ]')
+            ->and($shell->script)
+            ->not->toMatch('/binary_as_user=\'[a-z]/');
     });
 
     it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
@@ -1906,6 +2197,40 @@ final class ExecutingToolsProbeRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $result = Process::run($script);
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode(),
+            stdout: $result->output(),
+            stderr: $result->errorOutput(),
+            durationMs: 1,
+        );
+    }
+}
+
+final class PathPrefixedExecutingToolsProbeRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, string>  $env
+     */
+    public function __construct(
+        private string $pathPrefix,
+        private array $env = [],
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $path = $this->pathPrefix.':'.(getenv('PATH') ?: '/usr/bin:/bin:/usr/sbin:/sbin');
+        $lines = ['export PATH='.escapeshellarg($path)];
+
+        foreach ($this->env as $key => $value) {
+            $lines[] = 'export '.escapeshellarg($key).'='.escapeshellarg($value);
+        }
+
+        $lines[] = $script;
+        $result = Process::run(['bash', '-c', implode("\n", $lines)]);
 
         return new RemoteShellResult(
             exitCode: $result->exitCode(),

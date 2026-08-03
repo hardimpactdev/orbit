@@ -181,6 +181,9 @@ final class OpenClawTool extends BaseTool
 
         return [
             'binary' => $prefixBin,
+            // Presence must run as agent: agent home is owner-only 0700 and orbit
+            // cannot [ -x ] the local-prefix path. Observed path stays PREFIX_BIN.
+            'binary_as_user' => 'agent',
             'version_command' => 'sudo -u agent -H bash -lc '.ManagedToolShell::singleQuote("{$prefixBin} --version"),
             'update_command' => $this->updateScript(),
         ];

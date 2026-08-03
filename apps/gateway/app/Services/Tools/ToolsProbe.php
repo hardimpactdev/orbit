@@ -74,6 +74,7 @@ final readonly class ToolsProbe
         $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
         $script = $this->toolCapabilityProbeScript(
             binary: $binary,
+            binaryAsUser: $this->binaryAsUserFromMetadata($metadata),
             versionCommand: is_string($versionCommand) ? $versionCommand : '',
             service: is_string($service) ? $service : '',
             providerCommand: is_string($providerCommand) ? $providerCommand : '',
@@ -151,6 +152,7 @@ final readonly class ToolsProbe
             $node = $toolNode;
             $batch[$tool->name] = [
                 'binary' => is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name,
+                'binary_as_user' => $this->binaryAsUserFromMetadata($metadata),
                 'version_command' => is_string($metadata['version_command'] ?? null)
                     ? $metadata['version_command']
                     : '',
@@ -211,6 +213,7 @@ final readonly class ToolsProbe
 
     private function toolCapabilityProbeScript(
         string $binary,
+        string $binaryAsUser,
         string $versionCommand,
         string $service,
         string $providerCommand,
@@ -222,6 +225,7 @@ final readonly class ToolsProbe
             # orbit-tool-probe:capability
 
             binary=__BINARY__
+            binary_as_user=__BINARY_AS_USER__
             version_command=__VERSION_COMMAND__
             service=__SERVICE__
             provider_command=__PROVIDER_COMMAND__
@@ -243,7 +247,11 @@ final readonly class ToolsProbe
 
             case "$binary" in
                 */*)
-                    if [ -x "$binary" ]; then
+                    if [ -n "$binary_as_user" ]; then
+                        if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+                            path=$binary
+                        fi
+                    elif [ -x "$binary" ]; then
                         path=$binary
                     fi
                     ;;
@@ -305,12 +313,21 @@ final readonly class ToolsProbe
 
         return strtr($script, [
             '__BINARY__' => escapeshellarg($binary),
+            '__BINARY_AS_USER__' => escapeshellarg($binaryAsUser),
             '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
             '__SERVICE__' => escapeshellarg($service),
             '__PROVIDER_COMMAND__' => escapeshellarg($providerCommand),
             '__CONTAINER__' => escapeshellarg($container),
             '__EXTRA_PROBE__' => escapeshellarg($extraProbe),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function binaryAsUserFromMetadata(array $metadata): string
+    {
+        return UserScopedCliUsers::normalize($metadata['binary_as_user'] ?? null) ?? '';
     }
 
     /**
@@ -389,7 +406,7 @@ final readonly class ToolsProbe
     }
 
     /**
-     * @param  array<string, array{binary: mixed, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
+     * @param  array<string, array{binary: mixed, binary_as_user: string, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
      */
     private function batchedToolCapabilityProbeScript(array $batch): string
     {
@@ -401,6 +418,7 @@ final readonly class ToolsProbe
             $cases[] = implode("\n", [
                 '        '.escapeshellarg($name).')',
                 '            binary='.escapeshellarg((string) ($tool['binary'] ?? '')),
+                '            binary_as_user='.escapeshellarg($tool['binary_as_user']),
                 '            version_command='.escapeshellarg($tool['version_command']),
                 '            service='.escapeshellarg($tool['service']),
                 '            provider_command='.escapeshellarg($tool['provider_command']),
@@ -432,6 +450,7 @@ final readonly class ToolsProbe
                 fi
 
                 binary=''
+                binary_as_user=''
                 version_command=''
                 service=''
                 provider_command=''
@@ -456,7 +475,11 @@ final readonly class ToolsProbe
 
                 case "$binary" in
                     */*)
-                        if [ -x "$binary" ]; then
+                        if [ -n "$binary_as_user" ]; then
+                            if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+                                path=$binary
+                            fi
+                        elif [ -x "$binary" ]; then
                             path=$binary
                         fi
                         ;;

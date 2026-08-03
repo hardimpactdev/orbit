@@ -61,8 +61,11 @@ it('installs via local-prefix install-cli without agent self-sudo or system Node
         ->not->toContain('npm install -g openclaw')->and($remove)->toContain('rm -rf "${HOME}/.openclaw"')
         ->not->toContain('npm uninstall -g openclaw')->and($tool->probeMetadata())->toMatchArray([
             'binary' => '/home/agent/.openclaw/bin/openclaw',
+            'binary_as_user' => 'agent',
         ])->and($tool->probeMetadata()['version_command'] ?? null)->toContain(
             '/home/agent/.openclaw/bin/openclaw --version',
+        )->and($tool->probeMetadata()['version_command'] ?? null)->toContain(
+            'sudo -u agent',
         );
 });
 
@@ -100,6 +103,7 @@ it('configures secure gateway intent without printing tokens or installing a nat
         ->not->toContain('openclaw config set gateway.auth.token')
         ->not->toContain('openclaw gateway install')->and($tool->probeMetadata())->toMatchArray([
             'binary' => '/home/agent/.openclaw/bin/openclaw',
+            'binary_as_user' => 'agent',
         ])
         ->not->toHaveKey('repair_commands')
         ->not->toHaveKey('service');

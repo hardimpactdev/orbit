@@ -162,9 +162,16 @@ sudo -u agent -H bash -lc 'curl -fsSL --proto "=https" --tlsv1.2 https://opencla
 
 ## Verify Commands
 
-`doctor --family=tool` and `tool:show openclaw` use the local-prefix binary:
+`doctor --family=tool` and `tool:show openclaw --live` observe the local-prefix
+binary as the unprivileged `agent` user. Presence is
+`sudo -u agent -H test -x /home/agent/.openclaw/bin/openclaw` (not an orbit-side
+`[ -x ]` against the owner-only agent home). On success the observed path remains
+the real binary `/home/agent/.openclaw/bin/openclaw` — Orbit does not point probe
+metadata at `sudo` and does not install a world-readable probe-only shim.
+Version uses the same owner-scoped path:
 
 ```bash
+sudo -u agent -H test -x /home/agent/.openclaw/bin/openclaw
 sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw --version'
 sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw doctor'
 sudo -u agent -H bash -lc '/home/agent/.openclaw/bin/openclaw gateway status'

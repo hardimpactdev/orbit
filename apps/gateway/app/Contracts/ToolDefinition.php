@@ -64,6 +64,7 @@ interface ToolDefinition
     /**
      * @return array{
      *     binary?: string,
+     *     binary_as_user?: string,
      *     probe?: string,
      *     images?: list<string>,
      *     version_command?: string,
