@@ -216,17 +216,46 @@ it('passes Docker gateway state environment through the current checkout wrapper
         ->toContain("--env 'SESSION_DRIVER=file'");
 });
 
-it('writes direct CLI gateway config while refreshing current checkout gateway settings', function (): void {
+it('writes direct CLI gateway config from a supplied public root CA without HTTP CA fetch', function (): void {
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'localGatewaySettingsCommand');
+    $rootCaPem = "-----BEGIN CERTIFICATE-----\nTESTROOTCA\n-----END CERTIFICATE-----\n";
+    $caTrust = new \App\E2E\Support\E2ECurrentCheckoutGatewayCaTrust(rootCaPem: $rootCaPem);
 
-    $command = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2', true);
+    $command = $method->invoke(null, '/home/orbit/orbit-current', '10.6.0.2', true, $caTrust);
 
     expect($command)
-        ->toContain('/api/ca/root')
+        ->toContain('TESTROOTCA')
+        ->toContain('-----BEGIN CERTIFICATE-----')
         ->toContain('config.json')
         ->toContain('wireguard_https')
         ->toContain('exit(1)')
+        ->not->toContain('/api/ca/root')
+        ->not->toContain('file_get_contents("http://')
         ->not->toContain('gateway:add');
+});
+
+it('writes gateway-local CLI trust from on-node public root.crt without HTTP CA fetch', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'cliGatewayConfigCommand');
+    $caTrust = \App\E2E\Support\E2ECurrentCheckoutGatewayCaTrust::localGatewayRootCertificate();
+
+    $command = $method->invoke(null, '10.6.0.2', $caTrust);
+
+    expect($command)
+        ->toContain('/.config/orbit/ca/root.crt')
+        ->toContain('config.json')
+        ->toContain('wireguard_https')
+        ->not->toContain('/api/ca/root')
+        ->not->toContain('file_get_contents("http://');
+});
+
+it('rejects private key material when building CLI gateway config from a supplied CA', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'cliGatewayConfigCommand');
+    $caTrust = new \App\E2E\Support\E2ECurrentCheckoutGatewayCaTrust(
+        rootCaPem: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----\n",
+    );
+
+    expect(fn () => $method->invoke(null, '10.6.0.2', $caTrust))
+        ->toThrow(RuntimeException::class, 'private key');
 });
 
 it('prunes stale checkout archive cache tarballs and locks', function (): void {
@@ -374,6 +403,7 @@ it('installs gateway checkout before other roles when roles run concurrently', f
     expect($source)
         ->toContain("in_array('gateway', \$roles, true)")
         ->toContain('Install gateway first')
+        ->toContain('readTopologyGatewayRootCaPem')
         ->and($method->getNumberOfParameters())
         ->toBeGreaterThanOrEqual(3);
 });

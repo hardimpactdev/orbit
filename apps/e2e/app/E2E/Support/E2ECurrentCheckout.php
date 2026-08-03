@@ -54,11 +54,7 @@ final class E2ECurrentCheckout
         if (self::canInstallTopologyRolesConcurrently($topology, $roles, $users)) {
             $paths = self::installTopologyRolesConcurrently($topology, $roles, $users, $timer);
         } else {
-            $paths = [];
-
-            foreach ($roles as $role) {
-                $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
-            }
+            $paths = self::installTopologyRolesSequentially($topology, $roles, $users, $timer);
         }
 
         // Checkout overlay / runtime-state rewrites the home launcher. Final
@@ -76,6 +72,8 @@ final class E2ECurrentCheckout
         string $role,
         array $users,
         ?E2EPhaseTimer $roleTimer,
+        ?string $gatewayRootCaPem = null,
+        bool $useLocalGatewayRootCa = false,
     ): string {
         if (self::$installerForTests !== null) {
             return (self::$installerForTests)($role, $roleTimer ?? new E2EPhaseTimer);
@@ -94,12 +92,14 @@ final class E2ECurrentCheckout
             ): void {
                 self::refreshGatewayHostKeys(
                     $instance,
-                    $user,
                     $topology->sshKeyPair(),
                     $remotePath,
                     $roleTimer,
-                    $hostLauncher,
-                    $sourceMountedCheckout,
+                    [
+                        'user' => $user,
+                        'host_launcher' => $hostLauncher,
+                        'source_mounted' => $sourceMountedCheckout,
+                    ],
                 );
             }
             : null;
@@ -108,24 +108,39 @@ final class E2ECurrentCheckout
         // tests run `orbit` against the gateway API as a self-call to the
         // gateway's own WireGuard IP (routed locally), so the gateway's CLI
         // needs the same ~/.config/orbit gateway entry + CA trust as clients.
-        $refreshLocalGatewaySettings = $topology->gateway() !== null
-            ? function (string $remotePath, bool $sourceMountedCheckout = false) use (
-                $instance,
-                $user,
-                $topology,
-                $roleTimer,
-            ): void {
-                self::refreshLocalGatewaySettings(
+        // Dependent roles receive gateway-derived public root CA PEM from the
+        // harness control path; they must not HTTP-fetch /api/ca/root.
+        $caTrust = match (true) {
+            is_string($gatewayRootCaPem) && $gatewayRootCaPem !== '' => E2ECurrentCheckoutGatewayCaTrust::fromPem(
+                $gatewayRootCaPem,
+            ),
+            $useLocalGatewayRootCa || $role === 'gateway'
+                => E2ECurrentCheckoutGatewayCaTrust::localGatewayRootCertificate(),
+            default => null,
+        };
+        $refreshLocalGatewaySettings =
+            $topology->gateway() !== null && $caTrust instanceof E2ECurrentCheckoutGatewayCaTrust
+                ? function (string $remotePath, bool $sourceMountedCheckout = false) use (
                     $instance,
                     $user,
-                    $topology->sshKeyPair(),
-                    $remotePath,
-                    $topology->gatewayApiIp(),
+                    $topology,
                     $roleTimer,
-                    $sourceMountedCheckout,
-                );
-            }
-            : null;
+                    $caTrust,
+                ): void {
+                    self::runTimed($roleTimer, 'checkout.gateway-settings', fn () => E2ECommand::ssh(
+                        $instance,
+                        $user,
+                        $topology->sshKeyPair(),
+                        self::localGatewaySettingsCommand(
+                            $remotePath,
+                            $topology->gatewayApiIp(),
+                            $sourceMountedCheckout,
+                            $caTrust,
+                        ),
+                        timeoutSeconds: 120,
+                    ));
+                }
+                : null;
         $afterInstall =
             $refreshGatewayHostKeys !== null || $refreshLocalGatewaySettings !== null
                 ? function (string $remotePath, bool $sourceMountedCheckout = false) use (
@@ -206,27 +221,22 @@ final class E2ECurrentCheckout
         array $users,
         ?E2EPhaseTimer $timer,
     ): array {
-        // Operator (and other dependents) fetch the gateway CA during
-        // checkout.gateway-settings. Install gateway first so that endpoint is
-        // ready before dependent roles run in parallel.
-        $paths = [];
-        $parallelRoles = $roles;
-
-        if (in_array('gateway', $roles, true) && count($roles) > 1) {
-            $paths['gateway'] = self::installTopologyRole(
-                $topology,
-                'gateway',
-                $users,
-                $timer?->child('gateway'),
-            );
-            $parallelRoles = array_values(array_filter(
-                $roles,
-                static fn (string $role): bool => $role !== 'gateway',
-            ));
-        }
+        // Install gateway first so its on-node public root CA exists, then read
+        // that PEM over the topology control path and supply it to dependents.
+        // Clients never HTTP-fetch /api/ca/root for pre-trust CLI config.
+        [$paths, $parallelRoles, $gatewayRootCaPem] = self::installGatewayRoleFirstIfNeeded(
+            $topology,
+            $roles,
+            $users,
+            $timer,
+        );
 
         if ($parallelRoles === []) {
             return $paths;
+        }
+
+        if ($gatewayRootCaPem === null && $topology->gateway() !== null) {
+            $gatewayRootCaPem = self::readTopologyGatewayRootCaPem($topology);
         }
 
         $workers = [];
@@ -245,12 +255,25 @@ final class E2ECurrentCheckout
 
                 return [
                     ...$paths,
-                    ...self::installTopologyRolesSequentially($topology, $parallelRoles, $users, $timer),
+                    ...self::installTopologyRolesSequentially(
+                        $topology,
+                        $parallelRoles,
+                        $users,
+                        $timer,
+                        $gatewayRootCaPem,
+                    ),
                 ];
             }
 
             if ($pid === 0) {
-                $exitCode = self::runTopologyRoleInstallWorker($topology, $role, $users, $timer, $resultPath);
+                $exitCode = self::runTopologyRoleInstallWorker(
+                    $topology,
+                    $role,
+                    $users,
+                    $timer,
+                    $resultPath,
+                    $gatewayRootCaPem,
+                );
 
                 if (function_exists('posix_kill')) {
                     posix_kill(getmypid(), SIGKILL);
@@ -281,14 +304,118 @@ final class E2ECurrentCheckout
         array $roles,
         array $users,
         ?E2EPhaseTimer $timer,
+        ?string $gatewayRootCaPem = null,
     ): array {
-        $paths = [];
+        [$paths, $remainingRoles, $resolvedCaPem] = self::installGatewayRoleFirstIfNeeded(
+            $topology,
+            $roles,
+            $users,
+            $timer,
+            $gatewayRootCaPem,
+        );
 
-        foreach ($roles as $role) {
-            $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
+        if ($resolvedCaPem === null && $remainingRoles !== [] && $topology->gateway() !== null) {
+            $resolvedCaPem = self::readTopologyGatewayRootCaPem($topology);
+        }
+
+        foreach ($remainingRoles as $role) {
+            $paths[$role] = self::installTopologyRole(
+                $topology,
+                $role,
+                $users,
+                $timer?->child($role),
+                $resolvedCaPem,
+            );
         }
 
         return $paths;
+    }
+
+    /**
+     * Install gateway first when requested so public root CA is available, then
+     * return remaining roles and the control-plane-derived CA PEM.
+     *
+     * @param  list<string>  $roles
+     * @param  array<string, string>  $users
+     * @return array{0: array<string, string>, 1: list<string>, 2: ?string}
+     */
+    private static function installGatewayRoleFirstIfNeeded(
+        E2ETopologyLease $topology,
+        array $roles,
+        array $users,
+        ?E2EPhaseTimer $timer,
+        ?string $gatewayRootCaPem = null,
+    ): array {
+        $paths = [];
+        $remainingRoles = $roles;
+
+        if (in_array('gateway', $roles, true)) {
+            // Install gateway first so dependent checkout.gateway-settings can
+            // consume the established public root CA over the control path.
+            $paths['gateway'] = self::installTopologyRole(
+                $topology,
+                'gateway',
+                $users,
+                $timer?->child('gateway'),
+                gatewayRootCaPem: null,
+                useLocalGatewayRootCa: true,
+            );
+            $gatewayRootCaPem = self::readTopologyGatewayRootCaPem($topology);
+            $remainingRoles = array_values(array_filter(
+                $roles,
+                static fn (string $role): bool => $role !== 'gateway',
+            ));
+        }
+
+        return [$paths, $remainingRoles, $gatewayRootCaPem];
+    }
+
+    /**
+     * Read the gateway public root CA over the topology's trusted control path
+     * (SSH/exec). Never returns private key material.
+     */
+    private static function readTopologyGatewayRootCaPem(E2ETopologyLease $topology): string
+    {
+        [$gateway, $user] = self::topologyRoleTarget($topology, 'gateway', []);
+        $path = self::OrbitConfigRoot.'/ca/root.crt';
+
+        $result = E2ECommand::ssh(
+            $gateway,
+            $user,
+            $topology->sshKeyPair(),
+            'test -r '.escapeshellarg($path).' && cat '.escapeshellarg($path),
+            timeoutSeconds: 60,
+        );
+
+        $pem = trim($result->output());
+
+        if ($pem === '') {
+            throw new RuntimeException(
+                'Could not read public gateway root CA from topology control path: empty response.',
+            );
+        }
+
+        self::assertPublicRootCaPem($pem);
+
+        return $pem."\n";
+    }
+
+    private static function assertPublicRootCaPem(string $pem): void
+    {
+        if (
+            ! str_contains($pem, '-----BEGIN CERTIFICATE-----')
+            || ! str_contains($pem, '-----END CERTIFICATE-----')
+        ) {
+            throw new RuntimeException('Gateway root CA material is not a public certificate PEM.');
+        }
+
+        if (
+            str_contains($pem, 'PRIVATE KEY')
+            || str_contains($pem, 'BEGIN RSA PRIVATE')
+            || str_contains($pem, 'BEGIN EC PRIVATE')
+        ) {
+            throw new RuntimeException('Gateway root CA material must not include private key material.');
+        }
     }
 
     /**
@@ -300,11 +427,18 @@ final class E2ECurrentCheckout
         array $users,
         ?E2EPhaseTimer $timer,
         string $resultPath,
+        ?string $gatewayRootCaPem = null,
     ): int {
         $roleTimer = $timer?->child($role);
 
         try {
-            $path = self::installTopologyRole($topology, $role, $users, $roleTimer);
+            $path = self::installTopologyRole(
+                $topology,
+                $role,
+                $users,
+                $roleTimer,
+                $gatewayRootCaPem,
+            );
 
             file_put_contents($resultPath, serialize([
                 'path' => $path,
@@ -1360,28 +1494,11 @@ final class E2ECurrentCheckout
         );
     }
 
-    private static function refreshLocalGatewaySettings(
-        E2EInstance $instance,
-        string $user,
-        SshKeyPair $keyPair,
-        string $remotePath,
-        string $gatewayApiIp,
-        ?E2EPhaseTimer $timer,
-        bool $sourceMountedCheckout = false,
-    ): void {
-        self::runTimed($timer, 'checkout.gateway-settings', fn () => E2ECommand::ssh(
-            $instance,
-            $user,
-            $keyPair,
-            self::localGatewaySettingsCommand($remotePath, $gatewayApiIp, $sourceMountedCheckout),
-            timeoutSeconds: 120,
-        ));
-    }
-
     private static function localGatewaySettingsCommand(
         string $remotePath,
         string $gatewayApiIp,
-        bool $sourceMountedCheckout = false,
+        bool $sourceMountedCheckout,
+        E2ECurrentCheckoutGatewayCaTrust $caTrust,
     ): string {
         $gatewayUrlValue = var_export("https://{$gatewayApiIp}", true);
         $gatewayApiIpValue = var_export($gatewayApiIp, true);
@@ -1397,11 +1514,11 @@ final class E2ECurrentCheckout
 
         // The gateway-app LocalGatewaySettings write above only configures the
         // gateway application's store. The `orbit` CLI also needs its own
-        // ~/.config/orbit gateway entry with a ca_pem_path. E2E Docker gateway
-        // addresses are dynamic 10.90.x hosts, so the production `gateway:add`
-        // WireGuard-IP validation is intentionally bypassed here by writing the
-        // hermetic test config directly from the gateway's actual root CA.
-        $cliGatewayConfig = self::cliGatewayConfigCommand($gatewayApiIp);
+        // ~/.config/orbit gateway entry with a ca_pem_path. Production
+        // gateway:add WireGuard-IP validation is intentionally bypassed for
+        // hermetic retained checkout by writing config from public root CA PEM
+        // supplied by the harness (or the gateway node's local root.crt).
+        $cliGatewayConfig = self::cliGatewayConfigCommand($gatewayApiIp, $caTrust);
 
         return (
             'cd '
@@ -1419,49 +1536,62 @@ final class E2ECurrentCheckout
         );
     }
 
-    private static function cliGatewayConfigCommand(string $gatewayApiIp): string
-    {
+    /**
+     * Write CLI gateway trust config from an explicit public CA PEM or the
+     * gateway node's local public root.crt. Never HTTP-fetches /api/ca/root.
+     */
+    private static function cliGatewayConfigCommand(
+        string $gatewayApiIp,
+        E2ECurrentCheckoutGatewayCaTrust $caTrust,
+    ): string {
         $gatewayApiIpValue = var_export($gatewayApiIp, true);
-        $php = <<<PHP
-            \$gatewayIp = {$gatewayApiIpValue};
-            \$rootCa = null;
-            \$lastError = null;
+        $rootCaPem = $caTrust->rootCaPem;
 
-            for (\$attempt = 0; \$attempt < 8; \$attempt++) {
-                \$body = @file_get_contents("http://{\$gatewayIp}/api/ca/root", false, stream_context_create([
-                    'http' => ['timeout' => 5],
-                ]));
-
-                if (is_string(\$body) && \$body !== '') {
-                    \$decoded = json_decode(\$body, true);
-                    \$candidate = is_array(\$decoded)
-                        ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
-                        : \$body;
-
-                    if (is_string(\$candidate) && str_starts_with(\$candidate, '{')) {
-                        \$inner = json_decode(\$candidate, true);
-                        \$candidate = is_array(\$inner)
-                            ? (\$inner['success']['data']['root_ca'] ?? \$inner['data']['root_ca'] ?? null)
-                            : null;
+        if (is_string($rootCaPem) && $rootCaPem !== '') {
+            self::assertPublicRootCaPem($rootCaPem);
+            $rootCaValue = var_export($rootCaPem, true);
+            $resolveRootCa = "\$rootCa = {$rootCaValue};";
+        } elseif ($caTrust->useLocalGatewayRootCa) {
+            $configRootValue = var_export(self::OrbitConfigRoot.'/ca/root.crt', true);
+            $resolveRootCa = <<<PHP
+                \$rootCa = null;
+                \$candidates = [
+                    rtrim((string) getenv('HOME'), '/').'/.config/orbit/ca/root.crt',
+                    {$configRootValue},
+                ];
+                foreach (\$candidates as \$candidatePath) {
+                    if (! is_string(\$candidatePath) || \$candidatePath === '' || ! is_readable(\$candidatePath)) {
+                        continue;
                     }
-
+                    \$candidate = file_get_contents(\$candidatePath);
                     if (is_string(\$candidate)
                         && str_contains(\$candidate, '-----BEGIN CERTIFICATE-----')
-                        && str_contains(\$candidate, '-----END CERTIFICATE-----')) {
+                        && str_contains(\$candidate, '-----END CERTIFICATE-----')
+                        && ! str_contains(\$candidate, 'PRIVATE KEY')) {
                         \$rootCa = \$candidate;
                         break;
                     }
-
-                    \$lastError = 'gateway returned invalid CA material';
-                } else {
-                    \$lastError = 'gateway CA endpoint did not respond';
                 }
+                if (! is_string(\$rootCa)) {
+                    fwrite(STDERR, 'Could not read local public gateway root CA from on-node root.crt.'.PHP_EOL);
+                    exit(1);
+                }
+                PHP;
+        } else {
+            throw new RuntimeException(
+                'CLI gateway trust config requires a gateway-derived public root CA PEM or local gateway root.crt.',
+            );
+        }
 
-                sleep(3);
-            }
+        $php = <<<PHP
+            \$gatewayIp = {$gatewayApiIpValue};
+            {$resolveRootCa}
 
-            if (! is_string(\$rootCa)) {
-                fwrite(STDERR, 'Could not fetch gateway root CA: '.(\$lastError ?? 'unknown error').PHP_EOL);
+            if (! is_string(\$rootCa)
+                || ! str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
+                || ! str_contains(\$rootCa, '-----END CERTIFICATE-----')
+                || str_contains(\$rootCa, 'PRIVATE KEY')) {
+                fwrite(STDERR, 'Gateway root CA material is invalid or includes private key material.'.PHP_EOL);
                 exit(1);
             }
 
@@ -1523,15 +1653,20 @@ final class E2ECurrentCheckout
         return 'php -r '.escapeshellarg($php);
     }
 
+    /**
+     * @param  array{user: string, host_launcher: bool, source_mounted: bool}  $options
+     */
     private static function refreshGatewayHostKeys(
         E2EInstance $instance,
-        string $user,
         SshKeyPair $keyPair,
         string $remotePath,
         ?E2EPhaseTimer $timer,
-        bool $hostLauncher = false,
-        bool $sourceMountedCheckout = false,
+        array $options,
     ): void {
+        $user = $options['user'];
+        $hostLauncher = $options['host_launcher'];
+        $sourceMountedCheckout = $options['source_mounted'];
+
         self::runTimed($timer, 'checkout.host-keys', fn () => E2ECommand::ssh(
             $instance,
             $user,
