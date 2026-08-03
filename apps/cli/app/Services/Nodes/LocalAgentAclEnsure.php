@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
+use Closure;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class LocalAgentAclEnsure
 {
     /**
@@ -23,8 +27,8 @@ final readonly class LocalAgentAclEnsure
     ];
 
     /**
-     * Optional legacy/source-checkout paths. Absent entries are skipped so
-     * installed-only nodes converge without requiring a source tree.
+     * Optional legacy/source-checkout paths. Absent or ACL-unsupported entries
+     * are best-effort only and must not fail installed-path repair.
      *
      * @var list<string>
      */
@@ -44,6 +48,17 @@ final readonly class LocalAgentAclEnsure
     private const string REQUIRED_BINARY_PATH = '/home/orbit/.local/bin/orbit';
 
     private const string OPTIONAL_AGENT_BINARY_PATH = '/home/orbit/.local/bin/orbit-agent';
+
+    /**
+     * @param  (Closure(string): bool)|null  $directoryExists
+     * @param  (Closure(string): bool)|null  $pathExists
+     * @param  (Closure(list<string>, int): Process)|null  $runner
+     */
+    public function __construct(
+        private ?Closure $directoryExists = null,
+        private ?Closure $pathExists = null,
+        private ?Closure $runner = null,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -95,29 +110,7 @@ final readonly class LocalAgentAclEnsure
             );
         }
 
-        $optionalDirectoryPaths = [];
-
-        foreach (self::OPTIONAL_DIRECTORY_PATHS as $path) {
-            $optional = $this->run([
-                'sh',
-                '-lc',
-                'if [ -d '
-                    .escapeshellarg($path)
-                    .' ]; then exec sudo setfacl -m u:agent:--x '
-                    .escapeshellarg($path)
-                    .'; fi',
-            ], timeout: 30);
-
-            if (! $optional->isSuccessful()) {
-                throw new RuntimeException(
-                    'Could not ensure Orbit agent runtime ACLs (stage=optional_directory_acl).',
-                );
-            }
-
-            if ($optional->getExitCode() === 0 && is_dir($path)) {
-                $optionalDirectoryPaths[] = $path;
-            }
-        }
+        [$optionalDirectoryPathsApplied, $optionalDirectoryPathsSkipped] = $this->applyOptionalDirectoryAcls();
 
         $configAcl = $this->run([
             'sudo',
@@ -147,30 +140,108 @@ final readonly class LocalAgentAclEnsure
             );
         }
 
-        $agentBinaryAcl = $this->run([
-            'sh',
-            '-lc',
-            'if [ -e '
-                .escapeshellarg(self::OPTIONAL_AGENT_BINARY_PATH)
-                .' ]; then exec sudo setfacl -m u:agent:r-x '
-                .escapeshellarg(self::OPTIONAL_AGENT_BINARY_PATH)
-                .'; fi',
-        ], timeout: 30);
-
-        if (! $agentBinaryAcl->isSuccessful()) {
-            throw new RuntimeException(
-                'Could not ensure Orbit agent runtime ACLs (stage=agent_binary_acl).',
-            );
-        }
+        [$agentBinaryAclExitCode, $optionalAgentBinarySkipped] = $this->applyOptionalAgentBinaryAcl();
 
         return [
             'installed_acl' => $installedAcl,
             'directory_acl_exit_code' => $directoryAcl->getExitCode(),
             'config_acl_exit_code' => $configAcl->getExitCode(),
             'binary_acl_exit_code' => $binaryAcl->getExitCode(),
-            'agent_binary_acl_exit_code' => $agentBinaryAcl->getExitCode(),
-            'optional_directory_paths' => $optionalDirectoryPaths,
+            'agent_binary_acl_exit_code' => $agentBinaryAclExitCode,
+            'optional_directory_paths_applied' => $optionalDirectoryPathsApplied,
+            'optional_directory_paths_skipped' => $optionalDirectoryPathsSkipped,
+            'optional_agent_binary_skipped' => $optionalAgentBinarySkipped,
         ];
+    }
+
+    /**
+     * @return array{0: list<string>, 1: list<array{path: string, reason: string}>}
+     */
+    private function applyOptionalDirectoryAcls(): array
+    {
+        $applied = [];
+        $skipped = [];
+
+        foreach (self::OPTIONAL_DIRECTORY_PATHS as $path) {
+            if (! $this->directoryExists($path)) {
+                $skipped[] = [
+                    'path' => $path,
+                    'reason' => 'absent',
+                ];
+
+                continue;
+            }
+
+            $optional = $this->run([
+                'sudo',
+                'setfacl',
+                '-m',
+                'u:agent:--x',
+                $path,
+            ], timeout: 30);
+
+            if ($optional->isSuccessful()) {
+                $applied[] = $path;
+
+                continue;
+            }
+
+            // Present source/virtiofs mounts may not support ACL; non-fatal.
+            $skipped[] = [
+                'path' => $path,
+                'reason' => 'acl_unsupported',
+            ];
+        }
+
+        return [$applied, $skipped];
+    }
+
+    /**
+     * @return array{0: int, 1: array{path: string, reason: string}|null}
+     */
+    private function applyOptionalAgentBinaryAcl(): array
+    {
+        if (! $this->pathExists(self::OPTIONAL_AGENT_BINARY_PATH)) {
+            return [0, null];
+        }
+
+        $agentBinaryAcl = $this->run([
+            'sudo',
+            'setfacl',
+            '-m',
+            'u:agent:r-x',
+            self::OPTIONAL_AGENT_BINARY_PATH,
+        ], timeout: 30);
+
+        if ($agentBinaryAcl->isSuccessful()) {
+            return [$agentBinaryAcl->getExitCode() ?? 0, null];
+        }
+
+        return [
+            $agentBinaryAcl->getExitCode() ?? 1,
+            [
+                'path' => self::OPTIONAL_AGENT_BINARY_PATH,
+                'reason' => 'acl_unsupported',
+            ],
+        ];
+    }
+
+    private function directoryExists(string $path): bool
+    {
+        if ($this->directoryExists instanceof Closure) {
+            return (bool) ($this->directoryExists)($path);
+        }
+
+        return is_dir($path);
+    }
+
+    private function pathExists(string $path): bool
+    {
+        if ($this->pathExists instanceof Closure) {
+            return (bool) ($this->pathExists)($path);
+        }
+
+        return is_file($path) || is_link($path);
     }
 
     /**
@@ -178,6 +249,10 @@ final readonly class LocalAgentAclEnsure
      */
     private function run(array $command, int $timeout): Process
     {
+        if ($this->runner instanceof Closure) {
+            return ($this->runner)($command, $timeout);
+        }
+
         $process = new Process($command);
         $process->setTimeout($timeout);
         $process->run();

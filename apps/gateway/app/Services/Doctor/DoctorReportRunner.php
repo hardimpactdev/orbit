@@ -57,6 +57,7 @@ use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -2302,9 +2303,6 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  callable(callable(): void): void  $runner
-     */
-    /**
-     * @param  callable(callable(): void): void  $runner
      * @param  (callable(RemoteShellFailed): void)|null  $onRemoteShellFailed
      */
     private function runFamilyCheckPlan(
@@ -2385,11 +2383,7 @@ final readonly class DoctorReportRunner
         $familyIssues = array_slice($issues, $familyIssueOffset);
         $alreadyAttributed = array_any(
             $familyIssues,
-            static fn (array $issue): bool => (
-                str_ends_with((string) ($issue['key'] ?? ''), 'remote_shell_probe_failed')
-                || str_ends_with((string) ($issue['key'] ?? ''), 'node_probe_failed')
-                || str_ends_with((string) ($issue['key'] ?? ''), 'probe_failed')
-            ),
+            static fn (array $issue): bool => str_ends_with((string) ($issue['key'] ?? ''), 'probe_failed'),
         );
 
         if ($alreadyAttributed) {
@@ -3528,7 +3522,9 @@ final readonly class DoctorReportRunner
      */
     private function isSafeOrbitLaunchdExtraUnit(string $runtimeUnit, Node $node, array $detail): bool
     {
-        if (! $this->isSafeOrbitManagedRuntimeUnitIdentity($runtimeUnit)) {
+        // Launchd remove/render asserts ProcessRuntimeUnitName::isValid (max 64).
+        // Do not accept legacy over-length identities that cannot be operated safely.
+        if (! ProcessRuntimeUnitName::isValid($runtimeUnit) || ! str_starts_with($runtimeUnit, 'orbit_')) {
             return false;
         }
 
@@ -3551,7 +3547,7 @@ final readonly class DoctorReportRunner
 
     private function isSafeOrbitManagedRuntimeUnitIdentity(string $runtimeUnit): bool
     {
-        // Orbit-owned process units are orbit_* identities. Allow legacy units
+        // Orbit-owned systemd units are orbit_* identities. Allow legacy units
         // longer than the current 64-char bound so restore can remove them
         // after a rename/bound migration, but never absolute/relative paths.
         if (! str_starts_with($runtimeUnit, 'orbit_')) {

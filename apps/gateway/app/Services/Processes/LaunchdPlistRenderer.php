@@ -162,13 +162,7 @@ final readonly class LaunchdPlistRenderer
 
     private function homeDirectory(Node $node): string
     {
-        $user = is_string($node->user) && $node->user !== '' ? $node->user : 'orbit';
-
-        if (NodeHostPaths::isMacosPlatform($node->platform)) {
-            return $user === 'root' ? '/var/root' : "/Users/{$user}";
-        }
-
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 
     private function xml(string $value): string

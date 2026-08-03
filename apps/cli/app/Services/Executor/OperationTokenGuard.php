@@ -19,6 +19,7 @@ final readonly class OperationTokenGuard
     public function __construct(
         /** @var Closure(): GatewayApiClient */
         private Closure $resolveGateway,
+        private OperationStdinBuffer $stdinBuffer = new OperationStdinBuffer,
     ) {}
 
     public function verify(
@@ -29,6 +30,10 @@ final readonly class OperationTokenGuard
         if ($expectedCommand === '') {
             throw new OperationTokenGuardException;
         }
+
+        // Capture piped stdin before verify so bound input can be hashed and later
+        // re-read by the internal command without an empty stream.
+        $this->stdinBuffer->captureFromProcessStdin();
 
         if (
             $this->trustedExecutionAlreadyAuthorized($compactToken, $expectedCommand)
@@ -78,6 +83,7 @@ final readonly class OperationTokenGuard
      *     argv: list<string>,
      *     cwd?: string,
      *     environment: array<string, string>,
+     *     input?: string,
      *     consume: true,
      * }
      */
@@ -97,6 +103,12 @@ final readonly class OperationTokenGuard
 
         if (is_string($cwd) && $cwd !== '') {
             $payload['cwd'] = $cwd;
+        }
+
+        $input = $this->stdinBuffer->contents();
+
+        if (is_string($input) && $input !== '') {
+            $payload['input'] = $input;
         }
 
         return $payload;

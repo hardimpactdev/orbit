@@ -7,7 +7,6 @@ namespace App\Commands\Internal;
 use App\Services\Tools\LocalToolRunScriptAction;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 use Throwable;
 
 final class ToolRunScriptCommand extends InternalExecutorCommand
@@ -38,7 +37,7 @@ final class ToolRunScriptCommand extends InternalExecutorCommand
      */
     private function readPayload(): array
     {
-        $stdin = $this->stdin();
+        $stdin = $this->internalStdin();
 
         if ($stdin === '') {
             throw new InvalidArgumentException('Tool run payload must be provided on stdin.');
@@ -53,16 +52,5 @@ final class ToolRunScriptCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $payload */
         return $payload;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

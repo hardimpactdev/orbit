@@ -1210,7 +1210,13 @@ final readonly class ProcessesProbe
             return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
         }
 
-        return $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node);
+        try {
+            return $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node);
+        } catch (InvalidArgumentException) {
+            // Inventory may surface identities that fail launchd validity. Do not
+            // throw from the process family probe; leave a non-path label only.
+            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
+        }
     }
 
     /**

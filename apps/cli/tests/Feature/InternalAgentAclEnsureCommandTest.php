@@ -117,7 +117,7 @@ describe('internal agent acl ensure command', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($data['optional_directory_paths'] ?? null)
+            ->and($data['optional_directory_paths_skipped'] ?? null)
             ->toBeArray()
             // Required installed CLI path is always protected.
             ->and($log)
@@ -127,6 +127,24 @@ describe('internal agent acl ensure command', function (): void {
             ->not->toContain(
                 'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config',
             );
+    });
+
+    it('fails closed when required installed-path ACL application fails', function (): void {
+        install_agent_acl_fake_bin(setfaclExitCode: 0, sudoExitCode: 1);
+
+        $exitCode = Artisan::call('internal:agent-acl:ensure', [
+            '--operation-token' => agent_acl_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->not->toBeNull()->and(
+                (string) ($payload['error']['message'] ?? $payload['error']['code'] ?? ''),
+            )->toContain('stage=directory_acl')->and((string) json_encode($payload))
+            ->not->toContain('optional_directory_acl');
     });
 });
 

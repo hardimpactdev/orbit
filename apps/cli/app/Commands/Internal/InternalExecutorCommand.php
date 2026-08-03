@@ -6,8 +6,10 @@ namespace App\Commands\Internal;
 
 use App\Commands\Concerns\EmitsCanonicalEnvelopes;
 use App\Exceptions\OperationTokenGuardException;
+use App\Services\Executor\OperationStdinBuffer;
 use App\Services\Executor\OperationTokenGuard;
 use LaravelZero\Framework\Commands\Command;
+use Symfony\Component\Console\Input\StreamableInputInterface;
 
 /**
  * Abstract base for hidden internal executor commands.
@@ -69,6 +71,31 @@ abstract class InternalExecutorCommand extends Command
         }
 
         return true;
+    }
+
+    /**
+     * Read stdin for internal commands. Prefer the operation-token buffer so
+     * force_remote_host piped input survives token verification.
+     */
+    protected function internalStdin(): string
+    {
+        $buffered = app(OperationStdinBuffer::class)->take();
+
+        if ($buffered !== '') {
+            return $buffered;
+        }
+
+        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
+
+        if (is_resource($stream)) {
+            return (string) stream_get_contents($stream);
+        }
+
+        if (defined('STDIN') && is_resource(STDIN)) {
+            return (string) stream_get_contents(STDIN);
+        }
+
+        return '';
     }
 
     /**

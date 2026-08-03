@@ -206,7 +206,73 @@ describe(RemoteLocalExecutor::class, function (): void {
         }
     });
 
-    it('mints force_remote_host command context matching the host CLI verification payload', function (): void {
+    it('uses the installed host orbit binary for force_remote_host instead of container orbit-cli', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        $previousBinary = config('orbit.local_executor_binary');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        config()->set('orbit.local_executor_binary', '/usr/local/bin/orbit-cli');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-binary-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+            $capturedCommand = null;
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:app-runtime-containers:probe',
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000440',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-binary-ok\n");
+
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$capturedCommand): bool {
+                $command = (string) $process->command;
+                $matches =
+                    str_contains($command, 'internal:app-runtime-containers:probe')
+                    && str_contains($command, '--operation-token=')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '));
+
+                if ($matches) {
+                    $capturedCommand = $command;
+                }
+
+                return $matches;
+            });
+
+            expect($capturedCommand)
+                ->toBeString()
+                ->and($capturedCommand)
+                ->toContain('/home/orbit/.local/bin/orbit')
+                ->and($capturedCommand)
+                ->not->toContain('/usr/local/bin/orbit-cli');
+        } finally {
+            config()->set('orbit.local_executor_binary', $previousBinary);
+
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('mints force_remote_host command context matching the host CLI verification payload including bound input', function (): void {
         $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
         Http::preventStrayRequests();
         ProcessFacade::preventStrayProcesses();
@@ -223,17 +289,25 @@ describe(RemoteLocalExecutor::class, function (): void {
                     ),
                 ),
             );
+            // internal:caddy-config is gateway-allowed and binds JSON stdin.
             $node = remoteLocalExecutorNode(['gateway']);
             $hostHome = '/home/orbit';
             $operationId = '00000000-0000-4000-8000-000000000431';
+            $boundInput = json_encode([
+                'container' => 'orbit-caddy',
+                'action' => 'read-global',
+            ], JSON_THROW_ON_ERROR);
             $capturedCommand = null;
+            $capturedInput = null;
 
             $result = $executor->runInternal(
                 node: $node,
-                commandName: 'internal:wireguard-self-route',
-                arguments: ['10.6.0.2'],
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
                 transportOptions: [
                     'force_remote_host' => true,
+                    'input' => $boundInput,
+                    'bind_input' => true,
                     'metadata' => [
                         'ORBIT_OPERATION_ID' => $operationId,
                     ],
@@ -242,16 +316,17 @@ describe(RemoteLocalExecutor::class, function (): void {
 
             expect($result->stdout)->toBe("gateway-host-context-ok\n");
 
-            ProcessFacade::assertRan(function (PendingProcess $process) use (&$capturedCommand): bool {
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$capturedCommand, &$capturedInput): bool {
                 $command = (string) $process->command;
                 $matches =
-                    str_contains($command, 'internal:wireguard-self-route')
+                    str_contains($command, 'internal:caddy-config')
                     && str_contains($command, '--operation-token=')
                     && ! str_contains($command, 'docker exec -i')
                     && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '));
 
                 if ($matches) {
                     $capturedCommand = $command;
+                    $capturedInput = $process->input;
                 }
 
                 return $matches;
@@ -270,29 +345,28 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ->and($capturedCommand)
                 ->not->toContain('/usr/local/bin/orbit-cli')->and($capturedCommand)
                 ->not->toContain('APP_KEY=')->and($capturedCommand)
-                ->not->toContain('gateway-secret');
+                ->not->toContain('gateway-secret')->and($capturedInput)->toBe($boundInput);
 
             $compactToken = remoteLocalExecutorTokenFromNestedSshCommand((string) $capturedCommand);
             $token = OperationToken::parse($compactToken);
             $hostArgv = new LocalExecutorCommandBuilder()->buildArgv(
                 targetNode: $node,
-                commandName: 'internal:wireguard-self-route',
-                arguments: ['10.6.0.2'],
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
                 options: [],
                 operationToken: $compactToken,
             );
 
-            // Host CLI OperationTokenGuard submits getcwd() plus only allowlisted
-            // env vars present in the remote process. force_remote_host SSH does not
-            // export Process::env to the remote shell, so APP_KEY/ORBIT_CONFIG_PATH
-            // must not be bound into the minted token context for this lane.
+            // Host CLI OperationTokenGuard submits getcwd(), allowlisted env present in
+            // the remote process, and the piped stdin payload. force_remote_host SSH
+            // must mint that exact context (HOME only + bound input, no APP_KEY).
             $hostVerificationContext = OperationTokenCommandContext::fromAgentVerification(
                 argv: $hostArgv,
                 cwd: $hostHome,
                 environment: [
                     'HOME' => $hostHome,
                 ],
-                input: null,
+                input: $boundInput,
                 operationToken: $compactToken,
             );
 

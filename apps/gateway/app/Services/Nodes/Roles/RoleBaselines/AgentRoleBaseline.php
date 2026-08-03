@@ -99,18 +99,10 @@ class AgentRoleBaseline implements RoleBaseline
 
         $stage = $matches[1];
 
-        // Only forward safe stage tokens; never surface raw remote output.
+        // Only forward fatal stages emitted by LocalAgentAclEnsure; optional ACL
+        // skips are non-fatal metadata and never surface here.
         return match ($stage) {
-            'package_index',
-            'acl_package_install',
-            'required_directory_missing',
-            'directory_acl',
-            'required_config_missing',
-            'config_acl',
-            'required_binary_missing',
-            'binary_acl',
-            'agent_binary_acl',
-                => 'stage='.$stage,
+            'package_index', 'acl_package_install', 'directory_acl', 'config_acl', 'binary_acl' => 'stage='.$stage,
             default => null,
         };
     }

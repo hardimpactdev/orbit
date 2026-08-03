@@ -58,8 +58,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   refresh; related-process restart does not run when credentials refresh fails.
 - Reconfigure success output and logs must not include credential field values.
   Operators read credentials through `tool:credentials`.
-- When a related process row exists for the tool, restarts that process after
-  successful reconfigure and (when applicable) successful credential refresh.
+- When a related process row exists for the tool, reconciles that managed process
+  intent to the catalog `relatedProcess()` command and runtime when they differ,
+  then restarts the process after successful reconfigure and (when applicable)
+  successful credential refresh. Success payloads may include
+  `process.command_reconciled=true` when the stored command was updated to the
+  current catalog intent before restart. Credential values are never included.
 - Preserves the expected version.
 - Supplying `--password` for a tool that does not own password reconfiguration
   fails before config, credential, endpoint, or node artifacts are mutated.
@@ -102,4 +106,4 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:reconfigure` stream request forwarding for password payloads, and gateway error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for reconfigure: final complete frame in `--json` mode, canonical stream request shape, human progress rendering, and pre-stream gateway error pass-through. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
-| `apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php` | Gateway `ToolReconfigurer` reconfigure dispatch, post-reconfigure credentialsScript refresh and stored-field replacement, no-script tools, credentials failure/malformed JSON honesty, and related-process restart ordering after successful credential refresh. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php` | Gateway `ToolReconfigurer` reconfigure dispatch, post-reconfigure credentialsScript refresh and stored-field replacement, no-script tools, credentials failure/malformed JSON honesty, related-process command/runtime reconciliation to catalog intent, and restart ordering after successful credential refresh. |
