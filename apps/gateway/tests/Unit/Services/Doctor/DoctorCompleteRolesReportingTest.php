@@ -9,7 +9,6 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use ReflectionMethod;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -36,8 +35,7 @@ it('exposes all active roles in stable order on single-node doctor scope', funct
         familyStatuses: ['node' => 'queued', 'tool' => 'queued'],
     );
 
-    expect($report['scope']['role'])->toBe('agent')
-        ->and($report['scope']['roles'])->toBe(['agent', 'gateway']);
+    expect($report['scope']['role'])->toBe('agent')->and($report['scope']['roles'])->toBe(['agent', 'gateway']);
 });
 
 it('exposes complete roles on fleet node summaries while keeping role=fleet on fleet scope', function (): void {
@@ -61,7 +59,10 @@ it('exposes complete roles on fleet node summaries while keeping role=fleet on f
         'scope' => ['families' => ['node']],
     ]);
 
-    expect($summary['role'])->toBe('app-dev')
-        ->and($summary['roles'])->toBe(['app-dev', 'database'])
-        ->and($summary['node'])->toBe('multi-role-1');
+    expect($summary['role'])
+        ->toBe('app-dev')
+        ->and($summary['roles'])
+        ->toBe(['app-dev', 'database'])
+        ->and($summary['node'])
+        ->toBe('multi-role-1');
 });

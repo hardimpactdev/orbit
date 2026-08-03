@@ -556,26 +556,22 @@ it('prepares managed agent runtime user and CLI access before product proof on a
 
     $joined = implode("\n", $commands());
     $launcher = strpos($joined, '/home/orbit/.local/bin/orbit');
-    $agentUser = strpos($joined, 'useradd --create-home --shell /bin/bash agent');
-    $agentShim = strpos($joined, '/home/agent/.local/bin/orbit');
+    $agentUserEnsure = strpos($joined, 'LocalAgentUserEnsure');
+    $agentAclEnsure = strpos($joined, 'LocalAgentAclEnsure');
     $agentCli = strpos($joined, 'sudo -n -u agent -H env');
-    $agentAcl = strpos($joined, 'setfacl -m u:agent:--x');
 
     expect($launcher)
         ->toBeInt()
-        ->and($agentUser)
+        ->and($agentUserEnsure)
         ->toBeInt()
-        ->and($agentShim)
+        ->and($agentAclEnsure)
         ->toBeInt()
         ->and($agentCli)
         ->toBeInt()
-        ->and($agentAcl)
-        ->toBeInt()
         ->and($launcher)
-        ->toBeLessThan($agentUser)
+        ->toBeLessThan($agentUserEnsure)
         ->and($joined)
         ->toContain("incus exec 'clone-agent'")
-        ->toContain('id -u agent')
         ->toContain('/home/agent/.local/bin/orbit');
 });
 

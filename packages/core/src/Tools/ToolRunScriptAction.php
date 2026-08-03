@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Core\Tools;
 
 /**
- * Canonical tool run-script actions accepted by the gateway-to-CLI
- * `internal:tool:run-script` contract. Gateway dispatchers and CLI payload
- * validation must share this list so a gateway-emitted action cannot be
- * rejected again on the target CLI.
+ * Canonical tool run-script actions for gateway-to-CLI
+ * `internal:tool:run-script`. Gateway dispatch and CLI validation share this list.
  */
 enum ToolRunScriptAction: string
 {
@@ -41,16 +39,5 @@ enum ToolRunScriptAction: string
     public static function isAllowed(string $action): bool
     {
         return self::tryFrom($action) instanceof self;
-    }
-
-    public static function fromString(string $action): self
-    {
-        $resolved = self::tryFrom($action);
-
-        if (! $resolved instanceof self) {
-            throw new \InvalidArgumentException("Tool run payload action '{$action}' is invalid.");
-        }
-
-        return $resolved;
     }
 }

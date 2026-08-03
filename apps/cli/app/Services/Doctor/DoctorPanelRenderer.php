@@ -1336,15 +1336,24 @@ final class DoctorPanelRenderer
             $roles = $node['roles'] ?? null;
 
             if (is_array($roles)) {
-                return array_values(array_filter(
-                    $roles,
-                    static fn (mixed $role): bool => is_string($role) && $role !== '',
-                ));
+                $normalized = [];
+
+                foreach ($roles as $role) {
+                    if (is_string($role) && $role !== '') {
+                        $normalized[] = $role;
+                    }
+                }
+
+                return $normalized;
             }
 
-            $legacy = $node['role'] ?? null;
+            $primaryRole = $node['role'] ?? null;
 
-            return is_string($legacy) && $legacy !== '' && $legacy !== 'fleet' ? [$legacy] : [];
+            return (
+                is_string($primaryRole) && $primaryRole !== '' && $primaryRole !== 'fleet'
+                    ? [$primaryRole]
+                    : []
+            );
         }
 
         return [];

@@ -43,21 +43,25 @@ it('accepts every production ToolScriptDispatcher action literal', function (): 
         // $this->scripts()->run($node, 'tool', 'action', $script)
         // $this->toolScriptDispatcher()->run($node, 'tool', 'action', $script)
         // $this->scriptDispatcher()->run($node, 'tool', 'action', $script)
-        if (preg_match_all(
-            "/(?:scripts|toolScriptDispatcher|scriptDispatcher)\\(\\)->run\\(\\s*[^,]+,\\s*'[^']+',\\s*'([a-z0-9-]+)'/s",
-            $contents,
-            $positional,
-        ) > 0) {
+        if (
+            preg_match_all(
+                "/(?:scripts|toolScriptDispatcher|scriptDispatcher)\\(\\)->run\\(\\s*[^,]+,\\s*'[^']+',\\s*'([a-z0-9-]+)'/s",
+                $contents,
+                $positional,
+            ) > 0
+        ) {
             foreach ($positional[1] as $action) {
                 $dispatched[$action] = true;
             }
         }
 
-        if (preg_match_all(
-            "/scripts->run\\(\\s*[^,]+,\\s*'[^']+',\\s*'([a-z0-9-]+)'/s",
-            $contents,
-            $property,
-        ) > 0) {
+        if (
+            preg_match_all(
+                "/scripts->run\\(\\s*[^,]+,\\s*'[^']+',\\s*'([a-z0-9-]+)'/s",
+                $contents,
+                $property,
+            ) > 0
+        ) {
             foreach ($property[1] as $action) {
                 $dispatched[$action] = true;
             }
@@ -75,7 +79,8 @@ it('accepts every production ToolScriptDispatcher action literal', function (): 
     }
 
     // Fail closed for anything outside the shared contract.
-    expect(ToolRunScriptAction::isAllowed('not-a-dispatched-action'))->toBeFalse()
+    expect(ToolRunScriptAction::isAllowed('not-a-dispatched-action'))
+        ->toBeFalse()
         ->and(ToolRunScriptAction::values())
         ->toContain('preflight')
         ->toContain('probe-php-cli')
@@ -84,8 +89,7 @@ it('accepts every production ToolScriptDispatcher action literal', function (): 
 
 it('rejects unknown actions through ToolScriptDispatcher before transport', function (): void {
     $dispatcher = new ToolScriptDispatcher(
-        new class implements RunsInternalCommands
-        {
+        new class implements RunsInternalCommands {
             public function runInternal(
                 Node $node,
                 string $commandName,

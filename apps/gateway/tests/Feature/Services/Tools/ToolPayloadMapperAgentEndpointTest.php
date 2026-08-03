@@ -50,7 +50,8 @@ it('derives openclaw and hermes consumer https endpoints from catalog and node t
             'kind' => 'https',
             'url' => 'https://openclaw.agent',
             'host' => 'openclaw.agent',
-            'port' => 18789,
+            'port' => 443,
+            'upstream_port' => 18789,
         ]])
         ->and($mapper->toArray($hermes)['endpoints'])
         ->toBe([[
@@ -58,7 +59,8 @@ it('derives openclaw and hermes consumer https endpoints from catalog and node t
             'kind' => 'https',
             'url' => 'https://hermes.agent',
             'host' => 'hermes.agent',
-            'port' => 8080,
+            'port' => 443,
+            'upstream_port' => 8080,
         ]]);
 });
 
@@ -74,6 +76,8 @@ it('does not require persisted endpoint copies for agent tools', function (): vo
 
     $payload = app(ToolPayloadMapper::class)->toArray($tool);
 
-    expect($payload['endpoints'][0]['url'] ?? null)->toBe('https://openclaw.agent')
-        ->and($payload['endpoints'][0]['host'] ?? null)->not->toBe('stale.example');
+    expect($payload['endpoints'][0]['url'] ?? null)
+        ->toBe('https://openclaw.agent')
+        ->and($payload['endpoints'][0]['host'] ?? null)
+        ->not->toBe('stale.example');
 });

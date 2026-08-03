@@ -1900,51 +1900,18 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $script = <<<'SH'
-set -euo pipefail
-
-if ! id -u agent >/dev/null 2>&1; then
-  sudo -n useradd --create-home --shell /bin/bash agent
-fi
-
-sudo -n passwd -l agent >/dev/null 2>&1 || true
-sudo -n install -d -m 0755 -o agent -g agent /home/agent/.local/bin
-
-cat <<'SHIM' | sudo -n tee /home/agent/.local/bin/orbit >/dev/null
-#!/usr/bin/env bash
-set -euo pipefail
-export ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json
-export ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json
-exec /home/orbit/.local/bin/orbit "$@"
-SHIM
-sudo -n chmod 0755 /home/agent/.local/bin/orbit
-sudo -n chown agent:agent /home/agent/.local/bin/orbit
-
-if ! command -v setfacl >/dev/null 2>&1; then
-  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq acl
-fi
-
-sudo -n setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin
-if [ -d /home/orbit/orbit ]; then
-  sudo -n setfacl -m u:agent:--x /home/orbit/orbit /home/orbit/orbit/bin 2>/dev/null || true
-fi
-if [ -f /home/orbit/.config/orbit/config.json ]; then
-  sudo -n setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json
-fi
-if [ -f /home/orbit/.config/orbit/install.json ]; then
-  sudo -n setfacl -m u:agent:r-- /home/orbit/.config/orbit/install.json 2>/dev/null || true
-fi
-if [ -e /home/orbit/.local/bin/orbit ]; then
-  sudo -n setfacl -m u:agent:--x /home/orbit/.local/bin/orbit
-fi
-
-sudo -n -u agent -H env \
-  PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json \
-  ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json \
-  /home/agent/.local/bin/orbit --version --local >/dev/null
-SH;
+        // Reuse LocalAgentUserEnsure / LocalAgentAclEnsure (same services as
+        // internal:agent-user:ensure and internal:agent-acl:ensure).
+        $script = <<<'SH_WRAP'
+            set -euo pipefail
+            cd /home/orbit/orbit/apps/cli
+            php -r 'require "vendor/autoload.php"; (new App\Services\Nodes\LocalAgentUserEnsure)->ensure(); (new App\Services\Nodes\LocalAgentAclEnsure)->ensure();'
+            sudo -n -u agent -H env \
+              PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json \
+              ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json \
+              /home/agent/.local/bin/orbit --version --local >/dev/null
+            SH_WRAP;
 
         IncusParallelHostTasks::run(
             $this->hostFor($instances),

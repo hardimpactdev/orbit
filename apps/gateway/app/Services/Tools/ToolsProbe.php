@@ -13,6 +13,7 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -39,6 +40,8 @@ final readonly class ToolsProbe
         private ?ToolCatalog $catalog = null,
         private ?RunsInternalCommands $localExecutor = null,
         private ?ToolScriptDispatcher $scripts = null,
+        private ?AgentToolProxyRouteIntent $agentToolProxy = null,
+        private ?OrbitCaService $orbitCa = null,
     ) {}
 
     public function key(): string
@@ -1736,26 +1739,22 @@ final readonly class ToolsProbe
     }
 
     /**
-     * End-to-end consumer HTTPS URL check for installed autonomous-agent tools.
-     *
-     * Ownership boundary: tool family owns service readiness and the exact
-     * consumer URL health; proxy family owns route rows, Caddy artifacts, and
-     * TLS material. This check does not invent route restore — details point
-     * operators at `doctor --family=proxy` / `tool:show` for next steps.
-     *
      * @return list<DriftEntry>
      */
     private function checkAgentConsumerUrl(NodeTool $tool, ProbeSnapshot $snapshot): array
     {
         $catalog = $this->catalog ?? app(ToolCatalog::class);
+        $agentToolProxy = $this->agentToolProxy ?? app(AgentToolProxyRouteIntent::class);
+        $orbitCa = $this->orbitCa ?? app(OrbitCaService::class);
 
         if ($tool->expected_state !== 'installed' || $catalog->category($tool->name) !== 'agent') {
             return [];
         }
 
         $tool->loadMissing('node');
+        $node = $tool->node;
 
-        if (! $tool->node instanceof Node) {
+        if (! $node instanceof Node) {
             return [];
         }
 
@@ -1766,22 +1765,42 @@ final readonly class ToolsProbe
             return [];
         }
 
-        $route = app(AgentToolProxyRouteIntent::class)->expectedRoute($tool);
+        $route = $agentToolProxy->expectedRoute($tool);
 
         if ($route === null) {
             return [];
         }
 
         $url = 'https://'.$route->domain;
+        $caPath = $orbitCa->rootCertificatePath();
+
+        if ($caPath === null) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_consumer_url_unreachable',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Tool {$tool->name} consumer URL {$url} could not be verified: Orbit root CA is unavailable.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $node->name,
+                        'expected_url' => $url,
+                        'observed' => 'orbit_root_ca_missing',
+                        'next_command' => "doctor --node={$node->name} --family=proxy",
+                        'ownership' => 'tool-family service readiness; proxy-family owns route rows/TLS',
+                    ],
+                ),
+            ];
+        }
 
         try {
             $response = Http::connectTimeout(3)
                 ->timeout(8)
-                ->withoutVerifying()
+                ->withOptions(['verify' => $caPath])
                 ->withHeaders(['Accept' => '*/*'])
                 ->get($url);
             $status = $response->status();
-            $reachable = $status > 0 && $status < 500;
+            $reachable = $status >= 200 && $status < 400;
             $observedState = "HTTP {$status}";
         } catch (ConnectionException $exception) {
             $reachable = false;
@@ -1805,14 +1824,12 @@ final readonly class ToolsProbe
                 summary: "Tool {$tool->name} consumer URL {$url} is not reachable from the gateway.",
                 detail: [
                     'tool' => $tool->name,
-                    'node' => $tool->node->name,
+                    'node' => $node->name,
                     'expected_url' => $url,
                     'observed' => $observedState,
                     'http_status' => $status,
-                    'next_command' => "doctor --node={$tool->node->name} --family=proxy",
+                    'next_command' => "doctor --node={$node->name} --family=proxy",
                     'ownership' => 'tool-family service readiness; proxy-family owns route rows/TLS',
-                    // No unsafe restore here — route and runtime repairs belong
-                    // to proxy/process families when those checks fail.
                 ],
             ),
         ];

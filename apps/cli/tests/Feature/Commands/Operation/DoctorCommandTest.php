@@ -739,7 +739,6 @@ describe('doctor human panel', function (): void {
             ->not->toContain("\n│  - Issue 11");
     });
 
-    
     it('renders complete active roles on fleet node rows without breaking the bordered panel', function (): void {
         $report = doctorFleetReport();
         $report['nodes'] = [
@@ -768,7 +767,7 @@ describe('doctor human panel', function (): void {
         assertDoctorPanelLinesWithinWidth($plain);
     });
 
-it('renders fleet in-progress panel with DOCTOR title and no summary', function (): void {
+    it('renders fleet in-progress panel with DOCTOR title and no summary', function (): void {
         $progress = doctorFleetReport();
         $progress['progress'] = [
             'state' => 'running',

@@ -7,14 +7,12 @@ namespace App\Services\Tools;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Proxy\AgentToolProxyRouteIntent;
-use App\Tools\HermesTool;
-use App\Tools\OpenClawTool;
 
 final readonly class ToolPayloadMapper
 {
     public function __construct(
-        private ?ToolCatalog $catalog = null,
-        private ?AgentToolProxyRouteIntent $agentToolProxy = null,
+        private ToolCatalog $catalog,
+        private AgentToolProxyRouteIntent $agentToolProxy,
     ) {}
 
     /**
@@ -35,14 +33,6 @@ final readonly class ToolPayloadMapper
     }
 
     /**
-     * Non-secret endpoint metadata. Agent tools derive the consumer HTTPS URL
-     * from catalog category + node TLD + proxy contract instead of persisting
-     * redundant endpoint copies on the tool row.
-     *
-     * Canonical endpoint shape:
-     * `{name, kind, url, host, port}` where `url` is the operator-facing
-     * consumer address (for agent tools, `https://{tool}.{tld}`).
-     *
      * @return list<array<string, mixed>>
      */
     private function endpoints(NodeTool $tool): array
@@ -59,7 +49,11 @@ final readonly class ToolPayloadMapper
     }
 
     /**
-     * @return list<array{name: string, kind: string, url: string, host: string, port: int}>
+     * Canonical agent consumer shape:
+     * `{name, kind, url, host, port, upstream_port}` where `port` is public HTTPS
+     * (443) and `upstream_port` is the proxy loopback listen port.
+     *
+     * @return list<array{name: string, kind: string, url: string, host: string, port: int, upstream_port: int}>
      */
     private function derivedAgentEndpoints(NodeTool $tool): array
     {
@@ -70,40 +64,26 @@ final readonly class ToolPayloadMapper
             return [];
         }
 
-        $catalog = $this->catalog ?? app(ToolCatalog::class);
-
-        if ($catalog->category($tool->name) !== 'agent') {
+        if ($this->catalog->category($tool->name) !== 'agent' || $tool->expected_state !== 'installed') {
             return [];
         }
 
-        if ($tool->expected_state !== 'installed') {
-            return [];
-        }
+        $route = $this->agentToolProxy->expectedRoute($tool);
+        $upstreamPort = $this->agentToolProxy->upstreamPort($tool);
 
-        $route = ($this->agentToolProxy ?? app(AgentToolProxyRouteIntent::class))->expectedRoute($tool);
-
-        if ($route === null) {
+        if ($route === null || $upstreamPort === null) {
             return [];
         }
 
         $host = $route->domain;
-        $url = "https://{$host}";
 
         return [[
             'name' => $tool->name,
             'kind' => 'https',
-            'url' => $url,
+            'url' => "https://{$host}",
             'host' => $host,
-            'port' => $this->agentUpstreamPort($tool->name),
+            'port' => 443,
+            'upstream_port' => $upstreamPort,
         ]];
-    }
-
-    private function agentUpstreamPort(string $toolName): int
-    {
-        return match ($toolName) {
-            'openclaw' => OpenClawTool::WEB_PORT,
-            'hermes' => HermesTool::WEB_PORT,
-            default => 8080,
-        };
     }
 }

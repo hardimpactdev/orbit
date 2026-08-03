@@ -46,6 +46,22 @@ function createToolsProbeAppHostNode(array $attributes = []): Node
     ]);
 }
 
+function toolsProbeOrbitRootCaPath(): string
+{
+    $configRoot = config('orbit.paths.config_root');
+    expect($configRoot)->toBeString();
+    $caDir = rtrim((string) $configRoot, '/').'/ca';
+    if (! is_dir($caDir)) {
+        mkdir($caDir, 0755, true);
+    }
+    $path = $caDir.'/root.crt';
+    if (! is_file($path)) {
+        file_put_contents($path, "-----BEGIN CERTIFICATE-----\ntest-orbit-root\n-----END CERTIFICATE-----\n");
+    }
+
+    return $path;
+}
+
 function createToolsProbeAgentNode(): Node
 {
     $node = Node::factory()->create([
@@ -2242,6 +2258,7 @@ final class PathPrefixedExecutingToolsProbeRemoteShell implements RemoteShell
 }
 
 it('flags unreachable autonomous-agent consumer https urls for installed agent tools', function (): void {
+    toolsProbeOrbitRootCaPath();
     Http::preventStrayRequests();
     Http::fake([
         'https://openclaw.agent' => Http::response('bad gateway', 502),
@@ -2261,14 +2278,45 @@ it('flags unreachable autonomous-agent consumer https urls for installed agent t
 
     $issue = toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable');
 
-    expect($issue)->not->toBeNull()
-        ->and($issue?->kind)->toBe(DriftKind::Divergent)
-        ->and($issue?->detail['expected_url'] ?? null)->toBe('https://openclaw.agent')
-        ->and($issue?->detail['observed'] ?? null)->toBe('HTTP 502')
-        ->and($issue?->detail['next_command'] ?? null)->toContain('--family=proxy');
+    expect($issue)
+        ->not
+        ->toBeNull()
+        ->and($issue?->kind)
+        ->toBe(DriftKind::Divergent)
+        ->and($issue?->detail['expected_url'] ?? null)
+        ->toBe('https://openclaw.agent')
+        ->and($issue?->detail['observed'] ?? null)
+        ->toBe('HTTP 502')
+        ->and($issue?->detail['next_command'] ?? null)
+        ->toContain('--family=proxy');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://openclaw.agent');
 });
 
-it('accepts healthy autonomous-agent consumer https urls without inventing restore', function (): void {
+it('treats http 404 consumer responses as unreachable', function (): void {
+    toolsProbeOrbitRootCaPath();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://openclaw.agent' => Http::response('missing', 404),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'openclaw',
+        'expected_state' => 'installed',
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'openclaw' => ['installed' => true],
+    ]));
+
+    expect(toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable')?->detail['observed'] ?? null)
+        ->toBe('HTTP 404');
+});
+
+it('accepts 2xx autonomous-agent consumer https urls', function (): void {
+    toolsProbeOrbitRootCaPath();
     Http::preventStrayRequests();
     Http::fake([
         'https://hermes.agent' => Http::response('ok', 200),

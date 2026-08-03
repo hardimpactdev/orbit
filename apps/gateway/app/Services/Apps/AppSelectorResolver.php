@@ -289,20 +289,19 @@ final readonly class AppSelectorResolver
     ): AppInstance {
         $visible = $app
             ->instances
-            ->filter(
-                fn (AppInstance $instance): bool => $instanceIsVisible === null || $instanceIsVisible($instance),
-            )
+            ->filter(function (mixed $instance) use ($instanceIsVisible): bool {
+                return (
+                    $instance instanceof AppInstance
+                    && ($instanceIsVisible === null || $instanceIsVisible($instance))
+                );
+            })
             ->values();
 
-        // Exact instance name always wins before hostname/domain/node/path/TLD
-        // aliases so a sibling sharing those facts cannot make project.instance
-        // ambiguous (for example mealou.nmbp vs mealou.development on one node).
+        $needle = mb_strtolower(trim($instanceSelector));
         $exactNameMatches = $visible
-            ->filter(
-                fn (AppInstance $instance): bool => (
-                    mb_strtolower($instance->name) === mb_strtolower(trim($instanceSelector))
-                ),
-            )
+            ->filter(function (mixed $instance) use ($needle): bool {
+                return $instance instanceof AppInstance && mb_strtolower($instance->name) === $needle;
+            })
             ->values();
 
         if ($exactNameMatches->count() === 1) {
@@ -314,18 +313,19 @@ final readonly class AppSelectorResolver
         }
 
         if ($exactNameMatches->count() > 1) {
-            return $this->throwAmbiguousInstance($app, $fullSelector, $exactNameMatches);
+            $this->throwAmbiguousInstance($app, $fullSelector, $exactNameMatches);
         }
 
         $matches = $visible
-            ->filter(
-                fn (AppInstance $instance): bool => $this->placement->instanceMatchesSelector(
+            ->filter(function (mixed $instance) use ($instanceSelector, $fullSelector, $app): bool {
+                return $instance instanceof AppInstance
+                && $this->placement->instanceMatchesSelector(
                     instance: $instance,
                     selector: $instanceSelector,
                     fullSelector: $fullSelector,
                     app: $app,
-                ),
-            )
+                );
+            })
             ->values();
 
         $match = $matches->first();
@@ -335,7 +335,7 @@ final readonly class AppSelectorResolver
         }
 
         if ($matches->count() > 1) {
-            return $this->throwAmbiguousInstance($app, $fullSelector, $matches);
+            $this->throwAmbiguousInstance($app, $fullSelector, $matches);
         }
 
         throw new AppSelectionResolutionFailed(
@@ -350,9 +350,9 @@ final readonly class AppSelectorResolver
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, AppInstance>  $matches
+     * @param  iterable<int, mixed>  $matches
      */
-    private function throwAmbiguousInstance(Project $app, string $fullSelector, $matches): never
+    private function throwAmbiguousInstance(Project $app, string $fullSelector, iterable $matches): never
     {
         $instanceNames = [];
 

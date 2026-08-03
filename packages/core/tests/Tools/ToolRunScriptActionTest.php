@@ -26,11 +26,11 @@ it('exposes the shared gateway-to-CLI tool run-script actions', function (): voi
 
 it('accepts every canonical action and rejects unknown actions closed', function (): void {
     foreach (ToolRunScriptAction::values() as $action) {
-        expect(ToolRunScriptAction::isAllowed($action))->toBeTrue()
-            ->and(ToolRunScriptAction::fromString($action)->value)->toBe($action);
+        expect(ToolRunScriptAction::isAllowed($action))->toBeTrue();
     }
 
-    expect(ToolRunScriptAction::isAllowed('probe-php-cli-extra'))->toBeFalse()
-        ->and(fn () => ToolRunScriptAction::fromString('not-a-real-action'))
-        ->toThrow(InvalidArgumentException::class);
+    expect(ToolRunScriptAction::isAllowed('probe-php-cli-extra'))
+        ->toBeFalse()
+        ->and(ToolRunScriptAction::isAllowed('not-a-real-action'))
+        ->toBeFalse();
 });

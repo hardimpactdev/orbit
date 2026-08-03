@@ -73,9 +73,15 @@ final readonly class AgentToolProxyRouteIntent
         }
 
         $toolConfig = is_array($tool->config) ? $tool->config : [];
-        $upstream = is_string($toolConfig['upstream'] ?? null) && $toolConfig['upstream'] !== ''
+        $configuredUpstream = is_string($toolConfig['upstream'] ?? null) && $toolConfig['upstream'] !== ''
             ? $toolConfig['upstream']
-            : $this->defaultUpstream($tool->name);
+            : null;
+        $upstream = $configuredUpstream ?? $this->defaultUpstream($tool->name);
+
+        if ($upstream === null) {
+            return null;
+        }
+
         $config = [
             'target' => ['type' => 'upstream', 'value' => $upstream],
             'upstream' => $upstream,
@@ -126,17 +132,46 @@ final readonly class AgentToolProxyRouteIntent
     }
 
     /**
+     * Upstream listen port from the expected proxy route config, derived from
+     * the catalog tool's canonical loopback upstream (not the public HTTPS port).
+     */
+    public function upstreamPort(NodeTool $tool): ?int
+    {
+        $route = $this->expectedRoute($tool);
+
+        if (! $route instanceof ProxyRoute) {
+            return null;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $upstream = is_string($config['upstream'] ?? null) ? $config['upstream'] : null;
+
+        if ($upstream === null || $upstream === '') {
+            return null;
+        }
+
+        $parts = parse_url($upstream);
+        $port = is_array($parts) ? $parts['port'] ?? null : null;
+
+        return is_int($port) ? $port : null;
+    }
+
+    /**
      * Default container-reachable upstream for agent tool web UIs.
      * Hermes keeps port 8080; OpenClaw uses its documented default 18789 so both
      * can co-host without colliding with Orbit Caddy's private backend on 8081.
      */
-    private function defaultUpstream(string $toolName): string
+    private function defaultUpstream(string $toolName): ?string
     {
         $port = match ($toolName) {
             'openclaw' => OpenClawTool::WEB_PORT,
             'hermes' => HermesTool::WEB_PORT,
-            default => 8080,
+            default => null,
         };
+
+        if ($port === null) {
+            return null;
+        }
 
         return 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':'.$port;
     }
