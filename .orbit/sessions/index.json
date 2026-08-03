@@ -5237,9 +5237,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-08-03-092122-token-transport-contract",
-            "slug": "token-transport-contract",
-            "timestamp": "2026-08-03-092122",
+            "archive": "2026-08-03-092229-codex-token-transport-contract",
+            "slug": "codex-token-transport-contract",
+            "timestamp": "2026-08-03-092229",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",
@@ -5259,9 +5259,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-08-03-092229-codex-token-transport-contract",
-            "slug": "codex-token-transport-contract",
-            "timestamp": "2026-08-03-092229",
+            "archive": "2026-08-03-102940-codex-runtime-activation-progress",
+            "slug": "codex-runtime-activation-progress",
+            "timestamp": "2026-08-03-102940",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",

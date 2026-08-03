@@ -15,7 +15,7 @@ use RuntimeException;
 final readonly class RuntimeActivationService
 {
     public function __construct(
-        private RuntimeHibernation $hibernation,
+        private RemoteRuntimeHibernation $remoteHibernation,
         private RuntimeHibernationScopes $scopes,
         private RemoteRuntimeDependencies $dependencies,
         private RuntimeDependencyColdStorage $coldStorage,
@@ -63,36 +63,40 @@ final readonly class RuntimeActivationService
                 static fn (array $dependency): bool => ! $dependency['present'] && $dependency['reconstructable'],
             ))
             : [];
-        $currentRun = $cold ? $this->operations->latest($scope) : null;
-        $requiresOperation =
-            $cold
-            || $missingDependencies !== []
-            || $currentRun instanceof OperationRun
-            && (! $currentRun->status->isTerminal() || $currentRun->status === OperationStatus::Failed);
+        $currentRun = $this->operations->latest($scope);
+        // Only an in-flight (non-terminal) run skips the soft awake probe.
+        // A terminal Failed run must still probe: if the scope is already awake
+        // (race or external recovery), return 204 instead of a stale failed page.
+        $inFlightRun = $currentRun instanceof OperationRun && ! $currentRun->status->isTerminal();
 
-        if ($requiresOperation) {
-            try {
-                $run = $this->operations->currentOrBegin($scope, $missingDependencies, $retry);
-            } catch (RuntimeException) {
+        if (
+            ! $cold
+            && $missingDependencies === []
+            && ! $inFlightRun
+        ) {
+            $awake = $this->remoteHibernation->isAwake($scope->node, $scope->key());
+
+            if ($awake === null) {
                 return new RuntimeActivationOutcome(RuntimeActivationOutcome::FAILED, $scope);
             }
 
-            return new RuntimeActivationOutcome(
-                $run->status === OperationStatus::Failed
-                    ? RuntimeActivationOutcome::FAILED
-                    : RuntimeActivationOutcome::WAKING,
-                $scope,
-                $run,
-            );
+            if ($awake) {
+                return new RuntimeActivationOutcome(RuntimeActivationOutcome::ACTIVATED, $scope);
+            }
         }
 
-        $status = match ($this->hibernation->activate($type, $id, $caller)) {
-            RuntimeHibernation::ACTIVATED => RuntimeActivationOutcome::ACTIVATED,
-            RuntimeHibernation::FORBIDDEN => RuntimeActivationOutcome::FORBIDDEN,
-            RuntimeHibernation::NOT_FOUND => RuntimeActivationOutcome::NOT_FOUND,
-            default => RuntimeActivationOutcome::FAILED,
-        };
+        try {
+            $run = $this->operations->currentOrBegin($scope, $missingDependencies, $retry, $cold);
+        } catch (RuntimeException) {
+            return new RuntimeActivationOutcome(RuntimeActivationOutcome::FAILED, $scope);
+        }
 
-        return new RuntimeActivationOutcome($status, $scope);
+        return new RuntimeActivationOutcome(
+            $run->status === OperationStatus::Failed
+                ? RuntimeActivationOutcome::FAILED
+                : RuntimeActivationOutcome::WAKING,
+            $scope,
+            $run,
+        );
     }
 }

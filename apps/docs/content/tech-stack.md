@@ -445,13 +445,18 @@ On an `app-dev` instance or workspace route, stock Caddy's file matcher bypasses
 the gateway while the scope's node-local awake marker exists. When the marker is
 absent, `forward_auth` performs a bounded TLS request to the gateway activation
 endpoint using the installed Orbit root CA; the gateway accepts only the exact
-serving node's WireGuard identity and does not require a user grant. The
-original browser request continues only after activation succeeds. A dedicated
-JSON access log in `/data/caddy/orbit/hibernation` supplies the scope's last
-HTTP activity time. Awake and hibernated markers live under Caddy's ephemeral
-`/dev/shm`, so a host or Caddy restart cannot preserve a stale awake decision.
-Caddy itself remains persistent, and this contract requires neither a custom
-module nor an Orbit-specific Caddy image.
+serving node's WireGuard identity and does not require a user grant. When the
+scope is already awake, the pre-check returns success so the original request
+continues. When soft or cold wake work is required, the pre-check starts or
+follows one detached activation operation and returns the minimal auto-refreshing
+progress page immediately (Orbit mark and one aggregate bar only) until a later
+request succeeds; soft runners only fence process activation, while dependency
+inspection, restoration, readiness, and cold-marker clearing remain cold-only.
+A dedicated JSON access log in `/data/caddy/orbit/hibernation` supplies the
+scope's last HTTP activity time. Awake and hibernated markers live under Caddy's
+ephemeral `/dev/shm`, so a host or Caddy restart cannot preserve a stale awake
+decision. Caddy itself remains persistent, and this contract requires neither a
+custom module nor an Orbit-specific Caddy image.
 
 ### PHP runtime
 

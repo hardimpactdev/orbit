@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T08:29:40+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-runtime-activation-progress/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-102940-codex-runtime-activation-progress",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-activation-retained-dev-b9f618.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T074841Z-05bcfaf3fd3a.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-activation-retained-dev-b9f618.md": "83c12ff81a4851da031cbfbc74b84aa2b31a9befd039860001e9560feceae48c",
+        "loop.md": "26cf0d9c6a9e2fac6ab0bbb6bbf26779000c3904645f18929f790b4699a701a8",
+        "quality-gates/quality-check-2026-08-03T074841Z-05bcfaf3fd3a.json": "2d5c5ff9b9de6a3c3c8a2e8a482b8b76540eacb9d56ea75c834009275473d66e"
+    },
+    "branch": "codex/runtime-activation-progress",
+    "candidate_commit": "3a1371e2e56987a344a7708f0875e8de48adcd68",
+    "accepted_feature_tip": "3a1371e2e56987a344a7708f0875e8de48adcd68",
+    "accepted_main_tip": "f6712518c6f5a67ade2fda5d150512484454ba91",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

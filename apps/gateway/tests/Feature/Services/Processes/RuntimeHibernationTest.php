@@ -6,12 +6,15 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\OperationRun;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\Operations\OperationRunRecorder;
 use App\Services\Processes\ProcessLifecycle;
 use App\Services\Processes\ProcessOwnerContext;
+use App\Services\Processes\RuntimeActivationRunner;
 use App\Services\Processes\RuntimeDependencyColdStorage;
 use App\Services\Processes\RuntimeHibernationScope;
 use App\Services\Processes\RuntimeHibernationScopes;
@@ -20,7 +23,9 @@ use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Illuminate\Support\Sleep;
+use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
@@ -218,11 +223,16 @@ it('brackets a development workspace bulk restart with its asleep and awake mark
         ]);
 });
 
-it('wakes an app instance on an exact serving-node request and marks it awake after startup', function (): void {
+it('returns the minimal progress page immediately for a soft-asleep app instance without starting processes inline', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
     ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
     [$node, $app, $instance] = create_runtime_hibernation_instance();
     Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
     $executor = new RuntimeHibernationRecordingExecutor;
@@ -234,17 +244,63 @@ it('wakes an app instance on an exact serving-node request and marks it awake af
         server: [
             'REMOTE_ADDR' => $node->wireguard_address,
             'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            'HTTP_X_FORWARDED_URI' => '/dashboard?tab=jobs',
         ],
     );
 
-    $response->assertNoContent();
+    $response
+        ->assertServiceUnavailable()
+        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Retry-After', '2')
+        ->assertSee('Waking docs.test')
+        ->assertSee('url=/dashboard?tab=jobs', false)
+        ->assertSee('Starting queue')
+        ->assertDontSee('composer install');
 
-    expect($executor->actions())
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+
+    expect($run->status)
+        ->toBe(OperationStatus::Queued)
+        ->and($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and($run->result['runtime_activation']['dependencies'] ?? null)
+        ->toBe([])
+        ->and(array_column($run->result['runtime_activation']['processes'], 'name'))
+        ->toBe(['queue'])
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->and($executor->actions())
+        ->not->toContain('internal:process-systemd-service:start')
+        ->not->toContain('internal:caddy-config:runtime-awake')
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
         ->toBe([
+            'internal:caddy-config:runtime-states',
             'internal:caddy-config:runtime-states',
             'internal:process-systemd-service:start',
             'internal:caddy-config:runtime-awake',
-        ]);
+        ])
+        ->and($executor->actions())
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
+    )->assertNoContent();
 });
 
 it('rejects runtime activation from a node other than the exact serving node', function (): void {
@@ -275,13 +331,37 @@ it('rejects runtime activation from a node other than the exact serving node', f
     expect($executor->actions())->toBeEmpty();
 });
 
-it('marks an instance with no configured processes awake without reporting a startup failure', function (): void {
+it('returns no content for a soft scope that is awake after a terminal failed activation', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
     ]);
-    [$node, , $instance] = create_runtime_hibernation_instance();
-    $executor = new RuntimeHibernationRecordingExecutor;
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $failedRun = app(OperationRunRecorder::class)->queued(
+        operationId: "runtime-activation:app-instance-{$instance->id}",
+        lane: 'gateway',
+        operationType: 'runtime-activation',
+        targetNodeId: $node->id,
+        result: [
+            'runtime_activation' => [
+                'scope' => ['type' => 'app-instance', 'id' => $instance->id],
+                'cold' => false,
+                'dependencies' => [],
+                'processes' => [],
+            ],
+        ],
+    );
+    app(OperationRunRecorder::class)->failed($failedRun->id, error: [
+        'code' => 'runtime_activation_failed',
+        'message' => 'The application could not be prepared.',
+    ]);
+    $executor = new RuntimeHibernationRecordingExecutor(awake: true);
     app()->instance(RunsInternalCommands::class, $executor);
 
     $this->call(
@@ -293,11 +373,182 @@ it('marks an instance with no configured processes awake without reporting a sta
         ],
     )->assertNoContent();
 
+    expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(1)
+        ->and($failedRun->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states']);
+});
+
+it('preserves the failed soft progress page when the scope is still asleep and retry is absent', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $failedRun = app(OperationRunRecorder::class)->queued(
+        operationId: "runtime-activation:app-instance-{$instance->id}",
+        lane: 'gateway',
+        operationType: 'runtime-activation',
+        targetNodeId: $node->id,
+        result: [
+            'runtime_activation' => [
+                'scope' => ['type' => 'app-instance', 'id' => $instance->id],
+                'cold' => false,
+                'dependencies' => [],
+                'processes' => [
+                    ['id' => 1, 'name' => 'queue', 'label' => 'Starting queue'],
+                ],
+            ],
+        ],
+    );
+    app(OperationRunRecorder::class)->failed($failedRun->id, error: [
+        'code' => 'runtime_activation_failed',
+        'message' => 'The application could not be prepared.',
+    ]);
+    $executor = new RuntimeHibernationRecordingExecutor(awake: false);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+                'HTTP_X_FORWARDED_URI' => '/dashboard?tab=jobs',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Wake-up paused')
+        ->assertSee('Try again')
+        ->assertSee('/dashboard?tab=jobs&orbit-wake-retry=1');
+
+    expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(1)
+        ->and($failedRun->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->not->toContain('internal:process-systemd-service:start');
+});
+
+it('starts a new soft activation when retry is requested after a terminal failed run', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $failedRun = app(OperationRunRecorder::class)->queued(
+        operationId: "runtime-activation:app-instance-{$instance->id}",
+        lane: 'gateway',
+        operationType: 'runtime-activation',
+        targetNodeId: $node->id,
+        result: [
+            'runtime_activation' => [
+                'scope' => ['type' => 'app-instance', 'id' => $instance->id],
+                'cold' => false,
+                'dependencies' => [],
+                'processes' => [],
+            ],
+        ],
+    );
+    app(OperationRunRecorder::class)->failed($failedRun->id, error: [
+        'code' => 'runtime_activation_failed',
+        'message' => 'The application could not be prepared.',
+    ]);
+    $executor = new RuntimeHibernationRecordingExecutor(awake: false);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+                'HTTP_X_FORWARDED_URI' => '/dashboard?orbit-wake-retry=1',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Waking docs.test')
+        ->assertDontSee('Wake-up paused');
+
+    $runs = OperationRun::query()
+        ->where('operation_type', 'runtime-activation')
+        ->orderBy('created_at')
+        ->get();
+
+    expect($runs)
+        ->toHaveCount(2)
+        ->and($failedRun->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($runs->last()?->status)
+        ->toBe(OperationStatus::Queued)
+        ->and($runs->last()?->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states']);
+});
+
+it('marks an instance with no configured processes awake on the detached soft activation runner', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    [$node, , $instance] = create_runtime_hibernation_instance();
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+
     expect($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->and($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and($run->result['runtime_activation']['processes'] ?? null)
+        ->toBe([]);
+
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
         ->toBe([
             'internal:caddy-config:runtime-states',
+            'internal:caddy-config:runtime-states',
             'internal:caddy-config:runtime-awake',
-        ]);
+        ])
+        ->and($executor->actions())
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
 });
 
 it('does not restart a process group that is already marked awake', function (): void {
@@ -323,37 +574,74 @@ it('does not restart a process group that is already marked awake', function ():
         ->toBe(['internal:caddy-config:runtime-states']);
 });
 
-it('wakes inherited instance and workspace processes as one workspace lifecycle group', function (): void {
+it('returns the soft progress page for a workspace and wakes inherited processes on the runner', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
     ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
     [$node, $app, $instance] = create_runtime_hibernation_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'app_instance_id' => $instance->id,
         'name' => 'feature-a',
     ]);
-    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
-    Process::factory()->forOwner($workspace, $node)->create(['name' => 'vite']);
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'name' => 'queue',
+            'sort_order' => 1,
+        ]);
+    Process::factory()
+        ->forOwner($workspace, $node)
+        ->create([
+            'name' => 'vite',
+            'sort_order' => 2,
+        ]);
     $executor = new RuntimeHibernationRecordingExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this->call(
-        'GET',
-        "/api/runtime-activations/workspace/{$workspace->id}",
-        server: [
-            'REMOTE_ADDR' => $node->wireguard_address,
-            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
-        ],
-    )->assertNoContent();
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/workspace/{$workspace->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Starting queue')
+        ->assertSee('Starting vite');
+
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:workspace-{$workspace->id}")
+        ->sole();
 
     expect($executor->actions())
-        ->toBe([
-            'internal:caddy-config:runtime-states',
-            'internal:process-systemd-service:start',
-            'internal:process-systemd-service:start',
-            'internal:caddy-config:runtime-awake',
-        ]);
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->and($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and(array_column($run->result['runtime_activation']['processes'], 'name'))
+        ->toBe(['queue', 'vite']);
+
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
+        ->toContain('internal:process-systemd-service:start')
+        ->toContain('internal:caddy-config:runtime-awake')
+        ->and($executor->actions())
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+
+    $startCount = array_count_values($executor->actions())['internal:process-systemd-service:start'] ?? 0;
+
+    expect($startCount)->toBe(2);
 });
 
 it('hibernates an awake app instance after the configured HTTP idle interval', function (): void {
@@ -806,9 +1094,9 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
     /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private readonly int $lastActivityAt = 1_767_272_400,
-        private readonly bool $awake = false,
+        private bool $awake = false,
         private readonly bool $hibernated = false,
-        private readonly bool $cold = false,
+        private bool $cold = false,
         private readonly ?string $failingAction = null,
         private readonly int $failingActionOccurrence = 1,
         private readonly int $sourceActivityAt = 1_767_272_400,
@@ -831,6 +1119,22 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
         if ($call === $this->failingAction) {
             $this->failingActionCalls++;
             $shouldFail = $this->failingActionCalls === $this->failingActionOccurrence;
+        }
+
+        if (! $shouldFail && $commandName === 'internal:caddy-config' && $action === 'runtime-awake') {
+            $this->awake = true;
+        }
+
+        if (! $shouldFail && $commandName === 'internal:caddy-config' && $action === 'runtime-asleep') {
+            $this->awake = false;
+        }
+
+        if (! $shouldFail && $commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
+            $this->cold = false;
+        }
+
+        if (! $shouldFail && $commandName === 'internal:caddy-config' && $action === 'runtime-cold') {
+            $this->cold = true;
         }
 
         $data =
