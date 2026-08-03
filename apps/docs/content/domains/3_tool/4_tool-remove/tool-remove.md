@@ -57,10 +57,10 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 6. Removes tool-owned credential material and service endpoint configuration when the
    selected tool owns those artifacts.
 7. Removes the gateway tool row when cleanup succeeds.
-8. Deletes matching tool-owned proxy route rows for that tool on the target
-   node (registry intent only). Backend/TLS leftovers are classified as
-   `proxy.owner_invalid` / extras and cleaned with `proxy:remove --force` or
-   doctor proxy repair after the owner is gone.
+8. Removes matching tool-owned proxy routes for that tool on the target node
+   through the same backend/TLS cleanup path as `proxy:remove --force`
+   (`ProxyRouteFixer::removeExtra`), then deletes the registry rows. When
+   backend cleanup fails the registry row is kept so the operator can retry.
 9. Reports partial cleanup if gateway configuration and node reality diverge.
 
 The gateway cleans up its tool row and tool-owned configuration locally.

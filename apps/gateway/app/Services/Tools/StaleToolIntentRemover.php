@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteFixer;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -19,6 +20,7 @@ final readonly class StaleToolIntentRemover
         private ToolCatalog $catalog,
         private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private ProxyRouteFixer $proxyRouteFixer,
     ) {}
 
     /**
@@ -71,27 +73,28 @@ final readonly class StaleToolIntentRemover
     }
 
     /**
-     * Delete gateway proxy rows owned by this tool on the node.
-     * Backend/TLS cleanup is separate (proxy:remove --force / doctor extras).
+     * Remove backend/TLS for tool-owned proxy routes, then delete registry rows.
+     * Order matches proxy:remove --force so a failed cleanup leaves intent for retry.
      */
     public function removeOwnedProxyRoutesFor(string $tool, Node $node): int
     {
         $removed = 0;
 
-        ProxyRoute::query()
+        foreach (ProxyRoute::query()
             ->where('node_id', $node->id)
             ->where('owner_type', 'tool')
-            ->get()
-            ->each(static function (ProxyRoute $route) use ($tool, &$removed): void {
-                $config = is_array($route->config) ? $route->config : [];
+            ->get() as $route) {
+            $config = is_array($route->config) ? $route->config : [];
 
-                if (($config['owner_name'] ?? null) !== $tool) {
-                    return;
-                }
+            if (($config['owner_name'] ?? null) !== $tool) {
+                continue;
+            }
 
-                $route->delete();
-                $removed++;
-            });
+            // Backend/TLS first (same ordering as ProxyRouteIntent::remove).
+            $this->proxyRouteFixer->removeExtra($node, $route->domain);
+            $route->delete();
+            $removed++;
+        }
 
         return $removed;
     }

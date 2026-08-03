@@ -58,11 +58,13 @@ fall back to the only visible non-gateway node in non-interactive mode.
 - Removes tool-owned credential material and service endpoint configuration when the
   tool definition owns those artifacts.
 - Removes gateway tool configuration after supported cleanup succeeds.
-- After the tool row is deleted, deletes gateway proxy route rows owned by
-  that tool on the target node (`config.owner_name` match). Backend/TLS
-  cleanup for those domains remains proxy-family work (`proxy:remove
-  --force` for orphans classified as `proxy.owner_invalid`, or doctor
-  extras).
+- After the tool row is deleted, removes gateway proxy routes owned by that
+  tool on the target node (`config.owner_name` match): for each matching
+  domain call `ProxyRouteFixer::removeExtra` (backend site + TLS/global
+  cleanup) before deleting the registry row — same ordering as
+  `proxy:remove --force`. Failed backend cleanup leaves the row so removal
+  can be retried; remaining orphans are still classified as
+  `proxy.owner_invalid` for force-remove/doctor paths.
 - If cleanup partially fails, Orbit keeps the gateway tool row and any
   tool-owned credential or endpoint configuration needed to retry cleanup. Removal does
   not erase configuration before managed artifacts are either removed or explicitly

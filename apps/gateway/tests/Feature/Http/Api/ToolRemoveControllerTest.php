@@ -252,6 +252,11 @@ describe('ToolRemoveController', function (): void {
             ->toBeNull()
             ->and(ProxyRoute::find($route->id))
             ->toBeNull()
+            ->and($shell->proxyRemoveSiteObservations)
+            ->toBe([[
+                'domain' => 'hermes.agent',
+                'route_present' => true,
+            ]])
             ->and($shell->scripts)
             ->not
             ->toBeEmpty()
@@ -262,6 +267,11 @@ describe('ToolRemoveController', function (): void {
                         || str_contains($script, 'rm -rf "${HOME}/.hermes"')
                         || str_contains($script, "rm -rf \"\${HOME}/.hermes\"")
                     ),
+                ))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    static fn (string $script): bool => str_contains($script, "internal:caddy-config 'remove-site'"),
                 ))
             ->toBeTrue();
     });
@@ -321,7 +331,7 @@ describe('ToolRemoveController', function (): void {
         expect(Process::find($foreign->id))->not->toBeNull();
     });
 
-    it('removes stale unsupported tool-owned proxy routes without running remote scripts', function (): void {
+    it('removes stale unsupported tool-owned proxy routes after backend cleanup', function (): void {
         $caller = createToolRemoveApiCallerNode();
         $node = createTestAppHostNode([
             'name' => 'nmbp',
@@ -368,8 +378,16 @@ describe('ToolRemoveController', function (): void {
 
         expect(ProxyRoute::find($route->id))
             ->toBeNull()
-            ->and($shell->scripts)
-            ->toBeEmpty();
+            ->and($shell->proxyRemoveSiteObservations)
+            ->toBe([[
+                'domain' => 'hermes.nmbp.test',
+                'route_present' => true,
+            ]])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    static fn (string $script): bool => str_contains($script, "internal:caddy-config 'remove-site'"),
+                ))
+            ->toBeTrue();
     });
 
     it('cleans orphan tool-owned proxy rows for a removed catalog tool without a NodeTool row', function (): void {
@@ -437,10 +455,86 @@ describe('ToolRemoveController', function (): void {
 
         expect(ProxyRoute::find($route->id))
             ->toBeNull()
-            ->and($shell->scripts)
-            ->toBeEmpty();
+            ->and($shell->proxyRemoveSiteObservations)
+            ->toBe([[
+                'domain' => 'openclaw.agent',
+                'route_present' => true,
+            ]])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    static fn (string $script): bool => str_contains($script, "internal:caddy-config 'remove-site'"),
+                ))
+            ->toBeTrue();
     });
 
+    it('keeps the tool-owned proxy registry row when backend cleanup fails', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-proxy-cleanup-fail',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://host.docker.internal:8080',
+                ],
+            ],
+        ]);
+        $shell = new ToolRemoveApiRecordingShell(failRemoveSite: true);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        // Tool row and process may already be gone; proxy registry must remain
+        // when backend cleanup fails so force-remove/retry still has intent.
+        $response->assertServerError();
+        expect(ProxyRoute::find($route->id))
+            ->not
+            ->toBeNull()
+            ->and(NodeTool::find($tool->id))
+            ->toBeNull()
+            ->and($shell->proxyRemoveSiteObservations)
+            ->toBe([[
+                'domain' => 'hermes.agent',
+                'route_present' => true,
+            ]]);
+    });
     it('records explicit destructive consent source for a streamed human removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
         $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
@@ -597,12 +691,79 @@ final class ToolRemoveApiRecordingShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * Observations captured when ProxyRouteFixer issues remove-site (before row delete).
+     *
+     * @var list<array{domain: string|null, route_present: bool}>
+     */
+    public array $proxyRemoveSiteObservations = [];
+
+    public function __construct(
+        public bool $failRemoveSite = false,
+    ) {}
+
+    /**
      * @param  array<string, mixed>  $options
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
 
+        if (str_contains($script, "internal:caddy-config 'remove-site'")) {
+            $payload = tool_remove_decode_shell_input($options['input'] ?? null);
+            $domain = is_string($payload['domain'] ?? null) ? $payload['domain'] : null;
+            $this->proxyRemoveSiteObservations[] = [
+                'domain' => $domain,
+                'route_present' => $domain !== null && ProxyRoute::query()->where('domain', $domain)->exists(),
+            ];
+
+            if ($this->failRemoveSite) {
+                return new RemoteShellResult(
+                    exitCode: 1,
+                    stdout: '',
+                    stderr: 'caddy remove-site failed',
+                    durationMs: 1,
+                );
+            }
+
+            return tool_remove_shell_success(['domain' => $domain]);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'read-global'")) {
+            return tool_remove_shell_success(['content' => '']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'write-global'")) {
+            return tool_remove_shell_success(['content' => '']);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function tool_remove_decode_shell_input(mixed $input): array
+{
+    if (! is_string($input) || $input === '') {
+        return [];
+    }
+
+    /** @var mixed $payload */
+    $payload = json_decode($input, associative: true);
+
+    return is_array($payload) ? $payload : [];
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function tool_remove_shell_success(array $data): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(['success' => ['data' => $data]], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
+    );
 }
