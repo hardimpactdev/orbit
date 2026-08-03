@@ -162,6 +162,49 @@ it('fails safely when a host path prefix is set but host ownership cannot be res
     File::deleteDirectory($state['root']);
 });
 
+it('preserves literal backslashes and ampersands when rewriting existing gateway env values', function (): void {
+    $root = sys_get_temp_dir().'/orbit-gateway-entrypoint-env-'.bin2hex(random_bytes(6));
+    $appRoot = "{$root}/app";
+    $configRoot = "{$root}/config";
+    $environment = "{$configRoot}/.env";
+    $bin = "{$root}/bin";
+    $literalValue = 'prod\\slice&amp;keep\\n-not-escape';
+
+    File::ensureDirectoryExists($appRoot);
+    File::ensureDirectoryExists($configRoot);
+    File::ensureDirectoryExists($bin);
+    File::put("{$appRoot}/.env.example", '');
+    File::put($environment, "APP_ENV=old\n");
+    File::put("{$bin}/php", "#!/usr/bin/env bash\nexit 0\n");
+    File::put("{$bin}/id", "#!/usr/bin/env bash\nexit 1\n");
+    File::chmod("{$bin}/php", 0o755);
+    File::chmod("{$bin}/id", 0o755);
+
+    $path = getenv('PATH');
+    $process = new Process(
+        ['/bin/bash', repo_path('docker/orbit-gateway/entrypoint.sh'), 'artisan', 'about'],
+        repo_path(),
+        [
+            'ORBIT_GATEWAY_APP_ROOT' => $appRoot,
+            'ORBIT_CONFIG_ROOT' => $configRoot,
+            'APP_ENV' => $literalValue,
+            'PATH' => "{$bin}:".($path === false ? '' : $path),
+        ],
+    );
+    $process->mustRun();
+
+    $envContents = (string) file_get_contents($environment);
+
+    expect($envContents)
+        ->toContain("APP_ENV={$literalValue}")
+        ->not
+        ->toContain('APP_ENV=old')
+        ->and(str_contains($envContents, 'prod\\slice&amp;keep\\n-not-escape'))
+        ->toBeTrue();
+
+    File::deleteDirectory($root);
+});
+
 /**
  * @return array{root: string, config_root: string, certificates: string, operations_websocket: string, environment: string, database: string, tls_key: string, operations_apps: string}
  */

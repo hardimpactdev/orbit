@@ -22,7 +22,13 @@ set_env_value() {
 
     if grep -qE "^${key}=" "$env_path"; then
         tmp="$(mktemp)"
-        awk -F= -v key="$key" -v value="$value" '
+        # Pass values through ENVIRON so awk does not interpret backslash escapes
+        # in -v assignments (e.g. \n, \t, \\) when rewriting existing keys.
+        ORBIT_ENV_KEY="$key" ORBIT_ENV_VALUE="$value" awk -F= '
+            BEGIN {
+                key = ENVIRON["ORBIT_ENV_KEY"]
+                value = ENVIRON["ORBIT_ENV_VALUE"]
+            }
             $1 == key {
                 print key "=" value
                 next

@@ -101,6 +101,74 @@ it('keeps node-owned launch agents configured to run at load', function (): void
         ->toContain("<key>RunAtLoad</key>\n    <true/>");
 });
 
+it('renders only PATH and HOME for node-owned launchd processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'gateway',
+        'platform' => 'macos_14',
+        'user' => 'orbit',
+        'tld' => 'gateway',
+        'status' => 'active',
+    ]);
+    $surrogateApp = Project::factory()->for($node, 'node')->create([
+        'name' => 'gateway',
+        'path' => '/Users/orbit',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'node-exporter',
+            'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+    $plist = app(LaunchdPlistRenderer::class)->render($node, $surrogateApp, $process);
+
+    expect($plist)
+        ->toContain('<key>PATH</key>')
+        ->toContain('<key>HOME</key>')
+        ->toContain('<string>/Users/orbit</string>')
+        ->not->toContain('<key>APP_URL</key>')
+        ->not->toContain('<key>VITE_APP_URL</key>')
+        ->not->toContain('<key>VITE_VALET_HOST</key>')
+        ->not->toContain('<key>VITE_DEV_SERVER_KEY</key>')
+        ->not->toContain('<key>VITE_DEV_SERVER_CERT</key>')
+        ->not->toContain('https://gateway')
+        ->not->toContain('gateway.gateway');
+});
+
+it('still renders Laravel Vite URL and TLS variables for app-owned launchd processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'mac-app',
+        'platform' => 'macos_14',
+        'user' => 'nckrtl',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/Users/nckrtl/apps/docs',
+        'domain' => 'docs.test',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'command' => 'npm run dev -- --host=0.0.0.0',
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+    $plist = app(LaunchdPlistRenderer::class)->render($node, $app, $process);
+
+    expect($plist)
+        ->toContain('<key>PATH</key>')
+        ->toContain('<key>HOME</key>')
+        ->toContain('<key>APP_URL</key>')
+        ->toContain('<key>VITE_APP_URL</key>')
+        ->toContain('<key>VITE_VALET_HOST</key>')
+        ->toContain('<key>VITE_DEV_SERVER_KEY</key>')
+        ->toContain('<key>VITE_DEV_SERVER_CERT</key>');
+});
+
 it('keeps app-prod launch agents configured to run at load', function (): void {
     $node = Node::factory()
         ->appProd()

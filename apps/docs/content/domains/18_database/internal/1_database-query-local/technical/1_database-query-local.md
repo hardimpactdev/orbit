@@ -51,7 +51,16 @@ orbit internal:database-query-local --operation-token=<token> --json
 ## Failure Semantics
 
 - `missing_token` for direct invocation without an operation token.
-- `invalid_token` for malformed, expired, wrong-node, or wrong-command tokens.
+- Operation-token verification inherits the shared internal-executor safe denial
+  codes from the gateway verifier:
+  - `arguments_mismatch` when bound command arguments or context do not match
+  - `target_node_mismatch` when the token targets a different node
+  - `command_mismatch` when the token command does not match this internal
+    command
+  - `operation.already_dispatched` when the token was already consumed
+  - `operation.not_found` when the bound operation cannot be found
+  - `invalid_token` for malformed, expired, unknown, or transport-failed
+    verification outcomes (including unrecognized gateway denial reasons)
 - `validation_failed` for malformed stdin payloads.
 - `database_query.write_not_allowed` for write-capable SQL without write consent.
 - `database_query.execution_failed` for SQLite open or execution failures.
