@@ -369,7 +369,7 @@ it('excludes transient repo-root archive manifest fixtures from checkout archive
 
 it('installs gateway checkout before other roles when roles run concurrently', function (): void {
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'installTopologyRolesConcurrently');
-    $source = file_get_contents((string) (new ReflectionClass(E2ECurrentCheckout::class))->getFileName());
+    $source = file_get_contents((string) new ReflectionClass(E2ECurrentCheckout::class)->getFileName());
 
     expect($source)
         ->toContain("in_array('gateway', \$roles, true)")

@@ -52,8 +52,8 @@ it('requires DoctorRestoreSupport dispatch for every genuine-drift catalog entry
 it('marks codes restorable only when catalog genuine and DoctorRestoreSupport agrees', function (): void {
     foreach (DoctorIssueCatalog::definitions() as $code => $definition) {
         $restorable = DoctorIssueCatalog::isRestorable($code);
-        $expected = $definition->disposition === DoctorIssueDisposition::GenuineDrift
-            && DoctorRestoreSupport::supports($code);
+        $expected =
+            $definition->disposition === DoctorIssueDisposition::GenuineDrift && DoctorRestoreSupport::supports($code);
 
         expect($restorable)->toBe($expected, "Unexpected restorable flag for {$code}");
     }

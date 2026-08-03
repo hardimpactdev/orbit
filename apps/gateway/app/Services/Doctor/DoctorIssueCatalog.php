@@ -141,11 +141,13 @@ final class DoctorIssueCatalog
     {
         $definition = self::definition($code);
 
-        return $definition instanceof DoctorIssueDefinition
+        return (
+            $definition instanceof DoctorIssueDefinition
             && $definition->disposition === DoctorIssueDisposition::GenuineDrift
             && DoctorRestoreSupport::supports($code)
             && is_string($definition->restoreAction)
             && $definition->restoreAction !== ''
-            && $definition->restoreAction === DoctorRestoreSupport::actionId($code);
+            && $definition->restoreAction === DoctorRestoreSupport::actionId($code)
+        );
     }
 }

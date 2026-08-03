@@ -83,7 +83,8 @@ it('routes schedule hibernator restore without a schedule_key', function (): voi
         );
 
         expect($result)
-            ->not->toBeNull("Expected schedule apply routing for {$code}")
+            ->not
+            ->toBeNull("Expected schedule apply routing for {$code}")
             ->and($result['key'] ?? null)
             ->toBe($code)
             ->and($result['mode'] ?? null)

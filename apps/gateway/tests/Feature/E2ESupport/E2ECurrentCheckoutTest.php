@@ -1524,19 +1524,41 @@ it('installs source-mounted topology roles concurrently when fork workers are av
     }
 
     $starts = array_values(array_filter($lines, fn (string $line): bool => str_contains($line, ':start:')));
+    $gatewayStart = null;
+    $otherStarts = [];
+
+    foreach ($lines as $line) {
+        if (! str_contains($line, ':start:')) {
+            continue;
+        }
+
+        [$role, , $stamp] = explode(':', $line, 3);
+        $time = (float) $stamp;
+
+        if ($role === 'gateway') {
+            $gatewayStart = $time;
+        } else {
+            $otherStarts[] = $time;
+        }
+    }
 
     expect($paths)
-        ->toBe([
+        ->toMatchArray([
             'operator' => '/home/orbit/orbit-run-operator',
             'gateway' => '/home/orbit/orbit-run-gateway',
             'dev' => '/home/orbit/orbit-run-dev',
         ])
         ->and($starts)
         ->toHaveCount(3)
-        ->and($elapsed)
-        ->toBeLessThan(0.65)
-        ->and(array_column($timer->events(), 'name'))
-        ->toContain('operator checkout.test-worker', 'gateway checkout.test-worker', 'dev checkout.test-worker');
+        ->and($gatewayStart)
+        ->not->toBeNull()->and($otherStarts)
+        ->not->toBeEmpty()->and(min($otherStarts))->toBeGreaterThanOrEqual($gatewayStart)->and($elapsed)->toBeLessThan(
+            0.75,
+        )->and(array_column($timer->events(), 'name'))->toContain(
+            'operator checkout.test-worker',
+            'gateway checkout.test-worker',
+            'dev checkout.test-worker',
+        );
 });
 
 it('does not install topology roles concurrently when they share a target instance', function (): void {

@@ -18,10 +18,11 @@ final class DoctorRestoreSupport
      */
     public static function map(): array
     {
-        static $map = null;
+        /** @var array<string, string>|null $cache */
+        static $cache = null;
 
-        if (is_array($map)) {
-            return $map;
+        if (is_array($cache)) {
+            return $cache;
         }
 
         $map = [
@@ -150,6 +151,8 @@ final class DoctorRestoreSupport
             'proxy.analytics.router_route_orphaned' => 'restore_proxy_analytics_router_route_orphaned',
             'proxy.analytics.public_route_missing' => 'restore_proxy_analytics_public_route_missing',
         ];
+
+        $cache = $map;
 
         return $map;
     }
