@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T04:38:32+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-host-token-diagnostics/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-063831-codex-gateway-host-token-diagnostics",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-dev-87e9f9-home-perms-agent-acl-07896e875.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T041522Z-c51b68467766.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-dev-87e9f9-home-perms-agent-acl-07896e875.md": "04d7e27c6fcc652e479e1cdcaebd5743267deeee1e4705961d0e41f1306af0b9",
+        "loop.md": "e2f8c217e537a38ddc3a57da3233be48a511fd914f6db097703dc8b6597c2a53",
+        "quality-gates/quality-check-2026-08-03T041522Z-c51b68467766.json": "9454b12cb57348310fc338e1da85bc884e3e5dc09d52e4e35a286ebfea00ea83"
+    },
+    "branch": "codex-gateway-host-token-diagnostics",
+    "candidate_commit": "07896e875705d1a2f58af43b9e26ae5ce6e9331d",
+    "accepted_feature_tip": "07896e875705d1a2f58af43b9e26ae5ce6e9331d",
+    "accepted_main_tip": "ea31c0e6e48027cc97b312a2dd6661ed51421924",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
