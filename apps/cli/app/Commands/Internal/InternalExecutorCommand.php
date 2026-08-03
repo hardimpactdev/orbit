@@ -52,6 +52,13 @@ abstract class InternalExecutorCommand extends Command
      */
     protected function verifyOperationToken(string $expectedCommand): bool
     {
+        // Fresh capture per command invocation so token binding and the handler
+        // share the same operation payload after process STDIN is drained.
+        // Reset first: tests (and rare multi-command processes) must not reuse
+        // a prior command's buffered payload.
+        app(OperationStdinBuffer::class)->reset();
+        $this->captureOperationStdin();
+
         $compactToken = $this->option('operation-token');
 
         if (! is_string($compactToken) || trim($compactToken) === '') {
@@ -74,28 +81,39 @@ abstract class InternalExecutorCommand extends Command
     }
 
     /**
-     * Read stdin for internal commands. Prefer the operation-token buffer so
-     * force_remote_host piped input survives token verification.
+     * Canonical internal operation-payload stdin boundary.
+     *
+     * Reads only from OperationStdinBuffer (populated before token verification).
+     * Callers that historically trimmed must keep trim() at the call site.
      */
-    protected function internalStdin(): string
+    protected function stdin(): string
     {
-        $buffered = app(OperationStdinBuffer::class)->take();
+        $this->captureOperationStdin();
 
-        if ($buffered !== '') {
-            return $buffered;
+        return app(OperationStdinBuffer::class)->take();
+    }
+
+    /**
+     * Capture the operation payload once into OperationStdinBuffer.
+     * Prefers the Symfony stream (tests / wired input), else process STDIN.
+     */
+    private function captureOperationStdin(): void
+    {
+        $buffer = app(OperationStdinBuffer::class);
+
+        if ($buffer->hasCaptured()) {
+            return;
         }
 
         $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
 
         if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
+            $buffer->captureFromStream($stream);
+
+            return;
         }
 
-        if (defined('STDIN') && is_resource(STDIN)) {
-            return (string) stream_get_contents(STDIN);
-        }
-
-        return '';
+        $buffer->captureFromProcessStdin();
     }
 
     /**

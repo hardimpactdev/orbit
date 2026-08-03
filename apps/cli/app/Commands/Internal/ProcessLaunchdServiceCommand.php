@@ -8,7 +8,6 @@ use App\Services\Processes\LocalLaunchdServiceAction;
 use App\Services\Processes\LocalLaunchdServiceFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class ProcessLaunchdServiceCommand extends InternalExecutorCommand
 {
@@ -83,16 +82,5 @@ final class ProcessLaunchdServiceCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

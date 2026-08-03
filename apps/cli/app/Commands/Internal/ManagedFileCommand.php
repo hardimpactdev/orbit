@@ -8,7 +8,6 @@ use App\Services\Convergence\LocalManagedFileAction;
 use App\Services\Convergence\LocalManagedFileFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class ManagedFileCommand extends InternalExecutorCommand
 {
@@ -58,16 +57,5 @@ final class ManagedFileCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $payload */
         return $payload;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

@@ -8,7 +8,6 @@ use App\Services\Operations\LocalFleetUpdateInstallCliAction;
 use App\Services\Operations\LocalFleetUpdateInstallCliFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class FleetUpdateInstallCliCommand extends InternalExecutorCommand
 {
@@ -98,16 +97,5 @@ final class FleetUpdateInstallCliCommand extends InternalExecutorCommand
         }
 
         return $contents;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

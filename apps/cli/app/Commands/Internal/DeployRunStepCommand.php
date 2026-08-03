@@ -7,7 +7,6 @@ namespace App\Commands\Internal;
 use App\Services\Deploy\LocalDeployRunStepAction;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 use Throwable;
 
 final class DeployRunStepCommand extends InternalExecutorCommand
@@ -38,10 +37,7 @@ final class DeployRunStepCommand extends InternalExecutorCommand
      */
     private function readPayload(): array
     {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-        $stdin = is_resource($stream)
-            ? (string) stream_get_contents($stream)
-            : (string) stream_get_contents(STDIN);
+        $stdin = $this->stdin();
 
         if ($stdin === '') {
             throw new InvalidArgumentException('Deploy run step payload must be provided on stdin.');

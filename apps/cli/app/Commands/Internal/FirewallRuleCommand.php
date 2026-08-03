@@ -8,7 +8,6 @@ use App\Services\Firewall\LocalFirewallRuleAction;
 use App\Services\Firewall\LocalFirewallRuleFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class FirewallRuleCommand extends InternalExecutorCommand
 {
@@ -61,16 +60,5 @@ final class FirewallRuleCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

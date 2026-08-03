@@ -8,7 +8,6 @@ use App\Services\Caddy\LocalCaddyConfigAction;
 use App\Services\Caddy\LocalCaddyConfigFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class CaddyConfigCommand extends InternalExecutorCommand
 {
@@ -65,16 +64,5 @@ final class CaddyConfigCommand extends InternalExecutorCommand
         }
 
         return $normalized;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

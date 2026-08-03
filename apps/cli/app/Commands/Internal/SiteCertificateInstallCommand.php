@@ -8,7 +8,6 @@ use App\Services\Certificates\LocalSiteCertificateInstallAction;
 use App\Services\Certificates\LocalSiteCertificateInstallFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class SiteCertificateInstallCommand extends InternalExecutorCommand
 {
@@ -59,16 +58,5 @@ final class SiteCertificateInstallCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $payload */
         return $payload;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

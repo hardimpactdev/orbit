@@ -7,7 +7,6 @@ namespace App\Commands\Internal;
 use App\Services\Apps\LocalAppSetupStepAction;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 use Throwable;
 
 final class AppSetupStepCommand extends InternalExecutorCommand
@@ -53,16 +52,5 @@ final class AppSetupStepCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $payload */
         return $payload;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

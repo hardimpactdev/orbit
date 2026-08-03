@@ -37,7 +37,7 @@ final class ToolRunScriptCommand extends InternalExecutorCommand
      */
     private function readPayload(): array
     {
-        $stdin = $this->internalStdin();
+        $stdin = $this->stdin();
 
         if ($stdin === '') {
             throw new InvalidArgumentException('Tool run payload must be provided on stdin.');

@@ -8,7 +8,6 @@ use App\Services\Processes\LocalDockerSwarmServiceAction;
 use App\Services\Processes\LocalDockerSwarmServiceFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class ProcessDockerSwarmServiceCommand extends InternalExecutorCommand
 {
@@ -72,16 +71,5 @@ final class ProcessDockerSwarmServiceCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }
