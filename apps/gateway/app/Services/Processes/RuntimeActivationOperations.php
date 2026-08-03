@@ -27,12 +27,13 @@ final readonly class RuntimeActivationOperations
         RuntimeHibernationScope $scope,
         array $dependencies,
         bool $retry,
+        bool $cold,
     ): OperationRun {
         $resolvedRun = null;
 
         try {
             Cache::lock("runtime-activation-operation:{$scope->key()}", 15)
-                ->block(10, function () use ($scope, $dependencies, $retry, &$resolvedRun): void {
+                ->block(10, function () use ($scope, $dependencies, $retry, $cold, &$resolvedRun): void {
                     $current = $this->latest($scope);
 
                     if ($current instanceof OperationRun && ! $current->status->isTerminal()) {
@@ -59,7 +60,7 @@ final readonly class RuntimeActivationOperations
                         return;
                     }
 
-                    $resolvedRun = $this->begin($scope, $dependencies);
+                    $resolvedRun = $this->begin($scope, $dependencies, $cold);
                 });
         } catch (LockTimeoutException $exception) {
             throw new RuntimeException('Runtime activation operation lock timed out.', previous: $exception);
@@ -83,16 +84,19 @@ final readonly class RuntimeActivationOperations
 
     /**
      * @param  list<array{key: string, label: string, present: bool, reconstructable: bool}>  $dependencies
+     * @mago-expect lint:no-boolean-flag-parameter
      */
-    private function begin(RuntimeHibernationScope $scope, array $dependencies): OperationRun
+    private function begin(RuntimeHibernationScope $scope, array $dependencies, bool $cold): OperationRun
     {
-        $plannedDependencies = array_values(array_map(
-            static fn (array $dependency): array => [
-                'key' => $dependency['key'],
-                'label' => $dependency['label'],
-            ],
-            $dependencies,
-        ));
+        $plannedDependencies = $cold
+            ? array_values(array_map(
+                static fn (array $dependency): array => [
+                    'key' => $dependency['key'],
+                    'label' => $dependency['label'],
+                ],
+                $dependencies,
+            ))
+            : [];
         $processes = $scope
             ->context
             ->lifecycleProcesses(null)
@@ -114,6 +118,7 @@ final readonly class RuntimeActivationOperations
                         'type' => $scope->type,
                         'id' => $scope->id,
                     ],
+                    'cold' => $cold,
                     'dependencies' => $plannedDependencies,
                     'processes' => $processes,
                 ],

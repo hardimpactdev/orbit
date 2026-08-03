@@ -75,6 +75,14 @@ final readonly class RemoteRuntimeHibernation
         return $states;
     }
 
+    public function isAwake(Node $node, string $key): ?bool
+    {
+        $states = $this->states($node, [$key]);
+        $state = $states === null || $states === [] ? null : $states[0];
+
+        return is_array($state) ? $state['awake'] : null;
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */

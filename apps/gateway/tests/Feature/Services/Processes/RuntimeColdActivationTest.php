@@ -71,6 +71,7 @@ it('returns an immediate minimal progress page with only detected dependencies a
         server: [
             'REMOTE_ADDR' => $node->wireguard_address,
             'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/docs/api?version=2',
         ],
     );
 
@@ -78,7 +79,9 @@ it('returns an immediate minimal progress page with only detected dependencies a
         ->assertServiceUnavailable()
         ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
         ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Retry-After', '2')
         ->assertSee('Waking docs.test')
+        ->assertSee('url=/docs/api?version=2', false)
         ->assertSee('Installing PHP dependencies')
         ->assertSee('Installing frontend dependencies')
         ->assertSee('Starting horizon')
@@ -94,6 +97,8 @@ it('returns an immediate minimal progress page with only detected dependencies a
 
     expect($run->operation_type)
         ->toBe('runtime-activation')
+        ->and($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeTrue()
         ->and($run->result['runtime_activation']['dependencies'] ?? null)
         ->toHaveCount(2);
 
@@ -417,17 +422,76 @@ it('keeps the cold gate when dependency inspection fails', function (): void {
         ->not->toContain('internal:process-systemd-service:start');
 });
 
-it('keeps the transparent fast wake when no dependencies need restoration', function (): void {
+it('returns the progress page immediately for soft wake when no dependencies need restoration', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
     Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
-    $executor = new ColdRuntimeExecutor([
+    $executor = new ColdRuntimeExecutor(
         [
-            'key' => 'composer',
-            'label' => 'Installing PHP dependencies',
-            'present' => true,
-            'reconstructable' => true,
+            [
+                'key' => 'composer',
+                'label' => 'Installing PHP dependencies',
+                'present' => true,
+                'reconstructable' => true,
+            ],
         ],
-    ]);
+        defaultAwake: false,
+        defaultCold: false,
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Starting horizon')
+        ->assertDontSee('Installing PHP dependencies');
+
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+
+    expect($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and($run->result['runtime_activation']['dependencies'] ?? null)
+        ->toBe([])
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->not->toContain('internal:process-systemd-service:start')
+        ->not->toContain('internal:runtime-dependencies:inspect');
+
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
+        ->toContain('internal:process-systemd-service:start')
+        ->toContain('internal:caddy-config:runtime-awake')
+        ->and($executor->actions())
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+});
+
+it('returns no content for an already-awake soft scope without starting an activation operation', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor(
+        [
+            [
+                'key' => 'composer',
+                'label' => 'Installing PHP dependencies',
+                'present' => true,
+                'reconstructable' => true,
+            ],
+        ],
+        defaultAwake: true,
+        defaultCold: false,
+    );
     app()->instance(RunsInternalCommands::class, $executor);
 
     $this->call(
@@ -442,8 +506,7 @@ it('keeps the transparent fast wake when no dependencies need restoration', func
     expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
         ->toBe(0)
         ->and($executor->actions())
-        ->toContain('internal:process-systemd-service:start')
-        ->toContain('internal:caddy-config:runtime-awake');
+        ->toBe(['internal:caddy-config:runtime-states']);
 });
 
 it('keeps a cold sibling in activation until its already restored source is ready', function (): void {
@@ -767,12 +830,20 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
     /** @var list<string> */
     private array $runtimeWarmMarkerKeys = [];
 
+    /** @var array<string, bool> */
+    private array $awakeByKey = [];
+
+    /** @var array<string, bool> */
+    private array $coldByKey = [];
+
     /**
      * @param  list<array{key: string, label: string, present: bool, reconstructable: bool}>  $dependencies
      */
     public function __construct(
         private array $dependencies,
         private readonly ?string $failingAction = null,
+        private readonly bool $defaultAwake = false,
+        private readonly bool $defaultCold = true,
     ) {}
 
     /** @mago-expect lint:halstead */
@@ -787,6 +858,7 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         $call = $action === '' ? $commandName : "{$commandName}:{$action}";
         $this->actions[] = $call;
         $shouldFail = $call === $this->failingAction;
+        $inputKey = $this->inputKey($transportOptions);
 
         if (
             $commandName === 'internal:runtime-dependencies'
@@ -812,16 +884,41 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             );
         }
 
-        if ($commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
-            $input = $transportOptions['input'] ?? null;
-            $decoded = is_string($input)
-                ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
-                : [];
-            $key = is_array($decoded) ? $decoded['key'] ?? null : null;
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-awake'
+            && is_string($inputKey)
+        ) {
+            $this->awakeByKey[$inputKey] = true;
+        }
 
-            if (is_string($key)) {
-                $this->runtimeWarmMarkerKeys[] = $key;
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-asleep'
+            && is_string($inputKey)
+        ) {
+            $this->awakeByKey[$inputKey] = false;
+        }
+
+        if ($commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
+            if (is_string($inputKey)) {
+                $this->runtimeWarmMarkerKeys[] = $inputKey;
+
+                if (! $shouldFail) {
+                    $this->coldByKey[$inputKey] = false;
+                }
             }
+        }
+
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-cold'
+            && is_string($inputKey)
+        ) {
+            $this->coldByKey[$inputKey] = true;
         }
 
         $data = match ([$commandName, $action]) {
@@ -832,9 +929,9 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             ['internal:caddy-config', 'runtime-states'] => [
                 'states' => [[
                     'key' => 'app-instance-1',
-                    'awake' => false,
-                    'hibernated' => true,
-                    'cold' => true,
+                    'awake' => $this->isAwake('app-instance-1'),
+                    'hibernated' => ! $this->isAwake('app-instance-1'),
+                    'cold' => $this->isCold('app-instance-1'),
                     'last_activity_at' => 1_767_268_800,
                 ]],
             ],
@@ -847,11 +944,11 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
                 ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
             $keys = is_array($decoded) && is_array($decoded['keys'] ?? null) ? $decoded['keys'] : [];
-            $data['states'] = array_map(static fn (string $key): array => [
+            $data['states'] = array_map(fn (string $key): array => [
                 'key' => $key,
-                'awake' => false,
-                'hibernated' => true,
-                'cold' => true,
+                'awake' => $this->isAwake($key),
+                'hibernated' => ! $this->isAwake($key),
+                'cold' => $this->isCold($key),
                 'last_activity_at' => 1_767_268_800,
             ], $keys);
         }
@@ -868,6 +965,30 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             stderr: '',
             durationMs: 1,
         );
+    }
+
+    private function isAwake(string $key): bool
+    {
+        return $this->awakeByKey[$key] ?? $this->defaultAwake;
+    }
+
+    private function isCold(string $key): bool
+    {
+        return $this->coldByKey[$key] ?? $this->defaultCold;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function inputKey(array $transportOptions): ?string
+    {
+        $input = $transportOptions['input'] ?? null;
+        $decoded = is_string($input)
+            ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
+            : [];
+        $key = is_array($decoded) ? $decoded['key'] ?? null : null;
+
+        return is_string($key) ? $key : null;
     }
 
     /**
