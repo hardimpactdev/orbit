@@ -146,6 +146,60 @@ describe('InternalExecutorCommand base', function (): void {
             ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
     });
 
+    it('propagates recognized gateway denial reasons into the CLI failure code', function (string $reason): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+            'reason' => $reason,
+            'operation_id' => 'op-safe-reason',
+        ]));
+
+        [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+            '--operation-token' => signInternalExecutorToken(id: 'op-safe-reason'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure($reason, 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('operation_id')->and($output)
+            ->not->toContain('op-safe-reason');
+    })->with([
+        'invalid_token',
+        'arguments_mismatch',
+        'target_node_mismatch',
+        'command_mismatch',
+        'operation.already_dispatched',
+        'operation.not_found',
+    ]);
+
+    it('keeps unknown gateway denial reasons generic and redacted in JSON failures', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+            'reason' => 'secret_path_/etc/orbit/key.pem',
+            'operation_id' => 'op-unsafe-reason',
+        ]));
+
+        [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+            '--operation-token' => signInternalExecutorToken(id: 'op-unsafe-reason'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('secret_path')->and($output)
+            ->not->toContain('/etc/orbit/key.pem')->and($output)
+            ->not->toContain('op-unsafe-reason');
+    });
+
     it('posts the compact token and expected command to the gateway verifier', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,

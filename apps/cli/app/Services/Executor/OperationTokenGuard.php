@@ -51,9 +51,13 @@ final readonly class OperationTokenGuard
             throw new OperationTokenGuardException;
         }
 
-        if (! $this->isAllowedResponse($response)) {
-            throw new OperationTokenGuardException;
+        if ($this->isAllowedResponse($response)) {
+            return;
         }
+
+        throw OperationTokenGuardException::fromGatewayReason(
+            $this->safeDenialReason($response),
+        );
     }
 
     /**
@@ -61,19 +65,51 @@ final readonly class OperationTokenGuard
      */
     private function isAllowedResponse(array $response): bool
     {
+        $data = $this->verificationData($response);
+
+        if ($data === null) {
+            return false;
+        }
+
+        return ($data['allowed'] ?? null) === true;
+    }
+
+    /**
+     * Extract a candidate denial reason only from a well-formed allowed=false body.
+     * Malformed responses never expose free-form gateway text.
+     *
+     * @param  array<string, mixed>  $response
+     */
+    private function safeDenialReason(array $response): mixed
+    {
+        $data = $this->verificationData($response);
+
+        if ($data === null || ($data['allowed'] ?? null) !== false) {
+            return null;
+        }
+
+        return $data['reason'] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<array-key, mixed>|null
+     */
+    private function verificationData(array $response): ?array
+    {
         $success = $response['success'] ?? null;
 
         if (! is_array($success)) {
-            return false;
+            return null;
         }
 
         $data = $success['data'] ?? null;
 
         if (! is_array($data)) {
-            return false;
+            return null;
         }
 
-        return ($data['allowed'] ?? null) === true;
+        return $data;
     }
 
     /**

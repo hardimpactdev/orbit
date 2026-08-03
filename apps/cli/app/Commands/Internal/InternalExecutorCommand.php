@@ -71,8 +71,8 @@ abstract class InternalExecutorCommand extends Command
             /** @var OperationTokenGuard $guard */
             $guard = app(OperationTokenGuard::class);
             $guard->verify($compactToken, $expectedCommand);
-        } catch (OperationTokenGuardException) {
-            $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        } catch (OperationTokenGuardException $exception) {
+            $this->renderFailure($exception->reason(), 'Operation token is invalid.', []);
 
             return false;
         }
