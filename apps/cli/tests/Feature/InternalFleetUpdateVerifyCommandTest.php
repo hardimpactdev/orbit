@@ -68,7 +68,8 @@ describe('internal fleet update verify command', function (): void {
     it('verifies the local Orbit CLI through fixed argv', function (): void {
         $bin = install_fleet_update_verify_fake_bin(
             'orbit',
-            output: '{"success":{"data":{"version":"1.2.3","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'."\n",
+            output: '{"success":{"data":{"version":"1.2.3","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'
+            ."\n",
         );
 
         [$exitCode, $output] = run_internal_fleet_update_verify_command([
@@ -94,7 +95,8 @@ describe('internal fleet update verify command', function (): void {
     it('verifies the local Orbit CLI through an explicit launcher path', function (): void {
         $bin = install_fleet_update_verify_fake_bin(
             'orbit',
-            output: '{"success":{"data":{"version":"1.2.4","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'."\n",
+            output: '{"success":{"data":{"version":"1.2.4","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'
+            ."\n",
         );
 
         [$exitCode, $output] = run_internal_fleet_update_verify_command(

@@ -106,7 +106,7 @@ describe('LocalCheckoutUpdater', function (): void {
         putenv('ORBIT_BIN_PATH');
         putenv("HOME={$home}");
 
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
@@ -153,7 +153,7 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('downloads the binary to a staged path and reports the resolved version', function (): void {
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $download = new LocalCheckoutUpdater(new CheckoutPathResolver)->downloadBinary();
@@ -209,7 +209,7 @@ describe('LocalCheckoutUpdater', function (): void {
 
             return match ($call) {
                 1 => Process::describe()->runsFor(3)->exitCode(0),
-                3 => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0),
+                3 => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0),
                 default => Process::result(output: '', exitCode: 0),
             };
         });
@@ -230,7 +230,7 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('replaces the binary with a versioned file and relinks the host launcher', function (): void {
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
@@ -270,7 +270,7 @@ describe('LocalCheckoutUpdater', function (): void {
     it('does not relink a shadowing launcher resolved through PATH', function (): void {
         Process::fake([
             '*command -v orbit*' => Process::result(output: "/tmp/orbit-shadow-bin/orbit\n", exitCode: 0),
-            '*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0),
+            '*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0),
         ]);
         Process::preventStrayProcesses();
 
@@ -293,7 +293,7 @@ describe('LocalCheckoutUpdater', function (): void {
     it('does not relink when the resolved launcher is the relinked launcher', function (): void {
         Process::fake([
             '*command -v orbit*' => Process::result(output: $this->linkPath."\n", exitCode: 0),
-            '*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0),
+            '*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0),
         ]);
         Process::preventStrayProcesses();
 
@@ -322,7 +322,7 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('installs updates to a versioned binary without replacing the running binary path', function (): void {
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("9.8.7"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('9.8.7'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
@@ -361,7 +361,7 @@ describe('LocalCheckoutUpdater', function (): void {
         $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
         file_put_contents($versionedBinary, 'existing binary');
 
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
@@ -392,7 +392,7 @@ describe('LocalCheckoutUpdater', function (): void {
         file_put_contents($versionedBinary, 'candidate binary');
         file_put_contents($stagedBinary, 'candidate binary');
 
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $replace = new LocalCheckoutUpdater(new CheckoutPathResolver)->replaceBinary($stagedBinary, '1.2.3');
@@ -428,7 +428,7 @@ describe('LocalCheckoutUpdater', function (): void {
         file_put_contents($versionedBinary, 'released binary');
         file_put_contents($stagedBinary, 'candidate binary');
 
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $replace = new LocalCheckoutUpdater(new CheckoutPathResolver)->replaceBinary($stagedBinary, '1.2.3');
@@ -451,7 +451,7 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('writes install metadata after relinking the host launcher', function (): void {
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
@@ -499,7 +499,7 @@ describe('LocalCheckoutUpdater', function (): void {
                 return Process::result(errorOutput: 'sudo: a password is required', exitCode: 1);
             }
 
-            return Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0);
+            return Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0);
         });
         Process::preventStrayProcesses();
 
@@ -770,7 +770,7 @@ describe('LocalCheckoutUpdater', function (): void {
         // This verifies the full local update mechanism without a network call:
         //   1. downloadBinary — curl (file://) + chmod + verify --version
         //   2. replaceBinary  — mv to versioned path + relink + verify + metadata
-        Process::fake(['*' => Process::result(output: local_checkout_version_json("1.2.3"), exitCode: 0)]);
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
 
         $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));

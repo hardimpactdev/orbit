@@ -44,7 +44,8 @@ function managed_tool_bash_lc_script(string $commandLine): string
     $lcIndex = array_search('-lc', $words, true);
 
     expect($lcIndex)
-        ->not->toBeFalse()
+        ->not
+        ->toBeFalse()
         ->and(isset($words[$lcIndex + 1]))
         ->toBeTrue()
         ->and(array_key_exists($lcIndex + 2, $words))

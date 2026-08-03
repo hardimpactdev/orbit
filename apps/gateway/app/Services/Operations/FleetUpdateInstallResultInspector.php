@@ -64,9 +64,7 @@ final readonly class FleetUpdateInstallResultInspector
      */
     private function hasNonEmptyListField(array $payload, string $key): bool
     {
-        return array_key_exists($key, $payload)
-            && is_array($payload[$key])
-            && $payload[$key] !== [];
+        return array_key_exists($key, $payload) && is_array($payload[$key]) && $payload[$key] !== [];
     }
 
     private function installResultConfirmsAgentInstall(RemoteShellResult $result): bool

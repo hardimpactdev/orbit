@@ -188,11 +188,14 @@ it('preserves the OpenClaw gateway token shell pipeline through systemd renderin
     expect($command)
         ->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')
         ->toContain('${TOKEN_FILE}')
-        ->toContain('OPENCLAW_GATEWAY_TOKEN="$(tr -d "\r\n" < "${TOKEN_FILE}")"')
+        ->toContain('TOKEN="$(tr -d "[:space:]" < "${TOKEN_FILE}" 2>/dev/null || true)"')
+        ->toContain('export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"')
         ->and($execStart)
         ->not->toBeNull()->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')->toContain(
             '$${TOKEN_FILE}',
-        )->toContain('OPENCLAW_GATEWAY_TOKEN="$$(tr -d "\r\n" < "$${TOKEN_FILE}")"')->toContain(
+        )->toContain('TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"')->toContain(
+            'export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"',
+        )->toContain(
             'openclaw gateway run --port 18789 --bind lan',
         )
         // Unescaped shell vars must not appear in the unit file payload.

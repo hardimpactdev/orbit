@@ -847,7 +847,7 @@ it('session archive reuses compact content-identical archives across compatible 
         $firstArchiveDir = (string) $firstSummary['archive_dir'];
         $firstLoop = (string) file_get_contents("{$firstArchiveDir}/loop.md");
         $firstLoopDigest = is_array($firstSummary['entry_digests'] ?? null)
-            ? ($firstSummary['entry_digests']['loop.md'] ?? null)
+            ? $firstSummary['entry_digests']['loop.md'] ?? null
             : null;
 
         expect($firstLoopDigest)
@@ -934,7 +934,8 @@ it('failed cross-slug compact refresh leaves the original archive path and conte
         ], full: false);
 
         expect($secondRun->getExitCode())
-            ->not->toBe(0)
+            ->not
+            ->toBe(0)
             ->and(is_dir($firstArchiveDir))
             ->toBeTrue()
             ->and(basename($firstArchiveDir))
@@ -947,7 +948,7 @@ it('failed cross-slug compact refresh leaves the original archive path and conte
             ->toBe($originalReceipt);
     } finally {
         if (isset($paths['archiveRoot']) && is_dir($paths['archiveRoot'])) {
-            @chmod($paths['archiveRoot'], 0o755);
+            chmod($paths['archiveRoot'], 0o755);
         }
 
         remove_session_archive_workspace(path: $workspace);

@@ -60,11 +60,15 @@ final class VersionOutputParser
 
         $data = $success['data'] ?? null;
 
-        return is_array($data) ? $data : null;
+        if (! is_array($data)) {
+            return null;
+        }
+
+        return $this->stringKeyedArray($data);
     }
 
     /**
-     * @return array<array-key, mixed>|null
+     * @return array<string, mixed>|null
      */
     private function decodeLastJsonObject(string $output): ?array
     {
@@ -84,7 +88,7 @@ final class VersionOutputParser
             $decoded = null;
 
             for ($index = count($lines) - 1; $index >= 0; $index--) {
-                $line = trim((string) $lines[$index]);
+                $line = trim($lines[$index]);
 
                 if ($line === '' || ! str_starts_with($line, '{')) {
                     continue;
@@ -103,6 +107,29 @@ final class VersionOutputParser
             }
         }
 
-        return is_array($decoded) ? $decoded : null;
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        return $this->stringKeyedArray($decoded);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function stringKeyedArray(array $payload): ?array
+    {
+        $result = [];
+
+        foreach ($payload as $key => $value) {
+            if (! is_string($key)) {
+                return null;
+            }
+
+            $result[$key] = $value;
+        }
+
+        return $result;
     }
 }

@@ -200,77 +200,85 @@ describe('OperationRunRecorder', function (): void {
     });
 
     it('redacts APP_KEY and app_key material from summaries and nested results', function (): void {
-        $secret = 'base64:PersistMeNeverInSummaries==';
-        $run = $this->recorder->queued((string) Str::uuid(), 'local', operationType: 'websocket-runtime.app-key:ensure');
+        $material = 'base64:PersistMeNeverInSummaries==';
+        $marker = '<redacted>';
+        $run = $this->recorder->queued(
+            (string) Str::uuid(),
+            'local',
+            operationType: 'websocket-runtime.app-key:ensure',
+        );
         $this->recorder->running($run->id);
 
         $done = $this->recorder->succeeded(
             id: $run->id,
             exitCode: 0,
             result: [
-                'app_key' => $secret,
-                'nested' => ['APP_KEY' => $secret, 'status' => 'present'],
+                'app_key' => $material,
+                'nested' => ['APP_KEY' => $material, 'status' => 'present'],
             ],
-            stdoutSummary: "export APP_KEY={$secret}\n{\"app_key\":\"{$secret}\"}\n",
-            stderrSummary: "app_key: {$secret}",
+            stdoutSummary: "export APP_KEY={$material}\n{\"app_key\":\"{$material}\"}\n",
+            stderrSummary: "app_key: {$material}",
         );
 
         expect($done->stdout_summary)
-            ->not->toContain($secret)
-            ->toContain('APP_KEY=<redacted>')
-            ->and($done->stderr_summary)
-            ->not->toContain($secret)
-            ->toContain('app_key: <redacted>')
-            ->and($done->result)
-            ->toMatchArray([
-                'app_key' => '<redacted>',
-                'nested' => ['APP_KEY' => '<redacted>', 'status' => 'present'],
-            ]);
+            ->not->toContain($material)->toContain("APP_KEY={$marker}")->and($done->stderr_summary)
+            ->not->toContain($material)->toContain("app_key: {$marker}")->and($done->result['app_key'] ?? null)->toBe(
+                $marker,
+            )->and($done->result['nested']['APP_KEY'] ?? null)->toBe($marker)->and(
+                $done->result['nested']['status'] ?? null,
+            )->toBe('present');
     });
 
     it('redacts secret-shaped result error and summaries when queuing an operation_run', function (): void {
-        $secret = 'base64:QueuedMustNotPersist==';
+        $material = 'base64:QueuedMustNotPersist==';
+        $marker = '<redacted>';
 
         $run = $this->recorder->queued(
             operationId: (string) Str::uuid(),
             lane: 'local',
             operationType: 'websocket-runtime.app-key:ensure',
             result: [
-                'app_key' => $secret,
-                'nested' => ['password' => $secret, 'status' => 'queued'],
+                'app_key' => $material,
+                'nested' => [
+                    'password' => $material,
+                    'status' => 'queued',
+                ],
             ],
             error: [
                 'code' => 'preview',
-                'token' => $secret,
-                'message' => "export APP_KEY={$secret}",
+                'token' => $material,
+                'message' => "export APP_KEY={$material}",
             ],
-            stdoutSummary: "APP_KEY={$secret}\n",
-            stderrSummary: "password: {$secret}",
+            stdoutSummary: "APP_KEY={$material}\n",
+            stderrSummary: "password: {$material}",
         );
+
+        $result = $run->result ?? [];
+        $error = $run->error ?? [];
+        $nested = is_array($result['nested'] ?? null) ? $result['nested'] : [];
 
         expect($run->status)
             ->toBe(OperationStatus::Queued)
-            ->and($run->result)
-            ->toMatchArray([
-                'app_key' => '<redacted>',
-                'nested' => ['password' => '<redacted>', 'status' => 'queued'],
-            ])
-            ->and($run->error)
-            ->toMatchArray([
-                'code' => 'preview',
-                'token' => '<redacted>',
-                'message' => 'export APP_KEY=<redacted>',
-            ])
+            ->and($result['app_key'] ?? null)
+            ->toBe($marker)
+            ->and($nested['password'] ?? null)
+            ->toBe($marker)
+            ->and($nested['status'] ?? null)
+            ->toBe('queued')
+            ->and($error['code'] ?? null)
+            ->toBe('preview')
+            ->and($error['token'] ?? null)
+            ->toBe($marker)
+            ->and($error['message'] ?? null)
+            ->toBe("export APP_KEY={$marker}")
             ->and(trim((string) $run->stdout_summary))
-            ->toBe('APP_KEY=<redacted>')
+            ->toBe("APP_KEY={$marker}")
             ->and($run->stdout_summary)
-            ->not->toContain($secret)
-            ->and(trim((string) $run->stderr_summary))
-            ->toBe('password: <redacted>')
-            ->and($run->stderr_summary)
-            ->not->toContain($secret);
+            ->not->toContain($material)->and(trim((string) $run->stderr_summary))->toBe(
+                "password: {$marker}",
+            )->and($run->stderr_summary)
+            ->not->toContain($material);
     });
-
     it('preserves the first terminal result and warns on duplicate finalization', function (): void {
         $run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'tool.install');
         $first = $this->recorder->failed(
