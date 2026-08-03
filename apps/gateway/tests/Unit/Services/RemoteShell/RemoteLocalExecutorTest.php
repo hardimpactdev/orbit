@@ -264,6 +264,11 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ->and($capturedCommand)
                 ->toContain($hostHome)
                 ->and($capturedCommand)
+                ->toContain("{$hostHome}/.local/bin/orbit")
+                ->and($capturedCommand)
+                ->toContain('unset APP_KEY ORBIT_CONFIG_PATH')
+                ->and($capturedCommand)
+                ->not->toContain('/usr/local/bin/orbit-cli')->and($capturedCommand)
                 ->not->toContain('APP_KEY=')->and($capturedCommand)
                 ->not->toContain('gateway-secret');
 
@@ -295,6 +300,55 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ->toBe($hostVerificationContext->hash())
                 ->and(remote_local_executor_operation_run($operationId)->operation_token_consumed_at)
                 ->toBeNull();
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('keeps agent-push ordinary when force_remote_host is requested for non-gateway targets', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+
+        try {
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "agent-push-ordinary\n",
+                    stderr: '',
+                    durationMs: 1,
+                ),
+            );
+            $executor = remoteLocalExecutor(transport: $transport);
+            $node = remoteLocalExecutorNode(['ingress']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000432',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)
+                ->toBe("agent-push-ordinary\n")
+                ->and($transport->calls)
+                ->not->toBeEmpty();
+
+            $script = (string) ($transport->calls[0]['script'] ?? '');
+
+            expect($script)
+                ->toContain('internal:caddy-config')
+                ->not->toContain("cd '/home/orbit'")
+                ->not->toContain('unset APP_KEY');
         } finally {
             if ($previousExposureMode === false) {
                 putenv('ORBIT_GATEWAY_EXPOSURE_MODE');

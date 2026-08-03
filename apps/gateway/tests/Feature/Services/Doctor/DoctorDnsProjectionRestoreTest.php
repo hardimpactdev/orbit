@@ -401,3 +401,47 @@ it('does not probe node DNS projection on non-DNS-consumer nodes', function (): 
 
     expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
 });
+
+it('skips node DNS content probes on the DNS consumer when the projection directory is not mounted', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => '203.0.113.10',
+            'dns_ip' => '10.6.0.1',
+        ],
+    ]);
+    Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+    File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
+    app()->instance(DnsmasqReconciler::class, new class extends DnsmasqReconciler {
+        public function __construct() {}
+
+        public function projectionDirectoryIsMounted(): bool
+        {
+            return false;
+        }
+    });
+    app()->forgetInstance(DoctorReportRunner::class);
+
+    $report = app(DoctorReportRunner::class)->probe(
+        $gateway,
+        families: ['node'],
+        key: 'node.dns_mapping_mismatch',
+    );
+
+    expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
+});

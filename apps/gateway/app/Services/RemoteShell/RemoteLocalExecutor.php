@@ -1264,14 +1264,17 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         $home = $environment['HOME'] ?? $this->defaultLocalExecutorHome($node);
         $forceRemoteHost = ($transportOptions['force_remote_host'] ?? false) === true;
 
-        $environment['HOME'] = $home;
-
-        // force_remote_host dispatches over SSH. Process::env only affects the local
-        // SSH client, so inventing ORBIT_CONFIG_PATH here would bind a context key
-        // the remote host CLI never observes. Caller-supplied keys remain allowed.
-        if (! $forceRemoteHost) {
-            $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
+        // force_remote_host has one canonical context: HOME + host-home cwd only.
+        // Drop caller-supplied allowlisted keys so mint matches the host CLI after
+        // the remote script unsets optional profile exports.
+        if ($forceRemoteHost) {
+            return [
+                'HOME' => $home,
+            ];
         }
+
+        $environment['HOME'] = $home;
+        $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
 
         if (! $node->hasActiveRole('gateway')) {
             $environment['ORBIT_BIN_PATH'] = FleetUpdateNodeCliLauncher::binPath($node);
@@ -1356,6 +1359,50 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
+     * Canonical remote-host execution script: host-installed orbit binary, host home,
+     * and only the HOME env binding that OperationTokenGuard will observe after
+     * unsetting optional allowlisted keys the host profile may export.
+     *
+     * @param  array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }  $dispatch
+     * @param  array<string, mixed>  $dispatchOptions
+     */
+    private function forceRemoteHostScript(Node $node, array $dispatch, array $dispatchOptions): string
+    {
+        $home = is_string($dispatchOptions['cwd'] ?? null) && $dispatchOptions['cwd'] !== ''
+            ? $dispatchOptions['cwd']
+            : $this->defaultLocalExecutorHome($node);
+        $hostBinary = $home.'/.local/bin/orbit';
+        $argv = array_map(
+            escapeshellarg(...),
+            $dispatch['argv'],
+        );
+
+        // Keep remote process env aligned with the minted host-boundary context:
+        // cwd is applied by RemoteShellScriptComposer; HOME is the only allowlisted
+        // token-bound key; never export APP_KEY or config paths over SSH.
+        return implode(' ', [
+            'export',
+            'HOME='.escapeshellarg($home).';',
+            'unset',
+            'APP_KEY',
+            'ORBIT_CONFIG_PATH',
+            'ORBIT_INSTALL_METADATA_PATH',
+            'ORBIT_WG_EASY_DB_PATH',
+            'ORBIT_BIN_PATH',
+            ';',
+            'exec',
+            escapeshellarg($hostBinary),
+            ...$argv,
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $transportOptions
      */
     private function shouldBindApplicationKey(array $transportOptions): bool
@@ -1428,13 +1475,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         bool $forceRemoteHost = false,
     ): RemoteShellResult {
         $dispatchOptions = $this->transportDispatchOptions($node, $transportOptions);
-        $script = $this->commands->build(
-            targetNode: $node,
-            commandName: $commandName,
-            arguments: $arguments,
-            options: $commandOptions,
-            operationToken: $dispatch['operationToken'],
-        );
 
         if ($forceRemoteHost) {
             $dispatchOptions['force_remote_host'] = true;
@@ -1446,10 +1486,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             // @orbit-ssh-lane provisioning-ssh
             return app(RemoteHostExecutor::class)->run(
                 node: $node,
-                script: $script,
+                script: $this->forceRemoteHostScript($node, $dispatch, $dispatchOptions),
                 options: $dispatchOptions,
             );
         }
+
+        $script = $this->commands->build(
+            targetNode: $node,
+            commandName: $commandName,
+            arguments: $arguments,
+            options: $commandOptions,
+            operationToken: $dispatch['operationToken'],
+        );
 
         $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
             compactToken: $dispatch['operationToken'],

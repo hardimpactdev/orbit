@@ -1692,6 +1692,143 @@ describe('DoctorReportRunner', function (): void {
             ->toContain('orbit-app-removed');
     });
 
+    it('removes Orbit-owned stale systemd process.runtime_unit_extra units on restore', function (): void {
+        $node = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'beast',
+                'tld' => 'beast',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+            ]);
+        $app = Project::factory()->create([
+            'name' => 'dutchlaravelfoundation',
+            'node_id' => $node->id,
+            'path' => '/home/orbit/apps/dutchlaravelfoundation',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $app->path,
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'best-practices-sync',
+            'path' => '/home/orbit/apps/dutchlaravelfoundation/workspaces/best-practices-sync',
+        ]);
+        OrbitProcess::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'runtime' => ProcessRuntime::Systemd,
+                'app_instance_id' => $instance->id,
+                'restart_policy' => 'always',
+                'crash_notification' => 'none',
+            ]);
+
+        $staleUnit = 'orbit_dutchlaravelfoundation_development_best-practices-sync_vite';
+        $runner = app(DoctorReportRunner::class);
+        $method = new \ReflectionMethod(DoctorReportRunner::class, 'removeExtraManagedProcessRuntime');
+
+        $result = $method->invoke($runner, $node, 'process.runtime_unit_extra', [
+            'runtime_unit' => $staleUnit,
+            'runtime' => 'systemd',
+            'expected_path' => "/etc/systemd/system/{$staleUnit}.service",
+            'process' => 'vite',
+            'app' => 'dutchlaravelfoundation',
+        ]);
+
+        expect($result)
+            ->not
+            ->toBeNull()
+            ->and($result['status'] ?? null)
+            ->toBe('completed')
+            ->and($result['key'] ?? null)
+            ->toBe('process.runtime_unit_extra')
+            ->and($result['details']['runtime_unit'] ?? null)
+            ->toBe($staleUnit)
+            ->and($result['summary'] ?? '')
+            ->toContain($staleUnit);
+    });
+
+    it('refuses to remove non-Orbit systemd units labeled as runtime extras', function (): void {
+        $node = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'beast-2',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+            ]);
+        $runner = app(DoctorReportRunner::class);
+        $method = new \ReflectionMethod(DoctorReportRunner::class, 'removeExtraManagedProcessRuntime');
+
+        $result = $method->invoke($runner, $node, 'process.runtime_unit_extra', [
+            'runtime_unit' => 'nginx',
+            'runtime' => 'systemd',
+            'expected_path' => '/etc/systemd/system/nginx.service',
+        ]);
+
+        expect($result)->toBeNull();
+    });
+
+    it('continues later families when a family RemoteShellFailed after reporting family issues', function (): void {
+        $node = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'multi-family',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'command' => 'node_exporter',
+                'runtime' => ProcessRuntime::Systemd,
+                'restart_policy' => 'always',
+                'crash_notification' => 'none',
+            ]);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'ssh',
+            'action' => 'allow',
+            'direction' => 'in',
+            'protocol' => 'tcp',
+            'port' => '22',
+        ]);
+        app()->instance(
+            RemoteShell::class,
+            new DoctorReportRunnerThrowingRemoteShell(
+                failingNodeName: 'multi-family',
+                // Fail after process backend probe so process family has work in-flight.
+                failingScriptNeedle: 'internal:runtime-backend:probe',
+            ),
+        );
+
+        $report = app(DoctorReportRunner::class)->probeFleetTargetReport(
+            $node,
+            families: ['process', 'firewall_rule'],
+            key: null,
+        );
+
+        $keys = collect($report['issues'] ?? [])->pluck('key')->all();
+        $families = collect($report['issues'] ?? [])->pluck('family')->unique()->values()->all();
+
+        expect($keys)
+            ->toContain('process.remote_shell_probe_failed')
+            ->and($families)
+            ->toContain('firewall_rule')
+            ->and($report['scope']['families'] ?? null)
+            ->toContain('firewall_rule');
+    });
+
     it('restores missing node-owned docker swarm process runtime units through restore mode family dispatch', function (): void {
         $node = Node::factory()
             ->database()

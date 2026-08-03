@@ -213,11 +213,13 @@ it('replaces stale placeholder credentials and restarts related process after re
             ],
         ],
     ]);
+    $staleCommand = 'sudo -u agent -H bash -lc \'[ -f /home/agent/.hermes/dashboard.password ] && hermes dashboard\'';
+    $canonicalCommand = new HermesTool()->relatedProcess()['command'];
     Process::factory()
         ->forOwner($node)
         ->create([
             'name' => HermesTool::PROCESS_NAME,
-            'command' => 'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
+            'command' => $staleCommand,
             'runtime' => ProcessRuntime::Systemd,
             'tool' => 'hermes',
         ]);
@@ -243,6 +245,10 @@ it('replaces stale placeholder credentials and restarts related process after re
         $executor->payloads(),
     );
     $storedFields = $tool->fresh()->credentials['fields'] ?? [];
+    $process = Process::query()
+        ->where('name', HermesTool::PROCESS_NAME)
+        ->where('tool', 'hermes')
+        ->first();
 
     expect($result)
         ->toMatchArray([
@@ -255,13 +261,19 @@ it('replaces stale placeholder credentials and restarts related process after re
             'name' => HermesTool::PROCESS_NAME,
             'tool' => 'hermes',
             'action' => 'restarted',
+            'command_reconciled' => true,
         ])
+        ->and($process?->command)
+        ->toBe($canonicalCommand)
+        ->and($process?->command)
+        ->toContain('[ -n "${PASSWORD}" ]')
         ->and($actions)
         ->toBe(['reconfigure', 'credentials'])
         ->and(is_array($storedFields) ? $storedFields[hermesAuthFieldName()] ?? null : null)
         ->toBe($refreshed)
         ->and(json_encode($result, JSON_THROW_ON_ERROR))
-        ->not->toContain($refreshed);
+        ->not->toContain($refreshed)
+        ->not->toContain($staleCommand);
 });
 
 it('fails reconfigure without claiming success when the credentials script fails', function (): void {

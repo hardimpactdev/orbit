@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
+use App\Actions\Processes\EditProcess;
 use App\Actions\Processes\RemoveProcess;
 use App\Actions\Processes\RestartProcesses;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
@@ -14,8 +16,11 @@ use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
 /**
- * Symmetric lifecycle for tools that declare relatedProcess(): remove or
- * restart the matching process unit (name + tool) around tool scripts.
+ * Symmetric lifecycle for tools that declare relatedProcess(): remove,
+ * reconcile, or restart the matching process unit (name + tool) around tool
+ * scripts.
+ *
+ * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class RelatedToolProcessRemover
 {
@@ -24,6 +29,7 @@ final readonly class RelatedToolProcessRemover
         private ProcessOwnerContextResolver $processContexts,
         private RemoveProcess $removeProcess,
         private RestartProcesses $restartProcesses,
+        private EditProcess $editProcess,
     ) {}
 
     /**
@@ -84,10 +90,10 @@ final readonly class RelatedToolProcessRemover
     }
 
     /**
-     * Restart the related process after tool reconfigure so file/env changes
-     * (for example Hermes public URL) take effect in the running unit.
+     * Reconcile managed process intent to the catalog's current relatedProcess()
+     * command/runtime, then restart so file/env changes take effect.
      *
-     * @return array{name: string, runtime: string, tool: string, action: string}|ToolRegistryFailure|null
+     * @return array{name: string, runtime: string, tool: string, action: string, command_reconciled?: bool}|ToolRegistryFailure|null
      */
     public function restartIfPresent(Node $node, string $tool): array|ToolRegistryFailure|null
     {
@@ -99,15 +105,17 @@ final readonly class RelatedToolProcessRemover
 
         $resolved = $this->resolveOwnedProcess($node, $tool, $spec['name'], $spec['tool'], 'reconfigure');
 
-        if ($resolved instanceof ToolRegistryFailure) {
+        if ($resolved instanceof ToolRegistryFailure || $resolved === null) {
             return $resolved;
         }
 
-        if ($resolved === null) {
-            return null;
+        [$context, $process] = $resolved;
+        $commandReconciled = $this->reconcileProcessIntent($node, $tool, $context, $process, $spec);
+
+        if ($commandReconciled instanceof ToolRegistryFailure) {
+            return $commandReconciled;
         }
 
-        [$context] = $resolved;
         $result = $this->restartProcesses->handle($context, $spec['name']);
 
         if ($result['failed']) {
@@ -120,12 +128,84 @@ final readonly class RelatedToolProcessRemover
             );
         }
 
-        return [
+        return $this->restartedPayload($spec, $commandReconciled);
+    }
+
+    /**
+     * @param  array{name: string, command: string, runtime: string, tool: string}  $spec
+     * @return array{name: string, runtime: string, tool: string, action: string, command_reconciled?: bool}
+     */
+    private function restartedPayload(array $spec, bool $commandReconciled): array
+    {
+        $payload = [
             'name' => $spec['name'],
             'runtime' => $spec['runtime'],
             'tool' => $spec['tool'],
             'action' => 'restarted',
         ];
+
+        if ($commandReconciled) {
+            $payload['command_reconciled'] = true;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array{name: string, command: string, runtime: string, tool: string}  $spec
+     */
+    private function reconcileProcessIntent(
+        Node $node,
+        string $tool,
+        ProcessOwnerContext $context,
+        Process $process,
+        array $spec,
+    ): bool|ToolRegistryFailure {
+        $changes = $this->relatedProcessChanges($process, $spec);
+
+        if ($changes === []) {
+            return false;
+        }
+
+        try {
+            $this->editProcess->handle(
+                context: $context,
+                name: $spec['name'],
+                changes: $changes,
+                restart: false,
+            );
+        } catch (GatewayApiException $exception) {
+            return ToolRegistryFailure::remoteActionFailed(
+                $tool,
+                $node->name,
+                'reconfigure',
+                1,
+                $exception->getMessage(),
+            );
+        }
+
+        return array_key_exists('command', $changes);
+    }
+
+    /**
+     * @param  array{name: string, command: string, runtime: string, tool: string}  $spec
+     * @return array{command?: string, runtime?: ProcessRuntime}
+     */
+    private function relatedProcessChanges(Process $process, array $spec): array
+    {
+        $changes = [];
+
+        if ($process->command !== $spec['command']) {
+            $changes['command'] = $spec['command'];
+        }
+
+        $desiredRuntime = ProcessRuntime::tryFrom($spec['runtime']);
+
+        if ($desiredRuntime instanceof ProcessRuntime && $process->runtime !== $desiredRuntime) {
+            $changes['runtime'] = $desiredRuntime;
+        }
+
+        return $changes;
     }
 
     /**

@@ -1121,7 +1121,10 @@ final readonly class ProcessesProbe
                 ]);
 
                 if (! $isDocker) {
-                    $detail['expected_path'] = "/etc/systemd/system/{$runtimeUnit}.service";
+                    $runtime = $this->runtimeFor($process);
+                    $detail['expected_path'] = $runtime === ProcessRuntime::Launchd
+                        ? $this->launchdExtraExpectedPath($process, $runtimeUnit)
+                        : "/etc/systemd/system/{$runtimeUnit}.service";
                 }
 
                 return new DriftEntry(
@@ -1197,6 +1200,17 @@ final readonly class ProcessesProbe
         return $process->appInstance instanceof AppInstance
             ? "orbit_{$app->name}_{$process->appInstance->name}_"
             : "orbit_{$app->name}_";
+    }
+
+    private function launchdExtraExpectedPath(Process $process, string $runtimeUnit): string
+    {
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
+        }
+
+        return $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node);
     }
 
     /**

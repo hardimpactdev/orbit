@@ -109,15 +109,18 @@ The node probe reads gateway node records and checks these layers:
    `node.updates_driver_unsupported` findings.
 13. **Node DNS projection:** the shared `dnsmasq.d/10-node-records.conf`
     artifact is verified only on the DNS-serving host (gateway-coupled active
-    `vpn` role), not on nodes that only contribute records. Concrete and
-    wildcard mismatches still name their active source node in the issue.
-    Orphan directives from deleted or renamed nodes are reported once on the
-    active gateway projection anchor. Every active node with a valid TLD and
-    WireGuard address has a concrete `orbit.{tld}` record; only active
-    `app-dev` and `agent` nodes have wildcard and local-zone directives.
-    Container, listener, forwarding, and client-DNS checks belong to the tool
-    family. Local operator-machine resolver overrides remain the `dns:*`
-    command surface, not node doctor.
+    `vpn` role), not on nodes that only contribute records. Targeted
+    (`--node=gateway`) and broad (`--all`) scopes share this consumer gate:
+    content is probed only when the live `orbit-dns` runtime mounts the
+    managed projection directory, so unmounted host files cannot produce false
+    positives. Concrete and wildcard mismatches still name their active source
+    node in the issue. Orphan directives from deleted or renamed nodes are
+    reported once on the active gateway projection anchor. Every active node
+    with a valid TLD and WireGuard address has a concrete `orbit.{tld}` record;
+    only active `app-dev` and `agent` nodes have wildcard and local-zone
+    directives. Container, listener, forwarding, and client-DNS checks belong
+    to the tool family. Local operator-machine resolver overrides remain the
+    `dns:*` command surface, not node doctor.
 14. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
