@@ -12,8 +12,8 @@ use App\Services\Tools\ManagedToolShell;
 final class HermesTool extends BaseTool
 {
     /**
-     * Orbit proxy target for the Hermes web dashboard. Co-hosts with OpenClaw
-     * on 18789 and leaves Caddy's private backend on 8081 free.
+     * Orbit proxy target for the Hermes web dashboard. Leaves Caddy's private
+     * backend on 8081 free.
      */
     public const int WEB_PORT = 8080;
 

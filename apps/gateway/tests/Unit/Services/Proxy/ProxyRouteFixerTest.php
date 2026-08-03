@@ -47,7 +47,7 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
@@ -61,9 +61,9 @@ describe('ProxyRouteFixer', function (): void {
             key: 'proxy.agent_tool_route_missing',
             kind: DriftKind::Missing,
             summary: 'missing agent tool route',
-            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+            detail: ['tool' => 'hermes', 'domain' => 'hermes.agent'],
         ));
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->firstOrFail();
 
         expect($action)
             ->toMatchArray([
@@ -73,8 +73,8 @@ describe('ProxyRouteFixer', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
                 'details' => [
-                    'route' => 'openclaw.agent',
-                    'tool' => 'openclaw',
+                    'route' => 'hermes.agent',
+                    'tool' => 'hermes',
                 ],
             ])
             ->and($route->owner_type)
@@ -83,9 +83,9 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe('proxy')
             ->and($route->config)
             ->toMatchArray([
-                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:18789'],
-                'upstream' => 'http://host.docker.internal:18789',
-                'owner_name' => 'openclaw',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+                'upstream' => 'http://host.docker.internal:8080',
+                'owner_name' => 'hermes',
             ])
             ->and($route->source_hash)
             ->toBe(new ProxyRouteRenderer()->sourceHash($route))
@@ -108,19 +108,19 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => str_repeat(string: 'a', times: 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
                 'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ],
         ]);
         new ProxyFixerRecordingRemoteShell;
@@ -134,14 +134,14 @@ describe('ProxyRouteFixer', function (): void {
             key: 'proxy.agent_tool_route_mismatch',
             kind: DriftKind::Divergent,
             summary: 'mismatched agent tool route',
-            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+            detail: ['tool' => 'hermes', 'domain' => 'hermes.agent'],
         ));
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->firstOrFail();
 
         expect($action['status'])
             ->toBe('completed')
             ->and($route->config['upstream'])
-            ->toBe('http://host.docker.internal:18789')
+            ->toBe('http://host.docker.internal:8080')
             ->and($route->source_hash)
             ->toBe(new ProxyRouteRenderer()->sourceHash($route));
     });

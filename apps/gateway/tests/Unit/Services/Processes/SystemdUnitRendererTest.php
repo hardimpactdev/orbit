@@ -8,7 +8,6 @@ use App\Models\Process as OrbitProcess;
 use App\Models\Project;
 use App\Services\Processes\SystemdUnitRenderer;
 use App\Tools\HermesTool;
-use App\Tools\OpenClawTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -156,49 +155,5 @@ it('preserves the Hermes dashboard credential shell pipeline through systemd ren
             'hermes dashboard --host 0.0.0.0 --port 8080 --no-open',
         )
         ->not->toMatch('/(?<!\$)\$\{PASSWORD_FILE\}/')
-        ->not->toMatch('/(?<!\$)\$\(/');
-});
-
-it('preserves the OpenClaw gateway token shell pipeline through systemd rendering', function (): void {
-    $node = Node::factory()->create([
-        'name' => 'agent-1',
-        'user' => 'orbit',
-        'status' => 'active',
-        'tld' => 'agent',
-    ]);
-    $app = Project::factory()->for($node, 'node')->create([
-        'name' => 'agent-runtime',
-        'path' => '/home/orbit',
-    ]);
-    $command = new OpenClawTool()->relatedProcess()['command'];
-    $process = OrbitProcess::factory()
-        ->forOwner($node)
-        ->create([
-            'name' => 'openclaw-gateway',
-            'command' => $command,
-            'runtime' => ProcessRuntime::Systemd,
-            'restart_policy' => 'always',
-            'tool' => 'openclaw',
-        ]);
-
-    $unit = app(SystemdUnitRenderer::class)->render($node, $app, $process);
-    $execStart = collect(explode(PHP_EOL, $unit))
-        ->first(static fn (string $line): bool => str_starts_with($line, 'ExecStart='));
-
-    expect($command)
-        ->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')
-        ->toContain('${TOKEN_FILE}')
-        ->toContain('TOKEN="$(tr -d "[:space:]" < "${TOKEN_FILE}" 2>/dev/null || true)"')
-        ->toContain('export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"')
-        ->and($execStart)
-        ->not->toBeNull()->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')->toContain(
-            '$${TOKEN_FILE}',
-        )->toContain('TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"')->toContain(
-            'export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"',
-        )->toContain(
-            '/home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan',
-        )
-        // Unescaped shell vars must not appear in the unit file payload.
-        ->not->toMatch('/(?<!\$)\$\{TOKEN_FILE\}/')
         ->not->toMatch('/(?<!\$)\$\(/');
 });

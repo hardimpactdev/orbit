@@ -70,18 +70,18 @@ it('rejects unsupported tool run actions including unknown probe variants', func
 
 it('accepts and executes gateway install preflight action payloads', function (): void {
     $payload = LocalToolRunScriptPayload::fromArray([
-        'tool' => 'openclaw',
+        'tool' => 'hermes',
         'action' => 'preflight',
         'script' => "printf 'preflight-ok'",
     ]);
 
     expect($payload->tool)
-        ->toBe('openclaw')
+        ->toBe('hermes')
         ->and($payload->action)
         ->toBe('preflight');
 
     $result = new LocalToolRunScriptAction()->run([
-        'tool' => 'openclaw',
+        'tool' => 'hermes',
         'action' => 'preflight',
         'script' => <<<'BASH'
             set -eu

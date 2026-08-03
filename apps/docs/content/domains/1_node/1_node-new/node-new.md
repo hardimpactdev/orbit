@@ -47,7 +47,7 @@ orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
 orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --postgres-process=postgres --clickhouse-node=db-1 --tld=analytics
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=operator-1 --operator-tld=operator
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
-orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=openclaw --agent-tool=hermes
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=hermes
 orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=all --grant-to-preset=operator
 ```
 
@@ -333,7 +333,7 @@ regardless of whether a template or explicit role list was used.
 **`agent` role details**
 
 `--agent-tool=<tool>` may be repeated to select agent tools to install
-during provisioning. Supported agent tools are `openclaw` and `hermes`.
+during provisioning. The only supported first-party agent tool is `hermes`.
 Selecting more than one agent tool emits the same multiple-agent-tool
 warning that `tool:install` uses: interactive callers confirm before
 proceeding, machine-readable callers receive a structured

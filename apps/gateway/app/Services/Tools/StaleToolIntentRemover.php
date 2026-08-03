@@ -36,7 +36,7 @@ final readonly class StaleToolIntentRemover
             return null;
         }
 
-        $removedRoutes = $this->removeOwnedProxyRoutes($tool, $targetNode);
+        $removedRoutes = $this->removeOwnedProxyRoutesFor($tool, $targetNode);
 
         if ($removedRoutes === 0) {
             return null;
@@ -56,7 +56,7 @@ final readonly class StaleToolIntentRemover
     public function withRecord(string $tool, NodeTool $model): array
     {
         $node = $model->node;
-        $removedRoutes = $node instanceof Node ? $this->removeOwnedProxyRoutes($tool, $node) : 0;
+        $removedRoutes = $node instanceof Node ? $this->removeOwnedProxyRoutesFor($tool, $node) : 0;
 
         $model->credentials = null;
         $model->save();
@@ -70,26 +70,11 @@ final readonly class StaleToolIntentRemover
         ];
     }
 
-    private function targetNode(?string $node, ?string $app): ?Node
-    {
-        if ($node !== null) {
-            /** @var Node|null */
-            return Node::query()
-                ->where('name', $node)
-                ->where('status', NodeStatus::Active->value)
-                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-                ->whereNotIn('id', $this->gatewayNodeIds())
-                ->first();
-        }
-
-        if ($app === null) {
-            return null;
-        }
-
-        return $this->instanceNodes->resolve($app);
-    }
-
-    private function removeOwnedProxyRoutes(string $tool, Node $node): int
+    /**
+     * Delete gateway proxy rows owned by this tool on the node.
+     * Backend/TLS cleanup is separate (proxy:remove --force / doctor extras).
+     */
+    public function removeOwnedProxyRoutesFor(string $tool, Node $node): int
     {
         $removed = 0;
 
@@ -109,6 +94,25 @@ final readonly class StaleToolIntentRemover
             });
 
         return $removed;
+    }
+
+    private function targetNode(?string $node, ?string $app): ?Node
+    {
+        if ($node !== null) {
+            /** @var Node|null */
+            return Node::query()
+                ->where('name', $node)
+                ->where('status', NodeStatus::Active->value)
+                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
+                ->whereNotIn('id', $this->gatewayNodeIds())
+                ->first();
+        }
+
+        if ($app === null) {
+            return null;
+        }
+
+        return $this->instanceNodes->resolve($app);
     }
 
     /**

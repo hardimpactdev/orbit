@@ -211,6 +211,73 @@ describe('ProxyRoute mutation API', function (): void {
 
         expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeFalse();
     });
+
+    it('force-removes an orphaned tool-owned route when the NodeTool is gone', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'agent-1', 'tld' => 'agent']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/hermes.agent', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.route.domain', 'hermes.agent')
+            ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
+            ->assertJsonPath('success.meta.owner_type', 'tool')
+            ->assertJsonPath('success.meta.backend_removed', true);
+
+        expect(ProxyRoute::query()->where('domain', 'hermes.agent')->exists())->toBeFalse();
+    });
+
+    it('denies force-remove of a living tool-owned route', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'agent-1', 'tld' => 'agent']);
+        \App\Models\NodeTool::factory()->create([
+            'node_id' => $servingNode->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/hermes.agent', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'proxy.owned_route_denied')
+            ->assertJsonPath('error.meta.owner_type', 'tool');
+
+        expect(ProxyRoute::query()->where('domain', 'hermes.agent')->exists())->toBeTrue();
+    });
 });
 
 final readonly class ProxyMutationFakeCa extends OrbitCaService

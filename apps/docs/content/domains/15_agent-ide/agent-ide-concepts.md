@@ -20,7 +20,7 @@ a node; not every adapter requires a separate tool (some adapters run
 entirely client-side). OpenCode uses `opencode-cli` as the tool slug and
 `opencode-server` as the related process/runtime unit name.
 
-Autonomous agent tools (`openclaw`, `hermes`) follow a simpler convention: a single tool slug names the runtime, and they have no separate adapter id because they are not interactive IDE adapters — they are Orbit clients running on the `agent` role.
+Autonomous agent tools (`hermes`) follow a simpler convention: a single tool slug names the runtime, and they have no separate adapter id because they are not interactive IDE adapters — they are Orbit clients running on the `agent` role.
 
 ## Adapter Model
 

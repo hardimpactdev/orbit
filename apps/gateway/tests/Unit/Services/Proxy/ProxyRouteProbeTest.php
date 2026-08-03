@@ -137,7 +137,7 @@ describe('proxy registry probe foundation', function (): void {
         assignProxyProbeRole(node: $node, role: 'agent');
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
 
@@ -147,8 +147,8 @@ describe('proxy registry probe foundation', function (): void {
             ->toBe(DriftKind::Missing)
             ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_missing')?->detail)
             ->toMatchArray([
-                'tool' => 'openclaw',
-                'domain' => 'openclaw.agent',
+                'tool' => 'hermes',
+                'domain' => 'hermes.agent',
             ]);
     });
 
@@ -161,19 +161,19 @@ describe('proxy registry probe foundation', function (): void {
         assignProxyProbeRole(node: $node, role: 'agent');
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => str_repeat(string: 'a', times: 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
                 'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ],
         ]);
 
@@ -183,9 +183,9 @@ describe('proxy registry probe foundation', function (): void {
             ->toBe(DriftKind::Divergent)
             ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_mismatch')?->detail)
             ->toMatchArray([
-                'tool' => 'openclaw',
-                'domain' => 'openclaw.agent',
-                'expected_upstream' => 'http://host.docker.internal:18789',
+                'tool' => 'hermes',
+                'domain' => 'hermes.agent',
+                'expected_upstream' => 'http://host.docker.internal:8080',
                 'observed_upstream' => 'http://127.0.0.1:9999',
             ]);
     });
@@ -199,12 +199,12 @@ describe('proxy registry probe foundation', function (): void {
         assignProxyProbeRole(node: $node, role: 'agent');
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'custom',
             'kind' => 'proxy',
             'config' => [
@@ -219,8 +219,8 @@ describe('proxy registry probe foundation', function (): void {
             ->toBe(DriftKind::Divergent)
             ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_conflict')?->detail)
             ->toMatchArray([
-                'tool' => 'openclaw',
-                'domain' => 'openclaw.agent',
+                'tool' => 'hermes',
+                'domain' => 'hermes.agent',
                 'observed_owner_type' => 'custom',
             ]);
     });
@@ -234,24 +234,24 @@ describe('proxy registry probe foundation', function (): void {
         assignProxyProbeRole(node: $node, role: 'agent');
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $config = [
-            'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:18789'],
-            'upstream' => 'http://host.docker.internal:18789',
-            'owner_name' => 'openclaw',
+            'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            'upstream' => 'http://host.docker.internal:8080',
+            'owner_name' => 'hermes',
         ];
         $intent = new ProxyRoute([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'config' => $config,
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => new ProxyRouteRenderer()->sourceHash($intent),
@@ -506,6 +506,33 @@ describe('proxy registry probe foundation', function (): void {
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('classifies tool-owned routes without a matching installed NodeTool as owner invalid', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.owner_invalid')?->detail)
+            ->toMatchArray(['owner_type' => 'tool']);
     });
 
     it('requires active gateway or app serving nodes', function (callable $createNode): void {

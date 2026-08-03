@@ -69,9 +69,7 @@ include `tool:credentials`. The default agent self-grant does not include
 `https://hermes.<node-tld>` (for example `https://hermes.agent`). The route
 is internal: it is reachable only over the Orbit/WireGuard network and
 has no ingress baseline. The default reverse-proxy upstream is
-`http://host.docker.internal:8080`. OpenClaw uses its documented default port
-`18789` on the same agent node so both tool UIs can co-host without colliding
-with each other or with Orbit Caddy's private backend on `8081`.
+`http://host.docker.internal:8080`. This leaves Orbit Caddy's private backend on `8081` free.
 
 ## Orbit Notes
 

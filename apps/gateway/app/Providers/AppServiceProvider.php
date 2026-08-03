@@ -90,7 +90,6 @@ use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
 use App\Tools\NodeExporterTool;
-use App\Tools\OpenClawTool;
 use App\Tools\OpenCodeCliTool;
 use App\Tools\OrbStackTool;
 use App\Tools\PhpCliTool;
@@ -245,7 +244,6 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(PolyscopeServerTool::class),
                     $app->make(OpenCodeCliTool::class),
                     $app->make(OrbStackTool::class),
-                    $app->make(OpenClawTool::class),
                     $app->make(HermesTool::class),
                     $app->make(LaravelInstallerTool::class),
                     $app->make(CodexAppTool::class),

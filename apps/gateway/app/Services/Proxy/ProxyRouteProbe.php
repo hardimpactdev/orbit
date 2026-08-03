@@ -9,6 +9,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -1021,7 +1022,27 @@ final readonly class ProxyRouteProbe
             return [$this->ownerInvalid($route, 'workspace')];
         }
 
+        if ($route->owner_type === 'tool' && $this->toolOwnerIsMissing($route)) {
+            return [$this->ownerInvalid($route, 'tool')];
+        }
+
         return [];
+    }
+
+    private function toolOwnerIsMissing(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
+
+        if ($ownerName === null || $ownerName === '') {
+            return true;
+        }
+
+        return ! NodeTool::query()
+            ->where('node_id', $route->node_id)
+            ->where('name', $ownerName)
+            ->where('expected_state', 'installed')
+            ->exists();
     }
 
     /**

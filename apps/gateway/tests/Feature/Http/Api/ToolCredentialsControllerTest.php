@@ -48,11 +48,11 @@ describe('ToolCredentialsController', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
-                    'url' => 'https://openclaw.agent',
+                    'url' => 'https://hermes.agent',
                     'username' => 'orbit',
                     'password' => 'secret',
                 ],
@@ -63,7 +63,7 @@ describe('ToolCredentialsController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials?node=agent-1',
+            '/api/tools/hermes/credentials?node=agent-1',
             [],
             [],
             [],
@@ -72,9 +72,9 @@ describe('ToolCredentialsController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.credentials.tool', 'openclaw')
+            ->assertJsonPath('success.data.credentials.tool', 'hermes')
             ->assertJsonPath('success.data.credentials.node', 'agent-1')
-            ->assertJsonPath('success.data.credentials.fields.url', 'https://openclaw.agent');
+            ->assertJsonPath('success.data.credentials.fields.url', 'https://hermes.agent');
     });
 
     it('rejects caller without tool:credentials grant', function (): void {
@@ -92,11 +92,11 @@ describe('ToolCredentialsController', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
-                    'url' => 'https://openclaw.agent',
+                    'url' => 'https://hermes.agent',
                     'username' => 'orbit',
                     'password' => 'secret',
                 ],
@@ -107,7 +107,7 @@ describe('ToolCredentialsController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials?node=agent-1',
+            '/api/tools/hermes/credentials?node=agent-1',
             [],
             [],
             [],
@@ -134,11 +134,11 @@ describe('ToolCredentialsController', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $agentNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
             'credentials' => [
                 'fields' => [
-                    'url' => 'https://openclaw.agent',
+                    'url' => 'https://hermes.agent',
                     'username' => 'orbit',
                     'password' => 'secret',
                 ],
@@ -147,7 +147,7 @@ describe('ToolCredentialsController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials?node=agent-1',
+            '/api/tools/hermes/credentials?node=agent-1',
             [],
             [],
             [],
@@ -159,7 +159,7 @@ describe('ToolCredentialsController', function (): void {
     });
 
     it('rejects unauthenticated requests', function (): void {
-        $response = $this->getJson('/api/tools/openclaw/credentials');
+        $response = $this->getJson('/api/tools/hermes/credentials');
 
         $response
             ->assertForbidden()

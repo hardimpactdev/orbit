@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Services\Tools\ManagedToolShell;
 use App\Tools\HermesTool;
-use App\Tools\OpenClawTool;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
@@ -56,38 +55,14 @@ function managed_tool_bash_lc_script(string $commandLine): string
 
 it('double-quotes missing messages so snippets stay valid inside a single-quoted bash -lc argument', function (): void {
     $snippet = ManagedToolShell::requireNonEmptySecretFromFile(
-        fileVar: '${TOKEN_FILE}',
-        targetVar: 'TOKEN',
-        missingMessage: 'openclaw gateway token missing',
+        fileVar: '${PASSWORD_FILE}',
+        targetVar: 'PASSWORD',
+        missingMessage: 'hermes dashboard password missing',
     );
 
     expect($snippet)
-        ->toContain('echo "openclaw gateway token missing"')
-        ->not->toContain("echo 'openclaw gateway token missing'");
-});
-
-it('tokenizes OpenClaw relatedProcess as one full bash -lc script that parses', function (): void {
-    $command = new OpenClawTool()->relatedProcess()['command'];
-    $words = managed_tool_shell_words($command);
-    $script = managed_tool_bash_lc_script($command);
-
-    expect($words)
-        ->toContain('bash')
-        ->toContain('-lc')
-        ->and($script)
-        ->toContain('set -euo pipefail')
-        ->toContain('TOKEN_FILE="/home/agent/.openclaw/gateway.token"')
-        ->toContain('openclaw gateway token missing')
-        ->toContain('export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"')
-        ->toContain('exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan')
-        ->and(substr_count($script, 'openclaw gateway token missing'))
-        ->toBe(1);
-
-    $syntax = new Process(['bash', '-n', '-c', $script]);
-    $syntax->run();
-
-    expect($syntax->getExitCode())
-        ->toBe(0, $syntax->getErrorOutput());
+        ->toContain('echo "hermes dashboard password missing"')
+        ->not->toContain("echo 'hermes dashboard password missing'");
 });
 
 it('tokenizes Hermes relatedProcess as one full bash -lc script that parses', function (): void {

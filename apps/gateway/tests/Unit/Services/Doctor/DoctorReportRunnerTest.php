@@ -731,16 +731,16 @@ describe('DoctorReportRunner', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
-            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+            'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
         ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerAgentToolProxyRemoteShell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
         app()->instance(OrbitCaService::class, doctor_runner_agent_tool_proxy_fake_ca());
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['proxy']);
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->firstOrFail();
 
         expect($report['healthy'])
             ->toBeTrue()
@@ -761,7 +761,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($route->config['upstream'])
-            ->toBe('http://host.docker.internal:18789');
+            ->toBe('http://host.docker.internal:8080');
     });
 
     it('restores missing process runtime units through restore mode family dispatch', function (): void {

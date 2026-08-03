@@ -5,7 +5,7 @@
 Show connection credentials for a managed tool.
 
 `tool:credentials` displays generated or registered connection details for
-tools that declare a credential contract, such as Mailpit, SeaweedFS, OpenClaw,
+tools that declare a credential contract, such as Mailpit, SeaweedFS, Hermes,
 or OpenCode Server. Credentials for runnable services such as MySQL,
 PostgreSQL, and Valkey are not tool credentials.
 
@@ -19,7 +19,7 @@ orbit tool:credentials [tool] [--instance=<project.instance>] [--node=<node>] [-
 
 ```bash
 orbit tool:credentials mailpit --node=app-1
-orbit tool:credentials openclaw --node=agent-1
+orbit tool:credentials hermes --node=agent-1
 orbit tool:credentials opencode-cli --instance=docs
 orbit tool:credentials --node=app-1
 orbit tool:credentials opencode-cli --node=agent-1 --json

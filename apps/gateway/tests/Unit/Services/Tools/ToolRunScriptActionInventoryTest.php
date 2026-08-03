@@ -102,6 +102,6 @@ it('rejects unknown actions through ToolScriptDispatcher before transport', func
 
     $node = new Node(['name' => 'agent-1']);
 
-    expect(fn () => $dispatcher->run($node, 'openclaw', 'not-a-real-action', 'printf ok'))
+    expect(fn () => $dispatcher->run($node, 'hermes', 'not-a-real-action', 'printf ok'))
         ->toThrow(InvalidArgumentException::class, "Tool run payload action 'not-a-real-action' is invalid.");
 });

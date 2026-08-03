@@ -217,16 +217,14 @@ describe('ToolInstallController', function (): void {
             ->toBe([]);
     });
 
-    it('checks agent runtime-user isolation before OpenClaw or Hermes installation side effects', function (
-        string $tool,
-    ): void {
+    it('checks agent runtime-user isolation before Hermes installation side effects', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => "{$tool}-missing-runtime-user",
+            'name' => 'hermes-missing-runtime-user',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => "{$tool}-agent",
+            'tld' => 'hermes-agent',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell([
@@ -241,7 +239,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/tools/{$tool}/install",
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
@@ -251,13 +249,13 @@ describe('ToolInstallController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
-            ->assertJsonPath('error.meta.tool', $tool)
+            ->assertJsonPath('error.meta.tool', 'hermes')
             ->assertJsonPath('error.meta.constraint', 'runtime_user')
             ->assertJsonPath('error.meta.required', 'agent')
             ->assertJsonPath('error.meta.actual', 'missing')
             ->assertJsonPath('error.meta.exit_code', 64);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists())
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeFalse()
             ->and($shell->scripts)
             ->toHaveCount(1)
@@ -265,16 +263,44 @@ describe('ToolInstallController', function (): void {
             ->toContain("id -u 'agent'")
             ->and($shell->toolRowsPresent)
             ->toBe([false]);
-    })->with(['openclaw', 'hermes']);
+    });
+
+    it('rejects openclaw as an unsupported agent tool install', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'agent-openclaw-rejected',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/openclaw/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'tool.unsupported_action');
+        expect($shell->scripts)->toBeEmpty()->and(NodeTool::query()->where('name', 'openclaw')->exists())->toBeFalse();
+    });
 
     it('rejects a privileged agent runtime user through stable isolation metadata', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => 'openclaw-privileged-runtime-user',
+            'name' => 'hermes-privileged-runtime-user',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => 'openclaw-privileged',
+            'tld' => 'hermes-privileged',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell([
@@ -289,7 +315,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/openclaw/install',
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
@@ -304,7 +330,7 @@ describe('ToolInstallController', function (): void {
             ->assertJsonPath('error.meta.actual', 'privileged-user')
             ->assertJsonPath('error.meta.exit_code', 65);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeFalse()
             ->and($shell->toolRowsPresent)
             ->toBe([false]);
@@ -360,10 +386,10 @@ describe('ToolInstallController', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => 'openclaw-preflight-order',
+            'name' => 'hermes-preflight-order',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => 'openclaw-agent',
+            'tld' => 'hermes-agent',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell;
@@ -371,7 +397,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/openclaw/install',
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
@@ -380,10 +406,10 @@ describe('ToolInstallController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'openclaw')
-            ->assertJsonPath('success.data.tool.process.name', 'openclaw-gateway')
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.process.name', 'orbit-hermes-dashboard')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.tool.process.tool', 'openclaw')
+            ->assertJsonPath('success.data.tool.process.tool', 'hermes')
             ->assertJsonPath('success.data.tool.process.action', 'configured');
 
         expect($shell->scripts)
@@ -391,16 +417,14 @@ describe('ToolInstallController', function (): void {
             ->and($shell->scripts[0])
             ->toContain("id -u 'agent'")
             ->and($shell->scripts[1])
-            ->toContain('https://openclaw.ai/install-cli.sh')
+            ->toContain('https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh')
             ->and($shell->scripts[1])
-            ->toContain('--prefix "$HOME/.openclaw"')
+            ->toContain('--skip-setup')
             ->and($shell->scripts[1])
-            ->toContain('/home/agent/.openclaw/bin/openclaw config set gateway.port 18789')
-            ->and($shell->scripts[1])
-            ->toContain('https://openclaw.openclaw-agent')
+            ->toContain('https://hermes.hermes-agent')
             ->and($shell->toolRowsPresent[0] ?? null)
             ->toBeFalse()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeTrue();
     });
 

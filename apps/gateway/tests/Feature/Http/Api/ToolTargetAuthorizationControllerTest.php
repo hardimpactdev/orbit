@@ -75,7 +75,7 @@ describe('tool API target authorization', function (): void {
     })->with([
         'install' => ['POST', '/api/tools/composer/install', ['node' => 'hidden-node']],
         'update' => ['POST', '/api/tools/composer/update', ['node' => 'hidden-node']],
-        'credentials' => ['GET', '/api/tools/openclaw/credentials', ['node' => 'hidden-node']],
+        'credentials' => ['GET', '/api/tools/hermes/credentials', ['node' => 'hidden-node']],
         'remove' => ['DELETE', '/api/tools/composer', ['node' => 'hidden-node', 'destructive_consent' => true]],
         'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']],
     ]);
@@ -88,7 +88,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'visible-secret',
@@ -97,7 +97,7 @@ describe('tool API target authorization', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'hidden-secret',
@@ -107,7 +107,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials',
+            '/api/tools/hermes/credentials',
             [],
             [],
             [],
@@ -131,7 +131,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $caller->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'self-secret',
@@ -141,7 +141,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials',
+            '/api/tools/hermes/credentials',
             [
                 'node' => 'caller',
             ],
@@ -171,7 +171,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $operatorNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'operator-secret',
@@ -181,7 +181,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials',
+            '/api/tools/hermes/credentials',
             [
                 'node' => 'mini',
             ],
@@ -207,7 +207,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $gateway->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'gateway-secret',
@@ -217,7 +217,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials',
+            '/api/tools/hermes/credentials',
             [
                 'node' => 'gateway-1',
             ],
@@ -239,7 +239,7 @@ describe('tool API target authorization', function (): void {
 
         NodeTool::factory()->create([
             'node_id' => $visibleNode->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'credentials' => [
                 'fields' => [
                     'password' => 'visible-secret',
@@ -249,7 +249,7 @@ describe('tool API target authorization', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/tools/openclaw/credentials',
+            '/api/tools/hermes/credentials',
             [
                 'node' => 'visible-node',
             ],
@@ -306,8 +306,8 @@ describe('tool API target authorization', function (): void {
 
 function toolTargetAuthToolNameFromUri(string $uri): string
 {
-    if (str_contains($uri, 'openclaw')) {
-        return 'openclaw';
+    if (str_contains($uri, 'hermes')) {
+        return 'hermes';
     }
 
     if (str_contains($uri, 'opencode-cli')) {

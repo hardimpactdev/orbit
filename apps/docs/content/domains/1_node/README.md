@@ -145,10 +145,10 @@ any role or tool baseline. Orbit interacts with databases through the
 `database_connection` state family and `database:*` commands, which use PHP
 drivers — no client binary on the node is required.
 
-The `agent` role does not preinstall any agent tool. OpenClaw and Hermes are
-ordinary entries in the `tool` catalog with category `agent`; `node:new
---template=agent` or `--roles=agent` may optionally install zero, one, or
-several of them.
+The `agent` role does not preinstall any agent tool. Hermes is an ordinary
+entry in the `tool` catalog with category `agent`; `node:new
+--template=agent` or `--roles=agent` may optionally install it through
+`--agent-tool=hermes`.
 
 ## Thin CLI and gateway authority
 

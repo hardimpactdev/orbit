@@ -120,7 +120,7 @@ function toolsProbeLocalExecutor(): RemoteLocalExecutor
  */
 function toolsProbeAgentRouteConfig(string $tool): array
 {
-    $port = $tool === 'openclaw' ? 18789 : 8080;
+    $port = 8080;
     $upstream = "http://host.docker.internal:{$port}";
 
     return [
@@ -151,7 +151,7 @@ function toolsProbeCapabilityStdout(string $path, string $version = '', string $
  */
 function toolsProbeInaccessibleOwnerBinaryPath(): string
 {
-    return '/home/agent/.openclaw/bin/openclaw-owner-probe-'.bin2hex(random_bytes(4));
+    return '/home/agent/.hermes/bin/hermes-owner-probe-'.bin2hex(random_bytes(4));
 }
 
 /**
@@ -168,7 +168,7 @@ function toolsProbeInstallFakeSudo(array $config = []): array
     $allowUser = $config['allow_user'] ?? 'agent';
     $testXOk = $config['test_x_ok'] ?? true ? '1' : '0';
     $binary = $config['binary'] ?? '';
-    $versionLine = $config['version_line'] ?? 'OpenClaw 2026.7.1-2 (owner-probe)';
+    $versionLine = $config['version_line'] ?? 'Hermes 2026.7.1-2 (owner-probe)';
 
     $script = <<<'BASH'
         #!/usr/bin/env bash
@@ -221,7 +221,7 @@ function toolsProbeInstallFakeSudo(array $config = []): array
             cmd="${3:-}"
             case "$cmd" in
                 *--version*)
-                    printf '%s\n' "${ORBIT_FAKE_SUDO_VERSION_LINE:-OpenClaw 1.0.0}"
+                    printf '%s\n' "${ORBIT_FAKE_SUDO_VERSION_LINE:-Hermes 1.0.0}"
                     exit 0
                     ;;
             esac
@@ -667,7 +667,7 @@ describe('ToolsProbe', function (): void {
 
     it('observes owner-scoped absolute binaries via sudo -u test -x in single capability probes', function (): void {
         $binary = toolsProbeInaccessibleOwnerBinaryPath();
-        $version = 'OpenClaw 2026.7.1-2 (owner-probe-single)';
+        $version = 'Hermes 2026.7.1-2 (owner-probe-single)';
         $fake = toolsProbeInstallFakeSudo([
             'allow_user' => 'agent',
             'test_x_ok' => true,
@@ -723,7 +723,7 @@ describe('ToolsProbe', function (): void {
 
     it('observes owner-scoped absolute binaries via sudo -u test -x in batch capability probes', function (): void {
         $binary = toolsProbeInaccessibleOwnerBinaryPath();
-        $version = 'OpenClaw 2026.7.1-2 (owner-probe-batch)';
+        $version = 'Hermes 2026.7.1-2 (owner-probe-batch)';
         $fake = toolsProbeInstallFakeSudo([
             'allow_user' => 'agent',
             'test_x_ok' => true,
@@ -780,10 +780,10 @@ describe('ToolsProbe', function (): void {
     });
 
     it('emits owner-scoped test -x for absolute binaries with binary_as_user in single and batch scripts', function (): void {
-        $binary = '/home/agent/.openclaw/bin/openclaw';
+        $binary = '/home/agent/.hermes/bin/hermes';
         $node = createToolsProbeAppHostNode();
-        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'openclaw']);
-        $catalog = toolsProbeOwnerScopedCatalog('openclaw', [
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'hermes']);
+        $catalog = toolsProbeOwnerScopedCatalog('hermes', [
             'binary' => $binary,
             'binary_as_user' => 'agent',
             'version_command' => "sudo -u agent -H bash -lc '{$binary} --version'",
@@ -1743,7 +1743,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
 
@@ -1756,16 +1756,16 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
-            'source_hash' => toolsProbeAgentRouteSourceHash($node, 'openclaw'),
-            'config' => toolsProbeAgentRouteConfig('openclaw'),
+            'source_hash' => toolsProbeAgentRouteSourceHash($node, 'hermes'),
+            'config' => toolsProbeAgentRouteConfig('hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
@@ -1777,12 +1777,12 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'config' => ['owner_name' => 'hermes'],
         ]);
@@ -1796,16 +1796,16 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'upstream',
             'source_hash' => str_repeat('a', 64),
-            'config' => toolsProbeAgentRouteConfig('openclaw'),
+            'config' => toolsProbeAgentRouteConfig('hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
@@ -1817,19 +1817,19 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => str_repeat('b', 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
                 'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ],
         ]);
 
@@ -1842,7 +1842,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
             'credentials' => null,
         ]);
@@ -1856,13 +1856,13 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
-            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+            'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing'))->toBeNull();
@@ -1883,7 +1883,7 @@ describe('ToolsProbe', function (): void {
         ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $probe = toolsProbeWithAgentPush(new ToolsProbeRemoteShell(exitCode: 1));
@@ -1914,14 +1914,14 @@ describe('ToolsProbe', function (): void {
         ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
-            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+            'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
         ]);
         $probe = toolsProbeWithAgentPush(new QueuedToolsProbeRemoteShell);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_orbit_cli_inaccessible')?->kind)->toBe(DriftKind::Divergent);
@@ -1937,7 +1937,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
@@ -1954,14 +1954,14 @@ describe('ToolsProbe', function (): void {
         $probe = new ToolsProbe(localExecutor: $executor);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
             ->toBe(DriftKind::Unverifiable)
             ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail)
             ->toMatchArray([
-                'tool' => 'openclaw',
+                'tool' => 'hermes',
                 'reason' => 'exception',
                 'error' => 'agent runtime unavailable',
             ]);
@@ -1971,7 +1971,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
@@ -1993,7 +1993,7 @@ describe('ToolsProbe', function (): void {
         $probe = new ToolsProbe(localExecutor: $executor);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
@@ -2010,7 +2010,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
@@ -2032,7 +2032,7 @@ describe('ToolsProbe', function (): void {
         $probe = new ToolsProbe(localExecutor: $executor);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
@@ -2045,7 +2045,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
@@ -2072,7 +2072,7 @@ describe('ToolsProbe', function (): void {
         $probe = new ToolsProbe(localExecutor: $executor);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
@@ -2261,19 +2261,19 @@ it('flags unreachable autonomous-agent consumer https urls for installed agent t
     toolsProbeOrbitRootCaPath();
     Http::preventStrayRequests();
     Http::fake([
-        'https://openclaw.agent' => Http::response('bad gateway', 502),
+        'https://hermes.agent' => Http::response('bad gateway', 502),
     ]);
 
     $node = createToolsProbeAgentNode();
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'openclaw',
+        'name' => 'hermes',
         'expected_state' => 'installed',
-        'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+        'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
     ]);
 
     $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
-        'openclaw' => ['installed' => true],
+        'hermes' => ['installed' => true],
     ]));
 
     $issue = toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable');
@@ -2284,31 +2284,31 @@ it('flags unreachable autonomous-agent consumer https urls for installed agent t
         ->and($issue?->kind)
         ->toBe(DriftKind::Divergent)
         ->and($issue?->detail['expected_url'] ?? null)
-        ->toBe('https://openclaw.agent')
+        ->toBe('https://hermes.agent')
         ->and($issue?->detail['observed'] ?? null)
         ->toBe('HTTP 502')
         ->and($issue?->detail['next_command'] ?? null)
         ->toContain('--family=proxy');
 
-    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://openclaw.agent');
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://hermes.agent');
 });
 
 it('treats http 404 consumer responses as unreachable', function (): void {
     toolsProbeOrbitRootCaPath();
     Http::preventStrayRequests();
     Http::fake([
-        'https://openclaw.agent' => Http::response('missing', 404),
+        'https://hermes.agent' => Http::response('missing', 404),
     ]);
 
     $node = createToolsProbeAgentNode();
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'openclaw',
+        'name' => 'hermes',
         'expected_state' => 'installed',
     ]);
 
     $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
-        'openclaw' => ['installed' => true],
+        'hermes' => ['installed' => true],
     ]));
 
     expect(toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable')?->detail['observed'] ?? null)

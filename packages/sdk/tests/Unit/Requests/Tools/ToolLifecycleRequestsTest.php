@@ -20,10 +20,10 @@ use Saloon\Http\Faking\MockResponse;
 uses(TestCase::class);
 
 it('builds typed tool lifecycle requests', function (string $requestClass, string $action): void {
-    $request = new $requestClass(tool: 'openclaw', instance: 'docs', node: 'app-1');
+    $request = new $requestClass(tool: 'hermes', instance: 'docs', node: 'app-1');
 
     expect($request->resolveEndpoint())
-        ->toBe("/api/tools/openclaw/{$action}")
+        ->toBe("/api/tools/hermes/{$action}")
         ->and($request->getMethod())
         ->toBe(Method::POST)
         ->and($request->body()->all())
@@ -37,7 +37,7 @@ it('builds typed tool lifecycle requests', function (string $requestClass, strin
             'success' => [
                 'data' => [
                     'tool' => [
-                        'name' => 'openclaw',
+                        'name' => 'hermes',
                         'action' => $action,
                     ],
                 ],
@@ -53,7 +53,7 @@ it('builds typed tool lifecycle requests', function (string $requestClass, strin
         ->toBeInstanceOf(ToolShowResponse::class)
         ->and($dto->tool)
         ->toMatchArray([
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'action' => $action,
         ]);
 })->with([

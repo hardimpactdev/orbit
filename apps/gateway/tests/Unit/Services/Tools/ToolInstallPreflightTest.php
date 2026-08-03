@@ -32,4 +32,4 @@ it('rejects a missing route TLD before any remote preflight probe', function (st
             'required' => 'configured',
             'actual' => null,
         ]);
-})->with(['openclaw', 'hermes']);
+})->with(['hermes', 'hermes']);

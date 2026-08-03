@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -292,8 +293,29 @@ class ProxyRouteIntent
         return match ($route->owner_type) {
             'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof Project,
             'workspace' => ! $route->workspace instanceof Workspace,
+            'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };
+    }
+
+    /**
+     * Tool-owned routes store the catalog slug in config.owner_name; they are
+     * orphans when no matching installed NodeTool remains on the serving node.
+     */
+    private function toolOwnerIsMissing(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
+
+        if ($ownerName === null || $ownerName === '') {
+            return true;
+        }
+
+        return ! NodeTool::query()
+            ->where('node_id', $route->node_id)
+            ->where('name', $ownerName)
+            ->where('expected_state', 'installed')
+            ->exists();
     }
 
     private function resolveServingNode(string $nodeName, ?Node $caller, string $permission): Node

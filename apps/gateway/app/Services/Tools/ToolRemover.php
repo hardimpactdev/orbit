@@ -90,10 +90,18 @@ final readonly class ToolRemover
         $model->save();
         $model->delete();
 
+        // Drop tool-owned proxy intent for this tool after the NodeTool row is
+        // gone so doctor/proxy cannot treat an orphan route as healthy owner.
+        $routesRemoved = $this->staleIntentRemover->removeOwnedProxyRoutesFor($tool, $node);
+
         $payload = [
             'name' => $tool,
             'node' => $node->name,
         ];
+
+        if ($routesRemoved > 0) {
+            $payload['routes_removed'] = $routesRemoved;
+        }
 
         if ($process !== null) {
             $payload['process'] = $process;

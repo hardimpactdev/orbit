@@ -51,6 +51,5 @@ it('declares Docker-compatible provider requirements for container-backed tools'
     'php image inventory' => ['php', 'docker-compatible', 'docker'],
     'seaweedfs' => ['seaweedfs', 'docker-compatible', 'docker'],
     'docker provider itself' => ['docker', null, null],
-    'openclaw host runtime' => ['openclaw', null, 'unprivileged-user'],
     'hermes host runtime' => ['hermes', null, 'unprivileged-user'],
 ]);

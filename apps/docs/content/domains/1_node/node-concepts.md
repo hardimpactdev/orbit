@@ -144,7 +144,7 @@ Each term below has a precise meaning in the node command family.
   `.orbit` namespace. Role assignments never copy or own this value.
   Role features such as `app-dev` and `agent` consume the node field for
   wildcard development DNS mappings and
-  agent tool internal HTTPS hostnames such as `openclaw.agent` and `hermes.agent`.
+  agent tool internal HTTPS hostnames such as `hermes.agent`.
   Gateway VPN DNS publishes the concrete `orbit.<node-tld>` record for every
   active node. It publishes wildcard `<node-tld>` DNS only for active
   `app-dev` and `agent` nodes. The private service TLD `.orbit` remains
@@ -614,7 +614,7 @@ family.
   `app-dev` role. They route hosts below that node TLD to its WireGuard address.
 - **Agent wildcard DNS mapping:** The same wildcard and local-zone directives,
   present only while the node has an active `agent` role. They route agent-tool
-  hosts such as `openclaw.agent` and `hermes.agent` to that node.
+  hosts such as `hermes.agent` to that node.
 - **Node DNS materializer:** Internal node-family convergence that renders
   `10-node-records.conf` from active node rows. It uses the shared atomic DNS
   materializer and reload path, which is ownership-neutral. Node identity

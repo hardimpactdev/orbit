@@ -8,7 +8,7 @@ namespace App\Services\Tools;
  * Shared shell helpers for managed tool install/configure/credentials scripts.
  *
  * Keeps quoting and non-empty secret file regeneration consistent across
- * OpenClaw, Hermes, and similar managed tools without inventing a new
+ * Hermes and similar managed tools without inventing a new
  * credential product model.
  */
 final class ManagedToolShell

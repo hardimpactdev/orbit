@@ -54,7 +54,7 @@ describe('node write commands', function (): void {
             '--gateway-endpoint' => '10.3.0.2',
             '--tld' => 'test',
             '--grant-to' => ['agent-1'],
-            '--agent-tool' => ['openclaw'],
+            '--agent-tool' => ['hermes'],
             '--json' => true,
         ]);
 
@@ -69,7 +69,7 @@ describe('node write commands', function (): void {
                 && $request['gateway_endpoint'] === '10.3.0.2'
                 && $request['tld'] === 'test'
                 && $request['grant_to'] === ['agent-1']
-                && $request['agent_tools'] === ['openclaw']
+                && $request['agent_tools'] === ['hermes']
                 && ! isset($request['template'])
                 && ! isset($request['operator'])
             ),

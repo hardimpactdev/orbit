@@ -28,7 +28,7 @@ and the node-exporter host binary on metrics/workload nodes. The
 - `claude-code`  -  Anthropic Claude Code CLI runtime; no required node role; installs for the node default user and optional extra OS users via repeatable `--user`
 - `polyscope-server`  -  Polyscope headless coding-agent server
 - `opencode-server`  -  OpenCode HTTP server for programmatic LLM interaction
-- `openclaw`, `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
+- `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
 - `orbstack`  -  macOS-only Docker-compatible provider; supports explicit start/stop/restart through `orbctl`
 
 HTTP/WS tool endpoints surface as tool-owned proxy routes. TCP service

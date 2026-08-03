@@ -26,15 +26,9 @@ function createAgentEndpointNode(string $name): Node
     return $node;
 }
 
-it('derives openclaw and hermes consumer https endpoints from catalog and node tld', function (): void {
+it('derives hermes consumer https endpoints from catalog and node tld', function (): void {
     $node = createAgentEndpointNode('agent-1');
 
-    $openclaw = NodeTool::factory()->create([
-        'node_id' => $node->id,
-        'name' => 'openclaw',
-        'expected_state' => 'installed',
-        'config' => [],
-    ]);
     $hermes = NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'hermes',
@@ -44,16 +38,7 @@ it('derives openclaw and hermes consumer https endpoints from catalog and node t
 
     $mapper = app(ToolPayloadMapper::class);
 
-    expect($mapper->toArray($openclaw)['endpoints'])
-        ->toBe([[
-            'name' => 'openclaw',
-            'kind' => 'https',
-            'url' => 'https://openclaw.agent',
-            'host' => 'openclaw.agent',
-            'port' => 443,
-            'upstream_port' => 18789,
-        ]])
-        ->and($mapper->toArray($hermes)['endpoints'])
+    expect($mapper->toArray($hermes)['endpoints'])
         ->toBe([[
             'name' => 'hermes',
             'kind' => 'https',
@@ -69,7 +54,7 @@ it('does not require persisted endpoint copies for agent tools', function (): vo
 
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'openclaw',
+        'name' => 'hermes',
         'expected_state' => 'installed',
         'config' => ['endpoints' => [['name' => 'stale', 'host' => 'stale.example', 'port' => 1]]],
     ]);
@@ -77,7 +62,12 @@ it('does not require persisted endpoint copies for agent tools', function (): vo
     $payload = app(ToolPayloadMapper::class)->toArray($tool);
 
     expect($payload['endpoints'][0]['url'] ?? null)
-        ->toBe('https://openclaw.agent')
+        ->toBe('https://hermes.agent')
         ->and($payload['endpoints'][0]['host'] ?? null)
         ->not->toBe('stale.example');
+});
+
+it('does not register openclaw as a supported agent tool endpoint', function (): void {
+    expect(app(\App\Services\Tools\ToolCatalog::class)->supports('openclaw'))
+        ->toBeFalse();
 });

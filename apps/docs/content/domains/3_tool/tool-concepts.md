@@ -81,7 +81,7 @@ These terms describe how Orbit relates to each tool in the catalog.
   unprivileged `agent` user when the backend uses an agent runtime, and uses
   the backend declared by its catalog entry.
 - **Agent tool internal route:** Tool-owned proxy route under the agent node's
-  node-owned TLD, such as `https://openclaw.agent`. Reachable only over the
+  node-owned TLD, such as `https://hermes.agent`. Reachable only over the
   Orbit/WireGuard network.
 - **Agent tool credentials:** Web UI access metadata returned by
   `tool:credentials` for agent tools. Reading agent tool credentials

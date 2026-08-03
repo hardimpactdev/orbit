@@ -128,9 +128,8 @@ membership.
 
 9. [`polyscope-server`](polyscope-server.md)
 10. [`opencode-cli`](opencode-cli.md)
-11. [`openclaw`](openclaw.md)
-12. [`hermes`](hermes.md)
-13. [`codex-app`](codex-app.md)
+11. [`hermes`](hermes.md)
+12. [`codex-app`](codex-app.md)
 
 ### macOS runtime providers
 
