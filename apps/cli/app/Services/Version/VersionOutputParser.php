@@ -7,10 +7,13 @@ namespace App\Services\Version;
 use JsonException;
 
 /**
- * Parses Orbit version from structured `--version --json` output.
+ * Parses Orbit version from structured `version --json` output.
  *
- * Prefer JSON so install/update metadata never scrapes human Version table
- * rows or the first dotted triple in mixed progress stdout.
+ * Accepts only the shared success.data envelope. Install progress may precede
+ * the JSON object on stdout; the last JSON object line is used. Flat
+ * top-level `{version: ...}` is not accepted.
+ *
+ * @mago-expect lint:cyclomatic-complexity -- Last-JSON-line scan plus envelope unwrap.
  */
 final class VersionOutputParser
 {
@@ -20,7 +23,7 @@ final class VersionOutputParser
      */
     public function fromJsonOutput(string $output): ?string
     {
-        $payload = $this->decodeJsonEnvelope($output);
+        $payload = $this->decodeSuccessData($output);
 
         if ($payload === null) {
             return null;
@@ -38,17 +41,32 @@ final class VersionOutputParser
     }
 
     /**
-     * Prefer JSON; do not scrape human tables or arbitrary dotted triples.
+     * @return array<string, mixed>|null
      */
-    public function fromAnyOutput(string $output): ?string
+    private function decodeSuccessData(string $output): ?array
     {
-        return $this->fromJsonOutput($output);
+        $decoded = $this->decodeLastJsonObject($output);
+
+        if ($decoded === null) {
+            return null;
+        }
+
+        // Orbit success envelope only: { "success": { "data": { "version": "..." } } }
+        $success = $decoded['success'] ?? null;
+
+        if (! is_array($success)) {
+            return null;
+        }
+
+        $data = $success['data'] ?? null;
+
+        return is_array($data) ? $data : null;
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<array-key, mixed>|null
      */
-    private function decodeJsonEnvelope(string $output): ?array
+    private function decodeLastJsonObject(string $output): ?array
     {
         $trimmed = trim($output);
 
@@ -61,7 +79,8 @@ final class VersionOutputParser
             $decoded = json_decode($trimmed, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             // Progress lines may precede the JSON object; take the last JSON object line.
-            $lines = preg_split('/\R/', $trimmed) ?: [];
+            $split = preg_split('/\R/', $trimmed);
+            $lines = is_array($split) ? $split : [];
             $decoded = null;
 
             for ($index = count($lines) - 1; $index >= 0; $index--) {
@@ -84,22 +103,6 @@ final class VersionOutputParser
             }
         }
 
-        if (! is_array($decoded)) {
-            return null;
-        }
-
-        // Orbit success envelope: { "success": { "data": { "version": "..." } } }
-        if (isset($decoded['success']) && is_array($decoded['success'])) {
-            $data = $decoded['success']['data'] ?? null;
-
-            return is_array($data) ? $data : null;
-        }
-
-        // Flat VersionInfo shape.
-        if (array_key_exists('version', $decoded)) {
-            return $decoded;
-        }
-
-        return null;
+        return is_array($decoded) ? $decoded : null;
     }
 }

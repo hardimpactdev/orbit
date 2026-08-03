@@ -11,8 +11,9 @@ namespace Orbit\Core\Security;
  * and nested structured payloads so raw APP_KEY / password / token / api-key
  * material never lands in activity_log or operation_runs summary columns.
  *
- * Matching is key-shaped (env, JSON, human key/value, nested array keys), not a
- * blanket scan for ordinary words that merely contain those substrings.
+ * Matching is key-shaped (env, JSON, human key/value, nested array keys) plus
+ * a few complete structured forms (PEM blocks, HTTP Authorization Bearer
+ * syntax). It is not a blanket entropy scan or open-ended credential catalog.
  */
 final class SecretSummaryRedactor
 {
@@ -61,14 +62,43 @@ final class SecretSummaryRedactor
     private const string SECRET_KEY_CORE =
         '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
             .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD_HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
 
     private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
+
+    private const string PEM_BLOCK_PATTERN = '/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/';
 
     public function redactString(string $value): string
     {
         $redacted = $value;
         $keys = self::SECRET_KEY_IDENTIFIER;
+
+        // Complete PEM blocks even when no secret-shaped key names the value.
+        $redacted =
+            preg_replace(
+                self::PEM_BLOCK_PATTERN,
+                self::REDACTED,
+                $redacted,
+            ) ?? $redacted;
+
+        // Authorization / Proxy-Authorization headers (any scheme + credential).
+        // Stop at quotes/whitespace so quoted shell header forms keep delimiters.
+        $redacted =
+            preg_replace(
+                '/\b((?:Proxy-)?Authorization)\s*:\s*[^\s\'"]+(?:\s+[^\s\'"]+)?/i',
+                '$1: '.self::REDACTED,
+                $redacted,
+            ) ?? $redacted;
+
+        // Standalone Bearer <credential> (header-less or mid-line).
+        // Require quoted or token-shaped credentials so prose like "bearer of"
+        // is left alone.
+        $redacted =
+            preg_replace(
+                '/\bBearer\s+(?:"[^"]*"|\'[^\']*\'|[A-Za-z0-9][A-Za-z0-9._\-+\/=]{7,})/i',
+                'Bearer '.self::REDACTED,
+                $redacted,
+            ) ?? $redacted;
 
         // Env-style: PASSWORD=..., api_key='...', user_password=..., mixed case.
         $redacted =
@@ -87,14 +117,13 @@ final class SecretSummaryRedactor
             ) ?? $redacted;
 
         // Human key: value forms on their own line or after whitespace.
-        $redacted =
+        return (
             preg_replace(
                 '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
                 '$1: '.self::REDACTED,
                 $redacted,
-            ) ?? $redacted;
-
-        return $redacted;
+            ) ?? $redacted
+        );
     }
 
     /**
@@ -135,10 +164,10 @@ final class SecretSummaryRedactor
     {
         // Treat hyphen and underscore forms as one key policy so command-option
         // keys like app-key match app_key without caller-side normalization.
-        $normalized = strtolower(str_replace('-', '_', $key));
+        $normalized = strtolower(str_replace(search: '-', replace: '_', subject: $key));
 
         foreach (self::FORBIDDEN_KEYS as $forbidden) {
-            if ($normalized === str_replace('-', '_', strtolower($forbidden))) {
+            if ($normalized === str_replace(search: '-', replace: '_', subject: strtolower($forbidden))) {
                 return true;
             }
         }

@@ -200,21 +200,34 @@ topologies may supply their own explicit container name.
 #### Result-boundary redaction patterns
 
 Activity rows, operation_runs rows, internal-command JSON results, and
-exception messages must never contain raw secret material. Every redaction
-layer (the internal command's own pre-serialization scan, the gateway-side
-`OperationResultHandler`, and `RemoteLocalExecutor`'s exception sanitizer)
-scrubs values matching this pattern set:
+exception messages must never contain raw secret material. Orbit uses two
+intentional semantics — strict rejection at typed result/progress boundaries,
+and best-effort scrubbing at activity/operation persistence. Defense in depth
+does not license callers to emit secrets; Loggable properties and typed
+results must still be secret-free by contract.
 
-- `--operation-token=...` arguments (with or without whitespace around `=`)
-  and the exact minted token value
-- keys named `operation_token`, `executor_secret`, `password`, `bearer`,
-  `secret`, `_token`, `api_key`
-- substrings matching PEM blocks
+**Strict typed result and progress boundaries** (`ResultBoundaryRedactionPolicy`
+via internal-command pre-serialization, `OperationResultHandler`, and framed
+progress recognition) reject the payload before persistence when:
+
+- any key name contains a forbidden fragment: `operation_token`,
+  `executor_secret`, `password`, `bearer`, `secret`, `_token`, `api_key`
+- any leaf string embeds a PEM block
   (`-----BEGIN [A-Z ]+-----` through `-----END [A-Z ]+-----`)
+- an unknown key appears for a declared typed operation contract (fail closed)
 
-Redaction is applied at both the internal-command result boundary (before
-JSON serialization) and the gateway `OperationResultHandler` (before
-persistence). Tests assert both layers for every pattern.
+**Persistence safety net** (`SecretSummaryRedactor` on `ActivityLogger` for
+final merged properties and description, and on `OperationRunRecorder` for
+result/error/summaries) redacts rather than rejects. It covers key-shaped
+APP_KEY / application key, password / password-hash, secret, token, API /
+access / refresh / operation tokens, executor secret, private / pre-shared
+keys, bearer, and compound or hyphen variants across nested properties,
+summaries, and descriptions. It also scrubs complete PEM blocks and real
+authorization syntax (`Authorization: Bearer …`, `Proxy-Authorization: …`,
+standalone `Bearer <credential>`). `RemoteLocalExecutor` still redacts minted
+operation-token literals and explicit `redact_command_options` values in
+exception text and audit lines, because those are not always recoverable from
+key shape alone.
 
 Required work:
 

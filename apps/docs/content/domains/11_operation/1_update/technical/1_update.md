@@ -77,12 +77,14 @@ fields and does not prompt.
   Production artifact installs verify the staged and relinked binaries;
   source-mounted Docker/Incus development and E2E lanes verify the resolved
   `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point the same way.
-  Accepted verify output is a parseable version JSON success envelope (flat or
-  `success.data`) with a non-empty `version` field. Missing or malformed
-  structured version output is not accepted as a verified install. Orbit does
-  not fall back to `config('app.version')`, `0.0.0`, or any other guessed
-  version, and does not write install metadata under a version inferred from
-  human table text or the first dotted triple in mixed progress output.
+  Accepted verify output is a parseable version JSON success envelope under
+  `success.data` with a non-empty `version` field (the shared `version --json`
+  contract). Flat top-level `{version: ...}` is not accepted. Install progress
+  lines may precede the envelope; the last JSON object line is used. Missing or
+  malformed structured version output is not accepted as a verified install.
+  Orbit does not fall back to `config('app.version')`, `0.0.0`, or any other
+  guessed version, and does not write install metadata under a version inferred
+  from human table text or the first dotted triple in mixed progress output.
 
 ### Version check and the gateway-first gate
 

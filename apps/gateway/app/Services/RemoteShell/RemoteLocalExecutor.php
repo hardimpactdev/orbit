@@ -639,15 +639,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $transportOptions,
         string $activityTransport,
     ): void {
-        $redactor = new SecretSummaryRedactor;
+        // ActivityLogger is the global no-secrets property boundary. Keep only
+        // explicit redact_command_options scrubbing here so caller-named option
+        // values are removed from the audit line and structured options before
+        // that boundary (literal values not always inferable from key shape).
         $explicitOptionNames = $this->redactedCommandOptionNames($transportOptions);
-        // Discover secret-shaped option names only so --password value forms in the
-        // rendered line can be scrubbed; structured payloads use redactArray().
-        $commandLineOptionNames = array_values(array_unique([
-            ...$explicitOptionNames,
-            ...$this->secretShapedCommandOptionNames($commandOptions, $redactor),
-        ]));
-        $commandLine = $this->redactCommandOptionsInLine($auditLine, $commandLineOptionNames);
+        $commandLine = $this->redactCommandOptionsInLine($auditLine, $explicitOptionNames);
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
@@ -662,11 +659,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'target_node_id' => $this->nodeId($node),
                     'target_node_name' => $node->name,
                     'command' => $commandName,
-                    'arguments' => $redactor->redactArray($this->scalarPayload($arguments)),
-                    'command_options' => $redactor->redactArray(
-                        $this->scalarPayload($commandOptions, $explicitOptionNames),
-                    ),
-                    'command_line' => $redactor->redactString($commandLine),
+                    'arguments' => $this->scalarPayload($arguments),
+                    'command_options' => $this->scalarPayload($commandOptions, $explicitOptionNames),
+                    'command_line' => $commandLine,
                 ],
             ),
             channel: 'api',
@@ -1198,28 +1193,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         return $payload;
-    }
-
-    /**
-     * Option names that SecretSummaryRedactor treats as secret keys, used only
-     * to scrub rendered `--name value` / `--name=value` forms on command_line.
-     *
-     * @param  array<int|string, mixed>  $commandOptions
-     * @return list<string>
-     */
-    private function secretShapedCommandOptionNames(
-        array $commandOptions,
-        SecretSummaryRedactor $redactor,
-    ): array {
-        $names = [];
-
-        foreach (array_keys($commandOptions) as $key) {
-            if (is_string($key) && $redactor->isForbiddenKey($key)) {
-                $names[] = $key;
-            }
-        }
-
-        return $names;
     }
 
     /**

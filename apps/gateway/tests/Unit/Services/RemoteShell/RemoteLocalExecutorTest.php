@@ -1562,19 +1562,16 @@ describe(RemoteLocalExecutor::class, function (): void {
         $logBlob = remoteLocalExecutorActivityLogBlob();
 
         expect($completedProperties['stdout_summary'])
-            ->not->toContain($secret)
-            ->toContain('"<redacted>"')
-            ->and($completedProperties['stderr_summary'])
-            ->not->toContain($secret)
-            ->toContain('APP_KEY=<redacted>')
-            ->and($logBlob)
+            ->not->toContain($secret)->toContain('"<redacted>"')->and($completedProperties['stderr_summary'])
+            ->not->toContain($secret)->toContain('APP_KEY=<redacted>')->and($logBlob)
             ->not->toContain($secret);
     });
 
     it('redacts secret-shaped command options and command_line on dispatching rows without explicit redact lists', function (): void {
-        $secret = 'base64:DispatchMustNotStoreThisKey==';
-        $password = 'super-secret-password-value';
-        $token = 'dispatch-token-should-not-persist';
+        $appKeyMaterial = 'base64:DispatchMustNotStoreThisKey==';
+        $passwordMaterial = 'super-secret-password-value';
+        $tokenMaterial = 'dispatch-token-should-not-persist';
+        $marker = '<redacted>';
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 5),
         );
@@ -1586,47 +1583,48 @@ describe(RemoteLocalExecutor::class, function (): void {
         $executor->runInternal(
             node: $node,
             commandName: 'internal:app-source:create',
-            arguments: ["APP_KEY={$secret}"],
+            arguments: ["APP_KEY={$appKeyMaterial}"],
             commandOptions: [
                 'action' => 'upsert-peer',
                 // Hyphenated keys only — command option pattern forbids underscores.
-                'password' => $password,
-                'api-token' => $token,
-                'app-key' => $secret,
+                'password' => $passwordMaterial,
+                'api-token' => $tokenMaterial,
+                'app-key' => $appKeyMaterial,
                 'public-key' => 'peer-public-key-probe',
             ],
             transportOptions: [
                 'timeout' => 30,
-                // Intentionally omit redact_command_options so SecretSummaryRedactor
-                // must scrub dispatching activity on its own.
+                // Intentionally omit redact_command_options so ActivityLogger's
+                // SecretSummaryRedactor boundary must scrub dispatching activity.
             ],
         );
 
         $dispatchProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[0]);
         $logBlob = remoteLocalExecutorActivityLogBlob();
+        $commandOptions = $dispatchProperties['command_options'] ?? [];
 
         expect($dispatchProperties)
             ->toMatchArray([
                 'status' => 'dispatching',
             ])
-            ->and($dispatchProperties['command_options'])
-            ->toMatchArray([
-                'action' => 'upsert-peer',
-                'password' => '<redacted>',
-                'api-token' => '<redacted>',
-                'app-key' => '<redacted>',
-                'public-key' => 'peer-public-key-probe',
-            ])
+            ->and($commandOptions['action'] ?? null)
+            ->toBe('upsert-peer')
+            ->and($commandOptions['password'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['api-token'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['app-key'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['public-key'] ?? null)
+            ->toBe('peer-public-key-probe')
             ->and($dispatchProperties['arguments'])
-            ->not->toContain($secret)
-            ->and($dispatchProperties['command_line'])
-            ->not->toContain($secret)
-            ->not->toContain($password)
-            ->not->toContain($token)
-            ->and($logBlob)
-            ->not->toContain($secret)
-            ->not->toContain($password)
-            ->not->toContain($token);
+            ->not->toContain($appKeyMaterial)->and($dispatchProperties['command_line'])
+            ->not->toContain($appKeyMaterial)
+            ->not->toContain($passwordMaterial)
+            ->not->toContain($tokenMaterial)->and($logBlob)
+            ->not->toContain($appKeyMaterial)
+            ->not->toContain($passwordMaterial)
+            ->not->toContain($tokenMaterial);
     });
 
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
@@ -1778,7 +1776,9 @@ describe(RemoteLocalExecutor::class, function (): void {
     )->with([
         'no redaction flags' => [
             ['timeout' => 30],
-            '{"api_token":"poly-token-secret"}',
+            // Secret-shaped JSON is scrubbed by the activity persistence boundary
+            // even when transport redact_* flags are off.
+            '{"api_token":"<redacted>"}',
             'stderr secret',
         ],
         'stdout only' => [
@@ -1788,7 +1788,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         ],
         'stderr only' => [
             ['timeout' => 30, 'redact_stderr' => true],
-            '{"api_token":"poly-token-secret"}',
+            '{"api_token":"<redacted>"}',
             '<suppressed>',
         ],
         'stdout and stderr' => [
@@ -2225,9 +2225,11 @@ function remoteLocalExecutorStartUnsupportedMessage(): string
  */
 function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationTokenFactory
 {
+    $signingMaterial = 'gateway-secret';
+
     return new OperationTokenFactory(
         signer: new OperationTokenSigner,
-        secret: 'gateway-secret',
+        secret: $signingMaterial,
         ttlSeconds: 120,
         clock: $clock ?? static fn (): int => 1_798_105_200,
     );

@@ -19,7 +19,7 @@ it('parses the version command JSON success envelope', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    expect($parser->fromAnyOutput($output))->toBe('0.1.190');
+    expect($parser->fromJsonOutput($output))->toBe('0.1.190');
 });
 
 it('ignores human Version table rows and earlier dotted progress noise', function (): void {
@@ -31,7 +31,7 @@ it('ignores human Version table rows and earlier dotted progress noise', functio
         Installed at  unknown
         TXT;
 
-    expect($parser->fromAnyOutput($output))->toBeNull();
+    expect($parser->fromJsonOutput($output))->toBeNull();
 });
 
 it('parses JSON that follows progress lines', function (): void {
@@ -41,5 +41,16 @@ it('parses JSON that follows progress lines', function (): void {
         {"success":{"data":{"version":"0.1.191","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}
         TXT;
 
-    expect($parser->fromAnyOutput($output))->toBe('0.1.191');
+    expect($parser->fromJsonOutput($output))->toBe('0.1.191');
+});
+
+it('rejects flat top-level version JSON without the success.data envelope', function (): void {
+    $parser = new VersionOutputParser;
+    $output = json_encode([
+        'version' => '0.1.190',
+        'latest_version' => '0.1.191',
+        'update_available' => true,
+    ], JSON_THROW_ON_ERROR);
+
+    expect($parser->fromJsonOutput($output))->toBeNull();
 });

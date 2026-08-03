@@ -400,7 +400,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      */
     private function requireVersionFromOutput(string $output): ?string
     {
-        return $this->versionOutputParser->fromAnyOutput($output);
+        return $this->versionOutputParser->fromJsonOutput($output);
     }
 
     private function versionedBinaryPath(string $installRoot, string $version): string

@@ -60,7 +60,7 @@ final readonly class LocalFleetUpdateInstallCliAction
         string $stdout,
         Process $process,
     ): void {
-        $version = $this->versionOutputParser->fromAnyOutput($stdout);
+        $version = $this->versionOutputParser->fromJsonOutput($stdout);
 
         if ($version === null) {
             throw new LocalFleetUpdateInstallCliFailure(

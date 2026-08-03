@@ -50,7 +50,7 @@ final readonly class LocalFleetUpdateVerifyAction
             );
         }
 
-        $version = $this->versionOutputParser->fromAnyOutput($result->getOutput());
+        $version = $this->versionOutputParser->fromJsonOutput($result->getOutput());
 
         if ($version === null) {
             throw new LocalFleetUpdateVerifyFailure(
