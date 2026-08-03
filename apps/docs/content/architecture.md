@@ -191,18 +191,17 @@ sweeps do not inspect or prune it again; only activation may change that state.
 
 A request for an asleep (soft) or cold scope creates or follows one serialized
 activation operation. Through the existing stock-Caddy wake pre-check, the
-gateway returns a minimal auto-refreshing progress response immediately without
+gateway returns a minimal auto-refreshing boot response immediately without
 starting processes or restoring dependencies inline. Soft and cold share that
 page and operation machinery; the plan records the mode. Soft runners only fence
 process activation. Cold runners restore and verify only the missing dependency
 families, fence process activation, and clear that scope's cold marker only
-after ready. The response shows the Orbit mark and one aggregate progress bar
-derived from the operation plan (dependency steps cold only). The bar smoothly
-advances between newly reported completion values without exposing individual
-dependency or process rows. Once the pre-check succeeds, the refreshed original
-request passes through to the application. A failed or partially completed prune
-remains cold. Each detached runner atomically claims its operation once and
-heartbeats the operation journal while it works.
+after ready. The response presents one indeterminate animated Orbit mark only
+(no soft/cold copy, progress bar, step rows, or diagnostics). Mode, steps, and
+determinate progress remain internal to the operation. Once the pre-check
+succeeds, the refreshed original request passes through to the application. A
+failed or partially completed prune remains cold. Each detached runner atomically
+claims its operation once and heartbeats the operation journal while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
 once. A dependency waiter uses the full bounded activation-fence duration
@@ -211,8 +210,8 @@ finish before the sibling re-inspects. Process activation and cold-marker
 transitions remain fenced per scope.
 Stale takeover acquires both fences before replacing a runner, and each scope
 clears only its own cold marker after dependency restoration and process
-startup succeed. Failures therefore keep that scope's progress page and retry
-path available.
+startup succeed. Failures therefore keep that scope's boot page and retry path
+available.
 
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access

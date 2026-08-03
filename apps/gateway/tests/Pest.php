@@ -661,6 +661,51 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
     ];
 }
 
+/**
+ * Common soft/cold pending runtime-activation boot screen contract.
+ */
+function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $response, string $refreshUrl): void
+{
+    $response
+        ->assertServiceUnavailable()
+        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('Retry-After', '2')
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
+        ->assertSee('url='.$refreshUrl, false)
+        ->assertSee('orbit-spin', false)
+        ->assertSee('0.325s', false)
+        ->assertSee('will-change: transform', false)
+        ->assertSee('translate3d(-50%, -50%, 0)', false)
+        ->assertSee('#202020', false)
+        ->assertSee('conic-gradient', false)
+        ->assertSee('logo-rotor', false)
+        ->assertSee('logo-track', false)
+        ->assertSee('role="img"', false)
+        ->assertSee('aria-label="Orbit"', false)
+        ->assertDontSee('role="progressbar"', false)
+        ->assertDontSee('progress-value', false)
+        ->assertDontSee('Wake-up progress', false)
+        ->assertDontSee('prefers-reduced-motion', false)
+        ->assertDontSee('<script', false);
+
+    $content = (string) $response->getContent();
+    // Base rotor rule + 129 @keyframes orbit-spin samples (128 intervals).
+    expect(substr_count($content, 'translate3d(-50%, -50%, 0) rotate'))
+        ->toBe(130)
+        ->and(preg_match_all('/\d+(?:\.\d+)?%\s*\{\s*transform:\s*translate3d/', $content))
+        ->toBe(129);
+
+    $csp = (string) $response->headers->get('Content-Security-Policy');
+    expect($csp)
+        ->toContain("default-src 'none'")
+        ->toContain("style-src 'unsafe-inline'")
+        ->toContain('img-src data:')
+        ->toContain("base-uri 'none'")
+        ->toContain("frame-ancestors 'none'")
+        ->not->toContain('script-src');
+}
+
 final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
 {
     public int $workspaceCalls = 0;
