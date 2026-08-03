@@ -6,10 +6,6 @@ namespace App\Services\Doctor;
 
 /**
  * Bounded multi-pass restore loop for node-scoped Doctor convergence.
- *
- * Each pass: apply supported genuine-drift restorers, re-probe the same fence,
- * and continue while new restorable findings appear. Stops on clean, no-progress,
- * or max passes without inventing repairs for non-genuine dispositions.
  */
 final class DoctorRestoreConvergence
 {
@@ -32,132 +28,79 @@ final class DoctorRestoreConvergence
         callable $isRestorable,
         int $maxPasses = self::MAX_PASSES,
     ): array {
-        $allActions = [];
-        $previousSignature = null;
-        $passes = 0;
-        $probeResult = $probe();
-        $issues = $this->issues($probeResult);
-        $restorable = $this->filterRestorable($issues, $isRestorable);
+        $state = new DoctorRestorePassState(
+            probe: $probe(),
+            actions: [],
+            passes: 0,
+            previousSignature: null,
+        );
+        $restorable = $this->restorableIssues($state->probe, $isRestorable);
 
         if ($restorable === []) {
-            return [
-                'probe' => $probeResult,
-                'actions' => [],
-                'passes' => 0,
-                'stop_reason' => 'no_restorable',
-            ];
+            return $state->toResult('no_restorable');
         }
 
+        $callbacks = new DoctorRestoreCallbacks($probe, $apply, $isRestorable);
+
+        return $this->runPasses($state, $restorable, $callbacks, $maxPasses);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $restorable
+     * @return array{
+     *     probe: array{issues?: list<array<string, mixed>>},
+     *     actions: list<array<string, mixed>>,
+     *     passes: int,
+     *     stop_reason: 'converged'|'no_progress'|'max_passes'|'no_restorable'
+     * }
+     */
+    private function runPasses(
+        DoctorRestorePassState $state,
+        array $restorable,
+        DoctorRestoreCallbacks $callbacks,
+        int $maxPasses,
+    ): array {
         while (true) {
-            $signature = $this->signature($restorable);
+            $signature = DoctorRestoreIssueSignature::fromIssues($restorable);
+            $preStop = $state->stopReasonBeforeApply($signature, $maxPasses);
 
-            if ($signature === $previousSignature) {
-                return [
-                    'probe' => $probeResult,
-                    'actions' => $allActions,
-                    'passes' => $passes,
-                    'stop_reason' => 'no_progress',
-                ];
+            if ($preStop !== null) {
+                return $state->toResult($preStop);
             }
 
-            if ($passes >= $maxPasses) {
-                return [
-                    'probe' => $probeResult,
-                    'actions' => $allActions,
-                    'passes' => $passes,
-                    'stop_reason' => 'max_passes',
-                ];
-            }
-
-            $passActions = $apply($issues);
-            $allActions = [...$allActions, ...$passActions];
-            $previousSignature = $signature;
-            $passes++;
-
-            $probeResult = $probe();
-            $issues = $this->issues($probeResult);
-            $restorable = $this->filterRestorable($issues, $isRestorable);
+            $passActions = ($callbacks->apply)($this->allIssues($state->probe));
+            $state = $state->afterApply($passActions, $signature);
+            $state = $state->withProbe(($callbacks->probe)());
+            $restorable = $this->restorableIssues($state->probe, $callbacks->isRestorable);
 
             if ($restorable === []) {
-                return [
-                    'probe' => $probeResult,
-                    'actions' => $allActions,
-                    'passes' => $passes,
-                    'stop_reason' => 'converged',
-                ];
+                return $state->toResult('converged');
             }
 
-            // A pass that applied no successful mutation cannot unlock dependents.
-            // Stop before retrying the same genuine-drift set forever.
-            if (! $this->passMadeProgress($passActions)) {
-                return [
-                    'probe' => $probeResult,
-                    'actions' => $allActions,
-                    'passes' => $passes,
-                    'stop_reason' => 'no_progress',
-                ];
+            if (! DoctorRestorePassState::actionsMadeProgress($passActions)) {
+                return $state->toResult('no_progress');
             }
         }
     }
 
     /**
-     * @param  list<array<string, mixed>>  $actions
+     * @param  array{issues?: list<array<string, mixed>>}  $probe
+     * @param  callable(array<string, mixed>): bool  $isRestorable
+     * @return list<array<string, mixed>>
      */
-    private function passMadeProgress(array $actions): bool
+    private function restorableIssues(array $probe, callable $isRestorable): array
     {
-        return array_any(
-            $actions,
-            static fn (array $action): bool => in_array(
-                $action['status'] ?? null,
-                ['completed', 'created', 'updated'],
-                true,
-            ),
-        );
+        return array_values(array_filter($this->allIssues($probe), $isRestorable));
     }
 
     /**
      * @param  array{issues?: list<array<string, mixed>>}  $probe
      * @return list<array<string, mixed>>
      */
-    private function issues(array $probe): array
+    private function allIssues(array $probe): array
     {
         $issues = $probe['issues'] ?? [];
 
         return array_values(array_filter($issues, is_array(...)));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $issues
-     * @param  callable(array<string, mixed>): bool  $isRestorable
-     * @return list<array<string, mixed>>
-     */
-    private function filterRestorable(array $issues, callable $isRestorable): array
-    {
-        return array_values(array_filter($issues, $isRestorable));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $issues
-     */
-    private function signature(array $issues): string
-    {
-        $parts = array_map(
-            static function (array $issue): string {
-                $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
-                $code = is_string($issue['code'] ?? null)
-                    ? $issue['code']
-                    : (is_string($issue['key'] ?? null) ? $issue['key'] : '');
-                $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
-                $node = is_string($issue['node'] ?? null) ? $issue['node'] : '';
-                $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
-                $detailToken = json_encode($detail, JSON_THROW_ON_ERROR);
-
-                return "{$family}|{$code}|{$key}|{$node}|{$detailToken}";
-            },
-            $issues,
-        );
-        sort($parts);
-
-        return implode("\n", $parts);
     }
 }

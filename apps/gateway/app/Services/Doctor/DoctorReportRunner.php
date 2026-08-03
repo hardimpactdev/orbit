@@ -1296,13 +1296,15 @@ final readonly class DoctorReportRunner
         ];
 
         if ($actions === [] && $result['stop_reason'] === 'no_restorable') {
-            return $this->finalizeWithConvergence(
-                probe: $initialProbe,
-                mode: 'restore',
-                actions: $actions,
+            return $this->attachConvergenceMetadata(
+                report: $this->finalize(
+                    probe: $initialProbe,
+                    mode: 'restore',
+                    actions: $actions,
+                    authoritativeObservation: false,
+                ),
                 passes: 0,
                 stopReason: 'no_restorable',
-                authoritativeObservation: false,
             );
         }
 
@@ -1311,48 +1313,37 @@ final readonly class DoctorReportRunner
             $finalIssues,
         );
 
-        return $this->finalizeWithConvergence(
-            probe: $finalProbe,
-            mode: 'restore',
-            actions: $annotatedActions,
+        return $this->attachConvergenceMetadata(
+            report: $this->finalize(
+                probe: $finalProbe,
+                mode: 'restore',
+                actions: $annotatedActions,
+                authoritativeObservation: true,
+            ),
             passes: $result['passes'],
             stopReason: $result['stop_reason'],
-            authoritativeObservation: true,
         );
     }
 
     /**
-     * @param  array<string, mixed>  $probe
-     * @param  list<array<string, mixed>>  $actions
+     * @param  array<string, mixed>  $report
      * @return array<string, mixed>
      */
-    private function finalizeWithConvergence(
-        array $probe,
-        string $mode,
-        array $actions,
-        int $passes,
-        string $stopReason,
-        bool $authoritativeObservation,
-    ): array {
-        $result = $this->finalize(
-            probe: $probe,
-            mode: $mode,
-            actions: $actions,
-            authoritativeObservation: $authoritativeObservation,
-        );
-        $result['convergence'] = [
+    private function attachConvergenceMetadata(array $report, int $passes, string $stopReason): array
+    {
+        $report['convergence'] = [
             'passes' => $passes,
             'stop_reason' => $stopReason,
             'max_passes' => DoctorRestoreConvergence::MAX_PASSES,
         ];
-        $summary = is_array($result['summary'] ?? null) ? $result['summary'] : [];
-        $result['summary'] = [
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $report['summary'] = [
             ...$summary,
             'passes' => $passes,
             'stop_reason' => $stopReason,
         ];
 
-        return $result;
+        return $report;
     }
 
     /**

@@ -50,12 +50,25 @@ final class DoctorIssueCatalog
      */
     public static function definitions(): array
     {
-        static $definitions = null;
+        /** @var array<string, DoctorIssueDefinition>|null $cache */
+        static $cache = null;
 
-        if ($definitions !== null) {
-            return $definitions;
+        if (is_array($cache)) {
+            return $cache;
         }
 
+        $definitions = self::buildDefinitions();
+        $cache = $definitions;
+
+        return $definitions;
+    }
+
+    /**
+     * @return array<string, DoctorIssueDefinition>
+     */
+    private static function buildDefinitions(): array
+    {
+        /** @var array<string, DoctorIssueDefinition> $definitions */
         $definitions = [];
 
         foreach (self::providers() as $provider) {
