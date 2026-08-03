@@ -1,0 +1,38 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T17:30:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-doctor-convergence-completeness/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-193045-doctor-convergence-completeness",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-restore-agent-dev-4d398b.json",
+        "evidence/doctor-retained-incus-proof-dev-4d398b.md",
+        "evidence/doctor-verify-agent-after-dev-4d398b.json",
+        "evidence/incus-start-operator_gateway-d8b302c61.json",
+        "evidence/incus-stop-dev-4d398b.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T172313Z-eefa12a4ceee.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-restore-agent-dev-4d398b.json": "c0b9ee662e4387f3d799b0f77f2775ac9e8f28f2ad3230faeea27259c1188e5d",
+        "evidence/doctor-retained-incus-proof-dev-4d398b.md": "28c7468541896801e2a99c545216663a226348354fcb6e2c386475afcfec81b8",
+        "evidence/doctor-verify-agent-after-dev-4d398b.json": "7d87112af302296a24661a4ea505515ada0338a6a0da637424ea0e579bce5bc7",
+        "evidence/incus-start-operator_gateway-d8b302c61.json": "f6315fe810a345329774f22b6ab87f26a504fa0e7bd56ab88b8581d784fd42e8",
+        "evidence/incus-stop-dev-4d398b.json": "19195fe6a615a68de87b92b8cee6e169efd7dff6472e2729edbf551f4eb63101",
+        "loop.md": "b310192d344df31a62e24d158cbe31439fee82c0a4d977ff1bda12dda750a9c4",
+        "quality-gates/quality-check-2026-08-03T172313Z-eefa12a4ceee.json": "b8e033b11eb654c101738aa6faa6f94807bafd883cff93c0f01003a382fd73dd"
+    },
+    "slug": "doctor-convergence-completeness",
+    "requested_slug": "doctor-convergence-completeness",
+    "compatible_slugs": [
+        "doctor-convergence-completeness"
+    ],
+    "branch": "codex/doctor-convergence-completeness",
+    "candidate_commit": "d8b302c613d0f5cbbf3f6395ec289223fe893e26",
+    "accepted_feature_tip": "d8b302c613d0f5cbbf3f6395ec289223fe893e26",
+    "accepted_main_tip": "6dbcbd2d0292db36f7645a6fc8e2e9fa86c1e340",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
