@@ -248,15 +248,11 @@ it('returns the minimal progress page immediately for a soft-asleep app instance
         ],
     );
 
+    assert_runtime_activation_boot_screen($response, '/dashboard?tab=jobs');
     $response
-        ->assertServiceUnavailable()
-        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
-        ->assertHeader('Cache-Control', 'no-store, private')
-        ->assertHeader('Retry-After', '2')
-        ->assertSee('Waking docs.test')
-        ->assertSee('url=/dashboard?tab=jobs', false)
-        ->assertSee('Starting queue')
-        ->assertDontSee('composer install');
+        ->assertDontSee('Starting queue')
+        ->assertDontSee('composer install')
+        ->assertDontSee('role="progressbar"', false);
 
     $run = OperationRun::query()
         ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
@@ -427,7 +423,10 @@ it('preserves the failed soft progress page when the scope is still asleep and r
             ],
         )
         ->assertServiceUnavailable()
-        ->assertSee('Wake-up paused')
+        ->assertSee('orbit-spin', false)
+        ->assertSee('logo-rotor', false)
+        ->assertDontSee('Wake-up paused')
+        ->assertDontSee('role="progressbar"', false)
         ->assertSee('Try again')
         ->assertSee('/dashboard?tab=jobs&orbit-wake-retry=1');
 
@@ -484,8 +483,9 @@ it('starts a new soft activation when retry is requested after a terminal failed
             ],
         )
         ->assertServiceUnavailable()
-        ->assertSee('Waking docs.test')
-        ->assertDontSee('Wake-up paused');
+        ->assertSee('orbit-spin', false)
+        ->assertDontSee('Wake-up paused')
+        ->assertDontSee('role="progressbar"', false);
 
     $runs = OperationRun::query()
         ->where('operation_type', 'runtime-activation')
@@ -604,18 +604,19 @@ it('returns the soft progress page for a workspace and wakes inherited processes
     $executor = new RuntimeHibernationRecordingExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/workspace/{$workspace->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Starting queue')
-        ->assertSee('Starting vite');
+    $workspaceResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/workspace/{$workspace->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            'HTTP_X_FORWARDED_URI' => '/workspace',
+        ],
+    );
+    assert_runtime_activation_boot_screen($workspaceResponse, '/workspace');
+    $workspaceResponse
+        ->assertDontSee('Starting queue')
+        ->assertDontSee('Starting vite');
 
     $run = OperationRun::query()
         ->where('operation_id', "runtime-activation:workspace-{$workspace->id}")

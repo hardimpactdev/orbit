@@ -75,17 +75,12 @@ it('returns an immediate minimal progress page with only detected dependencies a
         ],
     );
 
+    assert_runtime_activation_boot_screen($response, '/docs/api?version=2');
     $response
-        ->assertServiceUnavailable()
-        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
-        ->assertHeader('Cache-Control', 'no-store, private')
-        ->assertHeader('Retry-After', '2')
-        ->assertSee('Waking docs.test')
-        ->assertSee('url=/docs/api?version=2', false)
-        ->assertSee('Installing PHP dependencies')
-        ->assertSee('Installing frontend dependencies')
-        ->assertSee('Starting horizon')
-        ->assertSee('Starting vite')
+        ->assertDontSee('Installing PHP dependencies')
+        ->assertDontSee('Installing frontend dependencies')
+        ->assertDontSee('Starting horizon')
+        ->assertDontSee('Starting vite')
         ->assertDontSee('Starting queue')
         ->assertDontSee('/home/orbit/apps/docs')
         ->assertDontSee('composer install')
@@ -383,20 +378,30 @@ it('detects persistent cold state for a legacy route that does not send the roll
     ]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/app-instance/{$instance->id}",
-            server: ['REMOTE_ADDR' => $node->wireguard_address],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Installing PHP dependencies');
+    $legacyColdResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($legacyColdResponse, '/');
+    $legacyColdResponse->assertDontSee('Installing PHP dependencies');
 
     expect(array_slice($executor->actions(), offset: 0, length: 2))
         ->toBe([
             'internal:caddy-config:runtime-states',
             'internal:runtime-dependencies:inspect',
         ]);
+
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+    expect($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeTrue()
+        ->and($run->result['runtime_activation']['dependencies'] ?? null)
+        ->not->toBeEmpty();
 });
 
 it('keeps the cold gate when dependency inspection fails', function (): void {
@@ -439,17 +444,18 @@ it('returns the progress page immediately for soft wake when no dependencies nee
     );
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/app-instance/{$instance->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Starting horizon')
+    $softWakeResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($softWakeResponse, '/');
+    $softWakeResponse
+        ->assertDontSee('Starting horizon')
         ->assertDontSee('Installing PHP dependencies');
 
     $run = OperationRun::query()
@@ -520,17 +526,18 @@ it('keeps a cold sibling in activation until its already restored source is read
     ]]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/app-instance/{$instance->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Starting horizon')
+    $presentDependencyResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($presentDependencyResponse, '/');
+    $presentDependencyResponse
+        ->assertDontSee('Starting horizon')
         ->assertDontSee('Installing PHP dependencies');
 
     $run = OperationRun::query()->sole();
@@ -563,20 +570,20 @@ it('uses the workspace source and its inherited dynamic process plan', function 
     ]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/workspace/{$workspace->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Waking feature-a.docs.test')
-        ->assertSee('Installing frontend dependencies')
-        ->assertSee('Starting horizon')
-        ->assertSee('Starting vite');
+    $workspaceColdResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/workspace/{$workspace->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($workspaceColdResponse, '/');
+    $workspaceColdResponse
+        ->assertDontSee('Installing frontend dependencies')
+        ->assertDontSee('Starting horizon')
+        ->assertDontSee('Starting vite');
 
     expect($executor->runtimeDependencyPaths())
         ->toBe(['/home/orbit/apps/docs/.worktrees/feature-a']);
@@ -742,7 +749,9 @@ it('keeps the cold marker and failed progress page when a process cannot start',
             ],
         )
         ->assertServiceUnavailable()
-        ->assertSee('Wake-up paused')
+        ->assertSee('orbit-spin', false)
+        ->assertDontSee('Wake-up paused')
+        ->assertDontSee('role="progressbar"', false)
         ->assertSee('Try again');
 });
 

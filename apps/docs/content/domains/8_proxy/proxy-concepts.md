@@ -162,22 +162,19 @@ These terms define the ingress behavior applied to app and workspace routes.
   operation for that scope and returns a minimal no-store HTML response
   immediately, without starting processes or restoring dependencies inline.
   That response auto-refreshes the original path and query until the pre-check
-  succeeds. It presents the Orbit mark and one aggregate progress bar derived
-  from the planned dependency restores (cold only) and the scope's actual
-  configured processes. The bar smoothly advances when a refresh reports a new
-  completion value; the response exposes no commands, filesystem paths,
-  environment values, raw logs, or individual step rows. Soft and cold share
-  the same page and operation machinery; the plan records the mode. Soft
-  runners only fence process activation. Cold runners restore and verify
-  dependencies, fence process activation, and clear that scope's cold marker
-  only after ready. After the pre-check succeeds, the reverse-proxy handoff
-  retries failed upstream connections for up to 15 seconds so the original
-  request can span container warm-up without requiring a custom Caddy module.
-  Failed activation retains the cold or asleep gate and presents a retry
-  action; a later request replaces a detached activation runner only after its
-  progress heartbeat expires and both its source dependency fence and scope
-  activation fence are available. One sibling scope never clears another
-  sibling's cold gate.
+  succeeds. It presents one indeterminate animated Orbit mark only: no soft/cold
+  distinction, aggregate progress bar, step rows, diagnostics, commands,
+  filesystem paths, environment values, or raw logs. Soft and cold share the
+  same page and operation machinery; the plan records the mode. Soft runners
+  only fence process activation. Cold runners restore and verify dependencies,
+  fence process activation, and clear that scope's cold marker only after ready.
+  After the pre-check succeeds, the reverse-proxy handoff retries failed
+  upstream connections for up to 15 seconds so the original request can span
+  container warm-up without requiring a custom Caddy module. Failed activation
+  retains the cold or asleep gate and presents a retry action; a later request
+  replaces a detached activation runner only after its progress heartbeat
+  expires and both its source dependency fence and scope activation fence are
+  available. One sibling scope never clears another sibling's cold gate.
 - **Development runtime activity:** Every app-development instance or workspace
   route writes a dedicated access log whose modification time is the last HTTP
   activity for that scope. Activity logs remain in Caddy's persistent data
