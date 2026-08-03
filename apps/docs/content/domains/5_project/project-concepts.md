@@ -36,7 +36,10 @@ The terms below define the core identity vocabulary.
 - **Instance selector argument:** Positional `[instance]` argument used by commands that
   read or update existing project or instance state. Placement-sensitive commands use a dotted
   instance selector, with bare logical shorthand only when exactly one
-  eligible visible instance exists. The logical `project:remove` command is the
+  eligible visible instance exists. Exact instance names always resolve before
+  hostname, domain, node, path, or TLD aliases so a sibling that shares those
+  facts cannot make selectors such as `mealou.nmbp` or `mealou.development`
+  ambiguous. The logical `project:remove` command is the
   exception: it accepts only the logical slug and cascades across all instances.
 - **Orbit instance serving node:** Node selected explicitly for one Orbit
   instance. Orbit instances may only run on nodes with an active `app-dev` or

@@ -804,6 +804,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             ));
         }
 
+        if (isset($instances['agent'])) {
+            $timer->measure('agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                $instances,
+                $timer,
+            ));
+        }
+
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances, $timer));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances, $timer));
         $startGatewayApiBeforeBake = $options->startGatewayApi && isset($instances['gateway'])
@@ -1001,6 +1008,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer->measure('reset.source-mounted-launchers', fn () => $this->activateSourceMountedLaunchers(
                     $instances,
                     $this->config,
+                    $cycleTimer,
+                ));
+            }
+
+            if (isset($instances['agent'])) {
+                $cycleTimer->measure('reset.agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                    $instances,
                     $cycleTimer,
                 ));
             }
@@ -1865,6 +1879,86 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             'source-mounted-launcher',
             timeoutSeconds: 60,
             failureMessage: 'Could not activate source-mounted Orbit launchers',
+        );
+    }
+
+    /**
+     * Prepare the managed agent runtime user and required Orbit CLI/home
+     * accessibility on retained agent topologies before product proof begins.
+     * Mirrors the product agent-user ensure + ACL posture so tool install/probe
+     * does not require ad hoc role repair.
+     *
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function ensureAgentRuntimeReadiness(
+        array $instances,
+        ?E2EPhaseTimer $timer = null,
+    ): void {
+        $agent = $instances['agent'] ?? null;
+
+        if (! $agent instanceof IncusInstance) {
+            return;
+        }
+
+        $script = <<<'SH'
+set -euo pipefail
+
+if ! id -u agent >/dev/null 2>&1; then
+  sudo -n useradd --create-home --shell /bin/bash agent
+fi
+
+sudo -n passwd -l agent >/dev/null 2>&1 || true
+sudo -n install -d -m 0755 -o agent -g agent /home/agent/.local/bin
+
+cat <<'SHIM' | sudo -n tee /home/agent/.local/bin/orbit >/dev/null
+#!/usr/bin/env bash
+set -euo pipefail
+export ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json
+export ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json
+exec /home/orbit/.local/bin/orbit "$@"
+SHIM
+sudo -n chmod 0755 /home/agent/.local/bin/orbit
+sudo -n chown agent:agent /home/agent/.local/bin/orbit
+
+if ! command -v setfacl >/dev/null 2>&1; then
+  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq acl
+fi
+
+sudo -n setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin
+if [ -d /home/orbit/orbit ]; then
+  sudo -n setfacl -m u:agent:--x /home/orbit/orbit /home/orbit/orbit/bin 2>/dev/null || true
+fi
+if [ -f /home/orbit/.config/orbit/config.json ]; then
+  sudo -n setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json
+fi
+if [ -f /home/orbit/.config/orbit/install.json ]; then
+  sudo -n setfacl -m u:agent:r-- /home/orbit/.config/orbit/install.json 2>/dev/null || true
+fi
+if [ -e /home/orbit/.local/bin/orbit ]; then
+  sudo -n setfacl -m u:agent:--x /home/orbit/.local/bin/orbit
+fi
+
+sudo -n -u agent -H env \
+  PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json \
+  ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json \
+  /home/agent/.local/bin/orbit --version --local >/dev/null
+SH;
+
+        IncusParallelHostTasks::run(
+            $this->hostFor($instances),
+            [
+                'agent' => sprintf(
+                    'incus exec %s -- bash -lc %s',
+                    escapeshellarg($agent->name()),
+                    escapeshellarg($script),
+                ),
+            ],
+            $timer ?? new E2EPhaseTimer,
+            'agent-runtime-readiness',
+            timeoutSeconds: 180,
+            failureMessage: 'Could not prepare the managed agent runtime user and Orbit CLI access',
         );
     }
 

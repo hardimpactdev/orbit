@@ -732,6 +732,7 @@ final readonly class DoctorReportRunner
         return [
             'node' => $node->name,
             'role' => $node->displayRole(),
+            'roles' => $this->nodeRoles($node),
             'healthy' => ($report['healthy'] ?? false) === true,
             'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
             'summary' => $reportSummary,
@@ -1159,6 +1160,7 @@ final readonly class DoctorReportRunner
             $nodes[] = $completedByName[$target->name] ?? [
                 'node' => $target->name,
                 'role' => $target->displayRole(),
+                'roles' => $this->nodeRoles($target),
                 'healthy' => true,
                 'families' => $fleetFamilies,
                 'summary' => ['issues' => 0],
@@ -1866,7 +1868,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
-     * @return array{families: list<string>, node: string, role: string, self: false, app: string|null, app_instance: string|null, workspace: string|null, key: string|null}
+     * @return array{families: list<string>, node: string, role: string, roles: list<string>, self: false, app: string|null, app_instance: string|null, workspace: string|null, key: string|null}
      */
     private function reportScope(
         array $families,
@@ -1878,12 +1880,27 @@ final readonly class DoctorReportRunner
             'families' => $families,
             'node' => $node->name,
             'role' => $node->displayRole(),
+            'roles' => $this->nodeRoles($node),
             'self' => false,
             'app' => $scope->app,
             'app_instance' => $scope->appInstance,
             'workspace' => $scope->workspace,
             'key' => $key,
         ];
+    }
+
+    /**
+     * Active canonical roles in stable sorted order. Operator nodes with no
+     * active role assignment surface as `['operator']` so consumers always
+     * receive a complete role set alongside the legacy primary `role` field.
+     *
+     * @return list<string>
+     */
+    private function nodeRoles(Node $node): array
+    {
+        $roles = app(NodeRoleAssignments::class)->activeRoleNames($node);
+
+        return $roles === [] ? ['operator'] : $roles;
     }
 
     /**

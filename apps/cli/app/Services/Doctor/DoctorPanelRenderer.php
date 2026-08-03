@@ -237,19 +237,21 @@ final class DoctorPanelRenderer
             $nodeIssues = $issuesByNode[$nodeName] ?? [];
             $rendersIssueDetails = $mode === 'verify' && $nodeIssues !== [];
             $nodeProgress = $this->nodeCheckProgress($report, $nodeName);
+            $status = $this->fleetNodeStatusText(
+                nodeIssues: $nodeIssues,
+                options: [
+                    'progressStatus' => $this->nodeProgressStatus($report, $nodeName),
+                    'mode' => $mode,
+                    'detailsFollow' => $rendersIssueDetails,
+                    'completed' => $nodeProgress['completed'] ?? null,
+                    'total' => $nodeProgress['total'] ?? null,
+                ],
+            );
+            $status = $this->withFleetNodeRoles($status, $this->fleetNodeRoles($report, $nodeName));
 
             foreach ($this->fleetNodeRows(
                 $nodeName,
-                $this->fleetNodeStatusText(
-                    nodeIssues: $nodeIssues,
-                    options: [
-                        'progressStatus' => $this->nodeProgressStatus($report, $nodeName),
-                        'mode' => $mode,
-                        'detailsFollow' => $rendersIssueDetails,
-                        'completed' => $nodeProgress['completed'] ?? null,
-                        'total' => $nodeProgress['total'] ?? null,
-                    ],
-                ),
+                $status,
                 $frame,
             ) as $categoryLine) {
                 $lines[] = $categoryLine;
@@ -1289,6 +1291,63 @@ final class DoctorPanelRenderer
     private function fleetNodeRows(string $nodeName, string $status, int $frame): array
     {
         return $this->labeledStatusRows($nodeName, $status, $frame);
+    }
+
+    /**
+     * Surface the complete active role set in the status column so fleet node
+     * names stay stable while multi-role nodes remain visible without JSON.
+     *
+     * @param  list<string>  $roles
+     */
+    private function withFleetNodeRoles(string $status, array $roles): string
+    {
+        // Single-role rows stay compact; multi-role nodes surface the full
+        // active set so operators are not limited to Node::displayRole().
+        if (count($roles) < 2) {
+            return $status;
+        }
+
+        $roleText = implode(', ', $roles);
+
+        if (str_contains($status, $roleText)) {
+            return $status;
+        }
+
+        return "{$status} · {$roleText}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function fleetNodeRoles(array $report, string $nodeName): array
+    {
+        $nodes = is_array($report['nodes'] ?? null) ? $report['nodes'] : [];
+
+        foreach ($nodes as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+
+            if (($node['node'] ?? null) !== $nodeName) {
+                continue;
+            }
+
+            $roles = $node['roles'] ?? null;
+
+            if (is_array($roles)) {
+                return array_values(array_filter(
+                    $roles,
+                    static fn (mixed $role): bool => is_string($role) && $role !== '',
+                ));
+            }
+
+            $legacy = $node['role'] ?? null;
+
+            return is_string($legacy) && $legacy !== '' && $legacy !== 'fleet' ? [$legacy] : [];
+        }
+
+        return [];
     }
 
     /**

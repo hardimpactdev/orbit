@@ -11,7 +11,9 @@ use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
+use InvalidArgumentException;
 use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Tools\ToolRunScriptAction;
 
 final readonly class ToolScriptDispatcher
 {
@@ -30,6 +32,10 @@ final readonly class ToolScriptDispatcher
         string $script,
         bool $throw = false,
     ): RemoteShellResult {
+        if (! ToolRunScriptAction::isAllowed($action)) {
+            throw new InvalidArgumentException("Tool run payload action '{$action}' is invalid.");
+        }
+
         $result = $this->localExecutor->runInternal(
             node: $node,
             commandName: InternalCommand::ToolRunScript->value,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use InvalidArgumentException;
+use Orbit\Core\Tools\ToolRunScriptAction;
 
 final readonly class LocalToolRunScriptPayload
 {
@@ -15,26 +16,6 @@ final readonly class LocalToolRunScriptPayload
     private const int MAX_TIMEOUT = 3600;
 
     private const string TOOL_PATTERN = '/\A[a-z][a-z0-9-]*\z/';
-
-    /**
-     * @var list<string>
-     */
-    private const array ALLOWED_ACTIONS = [
-        'install',
-        'update',
-        'remove',
-        'preflight',
-        'probe',
-        'probe-images',
-        'probe-many',
-        'probe-php-cli',
-        'reconfigure',
-        'start',
-        'stop',
-        'restart',
-        'logs',
-        'credentials',
-    ];
 
     private function __construct(
         public string $tool,
@@ -56,7 +37,7 @@ final readonly class LocalToolRunScriptPayload
 
         $action = $payload['action'] ?? null;
 
-        if (! is_string($action) || ! in_array($action, self::ALLOWED_ACTIONS, true)) {
+        if (! is_string($action) || ! ToolRunScriptAction::isAllowed($action)) {
             throw new InvalidArgumentException('Tool run payload action is invalid.');
         }
 

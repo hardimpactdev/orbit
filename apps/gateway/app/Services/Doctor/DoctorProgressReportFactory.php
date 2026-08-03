@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final class DoctorProgressReportFactory
 {
@@ -52,6 +53,7 @@ final class DoctorProgressReportFactory
                 'families' => $families,
                 'node' => $target->name,
                 'role' => $target->displayRole(),
+                'roles' => $this->nodeRoles($target),
                 'self' => false,
                 'app' => $app,
                 'app_instance' => $appInstance,
@@ -123,5 +125,15 @@ final class DoctorProgressReportFactory
                 fn (array $action): bool => ($action['status'] ?? null) === 'planned',
             )),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function nodeRoles(Node $target): array
+    {
+        $roles = app(NodeRoleAssignments::class)->activeRoleNames($target);
+
+        return $roles === [] ? ['operator'] : $roles;
     }
 }

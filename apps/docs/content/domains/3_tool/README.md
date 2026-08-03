@@ -157,7 +157,7 @@ the entity in the command result.
 | `version` | string \| null | Gateway-owned intended or registry-known version when the tool definition tracks versions. |
 | `observed_version` | string \| null | Live observed version when a command performs an explicit probe; otherwise `null`. The key remains present in canonical tool entities. |
 | `managed` | boolean | Whether Orbit owns capability configuration for this tool on the node. |
-| `endpoints` | array | Non-secret endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no endpoint. |
+| `endpoints` | array | Non-secret endpoint metadata. Autonomous-agent tools derive consumer HTTPS endpoints from catalog category + node TLD + proxy contract (for example `https://openclaw.agent` / `https://hermes.agent` with internal upstream ports OpenClaw `18789` and Hermes `8080`) instead of requiring persisted endpoint copies on the tool row. Canonical endpoint objects use `{name, kind, url, host, port}` where `url` is the operator-facing consumer address. Other tools may still surface definition- or config-declared endpoints. Omit or return an empty array when the tool has no endpoint. |
 
 ## Commands
 

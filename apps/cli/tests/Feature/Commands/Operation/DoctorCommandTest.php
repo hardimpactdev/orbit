@@ -99,6 +99,7 @@ function doctorFleetReport(): array
             [
                 'node' => 'app-1',
                 'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'healthy' => true,
                 'families' => ['node'],
                 'summary' => ['issues' => 0],
@@ -106,6 +107,7 @@ function doctorFleetReport(): array
             [
                 'node' => 'gateway-1',
                 'role' => 'gateway',
+                'roles' => ['gateway'],
                 'healthy' => true,
                 'families' => ['node'],
                 'summary' => ['issues' => 0],
@@ -737,7 +739,36 @@ describe('doctor human panel', function (): void {
             ->not->toContain("\n│  - Issue 11");
     });
 
-    it('renders fleet in-progress panel with DOCTOR title and no summary', function (): void {
+    
+    it('renders complete active roles on fleet node rows without breaking the bordered panel', function (): void {
+        $report = doctorFleetReport();
+        $report['nodes'] = [
+            [
+                'node' => 'multi-1',
+                'role' => 'agent',
+                'roles' => ['agent', 'app-dev'],
+                'healthy' => true,
+                'families' => ['node', 'tool'],
+                'summary' => ['issues' => 0],
+            ],
+        ];
+        $report['scope']['targets'] = ['multi-1'];
+        $report['scope']['role'] = 'fleet';
+
+        $plain = stripAnsi(implode("\n", app(DoctorPanelRenderer::class)->lines($report)));
+
+        expect($plain)
+            ->toContain('multi-1')
+            ->and($plain)
+            ->toContain('OK · agent, app-dev')
+            ->and($plain)
+            ->toContain('D O C T O R - R E S U L T')
+            ->and($report['scope']['role'])
+            ->toBe('fleet');
+        assertDoctorPanelLinesWithinWidth($plain);
+    });
+
+it('renders fleet in-progress panel with DOCTOR title and no summary', function (): void {
         $progress = doctorFleetReport();
         $progress['progress'] = [
             'state' => 'running',

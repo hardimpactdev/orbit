@@ -107,6 +107,16 @@ final class ToolShowCommand extends GatewayCommand
                 continue;
             }
 
+            $url = is_string($endpoint['url'] ?? null) && trim($endpoint['url']) !== ''
+                ? trim($endpoint['url'])
+                : null;
+
+            if ($url !== null) {
+                $labels[] = $url;
+
+                continue;
+            }
+
             $name = is_string($endpoint['name'] ?? null) ? $endpoint['name'] : 'endpoint';
             $host = is_string($endpoint['host'] ?? null) ? $endpoint['host'] : null;
             $port = is_scalar($endpoint['port'] ?? null) ? (string) $endpoint['port'] : null;

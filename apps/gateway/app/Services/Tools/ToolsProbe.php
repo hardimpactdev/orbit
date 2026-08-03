@@ -16,11 +16,14 @@ use App\Models\NodeTool;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Proxy\AgentToolProxyRouteIntent;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\PhpCliTool;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use JsonException;
 use Orbit\Core\Php\PhpCliArtifactCatalog;
@@ -913,6 +916,7 @@ final readonly class ToolsProbe
             ...$this->checkCredentialState($tool, $snapshot),
             ...$this->checkAgentCredentials($tool),
             ...$this->checkAgentUser($tool),
+            ...$this->checkAgentConsumerUrl($tool, $snapshot),
         ];
     }
 
@@ -1729,6 +1733,89 @@ final readonly class ToolsProbe
         }
 
         return [];
+    }
+
+    /**
+     * End-to-end consumer HTTPS URL check for installed autonomous-agent tools.
+     *
+     * Ownership boundary: tool family owns service readiness and the exact
+     * consumer URL health; proxy family owns route rows, Caddy artifacts, and
+     * TLS material. This check does not invent route restore — details point
+     * operators at `doctor --family=proxy` / `tool:show` for next steps.
+     *
+     * @return list<DriftEntry>
+     */
+    private function checkAgentConsumerUrl(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        if ($tool->expected_state !== 'installed' || $catalog->category($tool->name) !== 'agent') {
+            return [];
+        }
+
+        $tool->loadMissing('node');
+
+        if (! $tool->node instanceof Node) {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+        $installed = is_array($observed) && ($observed['installed'] ?? null) === true;
+
+        if (! $installed) {
+            return [];
+        }
+
+        $route = app(AgentToolProxyRouteIntent::class)->expectedRoute($tool);
+
+        if ($route === null) {
+            return [];
+        }
+
+        $url = 'https://'.$route->domain;
+
+        try {
+            $response = Http::connectTimeout(3)
+                ->timeout(8)
+                ->withoutVerifying()
+                ->withHeaders(['Accept' => '*/*'])
+                ->get($url);
+            $status = $response->status();
+            $reachable = $status > 0 && $status < 500;
+            $observedState = "HTTP {$status}";
+        } catch (ConnectionException $exception) {
+            $reachable = false;
+            $status = null;
+            $observedState = 'connection_failed: '.$this->summarizeDiagnostic($exception->getMessage());
+        } catch (Throwable $exception) {
+            $reachable = false;
+            $status = null;
+            $observedState = 'probe_failed: '.$this->summarizeDiagnostic($exception->getMessage());
+        }
+
+        if ($reachable) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.agent_consumer_url_unreachable',
+                kind: DriftKind::Divergent,
+                summary: "Tool {$tool->name} consumer URL {$url} is not reachable from the gateway.",
+                detail: [
+                    'tool' => $tool->name,
+                    'node' => $tool->node->name,
+                    'expected_url' => $url,
+                    'observed' => $observedState,
+                    'http_status' => $status,
+                    'next_command' => "doctor --node={$tool->node->name} --family=proxy",
+                    'ownership' => 'tool-family service readiness; proxy-family owns route rows/TLS',
+                    // No unsafe restore here — route and runtime repairs belong
+                    // to proxy/process families when those checks fail.
+                ],
+            ),
+        ];
     }
 
     private function agentRuntimeProbeFailed(

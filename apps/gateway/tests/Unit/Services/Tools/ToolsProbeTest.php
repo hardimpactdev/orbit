@@ -2240,3 +2240,51 @@ final class PathPrefixedExecutingToolsProbeRemoteShell implements RemoteShell
         );
     }
 }
+
+it('flags unreachable autonomous-agent consumer https urls for installed agent tools', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://openclaw.agent' => Http::response('bad gateway', 502),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'openclaw',
+        'expected_state' => 'installed',
+        'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'openclaw' => ['installed' => true],
+    ]));
+
+    $issue = toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable');
+
+    expect($issue)->not->toBeNull()
+        ->and($issue?->kind)->toBe(DriftKind::Divergent)
+        ->and($issue?->detail['expected_url'] ?? null)->toBe('https://openclaw.agent')
+        ->and($issue?->detail['observed'] ?? null)->toBe('HTTP 502')
+        ->and($issue?->detail['next_command'] ?? null)->toContain('--family=proxy');
+});
+
+it('accepts healthy autonomous-agent consumer https urls without inventing restore', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://hermes.agent' => Http::response('ok', 200),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'hermes',
+        'expected_state' => 'installed',
+        'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'hermes' => ['installed' => true],
+    ]));
+
+    expect(toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable'))->toBeNull();
+});

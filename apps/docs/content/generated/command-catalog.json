@@ -2481,6 +2481,7 @@
                 "apps/cli/tests/Feature/Commands/Operation/DoctorFixCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php",
                 "apps/gateway/tests/Feature/Http/Api/DoctorRunStreamControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php",
                 "apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
             ],
             "verification_hints": [
@@ -2511,6 +2512,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/DoctorRunStreamControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/DoctorRunStreamControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php",

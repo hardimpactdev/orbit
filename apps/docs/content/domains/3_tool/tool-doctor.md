@@ -64,7 +64,12 @@ The tools probe reads gateway tool rows and checks these layers:
    backend metadata match gateway configuration when the tool definition owns them.
 6. **Credential material:** managed credentials or connection metadata exist and
    match the tool definition when credentials are part of the tool contract.
-7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
+7. **Autonomous-agent consumer URL:** for installed agent-category tools that
+   declare a proxy consumer host (for example `https://openclaw.agent` /
+   `https://hermes.agent`), the gateway trust path can reach that exact HTTPS
+   URL with a non-5xx response. Tool family owns this service-readiness check;
+   proxy family continues to own route rows, Caddy artifacts, and TLS material.
+8. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
    be inspected for compatible tool facts.
 
 Observed node capabilities without gateway tool rows are unmanaged inventory by
@@ -103,6 +108,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/home/agent/.local/bin/orbit --version --local` through the owner-user shim. |
 | `tool.agent_runtime_probe_failed` | Agent-user/runtime inspection raised, returned non-success, or produced an empty/malformed payload, so agent runtime drift is unverifiable for this run. |
+| `tool.agent_consumer_url_unreachable` | An installed autonomous-agent tool's exact consumer HTTPS URL (for example `https://openclaw.agent` or `https://hermes.agent`) is not reachable from the gateway trust path with a non-5xx response. Tool family owns this service-readiness check; proxy family owns route rows, Caddy artifacts, and TLS. Details include `expected_url`, observed state, and `next_command` pointing at `doctor --family=proxy` — no unsafe route restore is invented here. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |

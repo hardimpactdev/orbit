@@ -530,6 +530,55 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->toContain('/home/orbit/orbit/bin/orbit');
 });
 
+it('prepares managed agent runtime user and CLI access before product proof on agent topologies', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+    $instances['agent'] = new IncusInstance(
+        $host,
+        'clone-agent',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+        hostSourcePath: '/home/orbit/orbit',
+    );
+
+    $method = new ReflectionMethod($provider, 'prepareInstances');
+    $method->setAccessible(true);
+    $method->invoke(
+        $provider,
+        $instances,
+        incusAcquisitionReadinessConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
+        E2ETopologyKind::OperatorGatewayAgent,
+    );
+
+    $joined = implode("\n", $commands());
+    $launcher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $agentUser = strpos($joined, 'useradd --create-home --shell /bin/bash agent');
+    $agentShim = strpos($joined, '/home/agent/.local/bin/orbit');
+    $agentCli = strpos($joined, 'sudo -n -u agent -H env');
+    $agentAcl = strpos($joined, 'setfacl -m u:agent:--x');
+
+    expect($launcher)
+        ->toBeInt()
+        ->and($agentUser)
+        ->toBeInt()
+        ->and($agentShim)
+        ->toBeInt()
+        ->and($agentCli)
+        ->toBeInt()
+        ->and($agentAcl)
+        ->toBeInt()
+        ->and($launcher)
+        ->toBeLessThan($agentUser)
+        ->and($joined)
+        ->toContain("incus exec 'clone-agent'")
+        ->toContain('id -u agent')
+        ->toContain('/home/agent/.local/bin/orbit');
+});
+
 it('restores standalone wg-easy when post-convergence handoff cleanup fails', function (): void {
     [$host, $commands] = incusAcquisitionReadinessCapturingHost('docker rm wg-easy');
     $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
