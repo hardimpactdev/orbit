@@ -19,6 +19,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionRegistry;
 use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
@@ -992,19 +993,15 @@ final readonly class NodesProbe
         return true;
     }
 
-    public function reconcile(Node $node, DriftEntry $entry): void
+    /**
+     * Codes this probe's reconcile path can restore. DoctorRestoreSupport and
+     * catalog restorable flags aggregate this map — do not duplicate elsewhere.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
     {
-        if ($entry->key === 'node.updates') {
-            if ($this->updateIssueCode($entry) === 'node.updates_reboot_required') {
-                throw new RuntimeException('Node update reboot-required drift is not restorable.');
-            }
-
-            $this->reconcileUpdates($node);
-
-            return;
-        }
-
-        $fixableKeys = [
+        $map = DoctorRestoreActionId::map([
             'node.managed_agent_intent_invalid',
             'node.agent_expectation_stale',
             'node.wireguard_peer_missing',
@@ -1020,7 +1017,39 @@ final readonly class NodesProbe
             'node.security.public_ssh_deny',
             'node.security.sysctl',
             'node.security.home_perms',
-        ];
+        ]);
+
+        // Emitted as key node.updates with detail.code variants; one restorer.
+        foreach ([
+            'node.updates',
+            'node.updates_config_missing',
+            'node.updates_config_mismatch',
+            'node.updates_dry_run_failed',
+            'node.updates_last_run_failed',
+            'node.updates_unverifiable',
+        ] as $code) {
+            $map[$code] = 'restore_node_updates';
+        }
+
+        return $map;
+    }
+
+    public function reconcile(Node $node, DriftEntry $entry): void
+    {
+        if ($entry->key === 'node.updates') {
+            if ($this->updateIssueCode($entry) === 'node.updates_reboot_required') {
+                throw new RuntimeException('Node update reboot-required drift is not restorable.');
+            }
+
+            $this->reconcileUpdates($node);
+
+            return;
+        }
+
+        $fixableKeys = array_values(array_filter(
+            array_keys(self::restoreSupport()),
+            static fn (string $code): bool => ! str_starts_with($code, 'node.updates'),
+        ));
 
         if (! in_array($entry->key, $fixableKeys, true)) {
             throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'.");

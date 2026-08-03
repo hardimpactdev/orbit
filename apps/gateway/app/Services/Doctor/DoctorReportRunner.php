@@ -2615,11 +2615,8 @@ final readonly class DoctorReportRunner
 
             if (
                 $mode === 'restore'
-                && in_array(
-                    $issue['key'] ?? null,
-                    ['node.dns_mapping_mismatch', 'proxy.dns_mapping_mismatch'],
-                    true,
-                )
+                && is_string($issue['key'] ?? null)
+                && DoctorDnsProjectionRestoreSupport::supports($issue['key'])
             ) {
                 $actions[] = $this->applyDnsProjectionIssue($node, $issue);
 
@@ -3221,6 +3218,10 @@ final readonly class DoctorReportRunner
      */
     private function applyDatabaseConnectionIssue(string $key, array $detail): ?array
     {
+        if (! array_key_exists($key, DatabaseConnectionRestorer::restoreSupport())) {
+            return null;
+        }
+
         $targetType = is_string($detail['target_type'] ?? null) ? $detail['target_type'] : null;
         $targetId = is_int($detail['target_id'] ?? null)
             ? $detail['target_id']
@@ -3444,6 +3445,10 @@ final readonly class DoctorReportRunner
      */
     private function applyProcessIssue(Node $node, string $key, array $detail): ?array
     {
+        if (! DoctorProcessRestoreSupport::supports($key)) {
+            return null;
+        }
+
         if ($key === 'process.runtime_unit_extra') {
             return $this->removeExtraManagedProcessRuntime($node, $key, $detail);
         }
@@ -4882,6 +4887,22 @@ final readonly class DoctorReportRunner
         $targetNode = $this->nodeFromIssue($issue) ?? $node;
         $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
 
+        if (! DoctorDnsProjectionRestoreSupport::supports($key)) {
+            return [
+                'family' => $family,
+                'node' => $targetNode->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'skipped',
+                'summary' => "No restore action is registered for {$key}.",
+                'details' => [
+                    ...$detail,
+                    'reason' => 'mode_not_supported',
+                ],
+            ];
+        }
+
         if (! $this->dnsmasqReconciler->projectionDirectoryIsMounted()) {
             return [
                 'family' => $family,
@@ -4988,7 +5009,7 @@ final readonly class DoctorReportRunner
     {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
 
-        if (in_array($key, DoctorRestoreSupport::scheduleGatewayCodes(), true)) {
+        if (in_array($key, SchedulesFixer::GatewayRestorableCodes, true)) {
             $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
             $schedule = $scheduleKey === null
                 ? null

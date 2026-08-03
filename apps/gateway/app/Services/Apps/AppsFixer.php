@@ -10,6 +10,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
@@ -26,6 +27,23 @@ final readonly class AppsFixer
     ) {}
 
     /**
+     * Codes AppsFixer / removeRuntimeConfigExtra can restore. Production-user
+     * findings are report-only (no safe restorer) and must not appear here.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'app.runtime_config_extra',
+            'app.runtime_config_missing',
+            'app.runtime_config_mismatch',
+            'app.security.system_user',
+            'app.security.fs_permissions',
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function fix(Project $app, DriftEntry $entry): ?array
@@ -34,6 +52,10 @@ final readonly class AppsFixer
         $node = $app->node;
 
         if (! $node instanceof Node) {
+            return null;
+        }
+
+        if (! array_key_exists($entry->key, self::restoreSupport()) || $entry->key === 'app.runtime_config_extra') {
             return null;
         }
 
@@ -59,15 +81,16 @@ final readonly class AppsFixer
             return null;
         }
 
-        return match ($entry->key) {
-            'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
-                $app,
-                $node,
-                $entry,
-                $instance,
-            ),
-            default => null,
-        };
+        if (! in_array($entry->key, ['app.runtime_config_missing', 'app.runtime_config_mismatch'], true)) {
+            return null;
+        }
+
+        return $this->reapplyRuntimeConfig(
+            $app,
+            $node,
+            $entry,
+            $instance,
+        );
     }
 
     /**

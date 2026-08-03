@@ -150,8 +150,6 @@ The table below shows what `doctor --restore` does for each fixable code.
 | `instance.runtime_config_missing` | Reinstall managed runtime configuration from the selected instance configuration. |
 | `instance.runtime_config_mismatch` | Rewrite managed runtime configuration to match the selected instance. |
 | `instance.runtime_config_extra` | Remove the stale Orbit-owned artifact only when its encoded dotted identity is unambiguous and absent from active instance configuration. |
-| `instance.production_user_missing` | Create or restore the production instance runtime user and ownership policy when production configuration is complete. |
-| `instance.production_user_mismatch` | Re-apply production instance runtime user and ownership policy from gateway instance configuration. |
 | `instance.security.system_user` | Restore the production app runtime user and group when the instance configuration is complete. |
 | `instance.security.fs_permissions` | Reapply production app ownership, permission, symlink, and release mount policy. |
 
@@ -160,9 +158,12 @@ The table below shows what `doctor --restore` does for each fixable code.
 `instance.root_outside_path`, `instance.php_version_unavailable`,
 `instance.runtime_config_probe_failed`,
 `instance.security.runtime_container_isolation`,
+`instance.production_user_missing`, `instance.production_user_mismatch`,
 `instance.production_health_unhealthy`, `instance.deployment_pipeline_invalid`,
 `instance.latest_deployment_failed`, `instance.deployment_run_stuck`,
 `instance.agent_ide_default_invalid`, or `instance.unregistered_path`.
+Production user findings are `runtime_incident` until a safe AppsFixer restorer
+exists; operators repair them with explicit instance/user commands.
 
 `instance.runtime_config_probe_failed` is Unverifiable diagnostic-only drift.
 Doctor must not present it as restorable; re-run verify after the underlying

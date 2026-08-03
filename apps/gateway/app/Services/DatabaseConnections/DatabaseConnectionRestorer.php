@@ -9,12 +9,27 @@ use App\Models\AppInstance;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class DatabaseConnectionRestorer
 {
+    /**
+     * Codes applyDatabaseConnectionIssue can restore when target identity is present.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'database_connection.env_missing',
+            'database_connection.env_mismatch',
+            'database_connection.target_missing',
+        ]);
+    }
+
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,

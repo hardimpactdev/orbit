@@ -9,6 +9,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -27,6 +28,30 @@ final readonly class ToolsFixer
     ) {}
 
     /**
+     * Explicit keys ToolsFixer::fix dispatches. No catch-all: unknown keys
+     * return null so catalog support cannot overclaim.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'tool.capability_missing',
+            'tool.version_mismatch',
+            'tool.config_missing',
+            'tool.config_mismatch',
+            'tool.credentials_missing',
+            'tool.credentials_mismatch',
+            'tool.container_missing',
+            'tool.container_not_running',
+            'tool.container_spec_mismatch',
+            'tool.php_cli_coverage_missing',
+            'tool.agent_user_missing',
+            'tool.agent_credentials_missing',
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function fix(NodeTool $tool, DriftEntry $entry): ?array
@@ -37,10 +62,19 @@ final readonly class ToolsFixer
             return null;
         }
 
-        $result = match ($entry->key) {
+        if (! array_key_exists($entry->key, self::restoreSupport())) {
+            return null;
+        }
+
+        return match ($entry->key) {
             'tool.capability_missing' => $tool->name === 'caddy'
                 ? $this->repairContainer($tool, $entry)
                 : $this->runRepairCommand($tool, $this->repairCommand($tool, $entry), $entry),
+            'tool.version_mismatch' => $this->runRepairCommand(
+                $tool,
+                $this->repairCommand($tool, $entry),
+                $entry,
+            ),
             'tool.php_cli_coverage_missing' => $this->runRepairCommand(
                 $tool,
                 $this->repairCommand($tool, $entry),
@@ -54,10 +88,8 @@ final readonly class ToolsFixer
                 => $this->repairContainer($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),
-            default => $this->runRepairCommand($tool, $this->repairCommand($tool, $entry), $entry),
+            default => null,
         };
-
-        return $result;
     }
 
     /**

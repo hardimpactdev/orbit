@@ -9,11 +9,22 @@ use App\Enums\DriftKind;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Doctor\DoctorRestoreActionId;
 use Throwable;
 
 final readonly class AnalyticsPublicProxyDoctorProbe
 {
     public const string PUBLIC_ROUTE_KEY = 'proxy.analytics.public_route_missing';
+
+    /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            self::PUBLIC_ROUTE_KEY,
+        ]);
+    }
 
     public function __construct(
         private AnalyticsRouteRegistrar $routeRegistrar,

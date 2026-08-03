@@ -107,11 +107,8 @@ final class ToolDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             ),
             self::invalid('tool.record_incomplete', 'tool'),
             self::blocked('tool.remote_shell_probe_failed', 'tool'),
-            self::genuine(
-                'tool.seaweedfs.credentials_missing',
-                'tool',
-                'restore_tool_seaweedfs_credentials_missing',
-            ),
+            // ToolsFixer has no seaweedfs credential restorer; operator must re-run s3 configure.
+            self::incident('tool.seaweedfs.credentials_missing', 'tool'),
             self::invalid('tool.seaweedfs.row_missing', 'tool'),
             self::invalid('tool.unregistered_capability', 'tool'),
             self::invalid('tool.unsupported_on_node', 'tool'),

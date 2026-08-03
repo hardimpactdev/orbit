@@ -10,6 +10,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
@@ -49,6 +50,19 @@ final readonly class S3ProxyDoctorProbe
     public const string RouterRouteOrphanedKey = 'proxy.s3.router_route_orphaned';
 
     public const string PublicRouteKey = 'proxy.s3.public_route_missing';
+
+    /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            self::RouterRouteKey,
+            self::RouterBackendKey,
+            self::RouterRouteOrphanedKey,
+            self::PublicRouteKey,
+        ]);
+    }
 
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,

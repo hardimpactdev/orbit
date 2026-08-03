@@ -103,19 +103,23 @@ final readonly class DnsRuntimeProbe
         return $drift;
     }
 
+    /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'tool.dns_container_missing',
+            'tool.dns_port_not_listening',
+            'tool.dns_base_config_mismatch',
+            'tool.dns_client_dns_drift',
+            'tool.dns_forwarding_missing',
+        ]);
+    }
+
     public function isRestorable(string $driftKey): bool
     {
-        return in_array(
-            $driftKey,
-            [
-                'tool.dns_container_missing',
-                'tool.dns_port_not_listening',
-                'tool.dns_base_config_mismatch',
-                'tool.dns_client_dns_drift',
-                'tool.dns_forwarding_missing',
-            ],
-            true,
-        );
+        return array_key_exists($driftKey, self::restoreSupport());
     }
 
     public function isAdoptable(string $driftKey): bool
@@ -125,6 +129,10 @@ final readonly class DnsRuntimeProbe
 
     public function restore(string $driftKey): bool
     {
+        if (! $this->isRestorable($driftKey)) {
+            return false;
+        }
+
         return match ($driftKey) {
             'tool.dns_container_missing' => $this->restoreContainer(),
             'tool.dns_port_not_listening' => $this->restartContainer(),

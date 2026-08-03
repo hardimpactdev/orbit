@@ -18,6 +18,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\NodeContainerScope;
@@ -88,6 +89,37 @@ final readonly class ProxyRouteFixer
                 'tool' => $tool,
             ],
         ];
+    }
+
+    /**
+     * Codes ProxyRouteFixer methods can restore (route fix, caddy, global, agent tool, extra).
+     * Specialized websocket/s3/analytics probes own their own support maps.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'proxy.route_missing',
+            'proxy.route_mismatch',
+            'proxy.route_extra',
+            'proxy.public_route_missing',
+            'proxy.public_route_mismatch',
+            'proxy.router_route_missing',
+            'proxy.router_route_mismatch',
+            'proxy.backend_route_missing',
+            'proxy.backend_route_mismatch',
+            'proxy.tls_missing',
+            'proxy.tls_mismatch',
+            'proxy.enactment_incomplete',
+            'proxy.caddy_container_missing',
+            'proxy.caddy_container_down',
+            'proxy.caddy_container_detached',
+            'proxy.global_config_missing',
+            'proxy.global_config_mismatch',
+            'proxy.agent_tool_route_missing',
+            'proxy.agent_tool_route_mismatch',
+        ]);
     }
 
     /**

@@ -165,14 +165,15 @@ credential repair logic.
 | `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
-| `tool.seaweedfs.credentials_missing` | Regenerate managed SeaweedFS credentials via the `seaweedfs` tool definition credential generation path. |
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
 `tool.config_probe_failed`, `tool.credentials_probe_failed`,
 `tool.agent_runtime_probe_failed`,
-`tool.agent_orbit_cli_inaccessible`, or `tool.seaweedfs.row_missing` (the
-`seaweedfs` tool row must be recreated by converging the `s3` role baseline;
+`tool.agent_orbit_cli_inaccessible`, `tool.seaweedfs.credentials_missing`, or
+`tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be recreated by
+converging the `s3` role baseline; missing credentials remain `runtime_incident`
+until operators re-run S3 configure — ToolsFixer has no credential restorer;
 restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.

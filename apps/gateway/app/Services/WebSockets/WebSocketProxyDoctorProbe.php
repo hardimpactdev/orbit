@@ -10,6 +10,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,18 @@ final readonly class WebSocketProxyDoctorProbe
     public const string RouterRouteOrphanedKey = 'proxy.websocket.router_route_orphaned';
 
     public const string PublicRouteKey = 'proxy.websocket.public_route_missing';
+
+    /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            self::RouterRouteKey,
+            self::RouterRouteOrphanedKey,
+            self::PublicRouteKey,
+        ]);
+    }
 
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,

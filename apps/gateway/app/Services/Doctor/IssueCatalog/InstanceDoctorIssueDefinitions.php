@@ -25,16 +25,9 @@ final class InstanceDoctorIssueDefinitions implements DoctorIssueDefinitionProvi
             self::incident('instance.path_unusable', 'instance'),
             self::incident('instance.php_version_unavailable', 'instance'),
             self::incident('instance.production_health_unhealthy', 'instance'),
-            self::genuine(
-                'instance.production_user_mismatch',
-                'instance',
-                'restore_app_production_user_mismatch',
-            ),
-            self::genuine(
-                'instance.production_user_missing',
-                'instance',
-                'restore_app_production_user_missing',
-            ),
+            // No safe AppsFixer restorer; report-only until a deterministic repair exists.
+            self::incident('instance.production_user_mismatch', 'instance'),
+            self::incident('instance.production_user_missing', 'instance'),
             self::invalid('instance.record_incomplete', 'instance'),
             self::incident('instance.root_missing', 'instance'),
             self::invalid('instance.root_outside_path', 'instance'),
