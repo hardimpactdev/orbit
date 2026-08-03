@@ -157,6 +157,54 @@ describe('internal site certificate install command', function (): void {
             ->and(file_exists("{$bin}/calls.log"))
             ->toBeFalse();
     });
+
+    it('uses sudo install and chown when existing cert material is non-writable for the desired current user', function (): void {
+        $bin = install_site_certificate_fake_bin();
+        $root = sys_get_temp_dir().'/orbit-site-certificate-home-'.bin2hex(random_bytes(8));
+        $certDir = "{$root}/.config/orbit/certs";
+        mkdir($certDir, recursive: true);
+
+        $certPath = "{$certDir}/ingress.example.test.crt";
+        $keyPath = "{$certDir}/ingress.example.test.key";
+        file_put_contents($certPath, 'legacy-root-owned-cert');
+        file_put_contents($keyPath, 'legacy-root-owned-key');
+        // Simulate root-owned leftovers that orbit cannot overwrite without sudo.
+        chmod($certPath, 0o444);
+        chmod($keyPath, 0o444);
+
+        $owner = site_certificate_current_user();
+        $payload = [
+            'cert_path' => $certPath,
+            'key_path' => $keyPath,
+            'cert' => 'orbit-cert',
+            'key' => 'orbit-key',
+            'owner' => $owner,
+        ];
+
+        [$exitCode, $output] = run_site_certificate_install_command($payload);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(site_certificate_success_data($output))
+            ->toMatchArray([
+                'cert_path' => $certPath,
+                'key_path' => $keyPath,
+                'owner' => $owner,
+                'cert_bytes' => 10,
+                'key_bytes' => 9,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain("sudo -n install -d -m 0755 {$certDir}")
+            ->toContain("sudo -n tee {$certPath}")
+            ->toContain("sudo -n tee {$keyPath}")
+            ->toContain("sudo -n chmod 0644 {$certPath}")
+            ->toContain("sudo -n chmod 0600 {$keyPath}")
+            ->toContain("sudo -n chown {$owner}:{$owner} {$certPath}")
+            ->toContain("sudo -n chown {$owner}:{$owner} {$keyPath}")
+            ->and(file_get_contents("{$bin}/writes.log"))
+            ->toContain("{$certPath}=orbit-cert")
+            ->toContain("{$keyPath}=orbit-key");
+    });
 });
 
 /**

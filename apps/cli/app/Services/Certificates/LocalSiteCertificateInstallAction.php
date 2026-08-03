@@ -33,7 +33,7 @@ final readonly class LocalSiteCertificateInstallAction
             );
         }
 
-        if ($this->shouldInstallAsCurrentUser($certPath, $owner)) {
+        if ($this->shouldInstallAsCurrentUser($certPath, $keyPath, $owner)) {
             $this->installAsCurrentUser($certPath, $keyPath, $cert, $key);
 
             return $this->installResult($certPath, $keyPath, $owner, $cert, $key);
@@ -167,13 +167,37 @@ final readonly class LocalSiteCertificateInstallAction
         $this->mustRun(['sudo', '-n', 'chown', $owner, $path]);
     }
 
-    private function shouldInstallAsCurrentUser(string $certPath, ?string $owner): bool
+    private function shouldInstallAsCurrentUser(string $certPath, string $keyPath, ?string $owner): bool
     {
         if ($owner === null || str_starts_with($certPath, '/etc/orbit/certs/')) {
             return false;
         }
 
-        return $owner === $this->currentUser();
+        if ($owner !== $this->currentUser()) {
+            return false;
+        }
+
+        // Existing root-owned / non-writable cert material cannot be replaced via
+        // the direct current-user write path. Force sudo tee + chown so the
+        // desired owner receives writable certificate files.
+        return $this->canWriteTargetsAsCurrentUser($certPath, $keyPath);
+    }
+
+    private function canWriteTargetsAsCurrentUser(string $certPath, string $keyPath): bool
+    {
+        foreach ([$certPath, $keyPath] as $path) {
+            if (file_exists($path) && ! is_writable($path)) {
+                return false;
+            }
+        }
+
+        $directory = dirname($certPath);
+
+        if (is_dir($directory) && ! is_writable($directory)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function currentUser(): string
