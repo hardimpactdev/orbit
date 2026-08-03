@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Services\Version\InstallMetadataStore;
 use JsonException;
 use Symfony\Component\Process\Process;
 
@@ -11,6 +12,7 @@ final readonly class LocalFleetUpdateInstallCliAction
 {
     public function __construct(
         private LocalFleetUpdateInstallCliEnvironment $environment,
+        private InstallMetadataStore $installMetadata = new InstallMetadataStore,
     ) {}
 
     /**
@@ -37,6 +39,9 @@ final readonly class LocalFleetUpdateInstallCliAction
             );
         }
 
+        $stdout = trim($process->getOutput());
+        $this->recordInstallMetadata($installPayload, $stdout);
+
         return [
             'installed' => true,
             'bin_path' => $installPayload->binPath,
@@ -44,8 +49,34 @@ final readonly class LocalFleetUpdateInstallCliAction
             'agent_bin_path' => $installPayload->agentArtifact?->binPath,
             'agent_installed' => $installPayload->agentArtifact instanceof LocalFleetUpdateInstallAgentPayload,
             'role_images' => $installPayload->roleImages,
-            'stdout' => trim($process->getOutput()),
+            'stdout' => $stdout,
         ];
+    }
+
+    private function recordInstallMetadata(
+        LocalFleetUpdateInstallCliPayload $installPayload,
+        string $stdout,
+    ): void {
+        $version = $this->versionFromOutput($stdout);
+
+        if ($version === null) {
+            return;
+        }
+
+        $this->installMetadata->write(
+            version: $version,
+            binaryPath: $installPayload->binPath,
+            installRoot: $installPayload->installRoot,
+        );
+    }
+
+    private function versionFromOutput(string $output): ?string
+    {
+        if (preg_match('/\b\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?\b/', $output, $matches) === 1) {
+            return $matches[0];
+        }
+
+        return null;
     }
 
     private function installScript(): string

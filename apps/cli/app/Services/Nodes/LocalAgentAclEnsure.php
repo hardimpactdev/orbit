@@ -10,6 +10,7 @@ use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  */
 final readonly class LocalAgentAclEnsure
 {
@@ -38,10 +39,23 @@ final readonly class LocalAgentAclEnsure
     ];
 
     /**
+     * Required owner-config files. Missing or unreadable required paths must
+     * fail closed at the config ACL stage.
+     *
      * @var list<string>
      */
     private const array REQUIRED_CONFIG_PATHS = [
         '/home/orbit/.config/orbit/config.json',
+    ];
+
+    /**
+     * Optional install metadata. Production installs should write it, but
+     * legacy nodes may lack install.json; ACL repair must still complete for
+     * config.json + binary when metadata is absent.
+     *
+     * @var list<string>
+     */
+    private const array OPTIONAL_CONFIG_PATHS = [
         '/home/orbit/.config/orbit/install.json',
     ];
 
@@ -112,19 +126,7 @@ final readonly class LocalAgentAclEnsure
 
         [$optionalDirectoryPathsApplied, $optionalDirectoryPathsSkipped] = $this->applyOptionalDirectoryAcls();
 
-        $configAcl = $this->run([
-            'sudo',
-            'setfacl',
-            '-m',
-            'u:agent:r--',
-            ...self::REQUIRED_CONFIG_PATHS,
-        ], timeout: 30);
-
-        if (! $configAcl->isSuccessful()) {
-            throw new RuntimeException(
-                'Could not ensure Orbit agent runtime ACLs (stage=config_acl).',
-            );
-        }
+        [$configAclExitCode, $optionalConfigPathsApplied, $optionalConfigPathsSkipped] = $this->applyConfigAcls();
 
         $binaryAcl = $this->run([
             'sudo',
@@ -145,13 +147,70 @@ final readonly class LocalAgentAclEnsure
         return [
             'installed_acl' => $installedAcl,
             'directory_acl_exit_code' => $directoryAcl->getExitCode(),
-            'config_acl_exit_code' => $configAcl->getExitCode(),
+            'config_acl_exit_code' => $configAclExitCode,
             'binary_acl_exit_code' => $binaryAcl->getExitCode(),
             'agent_binary_acl_exit_code' => $agentBinaryAclExitCode,
             'optional_directory_paths_applied' => $optionalDirectoryPathsApplied,
             'optional_directory_paths_skipped' => $optionalDirectoryPathsSkipped,
+            'optional_config_paths_applied' => $optionalConfigPathsApplied,
+            'optional_config_paths_skipped' => $optionalConfigPathsSkipped,
             'optional_agent_binary_skipped' => $optionalAgentBinarySkipped,
         ];
+    }
+
+    /**
+     * @return array{0: int, 1: list<string>, 2: list<array{path: string, reason: string}>}
+     */
+    private function applyConfigAcls(): array
+    {
+        $configAcl = $this->run([
+            'sudo',
+            'setfacl',
+            '-m',
+            'u:agent:r--',
+            ...self::REQUIRED_CONFIG_PATHS,
+        ], timeout: 30);
+
+        if (! $configAcl->isSuccessful()) {
+            throw new RuntimeException(
+                'Could not ensure Orbit agent runtime ACLs (stage=config_acl).',
+            );
+        }
+
+        $optionalApplied = [];
+        $optionalSkipped = [];
+
+        foreach (self::OPTIONAL_CONFIG_PATHS as $path) {
+            if (! $this->pathExists($path)) {
+                $optionalSkipped[] = [
+                    'path' => $path,
+                    'reason' => 'absent',
+                ];
+
+                continue;
+            }
+
+            $optional = $this->run([
+                'sudo',
+                'setfacl',
+                '-m',
+                'u:agent:r--',
+                $path,
+            ], timeout: 30);
+
+            if ($optional->isSuccessful()) {
+                $optionalApplied[] = $path;
+
+                continue;
+            }
+
+            $optionalSkipped[] = [
+                'path' => $path,
+                'reason' => 'acl_unsupported',
+            ];
+        }
+
+        return [$configAcl->getExitCode() ?? 0, $optionalApplied, $optionalSkipped];
     }
 
     /**

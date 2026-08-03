@@ -67,9 +67,13 @@ describe('internal agent acl ensure command', function (): void {
                 'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
             )
             ->toContain(
-                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json',
             )
             ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit')
+            // install.json is optional and applied only when present.
+            ->not->toContain(
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+            )
             // Optional checkout paths are not bulk-applied with the required set.
             ->not->toContain(
                 'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin',
@@ -100,7 +104,7 @@ describe('internal agent acl ensure command', function (): void {
                 'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
             )
             ->toContain(
-                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json',
             )
             ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit');
     });
