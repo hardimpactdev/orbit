@@ -23,6 +23,7 @@ final readonly class LocalToolRunScriptPayload
         'install',
         'update',
         'remove',
+        'preflight',
         'probe',
         'probe-images',
         'probe-many',

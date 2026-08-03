@@ -68,6 +68,36 @@ it('rejects unsupported tool run actions including unknown probe variants', func
         ->toThrow(\InvalidArgumentException::class, 'Tool run payload action is invalid.');
 });
 
+it('accepts and executes gateway install preflight action payloads', function (): void {
+    $payload = LocalToolRunScriptPayload::fromArray([
+        'tool' => 'openclaw',
+        'action' => 'preflight',
+        'script' => "printf 'preflight-ok'",
+    ]);
+
+    expect($payload->tool)
+        ->toBe('openclaw')
+        ->and($payload->action)
+        ->toBe('preflight');
+
+    $result = new LocalToolRunScriptAction()->run([
+        'tool' => 'openclaw',
+        'action' => 'preflight',
+        'script' => <<<'BASH'
+            set -eu
+            orbit_runtime_user_id="$(id -u "$(whoami)" 2>/dev/null)" || exit 64
+            printf 'preflight-ok'
+            BASH,
+    ]);
+
+    expect($result)
+        ->toMatchArray([
+            'exit_code' => 0,
+            'stdout' => 'preflight-ok',
+            'stderr' => '',
+        ]);
+});
+
 it('accepts the logs action used by tool:logs remote run payloads', function (): void {
     $payload = LocalToolRunScriptPayload::fromArray([
         'tool' => 'caddy',
