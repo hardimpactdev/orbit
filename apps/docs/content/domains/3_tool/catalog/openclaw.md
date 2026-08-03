@@ -38,6 +38,14 @@ OpenClaw gateway. Auth mode is token. The token is stored only at
 `/home/agent/.openclaw/gateway.token` and is never written into
 `openclaw.json`, process command argv, or logs.
 
+Install, update, and reconfigure use one non-empty secret rule for that token
+file. When the path is missing, zero-byte, or whitespace-only after stripping
+spaces and newlines, Orbit regenerates it securely (`openssl rand -hex 32`) and
+writes mode `0600`. The token stays out of argv, logs, and full-config rewrites.
+Process startup for the related `openclaw-gateway` unit applies the same
+non-empty-after-trim rule: it loads the token into `OPENCLAW_GATEWAY_TOKEN` only
+when non-empty, and refuses to start when the material is missing or blank.
+
 Example JSON shape:
 
 ```json
@@ -89,14 +97,18 @@ The managed web gateway is process-owned: `tool:install` configures a related
 `OPENCLAW_SUPERVISOR_MODE=external` so OpenClaw's native service install is not
 used (no double supervision). The process shell loads
 `OPENCLAW_GATEWAY_TOKEN` from `/home/agent/.openclaw/gateway.token` immediately
-before exec; the stored process command never contains the secret.
+before exec only when the file content is non-empty after trim; the stored
+process command never contains the secret, and blank or missing token material
+fails the unit closed.
 
 Install/update/reconfigure merge only managed gateway fields through
 `openclaw config set` (`gateway.mode`, `gateway.port`, `gateway.bind`,
 `gateway.auth.mode=token`, `gateway.controlUi.allowedOrigins`) and never
 rewrite the full `~/.openclaw/openclaw.json`, preserving agents, channels,
 models, and other settings. `gateway.auth.token` is unset from config when
-present so the env-file token remains the sole secret source.
+present so the file-backed token remains the sole secret source. By default,
+those lifecycle scripts regenerate blank `gateway.token` material before
+converge completes so zero-byte or whitespace-only files do not remain.
 
 `tool:update openclaw` from the node itself requires `tool:update` on the
 self-grant. `tool:install openclaw`, `tool:remove openclaw`,

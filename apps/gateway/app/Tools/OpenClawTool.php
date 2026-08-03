@@ -67,21 +67,25 @@ final class OpenClawTool extends BaseTool
         // depend on outer systemd Environment=HOME (node user, usually orbit).
         // Shell variables still use `$` and survive systemd via SystemdUnitRenderer
         // `$$` escaping of ExecStart.
-        $requireToken = ManagedToolShell::requireNonEmptySecretFromFile(
-            fileVar: '${TOKEN_FILE}',
-            targetVar: 'TOKEN',
-            missingMessage: 'openclaw gateway token missing',
-        );
+        //
+        // Build the complete inner script first, then single-quote it once for
+        // bash -lc so helper snippets never open/close the outer quote.
+        $innerScript =
+            'set -euo pipefail; '
+            .'TOKEN_FILE="/home/agent/.openclaw/gateway.token"; '
+            .ManagedToolShell::requireNonEmptySecretFromFile(
+                fileVar: '${TOKEN_FILE}',
+                targetVar: 'TOKEN',
+                missingMessage: 'openclaw gateway token missing',
+            )
+            .'export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"; '
+            ."exec openclaw gateway run --port {$port} --bind lan";
 
         return [
             'name' => 'openclaw-gateway',
             'command' =>
                 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc '
-                    ."'set -euo pipefail; "
-                    .'TOKEN_FILE="/home/agent/.openclaw/gateway.token"; '
-                    .$requireToken
-                    .'export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"; '
-                    ."exec openclaw gateway run --port {$port} --bind lan'",
+                    .ManagedToolShell::singleQuote($innerScript),
             'runtime' => 'systemd',
             'tool' => 'openclaw',
         ];

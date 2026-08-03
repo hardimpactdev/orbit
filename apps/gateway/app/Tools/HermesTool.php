@@ -73,36 +73,36 @@ final class HermesTool extends BaseTool
         $port = self::WEB_PORT;
         $username = self::AUTH_USERNAME;
 
-        $requirePassword = ManagedToolShell::requireNonEmptySecretFromFile(
-            fileVar: '${PASSWORD_FILE}',
-            targetVar: 'PASSWORD',
-            missingMessage: 'hermes dashboard password missing',
-        );
-        $requireSecret = ManagedToolShell::requireNonEmptySecretFromFile(
-            fileVar: '${SECRET_FILE}',
-            targetVar: 'SECRET',
-            missingMessage: 'hermes dashboard secret missing',
-        );
+        // Build the complete inner script first, then single-quote it once for
+        // bash -lc so helper snippets never open/close the outer quote.
+        $innerScript =
+            'set -euo pipefail; '
+            .'PASSWORD_FILE="/home/agent/.hermes/dashboard.password"; '
+            .'SECRET_FILE="/home/agent/.hermes/dashboard.secret"; '
+            .'PUBLIC_URL_FILE="/home/agent/.hermes/dashboard.public_url"; '
+            // Canonical non-empty rule: missing/zero-byte/whitespace-only
+            // credential files fail closed (same normalization as regen).
+            .ManagedToolShell::requireNonEmptySecretFromFile(
+                fileVar: '${PASSWORD_FILE}',
+                targetVar: 'PASSWORD',
+                missingMessage: 'hermes dashboard password missing',
+            )
+            .ManagedToolShell::requireNonEmptySecretFromFile(
+                fileVar: '${SECRET_FILE}',
+                targetVar: 'SECRET',
+                missingMessage: 'hermes dashboard secret missing',
+            )
+            ."export HERMES_DASHBOARD_BASIC_AUTH_USERNAME={$username}; "
+            .'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${PASSWORD}"; '
+            .'export HERMES_DASHBOARD_BASIC_AUTH_SECRET="${SECRET}"; '
+            .'if [ -f "${PUBLIC_URL_FILE}" ]; then '
+            .'export HERMES_DASHBOARD_PUBLIC_URL="$(tr -d "[:space:]" < "${PUBLIC_URL_FILE}")"; '
+            .'fi; '
+            ."exec hermes dashboard --host 0.0.0.0 --port {$port} --no-open";
 
         return [
             'name' => self::PROCESS_NAME,
-            'command' =>
-                'sudo -u agent -H bash -lc '
-                    ."'set -euo pipefail; "
-                    .'PASSWORD_FILE="/home/agent/.hermes/dashboard.password"; '
-                    .'SECRET_FILE="/home/agent/.hermes/dashboard.secret"; '
-                    .'PUBLIC_URL_FILE="/home/agent/.hermes/dashboard.public_url"; '
-                    // Canonical non-empty rule: missing/zero-byte/whitespace-only
-                    // credential files fail closed (same normalization as regen).
-                    .$requirePassword
-                    .$requireSecret
-                    ."export HERMES_DASHBOARD_BASIC_AUTH_USERNAME={$username}; "
-                    .'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${PASSWORD}"; '
-                    .'export HERMES_DASHBOARD_BASIC_AUTH_SECRET="${SECRET}"; '
-                    .'if [ -f "${PUBLIC_URL_FILE}" ]; then '
-                    .'export HERMES_DASHBOARD_PUBLIC_URL="$(tr -d "[:space:]" < "${PUBLIC_URL_FILE}")"; '
-                    .'fi; '
-                    ."exec hermes dashboard --host 0.0.0.0 --port {$port} --no-open'",
+            'command' => 'sudo -u agent -H bash -lc '.ManagedToolShell::singleQuote($innerScript),
             'runtime' => 'systemd',
             'tool' => 'hermes',
         ];

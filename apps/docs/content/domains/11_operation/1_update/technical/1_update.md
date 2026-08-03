@@ -72,11 +72,17 @@ fields and does not prompt.
   Operators who have duplicate or protected unmanaged launchers such as
   `/usr/local/bin/orbit` must remove, relink, or adopt them explicitly through a
   deployment/doctor path; normal `update` does not mutate them implicitly.
-- Verify the resolved local Orbit entry point responds to `--version`.
-  Production artifact installs verify the updated binary; source-mounted
-  Docker/Incus development and E2E lanes verify the resolved
-  `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point. A failed
-  verify step returns failure and identifies the failed step.
+- After staging the binary and after relinking the host launcher, verify the
+  resolved local Orbit entry point with `orbit --version --local --json`.
+  Production artifact installs verify the staged and relinked binaries;
+  source-mounted Docker/Incus development and E2E lanes verify the resolved
+  `/usr/local/bin/orbit -> <source>/apps/cli/orbit` entry point the same way.
+  Accepted verify output is a parseable version JSON success envelope (flat or
+  `success.data`) with a non-empty `version` field. Missing or malformed
+  structured version output is not accepted as a verified install. Orbit does
+  not fall back to `config('app.version')`, `0.0.0`, or any other guessed
+  version, and does not write install metadata under a version inferred from
+  human table text or the first dotted triple in mixed progress output.
 
 ### Version check and the gateway-first gate
 
@@ -172,7 +178,7 @@ gateway status query. The `Running doctor` step is verify-only.
 | Update check failed | The latest release version cannot be resolved from the release source. | Failure |
 | Binary unavailable | A production artifact download fails or the production release source is unreachable. | Failure |
 | Unsupported platform | The host OS/arch is not a supported binary target. | Failure |
-| Verify failed | The resolved local Orbit entry point does not respond to `--version`. | Failure |
+| Verify failed | The resolved local Orbit entry point fails `orbit --version --local --json`, or succeeds without parseable structured version JSON. | Failure |
 | Gateway behind (skip) | A newer release exists but the gateway has not updated to it. | Success / skip (no side effect; directs the operator to update the gateway first). |
 | Doctor reported drift | The post-update `doctor` verify reports issues. | Success (the update completed; the issue count is surfaced for follow-up). |
 
@@ -199,7 +205,8 @@ Primary CLI test owners:
 | `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: gate outcomes, JSON success/skip and error envelopes, human progress tree, failure prose, and local-installation-unavailable handling. |
 | `apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php` | Gate decisions (check-failed, already-installed, gateway-behind, proceed), step ordering (check→download→replace→doctor), and result fields (`fromVersion`/`toVersion`/`latestVersion`/`doctorIssues`). |
 | `apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php` | Gateway version read from `/api/status` and unknown-version handling (no gateway, unreachable, unparseable, `0.0.0`). |
-| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local-installation binary download/replace split (`downloadBinary`/`replaceBinary`), source-checkout branch handling, entry-point verification, post-update doctor parsing, and offline proof via `ORBIT_BINARY_URL=file://`. |
+| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local-installation binary download/replace split (`downloadBinary`/`replaceBinary`), source-checkout branch handling, structured `--version --local --json` entry-point verification (including fail-closed malformed output), post-update doctor parsing, and offline proof via `ORBIT_BINARY_URL=file://`. |
+| `apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php` | Shared structured version JSON parsing used by local checkout and fleet install metadata. |
 | `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Local install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths; the historical class name does not narrow the public contract to checkouts. |
 
 There is no gateway-side coverage for this command: the gateway `update`

@@ -280,6 +280,15 @@ The expected target shape per calling context:
     stage. Final result validation still requires Agent install confirmation
     when the full payload includes an Agent artifact.
   - A CLI-only payload (no Agent or role-image work) stays a single install call.
+- After a successful `internal:fleet-update:install-cli` shell install, the
+  local install action runs the installed launcher with
+  `orbit --version --local --json` (as the final install-script verify) and
+  records install metadata only from parseable structured version JSON.
+  Successful process exit with missing or malformed version JSON fails the
+  install with `fleet_update.cli_version_unstructured` and must not write
+  install metadata under a version scraped from human Version table rows,
+  progress noise, or any guessed fallback. Fleet verify of the CLI check
+  likewise requires structured JSON version output.
 - When an Orbit Agent artifact is selected, the remote update verifies the
   installed owner-user local `orbit-agent` hash and restarts a managed
   `orbit-agent` service when one is present, but only after required role image
@@ -377,6 +386,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Runtime hibernator recovery failed | The runtime hibernator could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Agent service missing | An Agent artifact is selected, but the target has neither an existing managed Agent service nor an unmanaged Agent listener to replace. | The target fails closed and requires bootstrap to create the first Agent service; `update:all` does not create it. |
+| CLI version unstructured | After a successful CLI install shell, `orbit --version --local --json` is missing or not parseable structured version JSON. | Target install fails closed with `fleet_update.cli_version_unstructured`; no install metadata is written under a guessed version. |
 | Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, runtime hibernator, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 

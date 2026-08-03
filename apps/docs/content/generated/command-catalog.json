@@ -12950,7 +12950,8 @@
                 "apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php",
                 "apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php",
                 "apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php",
-                "apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php"
+                "apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php",
+                "apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php"
             ],
             "verification_hints": [
                 {
@@ -12987,6 +12988,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Services/Updates/LocalUpdateRunnerTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Updates/LocalUpdateRunnerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Unit/Services/Version/VersionOutputParserTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Unit/Services/Version/VersionOutputParserTest.php"
                 }
             ],
             "p4_mapping": {
