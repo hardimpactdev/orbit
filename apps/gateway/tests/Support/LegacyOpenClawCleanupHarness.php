@@ -8,7 +8,12 @@ use Symfony\Component\Process\Process;
 /**
  * Bounded PATH-stub harness for the generated OpenClaw removal-only script.
  * No real systemd/sudo mutations: stub binaries interpret a state directory.
+ *
+ * Production cleanupScript() hard-codes security-sensitive targets. This
+ * harness rewrites only the generated text in-process for tests; it never
+ * introduces an env-based production override seam.
  */
+
 function openclaw_cleanup_harness_root(): string
 {
     $root = sys_get_temp_dir().'/orbit-openclaw-cleanup-'.bin2hex(random_bytes(6));
@@ -19,6 +24,31 @@ function openclaw_cleanup_harness_root(): string
     chmod($root.'/home/.openclaw/bin/openclaw', 0o755);
 
     return $root;
+}
+
+/**
+ * Test-only rewrite of the production cleanup script onto harness paths.
+ * Production text remains immutable and never reads ORBIT_LEGACY_OPENCLAW_*.
+ */
+function openclaw_cleanup_script_for_harness(string $productionScript, string $root): string
+{
+    $home = $root.'/home/.openclaw';
+
+    $script = str_replace(
+        "OPENCLAW_HOME='/home/agent/.openclaw'",
+        'OPENCLAW_HOME='.escapeshellarg($home),
+        $productionScript,
+    );
+    $script = str_replace('KILL_WAIT=1', 'KILL_WAIT=0', $script);
+    // Drop sudo on fixed home teardown so the harness can delete its temp path
+    // without privileges; system-path sudo rm stubs remain no-ops.
+    $script = str_replace(
+        'sudo rm -rf "${OPENCLAW_HOME}"',
+        'rm -rf "${OPENCLAW_HOME}"',
+        $script,
+    );
+
+    return $script;
 }
 
 function openclaw_cleanup_write_stubs(string $root, bool $unkillableListener = false): void
@@ -85,17 +115,16 @@ function openclaw_cleanup_write_stubs(string $root, bool $unkillableListener = f
 }
 
 /**
+ * @param  array<string, string>  $extraEnv
  * @return array{exit: int, stdout: string, stderr: string}
  */
-function openclaw_cleanup_run_script(string $root, string $script): array
+function openclaw_cleanup_run_script(string $root, string $script, array $extraEnv = []): array
 {
     $env = [
         'PATH' => $root.'/bin:'.(getenv('PATH') ?: '/usr/bin:/bin'),
+        // Stub-only state pointer; production script must not read this family.
         'ORBIT_LEGACY_OPENCLAW_HARNESS_STATE' => $root.'/state',
-        'ORBIT_LEGACY_OPENCLAW_HOME' => $root.'/home/.openclaw',
-        'ORBIT_LEGACY_OPENCLAW_USER' => 'agent',
-        'ORBIT_LEGACY_OPENCLAW_PORT' => (string) LegacyOpenClawRuntimeCleanup::LISTEN_PORT,
-        'ORBIT_LEGACY_OPENCLAW_KILL_WAIT' => '0',
+        ...$extraEnv,
     ];
 
     $process = new Process(['bash', '-c', $script], null, $env);
@@ -106,4 +135,15 @@ function openclaw_cleanup_run_script(string $root, string $script): array
         'stdout' => $process->getOutput(),
         'stderr' => $process->getErrorOutput(),
     ];
+}
+
+/**
+ * Production script rewritten for the harness root, ready to execute.
+ */
+function openclaw_cleanup_harness_script(string $root): string
+{
+    return openclaw_cleanup_script_for_harness(
+        app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript(),
+        $root,
+    );
 }

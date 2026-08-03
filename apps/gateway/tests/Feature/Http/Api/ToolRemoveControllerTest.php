@@ -10,12 +10,10 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
-use App\Services\Tools\LegacyOpenClawRuntimeCleanup;
 use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
-use Symfony\Component\Process\Process as SymfonyProcess;
 
 require_once __DIR__.'/../../../Support/LegacyOpenClawCleanupHarness.php';
 
@@ -878,21 +876,14 @@ final class ToolRemoveApiExecutingLegacyScriptShell extends ToolRemoveApiRecordi
     {
         if (str_contains($script, 'orbit legacy-remove openclaw')) {
             $this->scripts[] = $script;
-            $env = [
-                'PATH' => $this->harnessRoot.'/bin:'.(getenv('PATH') ?: '/usr/bin:/bin'),
-                'ORBIT_LEGACY_OPENCLAW_HARNESS_STATE' => $this->harnessRoot.'/state',
-                'ORBIT_LEGACY_OPENCLAW_HOME' => $this->harnessRoot.'/home/.openclaw',
-                'ORBIT_LEGACY_OPENCLAW_USER' => 'agent',
-                'ORBIT_LEGACY_OPENCLAW_PORT' => (string) LegacyOpenClawRuntimeCleanup::LISTEN_PORT,
-                'ORBIT_LEGACY_OPENCLAW_KILL_WAIT' => '0',
-            ];
-            $process = new SymfonyProcess(['bash', '-c', $script], null, $env);
-            $process->run();
-            $this->lastLegacyStderr = $process->getErrorOutput();
+            // Production script hard-codes targets; test rewrite is in-process only.
+            $harnessScript = openclaw_cleanup_script_for_harness($script, $this->harnessRoot);
+            $result = openclaw_cleanup_run_script($this->harnessRoot, $harnessScript);
+            $this->lastLegacyStderr = $result['stderr'];
 
             return new RemoteShellResult(
-                exitCode: $process->getExitCode() ?? 1,
-                stdout: $process->getOutput(),
+                exitCode: $result['exit'],
+                stdout: $result['stdout'],
                 stderr: $this->lastLegacyStderr,
                 durationMs: 1,
             );

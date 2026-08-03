@@ -56,21 +56,28 @@ final readonly class LegacyOpenClawRuntimeCleanup
      *
      * Best-effort stop/kill steps ignore missing targets, but final success is
      * verified: port listeners, residual openclaw processes, and agent home
-     * state must be gone. Test harnesses may override home/user/port via
-     * ORBIT_LEGACY_OPENCLAW_* env vars and stub PATH commands (sudo/ss/...).
+     * state must be gone.
+     *
+     * Security-sensitive targets (user, home path, port, kill wait) are
+     * hard-coded literals in the generated script. They must not be read from
+     * the process environment: Agent script execution inherits the parent env
+     * and must not redirect privileged kills or home teardown via overrides.
+     * Test harnesses rewrite the generated text in-process only.
      */
     public function cleanupScript(): string
     {
-        $defaultPort = self::LISTEN_PORT;
+        $port = self::LISTEN_PORT;
         $processUnit = self::PROCESS_NAME.'.service';
 
         return <<<BASH
             #!/usr/bin/env bash
             # orbit legacy-remove openclaw (removal-only migration; not product support)
             set -u
-            OPENCLAW_HOME="\${ORBIT_LEGACY_OPENCLAW_HOME:-/home/agent/.openclaw}"
-            OPENCLAW_USER="\${ORBIT_LEGACY_OPENCLAW_USER:-agent}"
-            OPENCLAW_PORT="\${ORBIT_LEGACY_OPENCLAW_PORT:-{$defaultPort}}"
+            # Fixed targets — never env-overridable (Agent inherits parent env).
+            OPENCLAW_HOME='/home/agent/.openclaw'
+            OPENCLAW_USER='agent'
+            OPENCLAW_PORT='{$port}'
+            KILL_WAIT=1
             # Privileged ss is required so orbit can read agent-owned PIDs.
             listener_pids() {
               sudo ss -lptn "sport = :\${OPENCLAW_PORT}" 2>/dev/null \\
@@ -98,19 +105,15 @@ final readonly class LegacyOpenClawRuntimeCleanup
             for pid in \$(listener_pids); do
               sudo kill -TERM "\${pid}" >/dev/null 2>&1 || true
             done
-            sleep "\${ORBIT_LEGACY_OPENCLAW_KILL_WAIT:-1}"
+            sleep "\${KILL_WAIT}"
             for pid in \$(listener_pids); do
               sudo kill -KILL "\${pid}" >/dev/null 2>&1 || true
             done
             # Residual agent-owned OpenClaw binaries/commands not under systemd.
             sudo pkill -u "\${OPENCLAW_USER}" -f "\${OPENCLAW_HOME}/bin/openclaw" >/dev/null 2>&1 || true
             sudo pkill -u "\${OPENCLAW_USER}" -f 'openclaw gateway' >/dev/null 2>&1 || true
-            # Home/state teardown (override path is for harnesses only).
-            if [ "\${OPENCLAW_HOME}" = '/home/agent/.openclaw' ]; then
-              sudo -u "\${OPENCLAW_USER}" -H bash -lc 'rm -rf "\${HOME}/.openclaw" 2>/dev/null || true'
-            else
-              rm -rf "\${OPENCLAW_HOME}" 2>/dev/null || true
-            fi
+            # Fixed agent home/state teardown (path is hard-coded above).
+            sudo rm -rf "\${OPENCLAW_HOME}" 2>/dev/null || true
             # Optional world shim from older install paths (may be absent).
             sudo rm -f /usr/local/bin/openclaw 2>/dev/null || true
             # Verified success: refuse false-positive exit 0 when residue remains.

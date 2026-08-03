@@ -46,3 +46,24 @@ it('ships a removal-only host script that uses privileged ss and verifies absenc
         ->not->toBeFalse()->and($verifyPos)
         ->not->toBeFalse()->and($verifyPos)->toBeGreaterThan($killPos);
 });
+
+it('hard-codes security-sensitive cleanup targets with no env override seam', function (): void {
+    $script = app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript();
+
+    expect($script)
+        ->toContain("OPENCLAW_HOME='/home/agent/.openclaw'")
+        ->toContain("OPENCLAW_USER='agent'")
+        ->toContain("OPENCLAW_PORT='".LegacyOpenClawRuntimeCleanup::LISTEN_PORT."'")
+        ->toContain('KILL_WAIT=1')
+        ->toContain('sudo rm -rf "${OPENCLAW_HOME}"')
+        // No production env override family for targets (Agent inherits parent env).
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW')
+        ->not->toContain('${ORBIT_')
+        ->not->toContain(':-/home/agent')
+        ->not->toContain(':-agent')
+        ->not->toContain(':-1')
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW_HOME')
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW_USER')
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW_PORT')
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW_KILL_WAIT');
+});

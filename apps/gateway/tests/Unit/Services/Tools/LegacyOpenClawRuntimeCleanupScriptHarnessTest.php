@@ -12,7 +12,7 @@ uses(TestCase::class);
 it('terminates a simulated detached OpenClaw listener and exits 0 only when residue is gone', function (): void {
     $root = openclaw_cleanup_harness_root();
     openclaw_cleanup_write_stubs($root, unkillableListener: false);
-    $script = app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript();
+    $script = openclaw_cleanup_harness_script($root);
 
     $result = openclaw_cleanup_run_script($root, $script);
 
@@ -29,7 +29,7 @@ it('terminates a simulated detached OpenClaw listener and exits 0 only when resi
 it('fails nonzero when a simulated listener cannot be killed', function (): void {
     $root = openclaw_cleanup_harness_root();
     openclaw_cleanup_write_stubs($root, unkillableListener: true);
-    $script = app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript();
+    $script = openclaw_cleanup_harness_script($root);
 
     $result = openclaw_cleanup_run_script($root, $script);
 
@@ -44,6 +44,28 @@ it('fails nonzero when a simulated listener cannot be killed', function (): void
         ->toContain('pid=4242');
 });
 
+it('ignores inherited ORBIT_LEGACY_OPENCLAW target overrides at execution time', function (): void {
+    $root = openclaw_cleanup_harness_root();
+    openclaw_cleanup_write_stubs($root, unkillableListener: false);
+    $script = openclaw_cleanup_harness_script($root);
+
+    // Evil overrides must not redirect kill/rm/verify away from harness-fixed targets
+    // because the production script (and harness rewrite) never reads them.
+    $result = openclaw_cleanup_run_script($root, $script, [
+        'ORBIT_LEGACY_OPENCLAW_HOME' => '/tmp/orbit-openclaw-evil-home',
+        'ORBIT_LEGACY_OPENCLAW_USER' => 'root',
+        'ORBIT_LEGACY_OPENCLAW_PORT' => '1',
+        'ORBIT_LEGACY_OPENCLAW_KILL_WAIT' => '99',
+    ]);
+
+    expect($result['exit'])
+        ->toBe(0, $result['stderr'])
+        ->and(is_dir($root.'/home/.openclaw'))
+        ->toBeFalse()
+        ->and(is_dir('/tmp/orbit-openclaw-evil-home'))
+        ->toBeFalse();
+});
+
 it('uses privileged sudo ss for both listener enumerations', function (): void {
     $script = app(LegacyOpenClawRuntimeCleanup::class)->cleanupScript();
 
@@ -53,5 +75,6 @@ it('uses privileged sudo ss for both listener enumerations', function (): void {
         ->toContain('listener_pids')
         ->toContain('legacy openclaw cleanup incomplete: port')
         ->toContain('still exists')
-        ->toContain('openclaw process still running');
+        ->toContain('openclaw process still running')
+        ->not->toContain('ORBIT_LEGACY_OPENCLAW');
 });
