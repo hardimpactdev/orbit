@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T07:21:23+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-token-transport-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-092122-token-transport-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/token-transport-retained-dev-04ed41.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T065825Z-3f0efe1e5abd.json",
+        "quality-gates/quality-check-2026-08-03T070939Z-5699e8feb225.json"
+    ],
+    "entry_digests": {
+        "evidence/token-transport-retained-dev-04ed41.md": "9b2e92e835e5865c33c12b53bd6282dc61957b9295a8c34a7ae2add371e84efb",
+        "loop.md": "230e98bcc3fb819d62108ac599af7d822e21ce54582d0374c8a005d311552138",
+        "quality-gates/quality-check-2026-08-03T065825Z-3f0efe1e5abd.json": "7e720792ecefea1a8560a6a38a7e8a2e34eca2ada6bd3afb27fecb0cbc71a140",
+        "quality-gates/quality-check-2026-08-03T070939Z-5699e8feb225.json": "493ee1ed19f6c10d356aff992715050ea5eb184db023cac88a5ca01de3242d4a"
+    },
+    "branch": "codex/token-transport-contract",
+    "candidate_commit": "d03ea5785394575edeb775698ed3c1c392473bbd",
+    "accepted_feature_tip": "d03ea5785394575edeb775698ed3c1c392473bbd",
+    "accepted_main_tip": "4c7fef113facd9c687ce159e796918e8c8d766dc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
