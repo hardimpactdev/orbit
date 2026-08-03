@@ -1,10 +1,10 @@
 {
     "schema_version": 2,
-    "generated_at": "2026-08-03T07:21:23+00:00",
+    "generated_at": "2026-08-03T07:22:29+00:00",
     "mode": "created",
     "archive_mode": "compact",
     "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-token-transport-contract/.orbit",
-    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-092122-token-transport-contract",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-092229-codex-token-transport-contract",
     "agent_sessions_dir": null,
     "copied_entries": [
         "evidence/token-transport-retained-dev-04ed41.md",
