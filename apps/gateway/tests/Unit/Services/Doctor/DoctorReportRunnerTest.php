@@ -7,6 +7,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
+use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
@@ -2805,6 +2806,78 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['actions'][0]['details']['error'])
             ->toContain('scheduler scale failed')
             ->and($shell->scripts)
+            ->toBe([]);
+    });
+
+    it('converges node.agent_expectation_stale in the same restore response after record mutation', function (): void {
+        $node = Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'former-workload',
+                'tld' => 'former-workload',
+                'status' => 'active',
+                'managed' => false,
+                'platform' => 'ubuntu_24-04',
+                'host' => '10.0.0.42',
+                'wireguard_address' => '10.6.0.42',
+                'installed_agent' => InstalledAgentArtifact::record([
+                    'version' => '1.0.0',
+                    'platform' => 'linux-amd64',
+                    'sha256' => str_repeat('a', 64),
+                    'source' => 'github-release',
+                    'build_id' => null,
+                    'artifact_url' => 'https://artifacts.orbit.test/orbit-agent',
+                    'installed_path' => '/home/orbit/.local/bin/orbit-agent',
+                    'operation_run_id' => 'agent-install-run',
+                ]),
+            ]);
+        markDoctorRunnerNodeSecurityBaselineClean($node);
+        write_current_node_dns_projection();
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $request = new DoctorRunRequest(key: 'node.agent_expectation_stale');
+        $report = app(DoctorReportRunner::class)->run(
+            $node,
+            mode: 'restore',
+            families: ['node'],
+            request: $request,
+        );
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($report['issues'] ?? [])
+            ->toBe([])
+            ->and($report['summary'])
+            ->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'passes' => 1,
+                'stop_reason' => 'converged',
+            ])
+            ->and($report['convergence'] ?? null)
+            ->toMatchArray([
+                'passes' => 1,
+                'stop_reason' => 'converged',
+            ])
+            ->and($report['actions'][0] ?? null)
+            ->toMatchArray([
+                'key' => 'node.agent_expectation_stale',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ])
+            ->and($node->fresh()?->installed_agent)
+            ->toBeNull();
+
+        $verify = app(DoctorReportRunner::class)->run(
+            $node->fresh() ?? $node,
+            mode: 'verify',
+            families: ['node'],
+            request: $request,
+        );
+
+        expect($verify['healthy'])
+            ->toBeTrue()
+            ->and($verify['issues'] ?? [])
             ->toBe([]);
     });
 

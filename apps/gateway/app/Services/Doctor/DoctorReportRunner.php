@@ -1260,8 +1260,17 @@ final readonly class DoctorReportRunner
     ): array {
         $scope = $request->targetScope();
         $convergence = new DoctorRestoreConvergence;
+        // Apply may mutate the node row via a separately loaded model instance
+        // (e.g. nodeFromIssue). Re-resolve the selected node from the database
+        // for every post-mutation probe/apply so record changes are observed
+        // without dropping family/key/instance/workspace fences.
+        $resolveSelectedNode = function () use ($node): Node {
+            $fresh = Node::query()->find($node->getKey());
+
+            return $fresh instanceof Node ? $fresh : $node;
+        };
         /** @var callable(): array{issues?: list<array<string, mixed>>} $probe */
-        $probe = function () use ($node, $families, $request, $initialProbe): array {
+        $probe = function () use ($resolveSelectedNode, $families, $request, $initialProbe): array {
             static $first = true;
 
             if ($first) {
@@ -1273,7 +1282,7 @@ final readonly class DoctorReportRunner
 
             /** @var array{issues?: list<array<string, mixed>>} $fresh */
             $fresh = $this->probe(
-                $node,
+                $resolveSelectedNode(),
                 $families,
                 $request->key,
                 scope: $request->targetScope(),
@@ -1283,7 +1292,7 @@ final readonly class DoctorReportRunner
         };
         $result = $convergence->run(
             probe: $probe,
-            apply: fn (array $issues): array => $this->apply($node, 'restore', $issues),
+            apply: fn (array $issues): array => $this->apply($resolveSelectedNode(), 'restore', $issues),
             isRestorable: fn (array $issue): bool => $this->issueSupportsMode($issue, 'restore'),
         );
 
