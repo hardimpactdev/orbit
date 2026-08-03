@@ -289,19 +289,22 @@ final readonly class AppSelectorResolver
     ): AppInstance {
         $visible = $app
             ->instances
-            ->filter(function (mixed $instance) use ($instanceIsVisible): bool {
-                return (
+            ->filter(
+                fn (mixed $instance): bool => (
                     $instance instanceof AppInstance
                     && ($instanceIsVisible === null || $instanceIsVisible($instance))
-                );
-            })
+                ),
+            )
             ->values();
 
         $needle = mb_strtolower(trim($instanceSelector));
         $exactNameMatches = $visible
-            ->filter(function (mixed $instance) use ($needle): bool {
-                return $instance instanceof AppInstance && mb_strtolower($instance->name) === $needle;
-            })
+            ->filter(
+                fn (mixed $instance): bool => (
+                    $instance instanceof AppInstance
+                    && mb_strtolower($instance->name) === $needle
+                ),
+            )
             ->values();
 
         if ($exactNameMatches->count() === 1) {
@@ -312,21 +315,19 @@ final readonly class AppSelectorResolver
             }
         }
 
-        if ($exactNameMatches->count() > 1) {
-            $this->throwAmbiguousInstance($app, $fullSelector, $exactNameMatches);
-        }
-
-        $matches = $visible
-            ->filter(function (mixed $instance) use ($instanceSelector, $fullSelector, $app): bool {
-                return $instance instanceof AppInstance
-                && $this->placement->instanceMatchesSelector(
-                    instance: $instance,
-                    selector: $instanceSelector,
-                    fullSelector: $fullSelector,
-                    app: $app,
-                );
-            })
-            ->values();
+        $matches = $exactNameMatches->count() > 1
+            ? $exactNameMatches
+            : $visible
+                ->filter(
+                    fn (mixed $instance): bool => $instance instanceof AppInstance
+                    && $this->placement->instanceMatchesSelector(
+                        instance: $instance,
+                        selector: $instanceSelector,
+                        fullSelector: $fullSelector,
+                        app: $app,
+                    ),
+                )
+                ->values();
 
         $match = $matches->first();
 
@@ -335,7 +336,24 @@ final readonly class AppSelectorResolver
         }
 
         if ($matches->count() > 1) {
-            $this->throwAmbiguousInstance($app, $fullSelector, $matches);
+            $instanceNames = [];
+
+            foreach ($matches as $instance) {
+                if ($instance instanceof AppInstance) {
+                    $instanceNames[] = $instance->name;
+                }
+            }
+
+            throw new AppSelectionResolutionFailed(
+                'validation_failed',
+                "Instance selector '{$fullSelector}' is ambiguous.",
+                [
+                    'field' => 'instance',
+                    'project' => $app->name,
+                    'selector' => $fullSelector,
+                    'instances' => $instanceNames,
+                ],
+            );
         }
 
         throw new AppSelectionResolutionFailed(
@@ -345,31 +363,6 @@ final readonly class AppSelectorResolver
                 'field' => 'instance',
                 'project' => $app->name,
                 'instance' => $instanceSelector,
-            ],
-        );
-    }
-
-    /**
-     * @param  iterable<int, mixed>  $matches
-     */
-    private function throwAmbiguousInstance(Project $app, string $fullSelector, iterable $matches): never
-    {
-        $instanceNames = [];
-
-        foreach ($matches as $instance) {
-            if ($instance instanceof AppInstance) {
-                $instanceNames[] = $instance->name;
-            }
-        }
-
-        throw new AppSelectionResolutionFailed(
-            'validation_failed',
-            "Instance selector '{$fullSelector}' is ambiguous.",
-            [
-                'field' => 'instance',
-                'project' => $app->name,
-                'selector' => $fullSelector,
-                'instances' => $instanceNames,
             ],
         );
     }
