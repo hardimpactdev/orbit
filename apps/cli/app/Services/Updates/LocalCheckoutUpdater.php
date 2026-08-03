@@ -141,12 +141,23 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             return $this->failedDownloadFrom($verifyResult);
         }
 
+        $version = $this->requireVersionFromOutput($verifyResult->output());
+
+        if ($version === null) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownload(
+                'CLI version verification failed: version output was not structured JSON.',
+                1,
+            );
+        }
+
         return [
             'successful' => true,
             'exit_code' => 0,
             'output' => trim($verifyResult->output()),
             'staged_path' => $stagedBinary,
-            'version' => $this->versionFromOutput($verifyResult->output()),
+            'version' => $version,
         ];
     }
 
@@ -204,8 +215,19 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedReplaceFrom($verifyResult);
             }
 
+            $verifiedVersion = $this->requireVersionFromOutput($verifyResult->output());
+
+            if ($verifiedVersion === null) {
+                return [
+                    'successful' => false,
+                    'exit_code' => 1,
+                    'output' => 'CLI version verification failed: version output was not structured JSON.',
+                    'skipped' => false,
+                ];
+            }
+
             $this->installMetadata->write(
-                version: $this->versionFromOutput($verifyResult->output()),
+                version: $verifiedVersion,
                 binaryPath: $linkPath,
                 installRoot: $installRoot,
                 releasedAt: $releasedAt,
@@ -371,17 +393,14 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         ];
     }
 
-    private function versionFromOutput(string $output): string
+    /**
+     * Fail closed: successful `--version --local --json` must yield a structured
+     * version. Never fall back to config('app.version') or 0.0.0 (that would
+     * install/link under the wrong version path).
+     */
+    private function requireVersionFromOutput(string $output): ?string
     {
-        $parsed = $this->versionOutputParser->fromAnyOutput($output);
-
-        if ($parsed !== null) {
-            return $parsed;
-        }
-
-        $configured = config('app.version');
-
-        return is_string($configured) && trim($configured) !== '' ? trim($configured) : '0.0.0';
+        return $this->versionOutputParser->fromAnyOutput($output);
     }
 
     private function versionedBinaryPath(string $installRoot, string $version): string

@@ -1571,6 +1571,64 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->not->toContain($secret);
     });
 
+    it('redacts secret-shaped command options and command_line on dispatching rows without explicit redact lists', function (): void {
+        $secret = 'base64:DispatchMustNotStoreThisKey==';
+        $password = 'super-secret-password-value';
+        $token = 'dispatch-token-should-not-persist';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 5),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $node = remoteLocalExecutorNode(['app-dev']);
+        $node->forceFill(['status' => 'active', 'managed' => true])->save();
+
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:app-source:create',
+            arguments: ["APP_KEY={$secret}"],
+            commandOptions: [
+                'action' => 'upsert-peer',
+                // Hyphenated keys only — command option pattern forbids underscores.
+                'password' => $password,
+                'api-token' => $token,
+                'app-key' => $secret,
+                'public-key' => 'peer-public-key-probe',
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                // Intentionally omit redact_command_options so SecretSummaryRedactor
+                // must scrub dispatching activity on its own.
+            ],
+        );
+
+        $dispatchProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[0]);
+        $logBlob = remoteLocalExecutorActivityLogBlob();
+
+        expect($dispatchProperties)
+            ->toMatchArray([
+                'status' => 'dispatching',
+            ])
+            ->and($dispatchProperties['command_options'])
+            ->toMatchArray([
+                'action' => 'upsert-peer',
+                'password' => '<redacted>',
+                'api-token' => '<redacted>',
+                'app-key' => '<redacted>',
+                'public-key' => 'peer-public-key-probe',
+            ])
+            ->and($dispatchProperties['arguments'])
+            ->not->toContain($secret)
+            ->and($dispatchProperties['command_line'])
+            ->not->toContain($secret)
+            ->not->toContain($password)
+            ->not->toContain($token)
+            ->and($logBlob)
+            ->not->toContain($secret)
+            ->not->toContain($password)
+            ->not->toContain($token);
+    });
+
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             static function (Node $node, string $script, array $options): RemoteShellResult {

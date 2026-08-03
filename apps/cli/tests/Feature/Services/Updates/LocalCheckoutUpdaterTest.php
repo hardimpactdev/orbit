@@ -665,6 +665,54 @@ describe('LocalCheckoutUpdater', function (): void {
         expect($doctor['issues'])->toBeNull();
     });
 
+    it('fails download closed when --version --local --json succeeds with malformed output', function (): void {
+        Process::fake(['*' => Process::result(output: "Version       1.2.3\nnot-json\n", exitCode: 0)]);
+        Process::preventStrayProcesses();
+        config()->set('app.version', '9.9.9');
+
+        $download = new LocalCheckoutUpdater(new CheckoutPathResolver)->downloadBinary();
+
+        expect($download['successful'])
+            ->toBeFalse()
+            ->and($download['version'])
+            ->toBeNull()
+            ->and($download['staged_path'])
+            ->toBeNull()
+            ->and($download['output'])
+            ->toContain('structured JSON')
+            ->and($download['output'])
+            ->not->toContain('9.9.9');
+    });
+
+    it('fails replace closed when launcher version JSON is missing after a successful exit', function (): void {
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            $command = $process->command;
+
+            if (is_array($command) && in_array('--version', $command, true) && in_array('--json', $command, true)) {
+                // Human table only — structured parser must reject this.
+                return Process::result(output: "Version       1.2.3\n", exitCode: 0);
+            }
+
+            return Process::result(output: '', exitCode: 0);
+        });
+        Process::preventStrayProcesses();
+        config()->set('app.version', '9.9.9');
+
+        $staged = $this->binaryDest.'.download.test';
+        file_put_contents($staged, "binary\n");
+
+        $replace = new LocalCheckoutUpdater(new CheckoutPathResolver)->replaceBinary($staged, '1.2.3');
+
+        expect($replace['successful'])
+            ->toBeFalse()
+            ->and($replace['skipped'])
+            ->toBeFalse()
+            ->and($replace['output'])
+            ->toContain('structured JSON')
+            ->and(is_file($this->installRoot.'/install.json'))
+            ->toBeFalse();
+    });
+
     it('installs dependencies inside orbit-gateway', function (): void {
         Process::fake(['*' => Process::result(output: 'Installing dependencies', exitCode: 0)]);
         Process::preventStrayProcesses();

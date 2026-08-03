@@ -56,12 +56,11 @@ final class SecretSummaryRedactor
      * word-boundaries keep token_count and ordinary prose intact.
      */
     private const string SECRET_KEY_CORE =
-        '(?:APP_KEY|APPLICATION_KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
-        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
-        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD_HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+        '(?:APP[_-]?KEY|APPLICATION[_-]?KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
+            .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
+            .'PRE[_-]?SHARED[_-]?KEY|PASSWORD_HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
 
-    private const string SECRET_KEY_IDENTIFIER =
-        '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
+    private const string SECRET_KEY_IDENTIFIER = '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
 
     public function redactString(string $value): string
     {
@@ -69,25 +68,28 @@ final class SecretSummaryRedactor
         $keys = self::SECRET_KEY_IDENTIFIER;
 
         // Env-style: PASSWORD=..., api_key='...', user_password=..., mixed case.
-        $redacted = preg_replace(
-            '/\b('.$keys.')\s*=\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
-            '$1='.self::REDACTED,
-            $redacted,
-        ) ?? $redacted;
+        $redacted =
+            preg_replace(
+                '/\b('.$keys.')\s*=\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
+                '$1='.self::REDACTED,
+                $redacted,
+            ) ?? $redacted;
 
         // JSON object members: "password":"…", "api-key" : "…".
-        $redacted = preg_replace(
-            '/("(?:'.$keys.')"\s*:\s*)(?:"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^,}\s]+)/i',
-            '$1"'.self::REDACTED.'"',
-            $redacted,
-        ) ?? $redacted;
+        $redacted =
+            preg_replace(
+                '/("(?:'.$keys.')"\s*:\s*)(?:"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^,}\s]+)/i',
+                '$1"'.self::REDACTED.'"',
+                $redacted,
+            ) ?? $redacted;
 
         // Human key: value forms on their own line or after whitespace.
-        $redacted = preg_replace(
-            '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
-            '$1: '.self::REDACTED,
-            $redacted,
-        ) ?? $redacted;
+        $redacted =
+            preg_replace(
+                '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
+                '$1: '.self::REDACTED,
+                $redacted,
+            ) ?? $redacted;
 
         return $redacted;
     }
@@ -136,9 +138,11 @@ final class SecretSummaryRedactor
 
         // Suffix-shaped sibling secrets (user_password, reverb_app_key) without
         // matching ordinary keys like secretary or token_count.
-        return preg_match(
-            '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key|pre[_-]?shared[_-]?key|bearer(?:[_-]?token)?)$/',
-            $normalized,
-        ) === 1;
+        return (
+            preg_match(
+                '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key|pre[_-]?shared[_-]?key|bearer(?:[_-]?token)?)$/',
+                $normalized,
+            ) === 1
+        );
     }
 }

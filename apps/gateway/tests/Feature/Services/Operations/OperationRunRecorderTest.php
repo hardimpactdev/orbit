@@ -228,6 +228,49 @@ describe('OperationRunRecorder', function (): void {
             ]);
     });
 
+    it('redacts secret-shaped result error and summaries when queuing an operation_run', function (): void {
+        $secret = 'base64:QueuedMustNotPersist==';
+
+        $run = $this->recorder->queued(
+            operationId: (string) Str::uuid(),
+            lane: 'local',
+            operationType: 'websocket-runtime.app-key:ensure',
+            result: [
+                'app_key' => $secret,
+                'nested' => ['password' => $secret, 'status' => 'queued'],
+            ],
+            error: [
+                'code' => 'preview',
+                'token' => $secret,
+                'message' => "export APP_KEY={$secret}",
+            ],
+            stdoutSummary: "APP_KEY={$secret}\n",
+            stderrSummary: "password: {$secret}",
+        );
+
+        expect($run->status)
+            ->toBe(OperationStatus::Queued)
+            ->and($run->result)
+            ->toMatchArray([
+                'app_key' => '<redacted>',
+                'nested' => ['password' => '<redacted>', 'status' => 'queued'],
+            ])
+            ->and($run->error)
+            ->toMatchArray([
+                'code' => 'preview',
+                'token' => '<redacted>',
+                'message' => 'export APP_KEY=<redacted>',
+            ])
+            ->and(trim((string) $run->stdout_summary))
+            ->toBe('APP_KEY=<redacted>')
+            ->and($run->stdout_summary)
+            ->not->toContain($secret)
+            ->and(trim((string) $run->stderr_summary))
+            ->toBe('password: <redacted>')
+            ->and($run->stderr_summary)
+            ->not->toContain($secret);
+    });
+
     it('preserves the first terminal result and warns on duplicate finalization', function (): void {
         $run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'tool.install');
         $first = $this->recorder->failed(

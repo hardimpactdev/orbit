@@ -2203,6 +2203,115 @@ it('blocks branch deletion when no matching session archive exists', function ()
     }
 });
 
+it('allows cleanup when a valid compact receipt is discoverable under a different basename via compatible slugs', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    // Basename slug differs from branch-derived `feature`; receipt metadata must
+    // make the archive discoverable without bypassing tip/digest validation.
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a cross-slug compact receipt that mismatches branch tip or digests', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    // Discoverable via compatible_slugs, but digests no longer match archive bytes.
+    $receipt['entry_digests']['loop.md'] = str_repeat('0', 64);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('bin/orbit-session-archive');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a cross-slug compact receipt with wrong branch tip even when compatible slugs match', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    // Candidate tip no longer equals the landed feature tip.
+    $receipt['candidate_commit'] = str_repeat('a', 40);
+    $receipt['accepted_feature_tip'] = str_repeat('a', 40);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('bin/orbit-session-archive');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('allows worktree removal when a matching session archive with loop and manifest exists', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 

@@ -238,6 +238,46 @@ describe('internal fleet update install cli command', function (): void {
             ]);
     });
 
+    it('fails when CLI install succeeds but version output is not structured JSON', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
+
+        // Human Version table only — install process exits 0 but metadata path fails closed.
+        file_put_contents($artifactPath, <<<'SH'
+            #!/usr/bin/env sh
+            echo "Version       9.9.9"
+            echo "Released at   unknown"
+            echo "Installed at  unknown"
+            SH);
+        chmod(filename: $artifactPath, permissions: 0o755);
+
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and(is_file($metadataPath))
+            ->toBeFalse()
+            ->and($output)
+            ->toContain('fleet_update.cli_version_unstructured')
+            ->toContain('structured JSON');
+    });
+
     it('installs from a hash-verified payload file', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";

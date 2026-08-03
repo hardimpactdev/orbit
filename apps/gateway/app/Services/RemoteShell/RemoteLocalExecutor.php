@@ -640,6 +640,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         string $activityTransport,
     ): void {
         $redactedCommandOptionNames = $this->redactedCommandOptionNames($transportOptions);
+        $secretSummaryRedactor = new SecretSummaryRedactor;
+        $secretShapedOptionNames = $this->secretShapedCommandOptionNames($commandOptions, $secretSummaryRedactor);
+        $commandLineOptionNames = array_values(array_unique([
+            ...$redactedCommandOptionNames,
+            ...$secretShapedOptionNames,
+        ]));
+        $commandLine = $this->redactCommandOptionsInLine($auditLine, $commandLineOptionNames);
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
@@ -654,9 +661,20 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'target_node_id' => $this->nodeId($node),
                     'target_node_name' => $node->name,
                     'command' => $commandName,
-                    'arguments' => $this->scalarPayload($arguments),
-                    'command_options' => $this->scalarPayload($commandOptions, $redactedCommandOptionNames),
-                    'command_line' => $this->redactCommandOptionsInLine($auditLine, $redactedCommandOptionNames),
+                    'arguments' => $this->redactDispatchScalars(
+                        $this->scalarPayload($arguments),
+                        $secretSummaryRedactor,
+                    ),
+                    'command_options' => $this->redactDispatchScalars(
+                        $this->scalarPayload($commandOptions, [
+                            ...$redactedCommandOptionNames,
+                            ...$secretShapedOptionNames,
+                        ]),
+                        $secretSummaryRedactor,
+                    ),
+                    // Explicit + secret-shaped option flags first, then shared
+                    // string scrub so APP_KEY=/password=/token= forms never persist.
+                    'command_line' => $secretSummaryRedactor->redactString($commandLine),
                 ],
             ),
             channel: 'api',
@@ -948,7 +966,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     {
         $redacted = $this->redactOperationToken($value, $operationToken);
 
-        return (new SecretSummaryRedactor)->redactString($redacted);
+        return new SecretSummaryRedactor()->redactString($redacted);
     }
 
     /**
@@ -1188,6 +1206,68 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         return $payload;
+    }
+
+    /**
+     * Scrub secret-shaped keys and env/JSON string forms in dispatch activity
+     * payloads after explicit redact_command_options handling.
+     *
+     * @param  array<int|string, bool|float|int|string>  $payload
+     * @return array<int|string, bool|float|int|string>
+     */
+    private function redactDispatchScalars(array $payload, SecretSummaryRedactor $redactor): array
+    {
+        $redacted = [];
+
+        foreach ($payload as $key => $value) {
+            if (is_string($key) && $this->isSecretShapedDispatchKey($key, $redactor)) {
+                $redacted[$key] = self::REDACTED_VALUE;
+
+                continue;
+            }
+
+            if (is_string($value)) {
+                $redacted[$key] = $redactor->redactString($value);
+
+                continue;
+            }
+
+            $redacted[$key] = $value;
+        }
+
+        return $redacted;
+    }
+
+    private function isSecretShapedDispatchKey(string $key, SecretSummaryRedactor $redactor): bool
+    {
+        if ($redactor->isForbiddenKey($key)) {
+            return true;
+        }
+
+        // Command options commonly use hyphens (password-hash); normalize for
+        // the underscore-oriented forbidden-key matcher.
+        $normalized = str_replace('-', '_', $key);
+
+        return $normalized !== $key && $redactor->isForbiddenKey($normalized);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $commandOptions
+     * @return list<string>
+     */
+    private function secretShapedCommandOptionNames(
+        array $commandOptions,
+        SecretSummaryRedactor $redactor,
+    ): array {
+        $names = [];
+
+        foreach (array_keys($commandOptions) as $key) {
+            if (is_string($key) && $this->isSecretShapedDispatchKey($key, $redactor)) {
+                $names[] = $key;
+            }
+        }
+
+        return $names;
     }
 
     /**

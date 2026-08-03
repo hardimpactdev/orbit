@@ -42,7 +42,7 @@ final readonly class LocalFleetUpdateInstallCliAction
         }
 
         $stdout = trim($process->getOutput());
-        $this->recordInstallMetadata($installPayload, $stdout);
+        $this->recordInstallMetadata($installPayload, $stdout, $process);
 
         return [
             'installed' => true,
@@ -58,11 +58,16 @@ final readonly class LocalFleetUpdateInstallCliAction
     private function recordInstallMetadata(
         LocalFleetUpdateInstallCliPayload $installPayload,
         string $stdout,
+        Process $process,
     ): void {
         $version = $this->versionOutputParser->fromAnyOutput($stdout);
 
         if ($version === null) {
-            return;
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'fleet_update.cli_version_unstructured',
+                message: 'CLI install succeeded but version output was not structured JSON.',
+                meta: $this->processMeta($process),
+            );
         }
 
         $this->installMetadata->write(
