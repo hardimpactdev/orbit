@@ -1,0 +1,56 @@
+Retained topology proof — Doctor resolution hardening
+=====================================================
+
+Topology
+- id: dev-a82245
+- kind: operator_gateway_app-dev
+- provider: incus
+- host: beast
+- instances: operator / gateway / dev
+- gateway VM: orbit-e2e-dev-a82245-gateway
+- relevant node: app-dev-1
+- Solo terminal: process 1321, name "Retained gateway VM proof dev-a82245"
+
+Launcher identity (on gateway VM)
+- pwd => /home/orbit/orbit-run
+- readlink -f /usr/local/bin/orbit => /home/orbit/orbit-run/apps/cli/orbit
+- orbit --version --local => 0.1.190
+
+Baseline
+- command: orbit doctor --node=app-dev-1 --family=node --json
+- exit: 1
+- healthy: false
+- issues (5):
+  - node.wireguard_peer_missing (non-restorable)
+  - node.security.public_ssh_deny
+  - node.security.sshd_config
+  - node.security.sysctl
+  - node.security.home_perms
+
+Restore
+- command: orbit doctor --node=app-dev-1 --family=node --restore --json
+- exit: 1
+- healthy: false
+- summary: issues=1 fixed=4 skipped=1
+- four security actions completed
+- node.wireguard_peer_missing skipped and remained as the sole fresh issue
+- proves completed receipts did not hide fresh remaining drift
+
+No-op scoped restore
+- command: orbit doctor --node=app-dev-1 --family=node --key=node.security.home_perms --restore --json
+- exit: 0
+- healthy: true
+- issues: 0
+- actions: 0
+- fixed: 0
+
+Final verify
+- command: orbit doctor --node=app-dev-1 --family=node --json
+- exit: 1
+- healthy: false
+- issues: exactly one — node.wireguard_peer_missing
+- actions: []
+
+Disposal
+- topology is disposable and will be released with:
+  composer e2e:incus -- --stop --id=dev-a82245

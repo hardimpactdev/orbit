@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T06:14:22+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-drift-resolution-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-081421-codex-drift-resolution-hardening",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-dev-a82245-doctor-resolution.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T061304Z-65cfc40ff067.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-dev-a82245-doctor-resolution.txt": "6dec9e3d802ad80c5b9633af2259cb3db03e6903e7303e71a987a103c9d3fcf8",
+        "loop.md": "6d2cdd097a2469451e90716d613be597f778983e3e6010e04f4e23fd0b92889e",
+        "quality-gates/quality-check-2026-08-03T061304Z-65cfc40ff067.json": "5708dc2a9950c91dc54d7c8ed6647621da2101ea530af7350dfe50b3092ace12"
+    },
+    "branch": "codex/drift-resolution-hardening",
+    "candidate_commit": "c23104e644b620a1482ff1366ef57a1f9e27129c",
+    "accepted_feature_tip": "c23104e644b620a1482ff1366ef57a1f9e27129c",
+    "accepted_main_tip": "f31b3813ee8e964dd427bcd321b8b3e05ad96db2",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
