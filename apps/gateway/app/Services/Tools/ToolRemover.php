@@ -12,6 +12,9 @@ use App\Models\NodeTool;
  */
 final readonly class ToolRemover
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
@@ -116,8 +119,10 @@ final readonly class ToolRemover
 
             // Surface process runtime-unit extras from RemoveProcess so operators
             // can doctor --family=process without silent drop.
-            if (isset($process['warnings']) && is_array($process['warnings']) && $process['warnings'] !== []) {
-                $payload['warnings'] = $process['warnings'];
+            $warnings = $process['warnings'] ?? null;
+
+            if (is_array($warnings) && $warnings !== []) {
+                $payload['warnings'] = $warnings;
             }
         }
 

@@ -23,6 +23,8 @@ use Throwable;
  * when a non-Orbit unit/process keeps the port. This cleanup is the typed path
  * that stops listeners, drops legacy units, deletes agent home state, and clears
  * gateway process/proxy/tool intent.
+ *
+ * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class LegacyOpenClawRuntimeCleanup
 {
@@ -30,8 +32,11 @@ final readonly class LegacyOpenClawRuntimeCleanup
 
     public const string PROCESS_NAME = 'openclaw-gateway';
 
-    public const int LISTEN_PORT = 18789;
+    public const int LISTEN_PORT = 18_789;
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,

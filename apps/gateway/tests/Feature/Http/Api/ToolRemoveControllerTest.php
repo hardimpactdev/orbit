@@ -525,7 +525,7 @@ describe('ToolRemoveController', function (): void {
         // Process intent is removed before the host cleanup script. A failed
         // cleanup script must not report overall success so operators retry.
         $response
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'tool.remote_action_failed');
 
         expect(Process::find($process->id))
