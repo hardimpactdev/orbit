@@ -72,11 +72,18 @@ final readonly class LocalFleetUpdateInstallCliAction
 
     private function versionFromOutput(string $output): ?string
     {
-        // Prefer the linked binary's `--version --local` line ("Orbit x.y.z") over any
-        // earlier dotted triple in install progress (image tags, retry noise, etc.).
+        // Match VersionCommand human rows: "Version       0.1.190" and optional
+        // "(new version available: x.y.z)" suffix. Ignore earlier dotted triples in
+        // install progress (image tags, retry noise, etc.).
         $matches = null;
 
-        if (preg_match('/^Orbit\s+(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)\s*$/m', $output, $matches) === 1) {
+        if (
+            preg_match(
+                '/^Version\s+(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)(?:\s|\(|$)/m',
+                $output,
+                $matches,
+            ) === 1
+        ) {
             return $matches[1];
         }
 

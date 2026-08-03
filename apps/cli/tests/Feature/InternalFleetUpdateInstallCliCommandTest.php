@@ -121,7 +121,7 @@ describe('internal fleet update install cli command', function (): void {
             ->and(fleet_update_install_cli_sha256(fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256)
             ->and(shell_exec(escapeshellarg("{$workspace}/bin/orbit").' --version --local'))
-            ->toBe("Orbit 9.9.9\n")
+            ->toBe(fleet_update_install_cli_fake_version_output())
             ->and($metadata)
             ->toMatchArray([
                 'schema_version' => 1,
@@ -194,15 +194,18 @@ describe('internal fleet update install cli command', function (): void {
             ->toBeFalse();
     });
 
-    it('writes install metadata from the Orbit version line ignoring earlier semver-like stdout', function (): void {
+    it('writes install metadata from the Version table line ignoring earlier semver-like stdout', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
         $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
 
+        // Real VersionCommand rows use %-14s label padding and may annotate updates.
         file_put_contents($artifactPath, <<<'SH'
             #!/usr/bin/env sh
             echo "pulling ghcr.io/hardimpactdev/orbit-reverb:1.2.3@sha256:deadbeef"
-            echo "Orbit 9.9.9"
+            echo "Version       9.9.9 (new version available: 1.2.3)"
+            echo "Released at   unknown"
+            echo "Installed at  unknown"
             SH);
         chmod(filename: $artifactPath, permissions: 0o755);
 
@@ -1394,6 +1397,19 @@ function fleet_update_install_cli_success_data(string $output): array
     return $data;
 }
 
+/**
+ * Mirrors VersionCommand human --version --local output (three rows, %-14s labels).
+ */
+function fleet_update_install_cli_fake_version_output(string $version = '9.9.9'): string
+{
+    return implode("\n", [
+        sprintf('%-14s%s', 'Version', $version),
+        sprintf('%-14s%s', 'Released at', 'unknown'),
+        sprintf('%-14s%s', 'Installed at', 'unknown'),
+        '',
+    ]);
+}
+
 function make_fleet_update_install_cli_workspace(): string
 {
     $workspace = sys_get_temp_dir().'/orbit-fleet-update-install-cli-'.bin2hex(random_bytes(8));
@@ -1402,9 +1418,12 @@ function make_fleet_update_install_cli_workspace(): string
     mkdir("{$workspace}/bin", recursive: true);
     $artifact = "{$workspace}/artifact/orbit";
 
+    // Match VersionCommand human contract: three %-14s rows from --version --local.
     file_put_contents($artifact, <<<'SH'
         #!/usr/bin/env sh
-        echo "Orbit 9.9.9"
+        echo "Version       9.9.9"
+        echo "Released at   unknown"
+        echo "Installed at  unknown"
         SH);
     chmod(filename: $artifact, permissions: 0o755);
 
