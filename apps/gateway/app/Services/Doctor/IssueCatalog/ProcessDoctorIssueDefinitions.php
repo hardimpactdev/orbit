@@ -26,7 +26,11 @@ final class ProcessDoctorIssueDefinitions implements DoctorIssueDefinitionProvid
             self::genuine('process.restart_policy_mismatch', 'process', 'restore_process_restart_policy_mismatch'),
             self::blocked('process.runtime_backend_unavailable', 'process'),
             self::invalid('process.runtime_context_unresolved', 'process'),
-            self::genuine('process.runtime_environment_mismatch', 'process', 'restore_process_runtime_environment_mismatch'),
+            self::genuine(
+                'process.runtime_environment_mismatch',
+                'process',
+                'restore_process_runtime_environment_mismatch',
+            ),
             self::genuine('process.runtime_unit_down', 'process', 'restore_process_runtime_unit_down'),
             self::genuine('process.runtime_unit_extra', 'process', 'restore_process_runtime_unit_extra'),
             self::genuine('process.runtime_unit_mismatch', 'process', 'restore_process_runtime_unit_mismatch'),

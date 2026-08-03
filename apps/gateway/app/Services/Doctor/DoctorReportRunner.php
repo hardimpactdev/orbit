@@ -16,10 +16,10 @@ use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
 use App\Enums\DoctorIssueDisposition;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
-use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
@@ -1260,23 +1260,29 @@ final readonly class DoctorReportRunner
     ): array {
         $scope = $request->targetScope();
         $convergence = new DoctorRestoreConvergence;
+        /** @var callable(): array{issues?: list<array<string, mixed>>} $probe */
+        $probe = function () use ($node, $families, $request, $initialProbe): array {
+            static $first = true;
+
+            if ($first) {
+                $first = false;
+
+                /** @var array{issues?: list<array<string, mixed>>} $initialProbe */
+                return $initialProbe;
+            }
+
+            /** @var array{issues?: list<array<string, mixed>>} $fresh */
+            $fresh = $this->probe(
+                $node,
+                $families,
+                $request->key,
+                scope: $request->targetScope(),
+            );
+
+            return $fresh;
+        };
         $result = $convergence->run(
-            probe: function () use ($node, $families, $request, $initialProbe): array {
-                static $first = true;
-
-                if ($first) {
-                    $first = false;
-
-                    return $initialProbe;
-                }
-
-                return $this->probe(
-                    $node,
-                    $families,
-                    $request->key,
-                    scope: $request->targetScope(),
-                );
-            },
+            probe: $probe,
             apply: fn (array $issues): array => $this->apply($node, 'restore', $issues),
             isRestorable: fn (array $issue): bool => $this->issueSupportsMode($issue, 'restore'),
         );
@@ -1339,8 +1345,9 @@ final readonly class DoctorReportRunner
             'stop_reason' => $stopReason,
             'max_passes' => DoctorRestoreConvergence::MAX_PASSES,
         ];
+        $summary = is_array($result['summary'] ?? null) ? $result['summary'] : [];
         $result['summary'] = [
-            ...($result['summary'] ?? []),
+            ...$summary,
             'passes' => $passes,
             'stop_reason' => $stopReason,
         ];

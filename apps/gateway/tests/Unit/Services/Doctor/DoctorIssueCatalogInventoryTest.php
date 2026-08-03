@@ -60,7 +60,8 @@ it('owns definitions through family providers rather than one heuristic map', fu
     $providers = DoctorIssueCatalog::providers();
 
     expect($providers)
-        ->not->toBeEmpty()
+        ->not
+        ->toBeEmpty()
         ->and(count($providers))
         ->toBeGreaterThan(1);
 
@@ -70,16 +71,14 @@ it('owns definitions through family providers rather than one heuristic map', fu
 });
 
 it('does not keep name-substring fallback classification in the doctor runner', function (): void {
-    $runnerPath = (new ReflectionClass(DoctorReportRunner::class))->getFileName();
+    $runnerPath = new ReflectionClass(DoctorReportRunner::class)->getFileName();
     expect($runnerPath)->toBeString();
     $source = file_get_contents((string) $runnerPath);
     expect($source)->toBeString();
 
     expect($source)
-        ->not->toContain('fallbackDisposition')
-        ->and($source)
-        ->not->toContain("str_contains(\$code, 'probe_failed')")
-        ->and($source)
+        ->not->toContain('fallbackDisposition')->and($source)
+        ->not->toContain("str_contains(\$code, 'probe_failed')")->and($source)
         ->not->toContain("str_contains(\$code, 'record_incomplete')");
 });
 

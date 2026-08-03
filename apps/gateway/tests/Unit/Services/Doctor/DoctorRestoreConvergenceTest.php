@@ -23,7 +23,7 @@ it('continues restore passes until no restorable genuine drift remains', functio
     $probeIndex = 0;
     $applied = [];
 
-    $result = (new DoctorRestoreConvergence)->run(
+    $result = new DoctorRestoreConvergence()->run(
         probe: function () use (&$probeIndex, $probes): array {
             $probe = $probes[$probeIndex] ?? ['issues' => []];
             $probeIndex++;
@@ -71,7 +71,7 @@ it('stops with no_progress when restorable findings repeat after a pass', functi
     $probes = [$same, $same, $same];
     $probeIndex = 0;
 
-    $result = (new DoctorRestoreConvergence)->run(
+    $result = new DoctorRestoreConvergence()->run(
         probe: function () use (&$probeIndex, $probes): array {
             $probe = $probes[$probeIndex] ?? $probes[array_key_last($probes)];
             $probeIndex++;
@@ -106,7 +106,7 @@ it('stops at max_passes without looping forever', function (): void {
     ];
     $probeIndex = 0;
 
-    $result = (new DoctorRestoreConvergence)->run(
+    $result = new DoctorRestoreConvergence()->run(
         probe: function () use (&$probeIndex, $oscillating): array {
             $probe = $oscillating[$probeIndex % 2];
             $probeIndex++;

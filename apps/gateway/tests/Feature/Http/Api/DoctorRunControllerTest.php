@@ -504,10 +504,14 @@ describe('DoctorRunController', function (): void {
             ->toBe('no_progress')
             ->and(collect($doctor['issues'] ?? [])->pluck('key')->all())
             ->toContain('proxy.route_mismatch')
-            ->and(collect($doctor['issues'] ?? [])->firstWhere('key', 'proxy.route_mismatch')['detail']['expected_hash'] ?? null)
+            ->and(
+                collect($doctor['issues'] ?? [])->firstWhere('key', 'proxy.route_mismatch')['detail']['expected_hash']
+                ?? null,
+            )
             ->toBe($expectedHash)
             ->and($mismatchActions)
-            ->not->toBeEmpty()
+            ->not
+            ->toBeEmpty()
             ->and($mismatchActions[0]['details']['node'] ?? null)
             ->toBe('ingress-1')
             ->and($mismatchActions[0]['details']['operation'] ?? null)

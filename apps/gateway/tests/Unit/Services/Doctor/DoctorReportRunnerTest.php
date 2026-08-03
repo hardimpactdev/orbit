@@ -1865,18 +1865,12 @@ describe('DoctorReportRunner', function (): void {
         $issue = collect($report['issues'])->firstWhere('key', $key);
 
         expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue['restorable'] ?? null)
-            ->toBeTrue()
-            ->and($issue['disposition'] ?? null)
-            ->toBe('genuine_drift')
-            ->and($issue['restore_action'] ?? null)
-            ->not->toBeNull()
-            ->and($issue['code'] ?? null)
-            ->toBe($key)
-            ->and($report['summary']['dispositions']['genuine_drift'] ?? null)
-            ->toBeGreaterThanOrEqual(1);
+            ->not->toBeNull()->and($issue['restorable'] ?? null)->toBeTrue()->and($issue['disposition'] ?? null)->toBe(
+                'genuine_drift',
+            )->and($issue['restore_action'] ?? null)
+            ->not->toBeNull()->and($issue['code'] ?? null)->toBe($key)->and(
+                $report['summary']['dispositions']['genuine_drift'] ?? null,
+            )->toBeGreaterThanOrEqual(1);
     })->with([
         'restart policy' => [
             'process.restart_policy_mismatch',

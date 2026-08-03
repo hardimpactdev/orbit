@@ -21,9 +21,21 @@ final class ProxyDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::genuine('proxy.agent_tool_route_mismatch', 'proxy', 'restore_proxy_agent_tool_route_mismatch'),
             self::invalid('proxy.backend_node_invalid', 'proxy'),
             self::genuine('proxy.agent_tool_route_missing', 'proxy', 'restore_proxy_agent_tool_route_missing'),
-            self::genuine('proxy.analytics.public_route_missing', 'proxy', 'restore_proxy_analytics_public_route_missing'),
-            self::genuine('proxy.analytics.router_route_missing', 'proxy', 'restore_proxy_analytics_router_route_missing'),
-            self::genuine('proxy.analytics.router_route_orphaned', 'proxy', 'restore_proxy_analytics_router_route_orphaned'),
+            self::genuine(
+                'proxy.analytics.public_route_missing',
+                'proxy',
+                'restore_proxy_analytics_public_route_missing',
+            ),
+            self::genuine(
+                'proxy.analytics.router_route_missing',
+                'proxy',
+                'restore_proxy_analytics_router_route_missing',
+            ),
+            self::genuine(
+                'proxy.analytics.router_route_orphaned',
+                'proxy',
+                'restore_proxy_analytics_router_route_orphaned',
+            ),
             self::genuine('proxy.backend_route_mismatch', 'proxy', 'restore_proxy_backend_route_mismatch'),
             self::genuine('proxy.backend_route_missing', 'proxy', 'restore_proxy_backend_route_missing'),
             self::genuine('proxy.caddy_container_detached', 'proxy', 'restore_proxy_caddy_container_detached'),
@@ -55,9 +67,21 @@ final class ProxyDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::genuine('proxy.s3.router_route_orphaned', 'proxy', 'restore_proxy_s3_router_route_orphaned'),
             self::genuine('proxy.tls_mismatch', 'proxy', 'restore_proxy_tls_mismatch'),
             self::genuine('proxy.tls_missing', 'proxy', 'restore_proxy_tls_missing'),
-            self::genuine('proxy.websocket.public_route_missing', 'proxy', 'restore_proxy_websocket_public_route_missing'),
-            self::genuine('proxy.websocket.router_route_missing', 'proxy', 'restore_proxy_websocket_router_route_missing'),
-            self::genuine('proxy.websocket.router_route_orphaned', 'proxy', 'restore_proxy_websocket_router_route_orphaned'),
+            self::genuine(
+                'proxy.websocket.public_route_missing',
+                'proxy',
+                'restore_proxy_websocket_public_route_missing',
+            ),
+            self::genuine(
+                'proxy.websocket.router_route_missing',
+                'proxy',
+                'restore_proxy_websocket_router_route_missing',
+            ),
+            self::genuine(
+                'proxy.websocket.router_route_orphaned',
+                'proxy',
+                'restore_proxy_websocket_router_route_orphaned',
+            ),
         ];
     }
 }

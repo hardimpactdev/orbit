@@ -13,7 +13,7 @@ namespace App\Services\Doctor;
  */
 final class DoctorRestoreConvergence
 {
-    public const MAX_PASSES = 8;
+    public const int MAX_PASSES = 8;
 
     /**
      * @param  callable(): array{issues?: list<array<string, mixed>>}  $probe
@@ -105,13 +105,14 @@ final class DoctorRestoreConvergence
      */
     private function passMadeProgress(array $actions): bool
     {
-        foreach ($actions as $action) {
-            if (in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(
+            $actions,
+            static fn (array $action): bool => in_array(
+                $action['status'] ?? null,
+                ['completed', 'created', 'updated'],
+                true,
+            ),
+        );
     }
 
     /**
@@ -121,10 +122,6 @@ final class DoctorRestoreConvergence
     private function issues(array $probe): array
     {
         $issues = $probe['issues'] ?? [];
-
-        if (! is_array($issues)) {
-            return [];
-        }
 
         return array_values(array_filter($issues, is_array(...)));
     }
