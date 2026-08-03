@@ -13,7 +13,6 @@ use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Orbit\Core\Http\JsonEnvelope;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
@@ -222,19 +221,6 @@ function polyscopeWorkspaceDriverExceptionBlob(WorkspaceCreateFailed $exception)
         'error_code' => $exception->errorCode,
         'meta' => $exception->meta,
     ], JSON_THROW_ON_ERROR);
-}
-
-/**
- * @return list<object>
- */
-function polyscopeWorkspaceDriverLocalExecutorActivityRows(): array
-{
-    return DB::table('activity_log')
-        ->where('log_name', 'api')
-        ->whereIn('event', ['agent_push.dispatching', 'agent_push.completed'])
-        ->orderBy('id')
-        ->get()
-        ->all();
 }
 
 final class PolyscopeWorkspaceDriverTransport implements RemoteExecutor

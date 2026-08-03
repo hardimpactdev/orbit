@@ -78,6 +78,45 @@ it('does not force remote host for unsaved non-gateway nodes without querying ro
     }
 });
 
+it('exposes containerized gateway runtime detection for shared host-boundary callers', function (): void {
+    $previousExposure = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+    $previousHost = getenv('ORBIT_HOST_PATH');
+    $previousSource = getenv('ORBIT_SOURCE_PATH');
+    putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+    putenv('ORBIT_HOST_PATH');
+    putenv('ORBIT_SOURCE_PATH');
+
+    try {
+        expect(GatewayHostExecution::isContainerizedGatewayRuntime())->toBeFalse();
+
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        expect(GatewayHostExecution::isContainerizedGatewayRuntime())->toBeTrue();
+
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        putenv('ORBIT_HOST_PATH=/mnt/orbit-host');
+        expect(GatewayHostExecution::isContainerizedGatewayRuntime())->toBeTrue();
+
+        putenv('ORBIT_HOST_PATH');
+        putenv('ORBIT_SOURCE_PATH=/opt/orbit');
+        expect(GatewayHostExecution::isContainerizedGatewayRuntime())->toBeTrue();
+
+        putenv('ORBIT_SOURCE_PATH=/srv/orbit');
+        expect(GatewayHostExecution::isContainerizedGatewayRuntime())->toBeFalse();
+    } finally {
+        foreach ([
+            'ORBIT_GATEWAY_EXPOSURE_MODE' => $previousExposure,
+            'ORBIT_HOST_PATH' => $previousHost,
+            'ORBIT_SOURCE_PATH' => $previousSource,
+        ] as $key => $value) {
+            if ($value === false) {
+                putenv($key);
+            } else {
+                putenv("{$key}={$value}");
+            }
+        }
+    }
+});
+
 it('does not force remote host when the gateway runtime is not containerized', function (): void {
     $previousExposure = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
     $previousHost = getenv('ORBIT_HOST_PATH');

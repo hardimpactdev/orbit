@@ -55,13 +55,17 @@ command does not prompt.
 - Return entries newest first.
 - Apply `project`, `node`, `effect`, and `correlation` filters against recorded
   activity relationships, not live node or project probes.
-- Exclude internal backend transport activity by default. Current Agent-push
-  rows use channel `api`, types `agent_push.dispatching` and
-  `agent_push.completed`, and `properties.lane = internal` with
-  `properties.transport = agent_push`. Bootstrap/provisioning SSH rows use
-  channel `api`, `ssh_bootstrap.*` types, `properties.lane = internal`, and
-  `properties.transport = ssh_bootstrap`. Effect filters alone must not surface
-  these rows; `include_internal=true` does.
+- Exclude internal backend transport activity by default. Current internal
+  rows use channel `api` and `properties.lane = internal`:
+  - `RemoteLocalExecutor` `{transport}.dispatching` / `{transport}.completed`
+    for `transport` in `agent_push`, `gateway_local`, and `force_remote_host`
+    with matching `properties.transport`
+  - interleaved shell audits from substrate executors: `gateway_local.run` /
+    `gateway_local.start` and `ssh_bootstrap.run` / `ssh_bootstrap.start`
+    (`run`/`start` are shell rows, not the RemoteLocalExecutor pair)
+  - bootstrap/provisioning SSH rows with `properties.transport = ssh_bootstrap`
+  Effect filters alone must not surface these rows; `include_internal=true`
+  does.
 - Return every entry through the canonical Activity DTO in
   [`activity-concepts.md`](../../activity-concepts.md). `effect` is a top-level
   DTO field; `properties` contains only type-specific audit data.

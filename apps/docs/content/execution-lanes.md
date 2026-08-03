@@ -150,12 +150,19 @@ Operation tokens are signed with the gateway's dedicated operation-token key,
 carry a key id for rotation, bind the exact per-attempt operation-run id, target
 node, command, and
 canonical hash of the dispatched `argv`, `cwd`, environment, and input, and are
-checked for not-before/expiry before use. Verification consumes the
-corresponding operation-run row; a second verification for the same attempt id
-returns a distinct already-dispatched denial instead of authorizing another
-node-local execution. The row's `operation_id` remains the logical grouping key
-for retries or concurrent fan-out that share caller metadata; consuming one
-attempt never consumes sibling rows in that logical group.
+checked for not-before/expiry before use. The bound environment is the shared
+allowlisted set defined by core `OperationTokenEnvironment`
+(`APP_KEY`, `HOME`, `ORBIT_BIN_PATH`, `ORBIT_CONFIG_PATH`,
+`ORBIT_INSTALL_METADATA_PATH`, `ORBIT_WG_EASY_DB_PATH`). Gateway minting and CLI
+`OperationTokenGuard` verification both filter through that helper so the
+minted hash matches the verification reconstruction. `force_remote_host` further
+collapses the bound environment to `HOME` only and unsets the other allowlisted
+keys on the host process. Verification consumes the corresponding operation-run
+row; a second verification for the same attempt id returns a distinct
+already-dispatched denial instead of authorizing another node-local execution.
+The row's `operation_id` remains the logical grouping key for retries or
+concurrent fan-out that share caller metadata; consuming one attempt never
+consumes sibling rows in that logical group.
 
 Gateway API requests normally authenticate by WireGuard peer identity. The
 `/api/internal-executor/token/verify` endpoint has one scoped exception for
@@ -246,16 +253,41 @@ command, and token without spending the single-use verify token twice.
 
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
 gateway-owned internal activity records on the canonical `api` channel with
-`properties.lane = internal` and `properties.transport = local_executor`:
+`properties.lane = internal` and `properties.transport` set to the intended
+audit lane (gateway role + normalized `force_remote_host`, before selector
+execution). Selector failure still records a dispatching/completed pair on that
+intended lane.
 
-- `local_executor.dispatching` before transport dispatch, after command
-  validation and token minting. It records the operation id,
+| Intended lane | `properties.transport` | Event types |
+| --- | --- | --- |
+| Agent push | `agent_push` | `agent_push.dispatching`, `agent_push.completed` |
+| Gateway container-local | `gateway_local` | `gateway_local.dispatching`, `gateway_local.completed` |
+| Gateway host boundary (`force_remote_host`) | `force_remote_host` | `force_remote_host.dispatching`, `force_remote_host.completed` |
+
+- `{transport}.dispatching` after command validation and token minting, and
+  before transport selection/execution. It records the operation id,
   target node id and name, internal command name, scalar arguments/options, and
   the `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
-- `local_executor.completed` after the transport returns or throws. It records
-  the same operation id, target node, command name, success/failure status, exit
-  code when available, duration, and stdout/stderr summaries capped at 4 KiB
-  with a `[truncated]` suffix.
+- `{transport}.completed` after the transport returns or throws (including
+  selector unavailability). It records the same operation id, target node,
+  command name, success/failure status, exit code when available, duration, and
+  stdout/stderr summaries capped at 4 KiB with a `[truncated]` suffix.
+
+Shell audit rows from substrate executors may interleave between that pair.
+They are separate executor substrate records (same channel,
+`properties.lane = internal`) and are not the RemoteLocalExecutor
+dispatching/completed pair:
+
+- gateway container-local execution: `gateway_local.dispatching` →
+  `gateway_local.run` / `gateway_local.start` (shell audit from
+  `RemoteOrbitGatewayExecutor`) → `gateway_local.completed`
+- force host boundary: `force_remote_host.dispatching` → `ssh_bootstrap.run` /
+  `ssh_bootstrap.start` (shell audit from `RemoteHostExecutor`) →
+  `force_remote_host.completed`
+
+The shared `gateway_local` prefix on shell `run`/`start` rows is intentional and
+unambiguous for operators: exclusion is `properties.lane = internal`, not event
+name alone. No consumer filters those intermediate event names as the lane pair.
 
 `RemoteLocalExecutor::streamInternal()` uses the same dispatch/completion
 activity shape for approved raw streams, but it does not buffer streamed payload

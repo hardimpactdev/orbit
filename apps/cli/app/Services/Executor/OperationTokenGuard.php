@@ -9,11 +9,11 @@ use App\Services\GatewayApiClient;
 use Closure;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenEnvironment;
 use Orbit\Core\Security\TrustedExecutionContext;
 use SensitiveParameter;
 use Throwable;
 
-/** @mago-expect lint:kan-defect */
 final readonly class OperationTokenGuard
 {
     public function __construct(
@@ -180,25 +180,7 @@ final readonly class OperationTokenGuard
      */
     private function verificationEnvironment(): array
     {
-        $environment = [];
-
-        foreach ([
-            'APP_KEY',
-            'HOME',
-            'ORBIT_CONFIG_PATH',
-            'ORBIT_INSTALL_METADATA_PATH',
-            'ORBIT_WG_EASY_DB_PATH',
-        ] as $key) {
-            $value = getenv($key);
-
-            if (! is_string($value) || $value === '') {
-                continue;
-            }
-
-            $environment[$key] = $value;
-        }
-
-        return $environment;
+        return OperationTokenEnvironment::fromProcess();
     }
 
     private function agentPushAlreadyAuthorized(
