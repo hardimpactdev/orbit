@@ -1,0 +1,30 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T10:02:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-drift-process-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-120228-codex-drift-process-hardening",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-drift-hardening-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T095612Z-6c14dab744c2.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-drift-hardening-proof.txt": "f7b6917acb8fc89ff3c979b52e5a641a31405e14dceba66b7b8742f3cd85e887",
+        "loop.md": "ebb4da038ab3c834d3493791d8b44dc4e1d0e85ce6af3a6201a57e7113a6ee54",
+        "quality-gates/quality-check-2026-08-03T095612Z-6c14dab744c2.json": "3199d14f18271469644b0e024aa1793fcca3b71b4400291a4ce597b58beafcfa"
+    },
+    "slug": "codex-drift-process-hardening",
+    "requested_slug": "codex-drift-process-hardening",
+    "compatible_slugs": [
+        "codex-drift-process-hardening"
+    ],
+    "branch": "codex/drift-process-hardening",
+    "candidate_commit": "66856b245165f4f7969c6a4ae3d59cc079b30bc2",
+    "accepted_feature_tip": "66856b245165f4f7969c6a4ae3d59cc079b30bc2",
+    "accepted_main_tip": "d4f18bfedb86d12c841f141ce61cdccd64188888",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

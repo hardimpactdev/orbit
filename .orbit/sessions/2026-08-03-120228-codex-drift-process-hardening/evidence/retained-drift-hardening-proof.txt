@@ -1,0 +1,1299 @@
+Retained drift-hardening proof transcript
+started_at_utc=2026-08-03T08:40:30Z
+feature_tip=551b8b0423a846e0572f288fd92a5677b0696634
+topology_id=dev-4e72f3
+topology_kind=operator_gateway_agent
+incus_host=beast
+instances.operator=orbit-e2e-dev-4e72f3-operator
+instances.gateway=orbit-e2e-dev-4e72f3-gateway
+instances.agent=orbit-e2e-dev-4e72f3-agent
+checkout_path=/home/orbit/orbit-run
+
+=== 1) operator launcher identity + version --local --json ===
+=== [operator/orbit-e2e-dev-4e72f3-operator] command -v orbit; ls -la "$(command -v orbit)" 2>/dev/null; readlink -f "$(command -v orbit)" 2>/dev/null; ls -la apps/cli/orbit 2>/dev/null; orbit --version --local --json ===
+/home/orbit/.local/bin/orbit
+lrwxrwxrwx 1 orbit orbit 31 Aug  3 08:40 /home/orbit/.local/bin/orbit -> /home/orbit/orbit-run/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+-rwxr-xr-x 1 ubuntu ubuntu 1404 Aug  3 07:23 apps/cli/orbit
+{"success":{"data":{"version":"0.1.190","latest_version":null,"update_available":false,"released_at":null,"installed_at":"2026-08-03T07:23:22+00:00"},"meta":[]}}
+
+=== 1b) gateway/agent launcher identity ===
+
+=== [gateway/orbit-e2e-dev-4e72f3-gateway] command -v orbit; readlink -f "$(command -v orbit)"; orbit --version --local --json ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+{"success":{"data":{"version":"0.1.190","latest_version":null,"update_available":false,"released_at":null,"installed_at":"2026-08-03T07:23:22+00:00"},"meta":[]}}
+
+=== [agent/orbit-e2e-dev-4e72f3-agent] command -v orbit; readlink -f "$(command -v orbit)"; orbit --version --local --json ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+{"success":{"data":{"version":"0.1.190","latest_version":null,"update_available":false,"released_at":null,"installed_at":"2026-08-03T07:23:22+00:00"},"meta":[]}}
+
+=== 2) doctor --all --json on operator (fleet) ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit doctor --all --json 2>&1 | head -c 200000 ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["node","tool","proxy","process","firewall_rule","schedule"],"node":null,"role":"fleet","self":false,"project":null,"workspace":null,"key":null,"targets":["agent-1","gateway"]},"summary":{"issues":19,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing required tool caddy.","detail":{"role":"agent","tool":"caddy"},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing the agent runtime user.","detail":{"role":"agent","component":"agent_user"},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.wireguard_peer_missing","code":"node.wireguard_peer_missing","kind":"missing","summary":"WireGuard peer for node agent-1 is missing.","detail":[],"restorable":false,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.public_ssh_deny","code":"node.security.public_ssh_deny","kind":"missing","summary":"Node agent-1 is missing protected public SSH deny rules.","detail":{"expected_families":["v4","v6"],"actual_families":[]},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sshd_config","code":"node.security.sshd_config","kind":"missing","summary":"Node agent-1 failed security check sshd_config.","detail":{"check":"sshd_config","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sysctl","code":"node.security.sysctl","kind":"missing","summary":"Node agent-1 failed security check sysctl.","detail":{"check":"sysctl","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.home_perms","code":"node.security.home_perms","kind":"divergent","summary":"Node agent-1 failed security check home_perms.","detail":{"check":"home_perms","observed":false},"restorable":true,"adoptable":false},{"family":"proxy","node":"agent-1","key":"proxy.caddy_container_missing","kind":"missing","summary":"Proxy runtime container orbit-caddy is missing on agent-1.","detail":{"container":"orbit-caddy","node":"agent-1"},"code":"proxy.caddy_container_missing","restorable":true,"adoptable":false},{"family":"proxy","node":"agent-1","key":"proxy.global_config_missing","kind":"missing","summary":"Global orbit-caddy config is missing on agent-1.","detail":{"node":"agent-1"},"code":"proxy.global_config_missing","restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.platform_record_mismatch","code":"node.platform_record_mismatch","kind":"divergent","summary":"Node platform record 'ubuntu' does not match local platform 'debian_12'.","detail":{"recorded":"ubuntu","observed":"debian_12"},"restorable":false,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.public_ssh_deny","code":"node.security.public_ssh_deny","kind":"missing","summary":"Node gateway is missing protected public SSH deny rules.","detail":{"expected_families":["v4","v6"],"actual_families":[]},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.sshd_config","code":"node.security.sshd_config","kind":"missing","summary":"Node gateway failed security check sshd_config.","detail":{"check":"sshd_config","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.sysctl","code":"node.security.sysctl","kind":"missing","summary":"Node gateway failed security check sysctl.","detail":{"check":"sysctl","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.home_perms","code":"node.security.home_perms","kind":"divergent","summary":"Node gateway failed security check home_perms.","detail":{"check":"home_perms","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.dns_mapping_mismatch","code":"node.dns_mapping_mismatch","kind":"divergent","summary":"Node-owned DNS orphan projection for gateway is missing or mismatched.","detail":{"node":"gateway","record_kind":"orphan","path":"/home/orbit/.config/orbit/dnsmasq.d/10-node-records.conf","expected":[],"actual":["address=/orbit.edge-1/10.6.0.7","address=/orbit.prod/10.6.0.5","address=/orbit.test/10.6.0.4","address=/test/10.6.0.4","local=/test/"]},"restorable":true,"adoptable":false},{"family":"proxy","node":"gateway","key":"proxy.caddy_container_missing","kind":"missing","summary":"Proxy runtime container orbit-caddy is missing on gateway.","detail":{"container":"orbit-caddy","node":"gateway"},"code":"proxy.caddy_container_missing","restorable":true,"adoptable":false},{"family":"proxy","node":"gateway","key":"proxy.global_config_missing","kind":"missing","summary":"Global orbit-caddy config is missing on gateway.","detail":{"node":"gateway"},"code":"proxy.global_config_missing","restorable":true,"adoptable":false},{"family":"schedule","node":"gateway","key":"schedule.runtime_backend_unavailable","kind":"missing","summary":"Gateway scheduler runtime backend is unavailable on node gateway.","detail":{"node":"gateway"},"code":"schedule.runtime_backend_unavailable","restorable":false,"adoptable":false},{"family":"schedule","node":"gateway","key":"schedule.runtime_hibernator_missing","kind":"missing","summary":"Orbit runtime hibernator daemon configuration is missing from gateway node gateway.","detail":{"node":"gateway"},"code":"schedule.runtime_hibernator_missing","restorable":false,"adoptable":false}],"actions":[],"nodes":[{"node":"agent-1","role":"agent","healthy":false,"families":["node","tool","proxy","process","firewall_rule"],"summary":{"issues":9,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0}},{"node":"gateway","role":"gateway","healthy":false,"families":["node","schedule","proxy","process","tool","firewall_rule"],"summary":{"issues":10,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0}}]}},"footer":"Doctor detected drift."}}}
+
+=== 2b) doctor summary extract: security posture codes present ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit doctor --node=gateway --json 2>&1 | python3 -c "
+import sys,json
+raw=sys.stdin.read()
+# stream-json may have event frames; find last JSON object with doctor
+objs=[]
+for line in raw.splitlines():
+    line=line.strip()
+    if not line.startswith(\"{\"): continue
+    try: objs.append(json.loads(line))
+    except: pass
+# whole stdout may be one object
+try: objs.append(json.loads(raw))
+except: pass
+found=False
+for o in objs:
+    d=o
+    # unwrap stream error/success
+    for path in [(\"data\",\"data\",\"doctor\"),(\"success\",\"data\",\"doctor\"),(\"data\",\"doctor\")]:
+        cur=o
+        ok=True
+        for p in path:
+            if isinstance(cur,dict) and p in cur: cur=cur[p]
+            else: ok=False; break
+        if ok and isinstance(cur,dict) and \"issues\" in cur:
+            d=cur; found=True; break
+    if found:
+        codes=[i.get(\"code\") or i.get(\"key\") for i in d.get(\"issues\",[])]
+        sec=[c for c in codes if c and \"security\" in str(c)]
+        print(json.dumps({\"healthy\":d.get(\"healthy\"),\"issue_count\":len(d.get(\"issues\",[])),\"security_issue_codes\":sec,\"all_codes\":codes}, indent=2))
+        break
+if not found:
+    print(\"could_not_parse_doctor_payload\")
+    print(raw[:2000])
+" ===
+could_not_parse_doctor_payload
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["node","schedule","proxy","process","tool","firewall_rule"],"node":"gateway","role":"gateway","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":10,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"node","node":"gateway","key":"node.platform_record_mismatch","code":"node.platform_record_mismatch","kind":"divergent","summary":"Node platform record 'ubuntu' does not match local platform 'debian_12'.","detail":{"recorded":"ubuntu","observed":"debian_12"},"restorable":false,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.public_ssh_deny","code":"node.security.public_ssh_deny","kind":"missing","summary":"Node gateway is missing protected public SSH deny rules.","detail":{"expected_families":["v4","v6"],"actual_families":[]},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.sshd_config","code":"node.security.sshd_config","kind":"missing","summary":"Node gateway failed security check sshd_config.","detail":{"check":"sshd_config","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.sysctl","code":"node.security.sysctl","kind":"missing","summary":"Node gateway failed security check sysctl.","detail":{"check":"sysctl","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.security.home_perms","code":"node.security.home_perms","kind":"divergent","summary":"Node gateway failed security check home_perms.","detail":{"check":"home_perms","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"gateway","key":"node.dns_mapping_mismatch","code":"node.dns_mapping_mismatch","kind":"divergent",
+
+=== 3) tool surface for OpenClaw ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit list --json 2>&1 | python3 -c "import sys,json,re; t=sys.stdin.read(); print(\"tool\" if \"tool\" in t.lower() else \"no-tool\"); print([line for line in t.splitlines() if \"tool\" in line.lower()][:40])" || true ===
+no-tool
+[]
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit help 2>&1 | rg -i "tool" | head -40 || orbit list 2>&1 | rg -i "tool|openclaw" | head -40 ===
+bash: line 1: rg: command not found
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit tool --help 2>&1 | head -80 || true ===
+Description:
+  List commands
+
+Usage:
+  list [options] [--] [<namespace>]
+
+Arguments:
+  namespace             The namespace name
+
+Options:
+      --raw             To output raw command list
+      --format=FORMAT   The output format (txt, xml, json, or md) [default: "txt"]
+      --short           To skip describing commands' arguments
+  -h, --help            Display help for the given command. When no command is given display help for the list command
+      --silent          Do not output any message
+  -q, --quiet           Only errors are displayed. All other output is suppressed
+  -V, --version         Display this application version
+      --ansi|--no-ansi  Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction  Do not ask any interactive question
+      --env[=ENV]       The environment the command should run under
+  -v|vv|vvv, --verbose  Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+Help:
+  The list command lists all commands:
+  
+    /home/orbit/orbit-run/apps/cli/orbit
+  
+  You can also display the commands for a specific namespace:
+  
+    /home/orbit/orbit-run/apps/cli/orbit test
+  
+  You can also output the information in other formats by using the --format option:
+  
+    /home/orbit/orbit-run/apps/cli/orbit --format=xml
+  
+  It's also possible to get raw list of commands (useful for embedding command runner):
+  
+    /home/orbit/orbit-run/apps/cli/orbit --raw
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit tool:install --help 2>&1 | head -100 || true ===
+Description:
+  Install a managed tool through the gateway.
+
+Usage:
+  tool:install [options] [--] [<tool>]
+
+Arguments:
+  tool                               Tool catalog name to install
+
+Options:
+      --instance[=INSTANCE]          Resolve target by instance selector
+      --node[=NODE]                  Resolve target by node
+      --tool-version[=TOOL-VERSION]  Version or version family to install
+      --user[=USER]                  Additional OS user to install a user-scoped CLI tool for (multiple values allowed)
+      --status[=STATUS]              Desired state after install (installed|running) [default: "installed"]
+      --with-process                 Also configure the related service process (default for service tools)
+      --no-process                   Install the capability only; do not configure the related service process
+      --json                         Output JSON
+      --stream-json                  Stream newline-delimited JSON progress frames
+  -h, --help                         Display help for the given command. When no command is given display help for the list command
+      --silent                       Do not output any message
+  -q, --quiet                        Only errors are displayed. All other output is suppressed
+  -V, --version                      Display this application version
+      --ansi|--no-ansi               Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction               Do not ask any interactive question
+      --env[=ENV]                    The environment the command should run under
+  -v|vv|vvv, --verbose               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit tool:list --json 2>&1 | head -c 50000 || true ===
+{"success":{"data":{"tools":[]},"meta":[]}}
+
+=== 2c) security-posture probe evidence (from doctor --all/--node=gateway) ===
+security_codes_observed:
+  - node.security.public_ssh_deny (gateway + agent-1)
+  - node.security.sshd_config
+  - node.security.sysctl
+  - node.security.home_perms
+note: doctor completed with drift_detected; security checks returned observed=false
+      (probe executed through gateway host-boundary path rather than hanging/failing transport).
+
+
+=== 3a) install openclaw on agent-1 with process ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction 2>&1 ===
+{"event":"error","data":{"exit_code":1,"message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","data":{"code":"tool.constraint_unsatisfied","message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","meta":{"tool":"openclaw","node":"agent-1","action":"install","constraint":"runtime_user","required":"agent","actual":"unverified","exit_code":1,"stderr":""},"footer":"Tool install failed"}}}
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit node:list --json 2>&1 | head -c 30000 ===
+{"success":{"data":{"nodes":[{"name":"agent-1","tld":"agent","host":"10.6.0.6","addresses":{"wireguard":"10.6.0.6"},"platform":"ubuntu","status":"active","roles":[{"role":"agent","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-03T08:40:02.000000Z"}]},{"name":"gateway","tld":"gateway","host":"10.6.0.2","addresses":{"wireguard":"10.6.0.2"},"platform":"ubuntu","status":"active","roles":[{"role":"gateway","status":"active","settings":[],"last_error":null,"converged_at":null},{"role":"router","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-03T08:39:21.000000Z"},{"role":"vpn","status":"active","settings":{"public_endpoint":"10.232.1.136","wireguard_cidr":"10.6.0.0/24","wireguard_port":51820,"dns_ip":"10.6.0.1"},"last_error":null,"converged_at":"2026-08-03T08:39:21.000000Z"}]},{"name":"operator-1","tld":"operator","host":"10.6.0.3","addresses":{"wireguard":"10.6.0.3"},"platform":"ubuntu","status":"active","roles":[]}]},"meta":[]}}
+
+=== [agent/orbit-e2e-dev-4e72f3-agent] id agent 2>&1; getent passwd agent 2>&1; ls -la /home/agent 2>&1 | head -20 ===
+id: 'agent': no such user
+ls: cannot access '/home/agent': No such file or directory
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit doctor --help 2>&1 | head -60 ===
+Description:
+  Check Orbit health and diagnose drift through the gateway.
+
+Usage:
+  doctor [options]
+
+Options:
+      --instance[=INSTANCE]    Limit to one instance
+      --workspace[=WORKSPACE]  Limit to one workspace
+      --node[=NODE]            Target node name
+      --self                   Limit to the calling node identity
+      --all                    Run across all eligible active role nodes
+      --family[=FAMILY]        Scope to one or more state families (multiple values allowed)
+      --key[=KEY]              Limit reported drift to one exact doctor issue key
+      --fix                    Enter resolution mode
+      --restore                Bulk restore gateway configuration to nodes
+      --adopt                  Bulk adopt node reality into gateway configuration
+      --dry-run                Preview bulk restore or adopt actions without applying changes
+      --json                   Output JSON
+      --stream-json            Stream progress frames as newline-delimited JSON
+  -h, --help                   Display help for the given command. When no command is given display help for the list command
+      --silent                 Do not output any message
+  -q, --quiet                  Only errors are displayed. All other output is suppressed
+  -V, --version                Display this application version
+      --ansi|--no-ansi         Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction         Do not ask any interactive question
+      --env[=ENV]              The environment the command should run under
+  -v|vv|vvv, --verbose         Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit doctor --node=agent-1 --fix --json --no-interaction 2>&1 | head -c 80000 ===
+{"error":{"code":"validation_failed","message":"doctor --fix cannot run with --json because it requires interactive prompts.","meta":{"field":"fix"}}}
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit doctor --node=agent-1 --fix --no-interaction 2>&1 | head -c 100000 ===
+validation_failed: doctor --fix requires an interactive terminal.
+
+=== [agent/orbit-e2e-dev-4e72f3-agent] getent passwd agent 2>&1; ls /home/agent 2>&1 | head -5 ===
+ls: cannot access '/home/agent': No such file or directory
+
+=== 3b) doctor --fix with TTY for agent-1 (public restore path) ===
+validation_failed: doctor --fix requires an interactive terminal.
+Shared connection to 192.168.6.20 closed.
+
+=== 3c) agent user after doctor fix ===
+ls: cannot access '/home/agent': No such file or directory
+
+=== 3) OpenClaw managed-tool proof: BLOCKED (topology preconditions) ===
+public_surface: orbit tool:install openclaw --node=agent-1 --with-process --json
+result: tool.constraint_unsatisfied runtime_user required=agent actual=unverified
+agent_host: id agent => no such user; /home/agent missing
+doctor_fix: requires interactive TTY; non-interactive and forced-ssh-tty still rejected
+collision_port_8081: not used (never tested)
+conclusion: OpenClaw install/config/reload lifecycle not exercised on this retained topology;
+rely on full-gate unit/feature tests for ManagedToolShell/OpenClaw token whitespace + port 18789.
+
+
+=== 4) persistence redaction after safe remote doctor ops ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit activity:list --include-internal --limit=20 --json 2>&1 | head -c 200000 ===
+{"success":{"data":{"activities":[{"id":257,"occurred_at":"2026-08-03T08:41:43+00:00","correlation_id":"cec25c7c-c908-43db-8704-c4df07deb597","type":"api:GET /nodes","effect":"read","subject":null,"actor":{"node":"operator-1"},"command":null,"description":"api:GET /nodes","properties":{"client":"api","method":"GET","path":"api/nodes","served_by_name":"gateway","served_by_wg_ip":"10.6.0.2"},"channel":"api"},{"id":256,"occurred_at":"2026-08-03T08:41:34+00:00","correlation_id":null,"type":"agent_push.completed","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation failed","properties":{"lane":"internal","transport":"agent_push","status":"failed","operation_id":"tool.preflight","target_node_id":4,"target_node_name":"agent-1","exit_code":1,"stdout_summary":"{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}","stderr_summary":"","duration_ms":872},"channel":"api"},{"id":255,"occurred_at":"2026-08-03T08:41:33+00:00","correlation_id":null,"type":"agent_push.dispatching","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation dispatching","properties":{"lane":"internal","transport":"agent_push","status":"dispatching","operation_id":"tool.preflight","target_node_id":4,"target_node_name":"agent-1","arguments":[],"command_options":[],"command_line":"'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":254,"occurred_at":"2026-08-03T08:41:33+00:00","correlation_id":"57d12252-71d1-4594-a4f1-0d3839a2b849","type":"api:POST /tools/{tool}/install","effect":"write","subject":null,"actor":{"node":"operator-1"},"command":null,"description":"api:POST /tools/{tool}/install","properties":{"client":"api","method":"POST","path":"api/tools/openclaw/install","served_by_name":"gateway","served_by_wg_ip":"10.6.0.2"},"channel":"api"},{"id":253,"occurred_at":"2026-08-03T08:41:23+00:00","correlation_id":"7322081c-468f-453a-9977-29f191f3ff98","type":"api:GET /tools","effect":"read","subject":null,"actor":{"node":"operator-1"},"command":null,"description":"api:GET /tools","properties":{"client":"api","method":"GET","path":"api/tools","served_by_name":"gateway","served_by_wg_ip":"10.6.0.2"},"channel":"api"},{"id":252,"occurred_at":"2026-08-03T08:41:17+00:00","correlation_id":null,"type":"force_remote_host.completed","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation succeeded","properties":{"lane":"internal","transport":"force_remote_host","status":"succeeded","operation_id":"tool.probe","target_node_id":1,"target_node_name":"gateway","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"0\\t\\n\",\"stderr\":\"\",\"duration_ms\":36},\"meta\":[]}}\n","stderr_summary":"","duration_ms":1823},"channel":"api"},{"id":251,"occurred_at":"2026-08-03T08:41:17+00:00","correlation_id":null,"type":"ssh_bootstrap.run","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":null,"description":"ssh_bootstrap.run","properties":{"lane":"internal","category":"remote_execution","transport":"ssh_bootstrap","node":"gateway","script_sha256":"369100c9037f477a8fde881399554abce8f5eeea8a8e129e07a985e08a4a3313","input_sha256":"a157703309dfe2278eadf4ee5d7ecbf27bd9f8fd381e058e787273541ac9064a","metadata_keys":["ORBIT_OPERATION_ID"],"cwd_set":true,"strict":false,"timeout":915,"exit_code":0,"duration_ms":1823,"status":"succeeded"},"channel":"api"},{"id":250,"occurred_at":"2026-08-03T08:41:16+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"tool.probe","target_node_id":1,"target_node_name":"gateway","arguments":[],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":249,"occurred_at":"2026-08-03T08:41:16+00:00","correlation_id":null,"type":"force_remote_host.completed","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation succeeded","properties":{"lane":"internal","transport":"force_remote_host","status":"succeeded","operation_id":"tool.probe-many","target_node_id":1,"target_node_name":"gateway","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":19},\"meta\":[]}}\n","stderr_summary":"","duration_ms":1264},"channel":"api"},{"id":248,"occurred_at":"2026-08-03T08:41:16+00:00","correlation_id":null,"type":"ssh_bootstrap.run","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":null,"description":"ssh_bootstrap.run","properties":{"lane":"internal","category":"remote_execution","transport":"ssh_bootstrap","node":"gateway","script_sha256":"3c1bada8fb79c6be559e4250bd247308cd857fe23d8a7fdd436d34c5349b1817","input_sha256":"0ab9634148ccf82b2d2c0110c3db7ab6c704e39e5173e43444787d7612ebd22f","metadata_keys":["ORBIT_OPERATION_ID"],"cwd_set":true,"strict":false,"timeout":915,"exit_code":0,"duration_ms":1264,"status":"succeeded"},"channel":"api"},{"id":247,"occurred_at":"2026-08-03T08:41:14+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"tool.probe-many","target_node_id":1,"target_node_name":"gateway","arguments":[],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":246,"occurred_at":"2026-08-03T08:41:14+00:00","correlation_id":null,"type":"force_remote_host.completed","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation succeeded","properties":{"lane":"internal","transport":"force_remote_host","status":"succeeded","operation_id":"tool.probe","target_node_id":1,"target_node_name":"gateway","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"available\\tfalse\\tfalse\\tfalse\\n\",\"stderr\":\"\",\"duration_ms\":59},\"meta\":[]}}\n","stderr_summary":"","duration_ms":1131},"channel":"api"},{"id":245,"occurred_at":"2026-08-03T08:41:14+00:00","correlation_id":null,"type":"ssh_bootstrap.run","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":null,"description":"ssh_bootstrap.run","properties":{"lane":"internal","category":"remote_execution","transport":"ssh_bootstrap","node":"gateway","script_sha256":"1e1b18d4583cc0f05e98c75eff64f328b67481a3c4bee3c131148ac140968c5e","input_sha256":"f04653180f18cbbc6fafe00590f85365f130155856e39c28b670b25c6905d718","metadata_keys":["ORBIT_OPERATION_ID"],"cwd_set":true,"strict":false,"timeout":915,"exit_code":0,"duration_ms":1131,"status":"succeeded"},"channel":"api"},{"id":244,"occurred_at":"2026-08-03T08:41:13+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:tool:run-script","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"tool.probe","target_node_id":1,"target_node_name":"gateway","arguments":[],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":243,"occurred_at":"2026-08-03T08:41:13+00:00","correlation_id":null,"type":"force_remote_host.completed","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:app-runtime-containers:probe","description":"Force remote host operation succeeded","properties":{"lane":"internal","transport":"force_remote_host","status":"succeeded","operation_id":"process-runtime-containers.probe","target_node_id":1,"target_node_name":"gateway","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"status\":\"present\",\"containers\":[],\"error\":\"\",\"stdout\":\"orbit-container-scan:present\\n\"},\"meta\":[]}}\n","stderr_summary":"","duration_ms":1354},"channel":"api"},{"id":242,"occurred_at":"2026-08-03T08:41:13+00:00","correlation_id":null,"type":"ssh_bootstrap.run","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":null,"description":"ssh_bootstrap.run","properties":{"lane":"internal","category":"remote_execution","transport":"ssh_bootstrap","node":"gateway","script_sha256":"fb710e7991d710e5b95ce6d8cb48221a62413411e082b69a57822d0793fd1756","metadata_keys":["ORBIT_OPERATION_ID"],"cwd_set":true,"strict":true,"timeout":30,"exit_code":0,"duration_ms":1354,"status":"succeeded"},"channel":"api"},{"id":241,"occurred_at":"2026-08-03T08:41:12+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:app-runtime-containers:probe","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"process-runtime-containers.probe","target_node_id":1,"target_node_name":"gateway","arguments":[],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:app-runtime-containers:probe --operation-token=<redacted> --json"},"channel":"api"},{"id":240,"occurred_at":"2026-08-03T08:41:12+00:00","correlation_id":null,"type":"force_remote_host.completed","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:node-security-posture:probe","description":"Force remote host operation succeeded","properties":{"lane":"internal","transport":"force_remote_host","status":"succeeded","operation_id":"node-security-posture.probe","target_node_id":1,"target_node_name":"gateway","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"runtime_user\":true,\"sshd_config\":false,\"sshd_listen\":true,\"sysctl\":false,\"home_perms\":false},\"meta\":[]}}\n","stderr_summary":"","duration_ms":1170},"channel":"api"},{"id":239,"occurred_at":"2026-08-03T08:41:12+00:00","correlation_id":null,"type":"ssh_bootstrap.run","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":null,"description":"ssh_bootstrap.run","properties":{"lane":"internal","category":"remote_execution","transport":"ssh_bootstrap","node":"gateway","script_sha256":"aedb109a662e866f86c6ede1741a0a4db457d044c873899ea510c83e458f9b5c","metadata_keys":["ORBIT_OPERATION_ID"],"cwd_set":true,"strict":false,"timeout":30,"exit_code":0,"duration_ms":1170,"status":"succeeded"},"channel":"api"},{"id":238,"occurred_at":"2026-08-03T08:41:11+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:node-security-posture:probe","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"node-security-posture.probe","target_node_id":1,"target_node_name":"gateway","arguments":["orbit"],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:node-security-posture:probe 'orbit' --operation-token=<redacted> --json"},"channel":"api"}]},"meta":{"filters":{"project":null,"node":null,"effect":null,"correlation":null,"include_internal":true},"limit":20,"count":20,"has_more":true}}}
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit activity:list --help 2>&1 | head -50 ===
+Description:
+  List gateway activity history.
+
+Usage:
+  activity:list [options]
+
+Options:
+      --project[=PROJECT]          Filter by project
+      --node[=NODE]                Filter by node
+      --effect[=EFFECT]            Filter by effect (read|write|destructive)
+      --correlation[=CORRELATION]  Filter by correlation UUID
+      --include-internal           Include internal backend transport activity
+      --limit[=LIMIT]              Max rows to return [default: "25"]
+      --json                       
+  -h, --help                       Display help for the given command. When no command is given display help for the list command
+      --silent                     Do not output any message
+  -q, --quiet                      Only errors are displayed. All other output is suppressed
+  -V, --version                    Display this application version
+      --ansi|--no-ansi             Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction             Do not ask any interactive question
+      --env[=ENV]                  The environment the command should run under
+  -v|vv|vvv, --verbose             Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+=== 4b) synthetic marker scan of activity:list --include-internal --limit=50 ===
+
+=== [operator/orbit-e2e-dev-4e72f3-operator] orbit activity:show 238 --json 2>&1 | head -c 20000 ===
+{"success":{"data":{"activity":{"id":238,"occurred_at":"2026-08-03T08:41:11+00:00","correlation_id":null,"type":"force_remote_host.dispatching","effect":"write","subject":{"type":"node","name":"gateway"},"actor":null,"command":"internal:node-security-posture:probe","description":"Force remote host operation dispatching","properties":{"lane":"internal","transport":"force_remote_host","status":"dispatching","operation_id":"node-security-posture.probe","target_node_id":1,"target_node_name":"gateway","arguments":["orbit"],"command_options":[],"command_line":"'/usr/local/bin/orbit-cli' internal:node-security-posture:probe 'orbit' --operation-token=<redacted> --json"},"channel":"api"},"related":[]},"meta":{"related_count":0}}}
+
+=== proof_summary ===
+topology_id=dev-4e72f3
+kind=operator_gateway_agent
+host=beast
+checkout=/home/orbit/orbit-run
+launcher_identity=/home/orbit/.local/bin/orbit -> /home/orbit/orbit-run/bin/orbit (all roles)
+version_envelope=success.data.version=0.1.190 (operator/gateway/agent)
+doctor=completed drift_detected issues=19 fleet; gateway security posture probes executed via force_remote_host
+openclaw=blocked_precondition agent runtime_user missing
+redaction=operation-token=<redacted> present; no raw JWT shape in activity list sample
+ended_at_utc=2026-08-03T08:42:40Z
+
+
+=== 4c) activity redaction scan (retry) ===
+
+=== topology release ===
+> Composer\Config::disableProcessTimeout
+{"success":{"released":[{"id":"dev-4e72f3","reaped":["orbit-e2e-dev-4e72f3-operator","orbit-e2e-dev-4e72f3-gateway","orbit-e2e-dev-4e72f3-agent"],"dry_run":false}]}}
+ended_at_utc=2026-08-03T08:43:06Z
+
+=== 4d) redaction conclusions from captured activity payloads ===
+operation_token_redacted_marker_count=7
+raw_jwt_eyJ_count=0
+raw_operation_token_non_redacted=False
+force_remote_host_node_security_posture=True
+notes:
+- Public doctor/tool flows did not inject synthetic APP_KEY payloads into activity; APP_KEY key-shape redaction relies on full-gate Pest coverage.
+- Operation-token redaction is proven on live force_remote_host and agent_push dispatching command_line fields.
+- No live fleet was touched; topology was disposable Incus only.
+
+=== topology_release ===
+composer e2e:incus -- --stop --id=dev-4e72f3 => success (instances reaped); second stop not_found confirms cleanup
+evidence_path=.orbit/evidence/retained-drift-hardening-proof.txt
+36944
+
+============================================================
+Retained final-hop proof (OpenClaw restore path)
+started_at_utc=2026-08-03T08:48:07Z
+feature_tip=551b8b0423a846e0572f288fd92a5677b0696634
+topology_id=dev-bc5d29
+topology_kind=operator_gateway_agent
+incus_host=beast
+instances.operator=orbit-e2e-dev-bc5d29-operator
+instances.gateway=orbit-e2e-dev-bc5d29-gateway
+instances.agent=orbit-e2e-dev-bc5d29-agent
+checkout_path=/home/orbit/orbit-run
+
+=== [operator] orbit doctor --restore --node=agent-1 --family=node --key=node.role_baseline_mismatch --dry-run --json 2>&1 | head -c 120000 ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":false,"mode":"restore","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.role_baseline_mismatch"},"summary":{"issues":2,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":2},"issues":[{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing required tool caddy.","detail":{"role":"agent","tool":"caddy"},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing the agent runtime user.","detail":{"role":"agent","component":"agent_user"},"restorable":true,"adoptable":false}],"actions":[{"family":"node","node":"agent-1","code":"node.role_baseline_mismatch","key":"node.role_baseline_mismatch","mode":"restore","status":"planned","summary":"Would restore node.role_baseline_mismatch.","details":{"role":"agent","tool":"caddy","dry_run":true}},{"family":"node","node":"agent-1","code":"node.role_baseline_mismatch","key":"node.role_baseline_mismatch","mode":"restore","status":"planned","summary":"Would restore node.role_baseline_mismatch.","details":{"role":"agent","component":"agent_user","dry_run":true}}],"dry_run":true}}}}
+
+=== [operator] orbit doctor --restore --node=agent-1 --family=node --key=node.role_baseline_mismatch --json 2>&1 | head -c 120000 ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"restore","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.role_baseline_mismatch"},"summary":{"issues":0,"fixed":1,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[{"family":"node","node":"agent-1","code":"node.role_baseline_mismatch","key":"node.role_baseline_mismatch","mode":"restore","status":"completed","summary":"Role baseline for 'agent' on node agent-1 is missing required tool caddy.","details":{"role":"agent","tool":"caddy"}}]}}}}
+
+=== [agent] id agent; getent passwd agent; ls -ld /home/agent; ls -la /home/agent | head -20 ===
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+agent:x:1003:1003::/home/agent:/bin/bash
+drwxr-x--- 3 agent agent 4096 Aug  3 08:48 /home/agent
+ls: cannot open directory '/home/agent': Permission denied
+
+=== [operator] orbit doctor --node=agent-1 --family=node --json 2>&1 | head -c 120000 ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":5,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"node","node":"agent-1","key":"node.wireguard_peer_missing","code":"node.wireguard_peer_missing","kind":"missing","summary":"WireGuard peer for node agent-1 is missing.","detail":[],"restorable":false,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.public_ssh_deny","code":"node.security.public_ssh_deny","kind":"missing","summary":"Node agent-1 is missing protected public SSH deny rules.","detail":{"expected_families":["v4","v6"],"actual_families":[]},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sshd_config","code":"node.security.sshd_config","kind":"missing","summary":"Node agent-1 failed security check sshd_config.","detail":{"check":"sshd_config","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sysctl","code":"node.security.sysctl","kind":"missing","summary":"Node agent-1 failed security check sysctl.","detail":{"check":"sysctl","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.home_perms","code":"node.security.home_perms","kind":"divergent","summary":"Node agent-1 failed security check home_perms.","detail":{"check":"home_perms","observed":false},"restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+
+=== 2 summary: agent_user restored ===
+restore_fixed=1 role_baseline_mismatch (caddy+agent_user)
+agent_user_present=yes (uid=1003, /home/agent exists)
+verify_agent_user_issue_gone=yes (not in subsequent node-family issues)
+
+=== 3) tool:install openclaw ===
+
+=== [operator] orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction 2>&1 ===
+{"event":"error","data":{"exit_code":1,"message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","data":{"code":"tool.constraint_unsatisfied","message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","meta":{"tool":"openclaw","node":"agent-1","action":"install","constraint":"runtime_user","required":"agent","actual":"unverified","exit_code":1,"stderr":""},"footer":"Tool install failed"}}}
+
+=== 3a) diagnose runtime_user preflight after agent user exists ===
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+agent:x:1003:1003::/home/agent:/bin/bash
+drwxr-x--- 3 agent agent 4096 Aug  3 08:48 /home/agent
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+{"success":{"data":{"version":"0.1.190","latest_version":null,"update_available":false,"released_at":null,"installed_at":"2026-08-03T07:23:22+00:00"},"meta":[]}}
+=== recent tool/preflight related activities ===
+{
+  "id": 242,
+  "type": "agent_push.completed",
+  "command": "internal:tool:run-script",
+  "status": "failed",
+  "operation_id": "tool.preflight",
+  "transport": "agent_push",
+  "exit_code": 1,
+  "command_line": null,
+  "stdout_summary": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}",
+  "stderr_summary": ""
+}
+{
+  "id": 241,
+  "type": "agent_push.dispatching",
+  "command": "internal:tool:run-script",
+  "status": "dispatching",
+  "operation_id": "tool.preflight",
+  "transport": "agent_push",
+  "exit_code": null,
+  "command_line": "'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json",
+  "stdout_summary": "",
+  "stderr_summary": ""
+}
+{
+  "id": 240,
+  "type": "api:POST /tools/{tool}/install",
+  "command": "",
+  "status": null,
+  "operation_id": null,
+  "transport": null,
+  "exit_code": null,
+  "command_line": null,
+  "stdout_summary": "",
+  "stderr_summary": ""
+}
+{
+  "id": 235,
+  "type": "agent_push.completed",
+  "command": "internal:agent-runtime:probe",
+  "status": "succeeded",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": 0,
+  "command_line": null,
+  "stdout_summary": "{\"success\":{\"data\":{\"runtime_user\":true,\"orbit_cli\":true,\"runtime_user_exit_code\":0,\"orbit_cli_exit_code\":0},\"meta\":[]}}",
+  "stderr_summary": ""
+}
+{
+  "id": 234,
+  "type": "agent_push.dispatching",
+  "command": "internal:agent-runtime:probe",
+  "status": "dispatching",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": null,
+  "command_line": "'/home/orbit/.local/bin/orbit' internal:agent-runtime:probe --operation-token=<redacted> --json",
+  "stdout_summary": "",
+  "stderr_summary": ""
+}
+{
+  "id": 228,
+  "type": "agent_push.completed",
+  "command": "internal:agent-runtime:probe",
+  "status": "succeeded",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": 0,
+  "command_line": null,
+  "stdout_summary": "{\"success\":{\"data\":{\"runtime_user\":true,\"orbit_cli\":true,\"runtime_user_exit_code\":0,\"orbit_cli_exit_code\":0},\"meta\":[]}}",
+  "stderr_summary": ""
+}
+{
+  "id": 227,
+  "type": "agent_push.dispatching",
+  "command": "internal:agent-runtime:probe",
+  "status": "dispatching",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": null,
+  "command_line": "'/home/orbit/.local/bin/orbit' internal:agent-runtime:probe --operation-token=<redacted> --json",
+  "stdout_summary": "",
+  "stderr_summary": ""
+}
+{
+  "id": 226,
+  "type": "agent_push.completed",
+  "command": "internal:agent-runtime:probe",
+  "status": "succeeded",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": 0,
+  "command_line": null,
+  "stdout_summary": "{\"success\":{\"data\":{\"runtime_user\":true,\"orbit_cli\":true,\"runtime_user_exit_code\":0,\"orbit_cli_exit_code\":0},\"meta\":[]}}",
+  "stderr_summary": ""
+}
+{
+  "id": 225,
+  "type": "agent_push.dispatching",
+  "command": "internal:agent-runtime:probe",
+  "status": "dispatching",
+  "operation_id": "node-agent-runtime.probe",
+  "transport": "agent_push",
+  "exit_code": null,
+  "command_line": "'/home/orbit/.local/bin/orbit' internal:agent-runtime:probe --operation-token=<redacted> --json",
+  "stdout_summary": "",
+  "stderr_summary": ""
+}
+
+=== 3b) tool preflight failure detail (activity 242) ===
+{
+  "id": 242,
+  "type": "agent_push.completed",
+  "command": "internal:tool:run-script",
+  "transport": "agent_push",
+  "status": "failed",
+  "operation_id": "tool.preflight",
+  "exit_code": 1,
+  "stdout_summary": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}",
+  "stderr_summary": "",
+  "command_line": null
+}
+
+=== 5) activity redaction scan (limit 30) ===
+{
+  "activity_count": 20,
+  "operation_token_redacted_count": 8,
+  "raw_jwt_eyJ_count": 0,
+  "raw_operation_token_non_redacted": false
+}
+
+=== final_hop_conclusions ===
+topology_id=dev-bc5d29
+host=beast
+feature_tip=551b8b0423a846e0572f288fd92a5677b0696634
+status=PARTIAL_BLOCKED_RETAINED
+
+step2_doctor_restore:
+  dry_run: planned 2 actions (caddy tool + agent_user)
+  restore: healthy=true for key scope, fixed=1, issues=[]
+  agent_user: present (uid=1003, home=/home/agent)
+  verify: node.role_baseline_mismatch agent_user GONE (other unrelated node security drift remains)
+
+step3_openclaw_install:
+  command: orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction
+  result: tool.constraint_unsatisfied runtime_user required=agent actual=unverified
+  root_cause_from_activity: agent_push internal:tool:run-script tool.preflight failed
+    stdout_summary error: validation_failed "Tool run payload is invalid."
+    exit_code=1 -> mapped to actual=unverified (not missing; agent user exists)
+  NOT an external installer/network failure; preflight script payload validation failed before install script
+  steps 3 post-install / 4 token reconfigure NOT executed
+
+step5_redaction:
+  operation-token=<redacted> present on dispatching lines; no JWT eyJ shapes in sample
+
+topology_release: NOT released (retained for diagnosis per failure policy)
+release_command_when_done: composer e2e:incus -- --stop --id=dev-bc5d29
+ended_at_utc=2026-08-03T08:49:55Z
+
+orbit-e2e-dev-bc5d29-agent,RUNNING
+orbit-e2e-dev-bc5d29-gateway,RUNNING
+orbit-e2e-dev-bc5d29-operator,RUNNING
+
+=== DEBUG reproduce tool:install openclaw ===
+{"event":"error","data":{"exit_code":1,"message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","data":{"code":"tool.constraint_unsatisfied","message":"Tool 'openclaw' install preflight failed on node 'agent-1': runtime_user constraint is not satisfied.","meta":{"tool":"openclaw","node":"agent-1","action":"install","constraint":"runtime_user","required":"agent","actual":"unverified","exit_code":1,"stderr":""},"footer":"Tool install failed"}}}
+
+============================================================
+systematic-debugging Phase 1/2: tool.preflight payload contract break
+topology_id=dev-bc5d29 (RETAINED)
+reproduced=yes (tool:install openclaw again -> same failure)
+
+=== DATA FLOW (boundaries) ===
+1) ToolInstallPreflight::runtimeUserFailure
+   - action string: "preflight"
+   - script keys produced: shell script only (id -u agent / exit 64|65)
+   - producer call: ToolScriptDispatcher::runForRegistry(tool, action="preflight", script)
+
+2) ToolScriptDispatcher::run
+   - stdin JSON object keys: tool, action, script
+   - command: internal:tool:run-script
+   - transportOptions: input=json, bind_input=true, force_remote_host=per gateway node,
+     metadata.ORBIT_OPERATION_ID=tool.{action} => "tool.preflight"
+   - NO other option keys for action allowlist on gateway side
+
+3) RemoteLocalExecutor / agent_push
+   - mints operation token for internal:tool:run-script
+   - binds stdin payload for host CLI
+   - activity retained evidence: command_line has --operation-token=<redacted> --json
+   - completed stdout_summary:
+     {"error":{"code":"validation_failed","message":"Tool run payload is invalid.","meta":[]}}
+   - exit_code=1
+
+4) CLI ToolRunScriptCommand::handle
+   - verify token
+   - readPayload() from stdin JSON object
+   - LocalToolRunScriptAction -> LocalToolRunScriptPayload::fromArray
+
+5) LocalToolRunScriptPayload::ALLOWED_ACTIONS consumer contract
+   allowlist: install, update, remove, probe, probe-images, probe-many, probe-php-cli,
+              reconfigure, start, stop, restart, logs, credentials
+   DOES NOT INCLUDE: preflight
+   Rejection: InvalidArgumentException "Tool run payload action is invalid."
+   Command catch maps to validation_failed "Tool run payload is invalid."
+
+=== FIRST DIVERGENCE ===
+Boundary: producer action label vs consumer ALLOWED_ACTIONS
+- Producer: apps/gateway/app/Services/Tools/ToolInstallPreflight.php
+  runtimeUserFailure/containerProviderFailure call action: 'preflight'
+- Consumer: apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php ALLOWED_ACTIONS
+  rejects action not in list at fromArray()
+- Divergence is BEFORE script execution: agent user can exist and still fail with actual=unverified
+  because exit_code 1 from validation is mapped as unverified (not 64 missing)
+
+=== WORKING vs BROKEN ===
+Working paths send allowed actions, e.g. install/update/probe/logs/reconfigure
+  (ToolInstaller, ToolLifecycleManager, LocalToolRunScriptActionTest uses install|probe|logs|probe-php-cli)
+Broken path: only install preflight uses action="preflight"
+Feature ToolInstallControllerTest mocks RemoteShell and never hits internal:tool:run-script allowlist,
+so order-of-preflight success tests mask this production agent_push path.
+
+=== ROOT-CAUSE HYPOTHESIS (precise) ===
+ToolInstallPreflight remote probes send stdin action="preflight", but
+LocalToolRunScriptPayload does not allow "preflight". The consumer rejects the
+payload before running the runtime-user probe script, returning validation_failed.
+Gateway maps non-64 failures to runtime_user actual=unverified even when the agent
+user exists (as proven after doctor --restore on dev-bc5d29).
+
+=== MINIMAL RED TEST TO ADD (not written yet) ===
+apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php or InternalToolRunScriptCommandTest:
+  it rejects or accepts action preflight consistently with producer;
+  AND/OR gateway integration: ToolInstallPreflight openclaw on agent via real
+  ToolScriptDispatcher/LocalExecutor path expecting preflight action to execute
+  (not validation_failed).
+
+Existing test that proves allowlist rejection pattern already:
+  LocalToolRunScriptActionTest "rejects unsupported tool run actions including unknown probe variants"
+  (probe-php-cli-extra) — same mechanism; no existing test names preflight specifically.
+
+=== RETAINED EVIDENCE POINTERS ===
+- activity tool.preflight completed: validation_failed Tool run payload is invalid, exit_code=1
+- agent_runtime probe separately: runtime_user=true after restore
+- re-reproduce install: same tool.constraint_unsatisfied actual=unverified
+topology remains: dev-bc5d29 RUNNING
+
+
+============================================================
+Retained OpenClaw final-hop after preflight fix
+started_at_utc=2026-08-03T08:56:05Z
+feature_tip=e54e90ece50534659b93d7ef0ed23702ae762fc5
+topology_id=dev-bc5d29
+topology_kind=operator_gateway_agent
+incus_host=beast
+instances.operator=orbit-e2e-dev-bc5d29-operator
+instances.gateway=orbit-e2e-dev-bc5d29-gateway
+instances.agent=orbit-e2e-dev-bc5d29-agent
+checkout_path=/home/orbit/orbit-run
+sync=composer e2e:incus -- --sync --id=dev-bc5d29
+
+=== [operator] command -v orbit; readlink -f "$(command -v orbit)"; git -C /home/orbit/orbit-run rev-parse HEAD; git -C /home/orbit/orbit-run rev-parse HEAD | tr -d "
+"; echo; test "$(git -C /home/orbit/orbit-run rev-parse HEAD)" = "e54e90ece50534659b93d7ef0ed23702ae762fc5" && echo runtime_commit_match=yes || echo runtime_commit_match=no; rg -n "preflight" apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php | head -5 ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+fatal: not a git repository (or any parent up to mount point /home/orbit)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home/orbit)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+
+runtime_commit_match=no
+fatal: not a git repository (or any parent up to mount point /home/orbit)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+bash: line 1: rg: command not found
+
+=== [operator] orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction 2>&1 ===
+{"event":"error","data":{"exit_code":1,"message":"Tool 'openclaw' install failed on node 'agent-1'.","data":{"code":"tool.remote_action_failed","message":"Tool 'openclaw' install failed on node 'agent-1'.","meta":{"tool":"openclaw","node":"agent-1","action":"install","exit_code":1,"stderr":"sudo: I'm sorry agent. I'm afraid I can't do that"},"footer":"Tool install failed"}}}
+
+=== runtime source identity (non-git overlay) ===
+26:        'preflight',
+6bf5fc6e959feb6e7bbb6b026789b5db  apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php
+-rwxr-xr-x 1 ubuntu ubuntu 1404 Aug  3 07:23 apps/cli/orbit
+-rwxr-xr-x 1 ubuntu ubuntu  707 Aug  3 07:23 bin/orbit
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Tools;
+
+=== agent sudo diagnosis ===
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+User agent is not allowed to run sudo on orbit-e2e-dev-bc5d29-agent.
+total 24
+drwxr-xr-x  2 root root 4096 Jun 22 22:04 .
+drwxr-xr-x 83 root root 4096 Aug  3 08:48 ..
+-r--r-----  1 root root   54 Jun 22 07:45 90-incus
+-r--r-----  1 root root  863 Jan 14  2026 README
+-r--r-----  1 root root   35 Jun 22 22:04 orbit-e2e-bootstrap
+-r--r-----  1 root root   29 Jun 22 22:04 orbit-e2e-orbit
+/etc/sudoers:# "sudo scp" or "sudo rsync" should be able to use your SSH agent.
+/etc/sudoers:# Ditto for GPG agent
+agent
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+/usr/bin/curl
+=== recent activity after install failure ===
+{"id": 253, "type": "agent_push.completed", "command": "internal:tool:run-script", "status": "succeeded", "operation_id": "tool.install", "exit_code": 0, "stdout_summary": "{\"success\":{\"data\":{\"exit_code\":1,\"stdout\":\"\\u001b[38;2;136;146;176mPreparing installer interface...\\u001b[0m\\n\\u001b[38;2;255;77;77m\\u001b[1m\\n  \\ud83e\\udd9e OpenClaw Installer\\n\\u001b[0m\\u001b[38;2;136;146;176m  Your .env is showing; don't worry, I'll pretend I didn't see it.\\u001b[0m\\n\\n\\u001b[38;2;0;229;204m\\u2713\\u001b[0m Detected: linux\\n\\n\\u001b[38;2;255;77;77m\\u001b[1mInstall plan\\u001b[0m", "stderr_summary": "", "command_line": null}
+{"id": 252, "type": "agent_push.dispatching", "command": "internal:tool:run-script", "status": "dispatching", "operation_id": "tool.install", "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": "'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"}
+{"id": 251, "type": "agent_push.completed", "command": "internal:tool:run-script", "status": "succeeded", "operation_id": "tool.preflight", "exit_code": 0, "stdout_summary": "{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":12},\"meta\":[]}}", "stderr_summary": "", "command_line": null}
+{"id": 250, "type": "agent_push.dispatching", "command": "internal:tool:run-script", "status": "dispatching", "operation_id": "tool.preflight", "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": "'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"}
+{"id": 249, "type": "api:POST /tools/{tool}/install", "command": null, "status": null, "operation_id": null, "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": null}
+{"id": 248, "type": "agent_push.completed", "command": "internal:tool:run-script", "status": "failed", "operation_id": "tool.preflight", "exit_code": 1, "stdout_summary": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Tool run payload is invalid.\",\"meta\":[]}}", "stderr_summary": "", "command_line": null}
+{"id": 247, "type": "agent_push.dispatching", "command": "internal:tool:run-script", "status": "dispatching", "operation_id": "tool.preflight", "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": "'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"}
+{"id": 246, "type": "api:POST /tools/{tool}/install", "command": null, "status": null, "operation_id": null, "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": null}
+{"id": 245, "type": "activity.shown", "command": null, "status": null, "operation_id": null, "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": null}
+{"id": 244, "type": "activity.listed", "command": null, "status": null, "operation_id": null, "exit_code": null, "stdout_summary": "", "stderr_summary": "", "command_line": null}
+=== activity 253 install result (redacted scan) ===
+{
+  "id": 253,
+  "type": "agent_push.completed",
+  "command": "internal:tool:run-script",
+  "status": "succeeded",
+  "operation_id": "tool.install",
+  "exit_code": 0,
+  "duration_ms": 1723,
+  "stdout_len": 948,
+  "stderr_len": 0,
+  "stdout_has_sudo_sorry": true,
+  "stderr_has_sudo_sorry": false,
+  "stdout_tail": "d83e\\udd9e OpenClaw Installer\\n\\u001b[0m\\u001b[38;2;136;146;176m  Your .env is showing; don't worry, I'll pretend I didn't see it.\\u001b[0m\\n\\n\\u001b[38;2;0;229;204m\\u2713\\u001b[0m Detected: linux\\n\\n\\u001b[38;2;255;77;77m\\u001b[1mInstall plan\\u001b[0m\\n\\u001b[38;2;90;100;128mOS:\\u001b[0m linux\\n\\u001b[38;2;90;100;128mInstall method:\\u001b[0m npm\\n\\u001b[38;2;90;100;128mRequested version:\\u001b[0m latest\\n\\u001b[38;2;90;100;128mOnboarding:\\u001b[0m skipped\\n\\n\\u001b[38;2;255;77;77m\\u001b[1m[1/3] Preparing environment\\u001b[0m\\n\\u001b[38;2;90;100;128m\\u00b7\\u001b[0m Node.js not found, installing it now\\n\\u001b[38;2;90;100;128m\\u00b7\\u001b[0m Administrator privileges required; enter your password\\n\",\"stderr\":\"sudo: I'm sorry agent. I'm afraid I can't do that\\n\",\"duration_ms\":134},\"meta\":[]}}",
+  "stderr_full": "",
+  "has_jwt_eyJ": false,
+  "has_operation_token_raw": false
+}
+function installScript(array $config = []): string
+    {
+        $configure = $this->configureManagedGatewayScript($config);
+
+        return <<<BASH
+            #!/usr/bin/env bash
+            # orbit install openclaw
+            set -euo pipefail
+            sudo -u agent -H bash -lc 'curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard'
+            {$configure}
+            BASH;
+    }
+
+    public function removeScript(array $config = []): string
+    {
+        return <<<'BASH'
+            #!/usr/bin/env bash
+            # orbit remove openclaw
+            set -e
+            sudo -u agent -H bash -lc 'npm uninstall -g openclaw 2>/dev/null || true'
+            sudo -u agent -H bash -lc 'rm -rf "${HOME}/.openclaw" 2>/dev/null || true'
+            BASH;
+    }
+
+    public function updateScript(array $config = []): string
+    {
+        $configure = $this->configureManagedGatewa
+
+=== agent sudo vs orbit sudo -u agent ===
+orbit_to_agent_exit=0
+root_to_agent_exit=0
+sudo: I'm sorry agent. I'm afraid I can't do that
+agent_self_sudo_exit=0
+
+=== retained proof after e54e90ece — conclusions ===
+topology_id=dev-bc5d29
+kind=operator_gateway_agent
+host=beast
+commit_requested=e54e90ece50534659b93d7ef0ed23702ae762fc5
+sync=yes (composer e2e:incus -- --sync --id=dev-bc5d29)
+runtime_source=source overlay (not git repo); LocalToolRunScriptPayload.php contains allowlist entry 'preflight'
+runtime_md5_LocalToolRunScriptPayload=6bf5fc6e959feb6e7bbb6b026789b5db
+
+PREFLIGHT_FIX_VERIFIED=yes
+  - tool.preflight activity exit_code=0 after sync (was validation_failed before e54e90ece)
+  - install proceeds past runtime_user constraint
+
+INSTALL_FINAL_HOP=FAILED
+  public: orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction
+  code: tool.remote_action_failed
+  nested script result: OpenClaw official installer starts (linux/npm/latest, onboarding skipped),
+    then "Node.js not found, installing it now" / "Administrator privileges required"
+    nested stderr: sudo: I'm sorry agent. I'm afraid I can't do that
+  cause: install script is `sudo -u agent -H bash -lc 'curl ... | bash -s -- --no-onboard'`;
+    official installer then escalates with sudo as agent; agent has no sudo rights on this Incus agent
+    (orbit_to_agent and root_to_agent sudo -u agent work; agent self-sudo for package install does not).
+  not caused by preflight action allowlist (that is fixed and proven).
+
+steps_not_run: tool:show --live, process/unit bash -n, token reconfigure, 18789 listen proof, release
+
+REDACTION: install activity has no JWT eyJ; operation-token remains <redacted> on dispatch lines
+
+topology_release: NOT performed (retained for diagnosis)
+release_when_ready: composer e2e:incus -- --stop --id=dev-bc5d29
+ended_at_utc=2026-08-03T08:57:20Z
+
+
+============================================================
+Final retained OpenClaw proof (local-prefix install-cli)
+started_at_utc=2026-08-03T09:04:37Z
+feature_tip=d5b83e4b8ce46da87820d606233b7a4a7e99286b
+topology_id=dev-bc5d29
+topology_kind=operator_gateway_agent
+incus_host=beast
+instances.operator=orbit-e2e-dev-bc5d29-operator
+instances.gateway=orbit-e2e-dev-bc5d29-gateway
+instances.agent=orbit-e2e-dev-bc5d29-agent
+checkout_path=/home/orbit/orbit-run
+sync=composer e2e:incus -- --sync --id=dev-bc5d29
+worktree_OpenClawTool_md5=348b75a1745eb539c1b9a0cfebe10c5f
+
+=== [operator] command -v orbit; readlink -f "$(command -v orbit)"; md5sum apps/gateway/app/Tools/OpenClawTool.php apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php; grep -n "install-cli\|PREFIX_BIN\|preflight" apps/gateway/app/Tools/OpenClawTool.php apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php | head -20 ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+348b75a1745eb539c1b9a0cfebe10c5f  apps/gateway/app/Tools/OpenClawTool.php
+6bf5fc6e959feb6e7bbb6b026789b5db  apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php
+apps/gateway/app/Tools/OpenClawTool.php:27:     * Local-prefix OpenClaw CLI installed by install-cli.sh under the agent home.
+apps/gateway/app/Tools/OpenClawTool.php:30:    public const string PREFIX_BIN = '/home/agent/.openclaw/bin/openclaw';
+apps/gateway/app/Tools/OpenClawTool.php:71:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:180:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:198:            'curl -fsSL --proto \'=https\' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"',
+apps/gateway/app/Tools/OpenClawTool.php:217:        $prefixBin = self::PREFIX_BIN;
+apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php:26:        'preflight',
+
+=== [operator] orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction 2>&1 ===
+{"event":"complete","data":{"exit_code":0,"data":{"tool":{"name":"openclaw","node":"agent-1","state":"installed","version":null,"process":{"name":"openclaw-gateway","runtime":"systemd","tool":"openclaw","action":"configured"}},"footer":"Tool installed"}}}
+
+=== [operator] orbit tool:show openclaw --node=agent-1 --live --json 2>&1 | head -c 100000 ===
+{"success":{"data":{"tool":{"name":"openclaw","node":"agent-1","expected_state":"installed","observed_state":"absent","observed_version":null,"version":null,"managed":true,"endpoints":[]}},"meta":[]}}
+
+=== [operator] orbit process:list --node=agent-1 --json 2>&1 | head -c 60000 ===
+{"success":{"data":{"context":{"node":"agent-1","project":null,"instance":null,"workspace":null},"processes":[{"node":"agent-1","project":null,"instance":null,"workspace":null,"name":"openclaw-gateway","command":"sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"$(tr -d \"[:space:]\" < \"${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan'","restart_policy":"always","crash_notification":"none","runtime":"systemd","tool":"openclaw","service":null,"runtime_unit":"openclaw-gateway","last_event":null}]},"meta":[]}}
+
+=== [operator] orbit process:show openclaw-gateway --node=agent-1 --json 2>&1 | head -c 100000 ===
+
+                                                       
+  Too many arguments, expected arguments "namespace".  
+                                                       
+
+
+=== [operator] orbit process:show --help 2>&1 | head -40 ===
+Description:
+  List commands
+
+Usage:
+  list [options] [--] [<namespace>]
+
+Arguments:
+  namespace             The namespace name
+
+Options:
+      --raw             To output raw command list
+      --format=FORMAT   The output format (txt, xml, json, or md) [default: "txt"]
+      --short           To skip describing commands' arguments
+  -h, --help            Display help for the given command. When no command is given display help for the list command
+      --silent          Do not output any message
+  -q, --quiet           Only errors are displayed. All other output is suppressed
+  -V, --version         Display this application version
+      --ansi|--no-ansi  Force (or disable --no-ansi) ANSI output
+  -n, --no-interaction  Do not ask any interactive question
+      --env[=ENV]       The environment the command should run under
+  -v|vv|vvv, --verbose  Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
+
+Help:
+  The list command lists all commands:
+  
+    /home/orbit/orbit-run/apps/cli/orbit
+  
+  You can also display the commands for a specific namespace:
+  
+    /home/orbit/orbit-run/apps/cli/orbit test
+  
+  You can also output the information in other formats by using the --format option:
+  
+    /home/orbit/orbit-run/apps/cli/orbit --format=xml
+  
+  It's also possible to get raw list of commands (useful for embedding command runner):
+  
+    /home/orbit/orbit-run/apps/cli/orbit --raw
+
+=== [operator] orbit process:show --node=agent-1 openclaw-gateway --json 2>&1 | head -c 100000 ===
+
+                                       
+  The "--node" option does not exist.  
+                                       
+
+
+=== [operator] orbit doctor --node=agent-1 --family=tool --json 2>&1 | head -c 80000 ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["tool"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":2,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"tool","node":"agent-1","key":"tool.container_missing","kind":"missing","summary":"Tool caddy container orbit-caddy is missing.","detail":{"tool":"caddy","container":"orbit-caddy"},"code":"tool.container_missing","restorable":true,"adoptable":false},{"family":"tool","node":"agent-1","key":"tool.capability_missing","kind":"missing","summary":"Tool openclaw is missing on the target node.","detail":{"tool":"openclaw"},"code":"tool.capability_missing","restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+=== [agent] host proofs ===
+-rwxr-xr-x 1 agent agent 176 Aug  3 09:05 /home/agent/.openclaw/bin/openclaw
+OpenClaw 2026.7.1-2 (0790d9f)
+--- unit ---
+# /etc/systemd/system/openclaw-gateway.service
+[Unit]
+Description=Orbit process openclaw-gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orbit
+WorkingDirectory=/home/orbit
+Environment="PATH=/home/orbit/.local/bin:/home/orbit/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/orbit"
+ExecStart=/bin/bash -lc 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc '\''set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan'\'''
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+--- is-active ---
+active
+● openclaw-gateway.service - Orbit process openclaw-gateway
+     Loaded: loaded (/etc/systemd/system/openclaw-gateway.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-08-03 09:05:22 UTC; 1min 48s ago
+ Invocation: 58426154196e4e35a5fd6a10ddecda74
+   Main PID: 3196 (sudo)
+      Tasks: 13 (limit: 1710)
+     Memory: 292.9M (peak: 436.1M)
+        CPU: 6.314s
+     CGroup: /system.slice/openclaw-gateway.service
+             ├─3196 sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc "set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"\$(tr -d \"[:space:]\" < \"\${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"\${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"\${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan"
+             └─3200 openclaw-gateway
+
+Aug 03 09:05:26 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:26.531+00:00 [gateway] starting HTTP server...
+Aug 03 09:05:26 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:26.534+00:00 [gateway] ⚠️  Gateway is binding to a non-loopback address. Ensure authentication is configured before exposing to public networks.
+Aug 03 09:05:26 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:26.630+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.268+00:00 [gateway] agent model: openai/gpt-5.5 (thinking=medium, fast=off)
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.270+00:00 [gateway] http server listening (2 plugins: memory-core, ollama; 1.0s)
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.271+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-08-03.log
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.301+00:00 [gateway] starting channels and sidecars...
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.311+00:00 [gateway] ready
+Aug 03 09:05:27 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:27.326+00:00 [heartbeat] started
+Aug 03 09:05:37 orbit-e2e-dev-bc5d29-agent bash[3200]: 2026-08-03T09:05:37.352+00:00 [gateway] agent runtime plugins pre-warmed in 41ms
+--- ports ---
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=3200,fd=33))             
+State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess                                                 
+LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*    users:(("sshd",pid=1533,fd=3),("systemd",pid=1,fd=212))
+LISTEN 0      4096      127.0.0.54:53         0.0.0.0:*    users:(("systemd-resolve",pid=550,fd=19))              
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=3200,fd=33))             
+LISTEN 0      4096       127.0.0.1:34793      0.0.0.0:*    users:(("containerd",pid=917,fd=3))                    
+LISTEN 0      128         10.6.0.6:9477       0.0.0.0:*    users:(("orbit-agent",pid=1374,fd=6))                  
+LISTEN 0      4096   127.0.0.53%lo:53         0.0.0.0:*    users:(("systemd-resolve",pid=550,fd=17))              
+LISTEN 0      128        127.0.0.1:9477       0.0.0.0:*    users:(("orbit-agent",pid=1374,fd=7))                  
+LISTEN 0      4096            [::]:22            [::]:*    users:(("sshd",pid=1533,fd=4),("systemd",pid=1,fd=213))
+LISTEN 0      4096               *:2377             *:*    users:(("dockerd",pid=1039,fd=20))                     
+LISTEN 0      4096               *:7946             *:*    users:(("dockerd",pid=1039,fd=27))                     
+--- token meta ---
+token_mode=600 owner=agent:agent
+token_nonblank=yes
+token_sha256=4da246ef7bebb87b2429a2f39c5f0da0282581134547e9b62eefc0ec7c966cc2
+--- bash -n on process command from unit ---
+exec_show_len=601
+unit_has_18789 True
+unit_has_8081 False
+unit_has_prefix True
+unit_has_bare_exec False
+exec_lines 1
+words0_3 ['/bin/bash', '-lc', 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc \'set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan\'']
+script_len 441
+script_starts sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefa
+bash_n_exit 0
+nested_bash_lc_in_script True
+token_sha256_before=4da246ef7bebb87b2429a2f39c5f0da0282581134547e9b62eefc0ec7c966cc2
+whitespace_token_written=yes
+
+=== [operator] orbit tool:reconfigure openclaw --node=agent-1 --json --no-interaction ===
+{"event":"complete","data":{"exit_code":0,"data":{"tool":{"name":"openclaw","node":"agent-1","action":"reconfigured","process":{"name":"openclaw-gateway","runtime":"systemd","tool":"openclaw","action":"restarted"}},"footer":"Tool reconfigured"}}}
+=== post-reconfigure host proofs ===
+token_mode=600 owner=agent:agent
+token_nonblank=yes
+token_sha256_after=d2ce7c1e75607b8d3715765fd2957db647158ec2770bb2b2d414cc6850a5a31b
+active
+● openclaw-gateway.service - Orbit process openclaw-gateway
+     Loaded: loaded (/etc/systemd/system/openclaw-gateway.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-08-03 09:07:51 UTC; 324ms ago
+ Invocation: dfffc36664c74c7fb9ca196777414a8f
+   Main PID: 3561 (sudo)
+      Tasks: 8 (limit: 1710)
+     Memory: 90.1M (peak: 90.1M)
+        CPU: 246ms
+     CGroup: /system.slice/openclaw-gateway.service
+             ├─3561 sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc "set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"\$(tr -d \"[:space:]\" < \"\${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"\${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"\${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan"
+             └─3565 openclaw
+
+Aug 03 09:07:51 orbit-e2e-dev-bc5d29-agent systemd[1]: Started openclaw-gateway.service - Orbit process openclaw-gateway.
+Aug 03 09:07:51 orbit-e2e-dev-bc5d29-agent sudo[3561]: pam_unix(sudo:session): session opened for user agent(uid=1003) by (uid=1002)
+Aug 03 09:07:51 orbit-e2e-dev-bc5d29-agent sudo[3561]: orbit :  PWD=/home/orbit ; USER=agent ; COMMAND=/usr/bin/env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"$(tr -d \"[:space:]\" < \"${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan
+=== activity redaction ===
+{
+  "count": 25,
+  "operation_token_redacted": 10,
+  "jwt_eyJ": 0,
+  "raw_op_token": false
+}
+{"id": 282, "type": "agent_push.completed", "command": "internal:tool:run-script", "status": "succeeded", "operation_id": "tool.reconfigure", "exit_code": 0, "command_line": null}
+{"id": 281, "type": "agent_push.dispatching", "command": "internal:tool:run-script", "status": "dispatching", "operation_id": "tool.reconfigure", "exit_code": null, "command_line": "'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"}
+
+============================================================
+Final retained proof closeout (post-reconfigure + release gate)
+checked_at_utc=2026-08-03T09:09:43Z
+feature_tip=d5b83e4b8ce46da87820d606233b7a4a7e99286b
+topology_id=dev-bc5d29
+topology_kind=operator_gateway_agent
+incus_host=beast
+worktree_OpenClawTool_md5=348b75a1745eb539c1b9a0cfebe10c5f
+=== composer e2e:incus -- --sync --id=dev-bc5d29 ===
+> Composer\Config::disableProcessTimeout
+{"success":{"source_sync":{"id":"dev-bc5d29","kind":"operator_gateway_agent","provider":"incus","host":"beast","source_path":"/tmp/orbit-e2e-sources/codex-drift-process-hardening-incus-2d28a996e4f6/retained/dev-bc5d29","checkouts":{"operator":"/home/orbit/orbit-run","gateway":"/home/orbit/orbit-run","agent":"/home/orbit/orbit-run"},"runtime_checkouts":{"operator":"/home/orbit/orbit-run","gateway":"/home/orbit/orbit-run","agent":"/home/orbit/orbit-run"},"sync_command":"composer e2e:incus -- --sync --id=dev-bc5d29","release_command":"composer e2e:incus -- --stop --id=dev-bc5d29"}}}
+sync_exit=
+
+=== [operator] launcher + OpenClawTool identity ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+md5sum: apps/gateway/app/Tools/OpenClawTool.php: Permission denied
+grep: apps/gateway/app/Tools/OpenClawTool.php: Permission denied
+
+=== [operator] tool:show openclaw --live ===
+{"success":{"data":{"tool":{"name":"openclaw","node":"agent-1","expected_state":"installed","observed_state":"absent","observed_version":null,"version":null,"managed":true,"endpoints":[]}},"meta":[]}}
+
+=== [operator] doctor --family=tool ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["tool"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":2,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"tool","node":"agent-1","key":"tool.container_missing","kind":"missing","summary":"Tool caddy container orbit-caddy is missing.","detail":{"tool":"caddy","container":"orbit-caddy"},"code":"tool.container_missing","restorable":true,"adoptable":false},{"family":"tool","node":"agent-1","key":"tool.capability_missing","kind":"missing","summary":"Tool openclaw is missing on the target node.","detail":{"tool":"openclaw"},"code":"tool.capability_missing","restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+
+=== [operator] process:list openclaw-gateway ===
+{"success":{"data":{"context":{"node":"agent-1","project":null,"instance":null,"workspace":null},"processes":[{"node":"agent-1","project":null,"instance":null,"workspace":null,"name":"openclaw-gateway","command":"sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"$(tr -d \"[:space:]\" < \"${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan'","restart_policy":"always","crash_notification":"none","runtime":"systemd","tool":"openclaw","service":null,"runtime_unit":"openclaw-gateway","last_event":{"id":2,"type":"started"}}]},"meta":[]}}
+
+=== [agent] post-reconfigure host proofs ===
+--- binary ---
+-rwxr-xr-x 1 agent agent 176 Aug  3 09:05 /home/agent/.openclaw/bin/openclaw
+OpenClaw 2026.7.1-2 (0790d9f)
+--- unit active ---
+active
+{ path=/bin/bash ; argv[]=/bin/bash -lc sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan' ; ignore_errors=no ; start_time=[Mon 2026-08-03 09:07:51 UTC] ; stop_time=[n/a] ; pid=3561 ; code=(null) ; status=0/0 }
+--- ports ---
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=3565,fd=27))             
+port_18789=yes
+port_8081=no
+--- token meta only ---
+token_mode=600 owner=agent:agent
+token_nonblank=yes
+token_sha256=d2ce7c1e75607b8d3715765fd2957db647158ec2770bb2b2d414cc6850a5a31b
+--- bash -n on ExecStart script ---
+exec_len 463
+unit_has_18789 True
+unit_has_8081 False
+unit_has_prefix True
+words0_3 ['/bin/bash', '-lc', 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc \'set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan\'']
+outer_script_starts sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_P
+bash_n_exit 0
+nested_len 335
+nested_bash_n_exit 0
+
+=== [operator] activity redaction scan ===
+Could not open input file: apps/gateway/artisan
+DONE_PROOFS
+
+=== [operator] launcher + OpenClawTool identity (checkout cwd) ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+348b75a1745eb539c1b9a0cfebe10c5f  apps/gateway/app/Tools/OpenClawTool.php
+6bf5fc6e959feb6e7bbb6b026789b5db  apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php
+apps/gateway/app/Tools/OpenClawTool.php:27:     * Local-prefix OpenClaw CLI installed by install-cli.sh under the agent home.
+apps/gateway/app/Tools/OpenClawTool.php:30:    public const string PREFIX_BIN = '/home/agent/.openclaw/bin/openclaw';
+apps/gateway/app/Tools/OpenClawTool.php:71:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:180:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:198:            'curl -fsSL --proto \'=https\' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"',
+apps/gateway/app/Tools/OpenClawTool.php:217:        $prefixBin = self::PREFIX_BIN;
+apps/cli/app/Services/Tools/LocalToolRunScriptPayload.php:26:        'preflight',
+
+=== [gateway] activity redaction scan via gateway artisan ===
+   Error  Class "App\Models\Activity" not found.
+
+=== hash comparison (expected before/after from earlier run) ===
+token_sha256_before=4da246ef7bebb87b2429a2f39c5f0da0282581134547e9b62eefc0ec7c966cc2
+token_sha256_after_current=d2ce7c1e75607b8d3715765fd2957db647158ec2770bb2b2d414cc6850a5a31b
+hash_changed=yes
+
+=== [operator] activity:list redaction scan ===
+{"success":{"data":{"activities":[{"id":300,"occurred_at":"2026-08-03T09:10:35+00:00","correlation_id":"16c23363-a147-40ce-8ecd-d315feca062c","type":"api:GET /processes","effect":"read","subject":null,"actor":{"node":"operator-1"},"command":null,"description":"api:GET /processes","properties":{"client":"api","method":"GET","path":"api/processes","served_by_name":"gateway","served_by_wg_ip":"10.6.0.2"},"channel":"api"},{"id":299,"occurred_at":"2026-08-03T09:10:33+00:00","correlation_id":null,"type":"agent_push.completed","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:agent-runtime:probe","description":"Agent push operation succeeded","properties":{"lane":"internal","transport":"agent_push","status":"succeeded","operation_id":"tool-agent-runtime.probe","target_node_id":4,"target_node_name":"agent-1","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"runtime_user\":true,\"orbit_cli\":true,\"runtime_user_exit_code\":0,\"orbit_cli_exit_code\":0},\"meta\":[]}}","stderr_summary":"","duration_ms":1604},"channel":"api"},{"id":298,"occurred_at":"2026-08-03T09:10:32+00:00","correlation_id":null,"type":"agent_push.dispatching","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:agent-runtime:probe","description":"Agent push operation dispatching","properties":{"lane":"internal","transport":"agent_push","status":"dispatching","operation_id":"tool-agent-runtime.probe","target_node_id":4,"target_node_name":"agent-1","arguments":[],"command_options":[],"command_line":"'/home/orbit/.local/bin/orbit' internal:agent-runtime:probe --operation-token=<redacted> --json"},"channel":"api"},{"id":297,"occurred_at":"2026-08-03T09:10:32+00:00","correlation_id":null,"type":"agent_push.completed","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation succeeded","properties":{"lane":"internal","transport":"agent_push","status":"succeeded","operation_id":"tool.probe","target_node_id":4,"target_node_name":"agent-1","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":1,\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":6},\"meta\":[]}}","stderr_summary":"","duration_ms":1647},"channel":"api"},{"id":296,"occurred_at":"2026-08-03T09:10:30+00:00","correlation_id":null,"type":"agent_push.dispatching","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation dispatching","properties":{"lane":"internal","transport":"agent_push","status":"dispatching","operation_id":"tool.probe","target_node_id":4,"target_node_name":"agent-1","arguments":[],"command_options":[],"command_line":"'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":295,"occurred_at":"2026-08-03T09:10:30+00:00","correlation_id":null,"type":"agent_push.completed","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation succeeded","properties":{"lane":"internal","transport":"agent_push","status":"succeeded","operation_id":"tool.probe","target_node_id":4,"target_node_name":"agent-1","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"/usr/bin/git\\tgit version 2.53.0\\tunknown\\t\\t\\t\\t\\t\\t\\t\\t\\t\\n\",\"stderr\":\"\",\"duration_ms\":10},\"meta\":[]}}","stderr_summary":"","duration_ms":934},"channel":"api"},{"id":294,"occurred_at":"2026-08-03T09:10:29+00:00","correlation_id":null,"type":"agent_push.dispatching","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation dispatching","properties":{"lane":"internal","transport":"agent_push","status":"dispatching","operation_id":"tool.probe","target_node_id":4,"target_node_name":"agent-1","arguments":[],"command_options":[],"command_line":"'/home/orbit/.local/bin/orbit' internal:tool:run-script --operation-token=<redacted> --json"},"channel":"api"},{"id":293,"occurred_at":"2026-08-03T09:10:29+00:00","correlation_id":null,"type":"agent_push.completed","effect":"write","subject":{"type":"node","name":"agent-1"},"actor":null,"command":"internal:tool:run-script","description":"Agent push operation succeeded","properties":{"lane":"internal","transport":"agent_push","status":"succeeded","operation_id":"tool.probe","target_node_id":4,"target_node_name":"agent-1","exit_code":0,"stdout_summary":"{\"success\":{\"data\":{\"exit_code\":0,\"stdout\":\"/usr/bin/docker\\tDocker version 29.1.3, build 29.1.3-0ubuntu4.1\\tunknown\\t\\t\\t\\t\\t0\\tmissing\\t\\t\\t\\n\",\"stderr\":\"\",\"duration_ms\":33},\"meta\":[]}}","stderr_summary":"","duration_ms":1042},"channel":"api"},{"id":292,"occurred_at":"2026-08-03T09:10:28+00:00","correlation_id":null,"type":"agent_push.dispatching","effect":"write","subjec
+{"jwt_eyJ": 0, "operation_token_redacted": 16, "raw_op_token_unredacted": false, "len": 24616}
+
+=== retained proof after d5b83e4b8 — conclusions ===
+topology_id=dev-bc5d29
+kind=operator_gateway_agent
+host=beast
+commit_requested=d5b83e4b8ce46da87820d606233b7a4a7e99286b
+commit_runtime_md5_OpenClawTool=348b75a1745eb539c1b9a0cfebe10c5f (matches worktree)
+launcher=/home/orbit/.local/bin/orbit -> /home/orbit/orbit-run/bin/orbit
+sync=yes (composer e2e:incus -- --sync --id=dev-bc5d29) re-run at closeout
+
+INSTALL_FINAL_HOP=PASS
+  public: orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction
+  result: exit_code=0 state=installed process openclaw-gateway configured
+  host binary: /home/agent/.openclaw/bin/openclaw present (OpenClaw 2026.7.1-2)
+
+PROCESS_COMMAND=PASS
+  systemd ExecStart=/bin/bash -lc '<single outer script with nested agent bash -lc>'
+  absolute exec: /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan
+  bash -n outer=0 nested=0
+  unit_has_18789=true unit_has_8081=false unit_has_prefix=true
+
+PORTS=PASS
+  post-install and post-reconfigure: port_18789=yes port_8081=no
+  service active; process command matches PREFIX_BIN
+
+TOKEN=PASS
+  mode=600 owner=agent:agent nonblank=yes (token never printed)
+  token_sha256_before=4da246ef7bebb87b2429a2f39c5f0da0282581134547e9b62eefc0ec7c966cc2
+  whitespace_token_written=yes then public tool:reconfigure
+  reconfigure: exit_code=0 action=reconfigured process restarted
+  token_sha256_after=d2ce7c1e75607b8d3715765fd2957db647158ec2770bb2b2d414cc6850a5a31b
+  hash_changed=yes mode=600 nonblank=yes post-reconfigure
+
+ACTIVITY_REDACTION=PASS
+  jwt_eyJ=0 operation_token_redacted>0 raw_op_token_unredacted=false
+  command_line uses operation-token=<redacted> on agent_push.dispatching
+
+PUBLIC_OBSERVATION residual (not install-path failure):
+  tool:show --live: expected_state=installed observed_state=absent observed_version=null
+  doctor --family=tool: tool.capability_missing for openclaw (+ unrelated caddy container_missing)
+  probe tool.probe returns exit_code=1 empty stdout while host binary and service healthy
+  process:list correctly shows managed openclaw-gateway command with PREFIX_BIN
+  residual is observation/probe path vs host-managed install; host proofs green
+
+OVERALL_HOST_PROOF=PASS
+topology_release: proceeding
+ended_at_utc=2026-08-03T09:12:57Z
+
+=== topology release first stop ===
+> Composer\Config::disableProcessTimeout
+{"success":{"released":[{"id":"dev-bc5d29","reaped":["orbit-e2e-dev-bc5d29-operator","orbit-e2e-dev-bc5d29-gateway","orbit-e2e-dev-bc5d29-agent"],"dry_run":false}]}}
+first_stop_exit=
+
+=== topology release second stop (expect not_found) ===
+> Composer\Config::disableProcessTimeout
+{"error":{"code":"not_found","message":"Retained E2E topology [dev-bc5d29] was not found."}}
+Script php bin/e2e-incus @additional_args handling the e2e:incus event returned with error code 1
+Script set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; composer --working-dir=apps/e2e e2e:incus -- @additional_args handling the e2e:incus event returned with error code 1
+second_stop_exit=
+
+=== post-release instance list ===
+ls: apps/e2e/var/dev-topology/dev-bc5d29.json: No such file or directory
+
+=== topology_release confirmed ===
+first_stop: success released id=dev-bc5d29 reaped operator/gateway/agent dry_run=false
+second_stop: error code=not_found message=Retained E2E topology [dev-bc5d29] was not found.
+manifest: apps/e2e/var/dev-topology/dev-bc5d29.json absent
+incus list orbit-e2e-dev-bc5d29: empty (no instances)
+release_complete=yes
+closeout_at_utc=2026-08-03T09:13:10Z
+EXIT:0
+
+============================================================
+Retained OpenClaw proof @ 8113ecdf3 (owner-scoped observation)
+started_at_utc=2026-08-03T09:22:56Z
+worktree_commit=8113ecdf3e47f8fb92fae2ad596c22c41bbba636
+worktree_OpenClawTool_md5=e3078196cdacec4254f0d7e53cd31c39
+worktree_ToolsProbe_md5=560cfe2779469bc1ddf3bb2c4c5141c1
+=== composer e2e:incus -- --start --topology=operator_gateway_agent --json ===
+> Composer\Config::disableProcessTimeout
+{"success":{"dev_topology":{"id":"dev-b6b361","kind":"operator_gateway_agent","provider":"incus","host":"beast","run_id":"dev-b6b361","ssh_key_path":"/tmp/orbit-e2e-topology-dev-b6b361/id_ed25519","gateway_ip":"10.6.0.2","instances":{"operator":"orbit-e2e-dev-b6b361-operator","gateway":"orbit-e2e-dev-b6b361-gateway","agent":"orbit-e2e-dev-b6b361-agent"},"checkouts":{"operator":"/home/orbit/orbit-run","gateway":"/home/orbit/orbit-run","agent":"/home/orbit/orbit-run"},"created_at":"2026-08-03T09:24:48+00:00","release_command":"composer e2e:incus -- --stop --id=dev-b6b361","timings":[{"name":"prepared-availability","seconds":0.206},{"name":"incus.worker-network","seconds":0.165},{"name":"incus.source-sync","seconds":24.694},{"name":"batch.copy-start","seconds":2.634},{"name":"clone-ready.operator","seconds":9.804},{"name":"clone-ready.gateway","seconds":9.791},{"name":"clone-ready.agent","seconds":8.511},{"name":"clone-ready","seconds":9.851},{"name":"command-ready.operator","seconds":0.184},{"name":"command-ready.gateway","seconds":0.204},{"name":"command-ready.agent","seconds":0.194},{"name":"command-ready","seconds":0.25},{"name":"known-hosts","seconds":0.171},{"name":"source-mounted-launcher.operator","seconds":0.105},{"name":"source-mounted-launcher.gateway","seconds":0.1},{"name":"source-mounted-launcher.agent","seconds":0.135},{"name":"source-mounted-launchers","seconds":0.173},{"name":"wireguard.install.gateway","seconds":0.379},{"name":"wireguard.install.operator","seconds":0.384},{"name":"wireguard.install.agent","seconds":0.417},{"name":"wireguard","seconds":5.896},{"name":"gateway-ssh-access.gateway","seconds":0.116},{"name":"gateway-ssh-access.agent","seconds":0.116},{"name":"gateway-ssh-access","seconds":0.219},{"name":"gateway-api.start","seconds":1.39},{"name":"retarget.bake.agent","seconds":17.903},{"name":"retarget","seconds":46.918},{"name":"network-ready.agent","seconds":4.592},{"name":"network-ready","seconds":4.636},{"name":"checkout operator checkout.source-overlay","seconds":0.14},{"name":"checkout operator checkout.extract","seconds":0.083},{"name":"checkout operator checkout.vendor-archives","seconds":1.795},{"name":"checkout operator checkout.vendor","seconds":0.064},{"name":"checkout operator checkout.runtime-state","seconds":1.868},{"name":"checkout operator checkout.migrate","seconds":2.24},{"name":"checkout operator checkout.gateway-settings","seconds":3.297},{"name":"checkout gateway checkout.source-overlay","seconds":0.142},{"name":"checkout gateway checkout.extract","seconds":0.088},{"name":"checkout gateway checkout.vendor-archives","seconds":1.775},{"name":"checkout gateway checkout.vendor","seconds":0.069},{"name":"checkout gateway checkout.runtime-state","seconds":0.111},{"name":"checkout gateway checkout.migrate","seconds":1.823},{"name":"checkout gateway checkout.host-keys","seconds":1.956},{"name":"checkout gateway checkout.gateway-settings","seconds":3.528},{"name":"checkout agent checkout.source-overlay","seconds":0.136},{"name":"checkout agent checkout.extract","seconds":0.084},{"name":"checkout agent checkout.vendor-archives","seconds":1.79},{"name":"checkout agent checkout.vendor","seconds":0.062},{"name":"checkout agent checkout.runtime-state","seconds":1.849},{"name":"checkout agent checkout.migrate","seconds":2.266},{"name":"checkout agent checkout.gateway-settings","seconds":3.282},{"name":"checkout gateway-api.restart","seconds":2.285},{"name":"checkout.overlay","seconds":11.992}],"source_path":"/tmp/orbit-e2e-sources/codex-drift-process-hardening-incus-2d28a996e4f6/retained/dev-b6b361","handles":[{"role":"operator","instance":"orbit-e2e-dev-b6b361-operator","ssh_example":"ssh beast incus exec orbit-e2e-dev-b6b361-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'"},{"role":"gateway","instance":"orbit-e2e-dev-b6b361-gateway","ssh_example":"ssh beast incus exec orbit-e2e-dev-b6b361-gateway -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'","perf_example":"ssh beast incus exec orbit-e2e-dev-b6b361-gateway -- bash -lc 'curl -sS -o /dev/null -w '\\''gateway /api/ca/root: %{time_total}s\\n'\\'' http://10.6.0.2/api/ca/root'"},{"role":"agent","instance":"orbit-e2e-dev-b6b361-agent","ssh_example":"ssh beast incus exec orbit-e2e-dev-b6b361-agent -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'"}]}}}
+topology_id=dev-b6b361
+topology_kind=operator_gateway_agent
+incus_host=beast
+instances.operator=orbit-e2e-dev-b6b361-operator
+instances.gateway=orbit-e2e-dev-b6b361-gateway
+instances.agent=orbit-e2e-dev-b6b361-agent
+checkout_path=/home/orbit/orbit-run
+release_command=composer e2e:incus -- --stop --id=dev-b6b361
+
+=== composer e2e:incus -- --sync --id=dev-b6b361 ===
+> Composer\Config::disableProcessTimeout
+{"success":{"source_sync":{"id":"dev-b6b361","kind":"operator_gateway_agent","provider":"incus","host":"beast","source_path":"/tmp/orbit-e2e-sources/codex-drift-process-hardening-incus-2d28a996e4f6/retained/dev-b6b361","checkouts":{"operator":"/home/orbit/orbit-run","gateway":"/home/orbit/orbit-run","agent":"/home/orbit/orbit-run"},"runtime_checkouts":{"operator":"/home/orbit/orbit-run","gateway":"/home/orbit/orbit-run","agent":"/home/orbit/orbit-run"},"sync_command":"composer e2e:incus -- --sync --id=dev-b6b361","release_command":"composer e2e:incus -- --stop --id=dev-b6b361"}}}
+
+=== [operator] launcher + OpenClawTool/ToolsProbe identity ===
+/home/orbit/.local/bin/orbit
+/home/orbit/orbit-run/bin/orbit
+e3078196cdacec4254f0d7e53cd31c39  apps/gateway/app/Tools/OpenClawTool.php
+560cfe2779469bc1ddf3bb2c4c5141c1  apps/gateway/app/Services/Tools/ToolsProbe.php
+apps/gateway/app/Tools/OpenClawTool.php:27:     * Local-prefix OpenClaw CLI installed by install-cli.sh under the agent home.
+apps/gateway/app/Tools/OpenClawTool.php:30:    public const string PREFIX_BIN = '/home/agent/.openclaw/bin/openclaw';
+apps/gateway/app/Tools/OpenClawTool.php:71:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:180:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Tools/OpenClawTool.php:185:            // cannot [ -x ] the local-prefix path. Observed path stays PREFIX_BIN.
+apps/gateway/app/Tools/OpenClawTool.php:186:            'binary_as_user' => 'agent',
+apps/gateway/app/Tools/OpenClawTool.php:201:            'curl -fsSL --proto \'=https\' --tlsv1.2 https://openclaw.ai/install-cli.sh | bash -s -- --no-onboard --prefix "$HOME/.openclaw"',
+apps/gateway/app/Tools/OpenClawTool.php:220:        $prefixBin = self::PREFIX_BIN;
+apps/gateway/app/Services/Tools/ToolsProbe.php:155:                'binary_as_user' => $this->binaryAsUserFromMetadata($metadata),
+apps/gateway/app/Services/Tools/ToolsProbe.php:228:            binary_as_user=__BINARY_AS_USER__
+apps/gateway/app/Services/Tools/ToolsProbe.php:250:                    if [ -n "$binary_as_user" ]; then
+apps/gateway/app/Services/Tools/ToolsProbe.php:251:                        if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+apps/gateway/app/Services/Tools/ToolsProbe.php:330:        return UserScopedCliUsers::normalize($metadata['binary_as_user'] ?? null) ?? '';
+apps/gateway/app/Services/Tools/ToolsProbe.php:409:     * @param  array<string, array{binary: mixed, binary_as_user: string, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
+apps/gateway/app/Services/Tools/ToolsProbe.php:421:                '            binary_as_user='.escapeshellarg($tool['binary_as_user']),
+apps/gateway/app/Services/Tools/ToolsProbe.php:453:                binary_as_user=''
+apps/gateway/app/Services/Tools/ToolsProbe.php:478:                        if [ -n "$binary_as_user" ]; then
+apps/gateway/app/Services/Tools/ToolsProbe.php:479:                            if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+
+=== [operator] doctor --node=agent-1 --family=node --json (pre) ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":7,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing required tool caddy.","detail":{"role":"agent","tool":"caddy"},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.role_baseline_mismatch","code":"node.role_baseline_mismatch","kind":"missing","summary":"Role baseline for 'agent' on node agent-1 is missing the agent runtime user.","detail":{"role":"agent","component":"agent_user"},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.wireguard_peer_missing","code":"node.wireguard_peer_missing","kind":"missing","summary":"WireGuard peer for node agent-1 is missing.","detail":[],"restorable":false,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.public_ssh_deny","code":"node.security.public_ssh_deny","kind":"missing","summary":"Node agent-1 is missing protected public SSH deny rules.","detail":{"expected_families":["v4","v6"],"actual_families":[]},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sshd_config","code":"node.security.sshd_config","kind":"missing","summary":"Node agent-1 failed security check sshd_config.","detail":{"check":"sshd_config","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.sysctl","code":"node.security.sysctl","kind":"missing","summary":"Node agent-1 failed security check sysctl.","detail":{"check":"sysctl","observed":false},"restorable":true,"adoptable":false},{"family":"node","node":"agent-1","key":"node.security.home_perms","code":"node.security.home_perms","kind":"divergent","summary":"Node agent-1 failed security check home_perms.","detail":{"check":"home_perms","observed":false},"restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+
+=== [agent] id agent (pre-restore) ===
+id: 'agent': no such user
+agent_user_missing=yes
+
+=== [operator] doctor --restore agent_user role baseline ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"restore","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.role_baseline_mismatch"},"summary":{"issues":0,"fixed":1,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[{"family":"node","node":"agent-1","code":"node.role_baseline_mismatch","key":"node.role_baseline_mismatch","mode":"restore","status":"completed","summary":"Role baseline for 'agent' on node agent-1 is missing required tool caddy.","details":{"role":"agent","tool":"caddy"}}]}}}}
+
+=== [agent] id agent (post-restore) ===
+uid=1003(agent) gid=1003(agent) groups=1003(agent)
+agent:x:1003:1003::/home/agent:/bin/bash
+
+=== [operator] node:list + agent runtime readiness signals ===
+{"success":{"data":{"nodes":[{"name":"agent-1","tld":"agent","host":"10.6.0.6","addresses":{"wireguard":"10.6.0.6"},"platform":"ubuntu","status":"active","roles":[{"role":"agent","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-03T09:24:30.000000Z"}]},{"name":"gateway","tld":"gateway","host":"10.6.0.2","addresses":{"wireguard":"10.6.0.2"},"platform":"ubuntu","status":"active","roles":[{"role":"gateway","status":"active","settings":[],"last_error":null,"converged_at":null},{"role":"router","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-03T09:23:47.000000Z"},{"role":"vpn","status":"active","settings":{"public_endpoint":"10.232.1.17","wireguard_cidr":"10.6.0.0/24","wireguard_port":51820,"dns_ip":"10.6.0.1"},"last_error":null,"converged_at":"2026-08-03T09:23:47.000000Z"}]},{"name":"operator-1","tld":"operator","host":"10.6.0.3","addresses":{"wireguard":"10.6.0.3"},"platform":"ubuntu","status":"active","roles":[]}]},"meta":[]}}
+
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"verify","scope":{"families":["node"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"node.role_baseline_mismatch"},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}}}}
+
+=== INSTALL openclaw ===
+
+=== [operator] orbit tool:install openclaw --node=agent-1 --with-process --json --no-interaction ===
+{"event":"complete","data":{"exit_code":0,"data":{"tool":{"name":"openclaw","node":"agent-1","state":"installed","version":null,"process":{"name":"openclaw-gateway","runtime":"systemd","tool":"openclaw","action":"configured"}},"footer":"Tool installed"}}}
+
+=== [operator] orbit tool:show openclaw --node=agent-1 --live --json ===
+{"success":{"data":{"tool":{"name":"openclaw","node":"agent-1","expected_state":"installed","observed_state":"installed","observed_version":"OpenClaw 2026.7.1-2 (0790d9f)","version":null,"managed":true,"endpoints":[]}},"meta":[]}}
+
+=== [operator] orbit doctor --node=agent-1 --family=tool --key=tool.capability_missing --json ===
+{"event":"complete","data":{"exit_code":0,"data":{"footer":"Doctor completed.","doctor":{"healthy":true,"mode":"verify","scope":{"families":["tool"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":"tool.capability_missing"},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}}}}
+
+=== [operator] orbit doctor --node=agent-1 --family=tool --json (full tool family note) ===
+{"event":"error","data":{"exit_code":1,"message":"Doctor detected drift.","data":{"code":"drift_detected","message":"Doctor detected drift.","meta":[],"data":{"doctor":{"healthy":false,"mode":"verify","scope":{"families":["tool"],"node":"agent-1","role":"agent","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":1,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[{"family":"tool","node":"agent-1","key":"tool.container_missing","kind":"missing","summary":"Tool caddy container orbit-caddy is missing.","detail":{"tool":"caddy","container":"orbit-caddy"},"code":"tool.container_missing","restorable":true,"adoptable":false}],"actions":[]}},"footer":"Doctor detected drift."}}}
+
+=== [operator] orbit process:list --node=agent-1 --json ===
+{"success":{"data":{"context":{"node":"agent-1","project":null,"instance":null,"workspace":null},"processes":[{"node":"agent-1","project":null,"instance":null,"workspace":null,"name":"openclaw-gateway","command":"sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"$(tr -d \"[:space:]\" < \"${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan'","restart_policy":"always","crash_notification":"none","runtime":"systemd","tool":"openclaw","service":null,"runtime_unit":"openclaw-gateway","last_event":null}]},"meta":[]}}
+
+=== [agent] host proofs (binary/process/ports/token/bash -n) ===
+--- binary as agent ---
+-rwxr-xr-x 1 agent agent 176 Aug  3 09:26 /home/agent/.openclaw/bin/openclaw
+OpenClaw 2026.7.1-2 (0790d9f)
+orbit_bare_x=yes
+agent_test_x=yes
+--- unit ---
+active
+{ path=/bin/bash ; argv[]=/bin/bash -lc sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc 'set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan' ; ignore_errors=no ; start_time=[Mon 2026-08-03 09:26:38 UTC] ; stop_time=[n/a] ; pid=2761 ; code=(null) ; status=0/0 }
+
+--- ports ---
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=2765,fd=33))             
+port_18789=yes
+port_8081=no
+--- token meta only ---
+token_mode=600 owner=agent:agent
+token_nonblank=yes
+token_sha256=d6137dc41080173b5613806fcea8e76b04aeb6a015b77a6b0cf92b9fac9d9a5d
+--- bash -n ---
+words0_3 ['/bin/bash', '-lc', 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc \'set -euo pipefail; TOKEN_FILE="/home/agent/.openclaw/gateway.token"; TOKEN="$$(tr -d "[:space:]" < "$${TOKEN_FILE}" 2>/dev/null || true)"; [ -n "$${TOKEN}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN="$${TOKEN}"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan\'']
+unit_has_18789 True
+unit_has_8081 False
+unit_has_prefix True
+bash_n_exit 0
+nested_bash_n_exit 0
+
+token_sha256_before=d6137dc41080173b5613806fcea8e76b04aeb6a015b77a6b0cf92b9fac9d9a5d
+whitespace_token_written=yes
+
+=== [operator] orbit tool:reconfigure openclaw --node=agent-1 --json --no-interaction ===
+{"event":"complete","data":{"exit_code":0,"data":{"tool":{"name":"openclaw","node":"agent-1","action":"reconfigured","process":{"name":"openclaw-gateway","runtime":"systemd","tool":"openclaw","action":"restarted"}},"footer":"Tool reconfigured"}}}
+
+=== post-reconfigure host proofs ===
+token_mode=600 owner=agent:agent
+token_nonblank=yes
+token_sha256_after=ac4620d9c7899e3d1910effb468a517d3c03a9a5d8df6bc255959dc3101c0844
+active
+port_18789=no
+port_8081=no
+
+=== [operator] activity redaction scan ===
+{"jwt_eyJ": 0, "operation_token_redacted": 12, "raw_op_token_unredacted": false, "len": 18680}
+
+=== [operator] tool:show --live after reconfigure ===
+{"success":{"data":{"tool":{"name":"openclaw","node":"agent-1","expected_state":"installed","observed_state":"installed","observed_version":"OpenClaw 2026.7.1-2 (0790d9f)","version":null,"managed":true,"endpoints":[]}},"meta":[]}}
+
+=== post-reconfigure port settle retry ===
+attempt=1 active
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=3239,fd=27))             
+port_18789=yes
+port_8081=no
+active
+● openclaw-gateway.service - Orbit process openclaw-gateway
+     Loaded: loaded (/etc/systemd/system/openclaw-gateway.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-08-03 09:27:40 UTC; 15s ago
+ Invocation: 90b7d370eb5941dbba2f30e8330350a9
+   Main PID: 3235 (sudo)
+      Tasks: 13 (limit: 1710)
+     Memory: 435.7M (peak: 435.8M)
+        CPU: 5.376s
+     CGroup: /system.slice/openclaw-gateway.service
+             ├─3235 sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc "set -euo pipefail; TOKEN_FILE=\"/home/agent/.openclaw/gateway.token\"; TOKEN=\"\$(tr -d \"[:space:]\" < \"\${TOKEN_FILE}\" 2>/dev/null || true)\"; [ -n \"\${TOKEN}\" ] || { echo \"openclaw gateway token missing\" >&2; exit 1; }; export OPENCLAW_GATEWAY_TOKEN=\"\${TOKEN}\"; exec /home/agent/.openclaw/bin/openclaw gateway run --port 18789 --bind lan"
+             └─3239 openclaw-gateway
+
+Aug 03 09:27:44 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:44.794+00:00 [gateway] starting HTTP server...
+Aug 03 09:27:44 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:44.798+00:00 [gateway] ⚠️  Gateway is binding to a non-loopback address. Ensure authentication is configured before exposing to public networks.
+Aug 03 09:27:44 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:44.885+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.618+00:00 [gateway] agent model: openai/gpt-5.5 (thinking=medium, fast=off)
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.621+00:00 [gateway] http server listening (2 plugins: memory-core, ollama; 1.1s)
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.622+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-08-03.log
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.664+00:00 [gateway] starting channels and sidecars...
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.678+00:00 [gateway] ready
+Aug 03 09:27:45 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:45.696+00:00 [heartbeat] started
+Aug 03 09:27:55 orbit-e2e-dev-b6b361-agent bash[3239]: 2026-08-03T09:27:55.726+00:00 [gateway] agent runtime plugins pre-warmed in 49ms
+LISTEN 0      511          0.0.0.0:18789      0.0.0.0:*    users:(("openclaw-gatewa",pid=3239,fd=27))             
+
+=== retained proof after 8113ecdf3 — conclusions ===
+topology_id=dev-b6b361
+kind=operator_gateway_agent
+host=beast
+commit=8113ecdf3e47f8fb92fae2ad596c22c41bbba636
+runtime_md5_OpenClawTool=e3078196cdacec4254f0d7e53cd31c39 (matches worktree)
+runtime_md5_ToolsProbe=560cfe2779469bc1ddf3bb2c4c5141c1 (matches worktree)
+launcher=/home/orbit/.local/bin/orbit -> /home/orbit/orbit-run/bin/orbit
+agent_user_restore=yes (doctor --restore --key=node.role_baseline_mismatch; agent uid=1003 exists)
+
+INSTALL=PASS exit_code=0 state=installed process configured
+TOOL_SHOW_LIVE=PASS observed_state=installed observed_version='OpenClaw 2026.7.1-2 (0790d9f)'
+DOCTOR_CAPABILITY_MISSING=PASS healthy=true issues=0 (filtered key tool.capability_missing)
+DOCTOR_TOOL_FAMILY_NOTE=unrelated tool.container_missing caddy only (not repaired)
+HOST=PASS binary PREFIX_BIN version OpenClaw 2026.7.1-2 active 18789=yes 8081=no token_mode=600 nonblank bash_n=0
+RECONFIGURE=PASS whitespace -> hash d6137dc4... -> ac4620d9... mode=600 nonblank; 18789 settles yes/8081 no
+ACTIVITY_REDACTION=PASS jwt_eyJ=0 raw_op_token_unredacted=false
+POST_RECONFIGURE_SHOW_LIVE=PASS observed_state=installed observed_version retained
+OVERALL=PASS
+topology_release: proceeding
+ended_at_utc=2026-08-03T09:28:07Z
+
+=== topology release first stop ===
+> Composer\Config::disableProcessTimeout
+{"success":{"released":[{"id":"dev-b6b361","reaped":["orbit-e2e-dev-b6b361-operator","orbit-e2e-dev-b6b361-gateway","orbit-e2e-dev-b6b361-agent"],"dry_run":false}]}}
+
+=== topology release second stop (expect not_found) ===
+> Composer\Config::disableProcessTimeout
+{"error":{"code":"not_found","message":"Retained E2E topology [dev-b6b361] was not found."}}
+Script php bin/e2e-incus @additional_args handling the e2e:incus event returned with error code 1
+Script set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; composer --working-dir=apps/e2e e2e:incus -- @additional_args handling the e2e:incus event returned with error code 1
+
+=== post-release instance list ===
+EXIT:0
+ls: apps/e2e/var/dev-topology/dev-b6b361.json: No such file or directory
+
+=== topology_release confirmed ===
+first_stop: success released id=dev-b6b361
+second_stop: not_found
+release_complete=yes
+closeout_at_utc=2026-08-03T09:28:11Z
