@@ -101,9 +101,11 @@ These terms describe the runtime objects that Orbit derives from process definit
   the configured node user's LaunchAgents directory. The `orbit_` prefix marks
   Orbit ownership, and underscores are reserved as backend segment delimiters.
 - **Runtime unit environment:** Predictable runtime environment exposed to
-  derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
-  and TLS path variables that Orbit manages. Separate from workspace lifecycle
-  step environment.
+  derived runtime units. Every unit receives `PATH` and `HOME`. Instance and
+  workspace process units also receive `APP_URL`, `VITE_APP_URL`, and TLS path
+  variables that Orbit manages. Node-owned process units receive only variables
+  meaningful to their selected runtime and do not synthesize app/Vite variables.
+  Separate from workspace lifecycle step environment.
 - **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
   Systemd runtime units are host service files. Docker runtime units are
   container definitions. Launchd runtime units are user LaunchAgent plist files

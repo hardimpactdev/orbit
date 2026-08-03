@@ -78,7 +78,7 @@ final readonly class LaunchdPlistRenderer
             ? '<true/>'
             : '<false/>';
 
-        $envLines = $this->environmentEntries($app, $node, $workspace, $home);
+        $envLines = $this->environmentEntries($process, $app, $node, $workspace, $home);
 
         $xml = [
             '<?xml version="1.0" encoding="UTF-8"?>',
@@ -135,13 +135,25 @@ final readonly class LaunchdPlistRenderer
     /**
      * @return list<string>
      */
-    private function environmentEntries(Project $app, Node $node, ?Workspace $workspace, string $home): array
-    {
-        $environment =
-            [
-                'PATH' => "{$home}/.local/bin:{$home}/.vite-plus/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
-                'HOME' => $home,
-            ] + $this->vite->shellVariables($app, $node, $workspace);
+    private function environmentEntries(
+        Process $process,
+        Project $app,
+        Node $node,
+        ?Workspace $workspace,
+        string $home,
+    ): array {
+        $environment = [
+            'PATH' => "{$home}/.local/bin:{$home}/.vite-plus/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+            'HOME' => $home,
+        ];
+
+        $process->loadMissing('owner');
+
+        // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
+        // TLS variables belong to instance/workspace process contexts.
+        if (! $process->owner instanceof Node) {
+            $environment += $this->vite->shellVariables($app, $node, $workspace);
+        }
 
         $entries = [
             '    <key>EnvironmentVariables</key>',

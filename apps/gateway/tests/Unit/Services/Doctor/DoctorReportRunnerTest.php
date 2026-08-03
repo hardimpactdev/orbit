@@ -1646,6 +1646,130 @@ describe('DoctorReportRunner', function (): void {
             ->toBeTrue();
     });
 
+    it('marks node-owned process restart and environment mismatches as restorable', function (string $key, string $probeRow): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'gateway',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+                'managed' => true,
+                'tld' => 'gateway',
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'runtime' => ProcessRuntime::Systemd,
+                'command' => 'node_exporter --web.listen-address=0.0.0.0:9100',
+                'restart_policy' => 'always',
+                'crash_notification' => 'none',
+                'sort_order' => 1,
+            ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $probeRow, stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'verify', families: ['process']);
+        $issue = collect($report['issues'])->firstWhere('key', $key);
+
+        expect($issue)
+            ->not->toBeNull()
+            ->and($issue['restorable'] ?? null)
+            ->toBeTrue()
+            ->and($issue['code'] ?? null)
+            ->toBe($key);
+    })->with([
+        'restart policy' => [
+            'process.restart_policy_mismatch',
+            "node-exporter\t1\t1\t0\t1\n",
+        ],
+        'runtime environment' => [
+            'process.runtime_environment_mismatch',
+            "node-exporter\t1\t1\t1\t0\n",
+        ],
+    ]);
+
+    it('restores node-owned process restart and environment mismatches by re-rendering the Orbit unit', function (string $key, string $probeRow): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'gateway',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+                'managed' => true,
+                'tld' => 'gateway',
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'runtime' => ProcessRuntime::Systemd,
+                'command' => 'node_exporter --web.listen-address=0.0.0.0:9100',
+                'restart_policy' => 'always',
+                'crash_notification' => 'none',
+                'sort_order' => 1,
+            ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $probeRow, stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => true,
+                    'hash' => 'stale',
+                    'enabled' => true,
+                ], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['summary'])
+            ->toMatchArray([
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'gateway',
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'node' => 'gateway',
+                    'process' => 'node-exporter',
+                    'runtime_unit' => 'node-exporter',
+                ],
+            ])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => (
+                        str_contains($script, 'internal:process-systemd-service')
+                        && str_contains($script, 'node-exporter.service')
+                    ),
+                ))
+            ->toBeTrue();
+    })->with([
+        'restart policy' => [
+            'process.restart_policy_mismatch',
+            "node-exporter\t1\t1\t0\t1\n",
+        ],
+        'runtime environment' => [
+            'process.runtime_environment_mismatch',
+            "node-exporter\t1\t1\t1\t0\n",
+        ],
+    ]);
+
     it('reports and removes orphaned managed app containers through the process family', function (): void {
         $node = Node::factory()
             ->appDev()

@@ -3272,7 +3272,13 @@ final readonly class DoctorReportRunner
 
         if (! in_array(
             $key,
-            ['process.runtime_unit_missing', 'process.runtime_unit_mismatch', 'process.runtime_unit_down'],
+            [
+                'process.runtime_unit_missing',
+                'process.runtime_unit_mismatch',
+                'process.runtime_unit_down',
+                'process.restart_policy_mismatch',
+                'process.runtime_environment_mismatch',
+            ],
             true,
         )) {
             return null;
@@ -5016,6 +5022,8 @@ final readonly class DoctorReportRunner
             'process.runtime_unit_down',
             'process.runtime_unit_extra',
             'process.runtime_unit_unrenderable',
+            'process.restart_policy_mismatch',
+            'process.runtime_environment_mismatch',
             'process.event_notifier_missing',
             'process.event_notifier_mismatch',
             'tool.capability_missing',

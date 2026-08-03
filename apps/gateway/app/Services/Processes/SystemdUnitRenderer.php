@@ -64,7 +64,7 @@ final readonly class SystemdUnitRenderer
             'Type=simple',
             "User={$user}",
             'WorkingDirectory='.$this->workingDirectory($node, $app, $process, $workspace, $home),
-            ...$this->environmentLines($app, $node, $workspace, $home),
+            ...$this->environmentLines($process, $app, $node, $workspace, $home),
             'ExecStart=/bin/bash -lc '.$this->execStartCommand($process->command),
             'Restart='.$process->restart_policy->toSystemd(),
             'RestartSec=2',
@@ -116,13 +116,25 @@ final readonly class SystemdUnitRenderer
     /**
      * @return list<string>
      */
-    private function environmentLines(Project $app, Node $node, ?Workspace $workspace, string $home): array
-    {
-        $environment =
-            [
-                'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
-                'HOME' => $home,
-            ] + $this->vite->shellVariables($app, $node, $workspace);
+    private function environmentLines(
+        Process $process,
+        Project $app,
+        Node $node,
+        ?Workspace $workspace,
+        string $home,
+    ): array {
+        $environment = [
+            'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+            'HOME' => $home,
+        ];
+
+        $process->loadMissing('owner');
+
+        // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
+        // TLS variables belong to instance/workspace process contexts.
+        if (! $process->owner instanceof Node) {
+            $environment += $this->vite->shellVariables($app, $node, $workspace);
+        }
 
         return collect($environment)
             ->map(

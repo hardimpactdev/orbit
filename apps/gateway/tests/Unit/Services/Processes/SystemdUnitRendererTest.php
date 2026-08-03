@@ -14,6 +14,74 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+it('renders only PATH and HOME for node-owned systemd processes such as node-exporter', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'gateway',
+        'user' => 'orbit',
+        'status' => 'active',
+        'tld' => 'gateway',
+        'platform' => 'ubuntu_24-04',
+    ]);
+    $surrogateApp = Project::factory()->for($node, 'node')->create([
+        'name' => 'gateway',
+        'path' => '/home/orbit',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'node-exporter',
+            'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+            'runtime' => ProcessRuntime::Systemd,
+            'restart_policy' => 'always',
+        ]);
+
+    $unit = app(SystemdUnitRenderer::class)->render($node, $surrogateApp, $process);
+
+    expect($unit)
+        ->toContain('Environment="PATH=')
+        ->toContain('Environment="HOME=/home/orbit"')
+        ->not->toContain('Environment="APP_URL=')
+        ->not->toContain('Environment="VITE_APP_URL=')
+        ->not->toContain('Environment="VITE_VALET_HOST=')
+        ->not->toContain('Environment="VITE_DEV_SERVER_KEY=')
+        ->not->toContain('Environment="VITE_DEV_SERVER_CERT=')
+        ->not->toContain('https://gateway')
+        ->not->toContain('gateway.gateway');
+});
+
+it('still renders Laravel Vite URL and TLS variables for app-owned systemd processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'app-dev',
+        'user' => 'orbit',
+        'status' => 'active',
+        'tld' => 'test',
+        'platform' => 'ubuntu_24-04',
+    ]);
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/home/orbit/apps/docs',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'command' => 'npm run dev -- --host=0.0.0.0',
+            'runtime' => ProcessRuntime::Systemd,
+            'restart_policy' => 'always',
+        ]);
+
+    $unit = app(SystemdUnitRenderer::class)->render($node, $app, $process);
+
+    expect($unit)
+        ->toContain('Environment="PATH=')
+        ->toContain('Environment="HOME=/home/orbit"')
+        ->toContain('Environment="APP_URL=')
+        ->toContain('Environment="VITE_APP_URL=')
+        ->toContain('Environment="VITE_VALET_HOST=')
+        ->toContain('Environment="VITE_DEV_SERVER_KEY=')
+        ->toContain('Environment="VITE_DEV_SERVER_CERT=');
+});
+
 it('escapes shell dollars so systemd does not expand process command variables', function (): void {
     $node = Node::factory()->create([
         'name' => 'agent-1',
