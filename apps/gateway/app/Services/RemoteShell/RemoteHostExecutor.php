@@ -159,7 +159,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
     {
         if (
             $this->roleAssignments->nodeIsGateway($node)
-            && ! $this->runningInsideOrbitGateway()
+            && ! GatewayHostExecution::isContainerizedGatewayRuntime()
             && ! ($options['force_remote_host'] ?? false)
         ) {
             return 'bash -c '.escapeshellarg($script);
@@ -262,24 +262,5 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
         $envValue = $_ENV[$key] ?? null;
 
         return is_string($envValue) && trim($envValue) !== '' ? trim($envValue) : null;
-    }
-
-    private function runningInsideOrbitGateway(): bool
-    {
-        $exposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
-
-        if (is_string($exposureMode) && trim($exposureMode) !== '') {
-            return true;
-        }
-
-        $hostPath = getenv('ORBIT_HOST_PATH');
-
-        if (is_string($hostPath) && trim($hostPath) !== '') {
-            return true;
-        }
-
-        $sourcePath = getenv('ORBIT_SOURCE_PATH');
-
-        return is_string($sourcePath) && trim($sourcePath) === '/opt/orbit';
     }
 }

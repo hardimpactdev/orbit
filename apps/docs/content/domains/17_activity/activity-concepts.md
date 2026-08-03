@@ -146,11 +146,13 @@ Activity covers the following categories of operations.
   `read`. Default-on for consistent activity visibility.
 - CLI commands that perform CLI-only state changes (e.g. local gateway
   connection setup) emit through the CLI helper.
-- Orbit Agent push operations are recorded through the existing gateway activity
-  and operation history surfaces. The gateway records command dispatch, success,
-  and failure as gateway history entries, not a separate Orbit Agent log product
-  surface. Activity entries still follow the no raw command, no-secret
-  properties rule.
+- Node-local executor operations are recorded through the existing gateway
+  activity and operation history surfaces. The gateway records
+  `RemoteLocalExecutor` dispatch/completion for the intended lane
+  (`agent_push`, `gateway_local`, or `force_remote_host`), plus shell audit
+  rows when gateway-local or host SSH substrate executors run. These are
+  gateway history entries, not a separate Orbit Agent log product surface.
+  Activity entries still follow the no raw command, no-secret properties rule.
 
 Never logged:
 
@@ -189,11 +191,22 @@ These rules govern which activity rows a caller may read.
   is computed against the caller's WireGuard-resolved node identity.
 - **Internal activity visibility:** Backend transport audit rows are durable
   but hidden from default `activity:list` output. Internal rows use channel
-  `api` and `properties.lane = internal`. Current Agent-push dispatch, success,
-  and failure rows use types `agent_push.dispatching` and
-  `agent_push.completed` with `properties.transport = agent_push`.
-  Bootstrap/provisioning SSH rows use types `ssh_bootstrap.run` or
-  `ssh_bootstrap.start` with `properties.transport = ssh_bootstrap`.
+  `api` and `properties.lane = internal`. Current internal recording includes:
+
+  - `RemoteLocalExecutor` pairs: `{transport}.dispatching` and
+    `{transport}.completed` with `properties.transport` in `agent_push`,
+    `gateway_local`, or `force_remote_host`.
+  - Shell audit rows may interleave inside a successful dispatch: gateway
+    container-local work may emit `gateway_local.run` / `gateway_local.start`
+    between the `gateway_local` dispatching/completed pair; force-host work
+    may emit `ssh_bootstrap.run` / `ssh_bootstrap.start` between the
+    `force_remote_host` pair. Those `run`/`start` rows are substrate shell
+    audits (same internal lane), not a second RemoteLocalExecutor pair. The
+    shared `gateway_local` prefix is not ambiguous: consumers exclude by
+    `properties.lane = internal`, not by filtering those intermediate event
+    names.
+  - Bootstrap/provisioning SSH rows: `ssh_bootstrap.run` or
+    `ssh_bootstrap.start` with `properties.transport = ssh_bootstrap`.
 
   Operators inspect internal rows with `activity:list --include-internal` or
   the gateway `include_internal=true` query parameter. Internal rows still use

@@ -24,6 +24,7 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Security\OperationTokenEnvironment;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
@@ -181,12 +182,12 @@ it('passes the macOS node home to workspace runtime container agent-push actions
                 'expected_hash' => $container->specHash(),
                 'config_path' => '/Users/nckrtl/.config/orbit/workspaces/happie-smoke.ini',
                 'workspace_slug' => 'smoke',
-                'environment' => [
+                'environment' => OperationTokenEnvironment::allowlisted([
                     'HOME' => '/Users/nckrtl',
                     'ORBIT_CONFIG_PATH' => '/Users/nckrtl/.config/orbit/config.json',
                     'ORBIT_BIN_PATH' => '/Users/nckrtl/.local/bin/orbit',
                     'APP_KEY' => app_runtime_manager_operation_secret(),
-                ],
+                ]),
             ],
         ),
     );

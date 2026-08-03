@@ -31,7 +31,12 @@ final class GatewayHostExecution
         return app(NodeRoleAssignments::class)->nodeIsGateway($node);
     }
 
-    private static function isContainerizedGatewayRuntime(): bool
+    /**
+     * True when the gateway process is running inside the orbit-gateway container
+     * (or an equivalent prepared container runtime). Shared by host-boundary
+     * force_remote_host and RemoteHostExecutor local-bash selection.
+     */
+    public static function isContainerizedGatewayRuntime(): bool
     {
         $exposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
 

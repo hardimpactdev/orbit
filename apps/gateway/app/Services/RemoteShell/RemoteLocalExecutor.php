@@ -25,6 +25,7 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Orbit\Core\Security\OperationTokenCommandContext;
+use Orbit\Core\Security\OperationTokenEnvironment;
 use RuntimeException;
 use Throwable;
 
@@ -107,6 +108,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     bind_input?: bool,
      *     force_remote_host?: bool,
      * }  $transportOptions
+     *
+     * `transportOptions['environment']` is filtered through the shared
+     * operation-token allowlist before minting and Agent envelope dispatch.
+     * Arbitrary keys are not passed through into the bound token context.
      */
     public function runInternal(
         Node $node,
@@ -125,6 +130,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
         );
         $environment = $this->localExecutorEnvironment($node, $transportOptions);
+        $activityTransport = $this->intendedActivityTransport($node, $transportOptions);
         $run = $this->operationRuns->queued(
             operationId: $operationId,
             lane: 'local',
@@ -154,6 +160,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         try {
+            // Record dispatching before selector/execution so selector failures
+            // still produce a dispatching/completed pair on the intended lane.
             $this->logDispatching(
                 node: $node,
                 commandName: $commandName,
@@ -162,6 +170,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 operationId: $operationId,
                 auditLine: $dispatch['auditLine'],
                 transportOptions: $transportOptions,
+                activityTransport: $activityTransport,
             );
 
             $envelope = NodeCommandEnvelope::agentPushBinary(
@@ -170,11 +179,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 argv: $dispatch['argv'],
                 input: $this->input($transportOptions),
                 cwd: $this->cwd($transportOptions),
-                environment: $this->localExecutorEnvironment($node, $transportOptions),
+                environment: $environment,
                 timeoutSeconds: $this->timeoutSeconds($transportOptions),
             );
+            // Selector remains authoritative for the actual execution path.
             $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
             $forceRemoteHost = ($transportOptions['force_remote_host'] ?? false) === true;
+
             $result = match ($transport) {
                 // Host-owned gateway checks (systemd, host Caddy, self-route,
                 // node-exporter tooling) force the host boundary when requested.
@@ -221,6 +232,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 dispatch: $dispatch,
                 result: $sanitizedResult,
                 transportOptions: $transportOptions,
+                activityTransport: $activityTransport,
             );
 
             throw new RemoteShellFailed(
@@ -228,7 +240,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 script: $this->redactTransportSecrets(
                     value: $exception->script,
                     operationToken: $dispatch['operationToken'],
-                    transportOptions: $transportOptions,
                 ),
                 result: $sanitizedResult,
             );
@@ -261,6 +272,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 operationId: $operationId,
                 throwable: $throwable,
                 exceptionMessage: $redactedMessage,
+                activityTransport: $activityTransport,
             );
 
             throw new RemoteLocalExecutorTransportFailed(
@@ -291,6 +303,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             dispatch: $dispatch,
             result: $result,
             transportOptions: $transportOptions,
+            activityTransport: $activityTransport,
         );
 
         return $result;
@@ -362,6 +375,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
         $startedAt = $this->monotonicNanoseconds();
 
+        $activityTransport = 'agent_push';
+
         try {
             $this->logDispatching(
                 node: $node,
@@ -371,6 +386,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 operationId: $operationId,
                 auditLine: $dispatch['auditLine'],
                 transportOptions: $transportOptions,
+                activityTransport: $activityTransport,
             );
 
             $streamResult = $this->streamAgentPush(
@@ -401,6 +417,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     dispatch: $dispatch,
                     result: $result,
                     transportOptions: $transportOptions,
+                    activityTransport: $activityTransport,
                 );
 
                 throw new RemoteShellFailed(
@@ -441,6 +458,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 operationId: $operationId,
                 throwable: $throwable,
                 exceptionMessage: $redactedMessage,
+                activityTransport: $activityTransport,
             );
 
             throw new RemoteLocalExecutorTransportFailed(
@@ -464,6 +482,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             dispatch: $dispatch,
             result: $result,
             transportOptions: $transportOptions,
+            activityTransport: $activityTransport,
         );
     }
 
@@ -617,17 +636,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         string $operationId,
         string $auditLine,
         array $transportOptions,
+        string $activityTransport,
     ): void {
         $redactedCommandOptionNames = $this->redactedCommandOptionNames($transportOptions);
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'agent_push.dispatching',
+                event: "{$activityTransport}.dispatching",
                 subject: $node,
-                description: 'Agent push operation dispatching',
+                description: $this->activityDescription($activityTransport, 'dispatching'),
                 properties: [
                     'lane' => 'internal',
-                    'transport' => 'agent_push',
+                    'transport' => $activityTransport,
                     'status' => 'dispatching',
                     'operation_id' => $operationId,
                     'target_node_id' => $this->nodeId($node),
@@ -651,6 +671,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     argv: list<string>,
      *     commandContext: OperationTokenCommandContext,
      * }  $dispatch
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private function logCompleted(
         Node $node,
@@ -658,17 +680,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $dispatch,
         RemoteShellResult $result,
         array $transportOptions,
+        string $activityTransport,
     ): void {
         $status = $result->successful() ? 'succeeded' : 'failed';
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'agent_push.completed',
+                event: "{$activityTransport}.completed",
                 subject: $node,
-                description: "Agent push operation {$status}",
+                description: $this->activityDescription($activityTransport, $status),
                 properties: [
                     'lane' => 'internal',
-                    'transport' => 'agent_push',
+                    'transport' => $activityTransport,
                     'status' => $status,
                     'operation_id' => $dispatch['operationId'],
                     'target_node_id' => $this->nodeId($node),
@@ -693,21 +716,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         );
     }
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     private function logTransportException(
         Node $node,
         string $commandName,
         string $operationId,
         Throwable $throwable,
         string $exceptionMessage,
+        string $activityTransport,
     ): void {
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'agent_push.completed',
+                event: "{$activityTransport}.completed",
                 subject: $node,
-                description: 'Agent push operation failed',
+                description: $this->activityDescription($activityTransport, 'failed'),
                 properties: [
                     'lane' => 'internal',
-                    'transport' => 'agent_push',
+                    'transport' => $activityTransport,
                     'status' => 'failed',
                     'operation_id' => $operationId,
                     'target_node_id' => $this->nodeId($node),
@@ -723,6 +750,41 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             channel: 'api',
             causer: null,
         );
+    }
+
+    /**
+     * Deterministic audit-lane label for activity records.
+     *
+     * Derived from gateway role + already-normalized force_remote_host before
+     * envelope build/selection. Selector stays authoritative for execution;
+     * this only labels the RemoteLocalExecutor dispatching/completed pair.
+     *
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function intendedActivityTransport(Node $node, array $transportOptions): string
+    {
+        if ($node->hasActiveRole('gateway')) {
+            return ($transportOptions['force_remote_host'] ?? false) === true
+                ? 'force_remote_host'
+                : 'gateway_local';
+        }
+
+        return 'agent_push';
+    }
+
+    private function activityDescription(string $activityTransport, string $status): string
+    {
+        $label = match ($activityTransport) {
+            'gateway_local' => 'Gateway local',
+            'force_remote_host' => 'Force remote host',
+            default => 'Agent push',
+        };
+
+        if ($status === 'dispatching') {
+            return "{$label} operation dispatching";
+        }
+
+        return "{$label} operation {$status}";
     }
 
     private function sanitizedResult(RemoteShellResult $result, string $operationToken): RemoteShellResult
@@ -879,14 +941,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         return str_replace($operationToken, self::REDACTED_VALUE, $redacted);
     }
 
-    /**
-     * @param  array<string, mixed>  $transportOptions
-     */
-    private function redactTransportSecrets(
-        string $value,
-        string $operationToken,
-        array $transportOptions,
-    ): string {
+    private function redactTransportSecrets(string $value, string $operationToken): string
+    {
         return $this->redactOperationToken($value, $operationToken);
     }
 
@@ -917,7 +973,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         return $this->redactTransportSecrets(
             value: $this->redactCommandOptionSecrets($value, $transportOptions, $commandOptions),
             operationToken: $operationToken,
-            transportOptions: $transportOptions,
         );
     }
 
@@ -1268,9 +1323,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         // Drop caller-supplied allowlisted keys so mint matches the host CLI after
         // the remote script unsets optional profile exports.
         if ($forceRemoteHost) {
-            return [
+            return OperationTokenEnvironment::allowlisted([
                 'HOME' => $home,
-            ];
+            ]);
         }
 
         $environment['HOME'] = $home;
@@ -1286,7 +1341,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             unset($environment['APP_KEY']);
         }
 
-        return $environment;
+        // Token-bound and Agent-envelope environment share the same allowlist so
+        // mint hash matches CLI/Agent verification reconstruction.
+        return OperationTokenEnvironment::allowlisted($environment);
     }
 
     /**
@@ -1377,7 +1434,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         $home = is_string($dispatchOptions['cwd'] ?? null) && $dispatchOptions['cwd'] !== ''
             ? $dispatchOptions['cwd']
             : $this->defaultLocalExecutorHome($node);
-        $hostBinary = $home.'/.local/bin/orbit';
+        $hostBinary = FleetUpdateNodeCliLauncher::binPath($node);
         $argv = array_map(
             escapeshellarg(...),
             $dispatch['argv'],
@@ -1390,11 +1447,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             'export',
             'HOME='.escapeshellarg($home).';',
             'unset',
-            'APP_KEY',
-            'ORBIT_CONFIG_PATH',
-            'ORBIT_INSTALL_METADATA_PATH',
-            'ORBIT_WG_EASY_DB_PATH',
-            'ORBIT_BIN_PATH',
+            ...OperationTokenEnvironment::forceRemoteHostUnsetKeys(),
             ';',
             'exec',
             escapeshellarg($hostBinary),

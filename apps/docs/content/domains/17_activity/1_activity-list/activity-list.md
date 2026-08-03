@@ -34,9 +34,13 @@ orbit activity:list --json
 - `--node`: Limit results to activity associated with the recorded node name.
 - `--effect`: Limit results to one effect: `read`, `write`, or `destructive`.
 - `--correlation`: Limit results to one correlated operation.
-- `--include-internal`: Include current Agent-push and bootstrap transport
-  audit rows. They use channel `api`, are hidden by default through
-  `properties.lane = internal`, and carry their current transport marker.
+- `--include-internal`: Include internal backend transport audit rows hidden
+  by default through `properties.lane = internal`. Current rows include
+  `RemoteLocalExecutor` lanes (`agent_push`, `gateway_local`,
+  `force_remote_host` dispatching/completed pairs), shell audit rows from
+  substrate executors (`gateway_local.run`/`start`,
+  `ssh_bootstrap.run`/`start`), and bootstrap/provisioning SSH rows. All use
+  channel `api` and carry their transport marker in `properties.transport`.
 - `--limit`: Maximum number of entries to return. Defaults to `25`.
 - `--json`: Output JSON.
 
