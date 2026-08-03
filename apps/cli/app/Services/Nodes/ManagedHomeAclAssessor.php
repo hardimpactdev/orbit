@@ -10,7 +10,7 @@ namespace App\Services\Nodes;
  *
  * @mago-expect lint:cyclomatic-complexity
  */
-final class ManagedHomeAclAssessor
+final readonly class ManagedHomeAclAssessor
 {
     public function __construct(
         private string $managedAgentConsumer = 'agent',
