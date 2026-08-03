@@ -530,6 +530,51 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->toContain('/home/orbit/orbit/bin/orbit');
 });
 
+it('installs a real home-local orbit launcher for source-mounted topologies', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+    $instances['agent'] = new IncusInstance(
+        $host,
+        'clone-agent',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+        hostSourcePath: '/home/orbit/orbit',
+    );
+
+    $method = new ReflectionMethod($provider, 'activateSourceMountedLaunchers');
+    $method->setAccessible(true);
+    $method->invoke(
+        $provider,
+        $instances,
+        incusAcquisitionReadinessConfig(),
+        new E2EPhaseTimer,
+    );
+
+    $joined = implode("\n", $commands());
+
+    // Production installs a real file at ~/.local/bin/orbit. A symlink into the
+    // virtiofs source mount makes LocalAgentAclEnsure fail at stage=binary_acl.
+    expect($joined)
+        ->toContain('/home/orbit/.local/bin/orbit')
+        ->toContain('/home/orbit/orbit/bin/orbit')
+        ->toContain('exec /home/orbit/orbit/bin/orbit')
+        ->toContain('rm -f ')
+        ->toContain('printf %s ')
+        ->toContain('test -f ')
+        ->toContain('test ! -L ')
+        ->toContain('test -x ')
+        ->not
+        ->toContain('ln -sfn ')
+        ->and($joined)
+        ->toContain("incus exec 'clone-agent'")
+        ->toContain("incus exec 'clone-gateway'")
+        ->toContain('/home/operator/.local/bin/orbit')
+        ->toMatch('/rm -f .*\/home\/orbit\/\.local\/bin\/orbit/')
+        ->toMatch('/test ! -L .*\/home\/orbit\/\.local\/bin\/orbit/')
+        ->toMatch('/printf %s .*exec \/home\/orbit\/orbit\/bin\/orbit/s');
+});
+
 it('prepares managed agent runtime user and CLI access before product proof on agent topologies', function (): void {
     [$host, $commands] = incusAcquisitionReadinessCapturingHost();
     $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
@@ -589,7 +634,10 @@ it('prepares managed agent runtime user and CLI access before product proof on a
         ->and($joined)
         ->toContain("incus exec 'clone-agent' -- runuser -u 'orbit'")
         ->toContain('test -f /home/orbit/.config/orbit/config.json')
-        ->toMatch("/incus exec 'clone-agent' -- runuser -u 'orbit' -- bash -lc 'mkdir -p/");
+        ->toMatch("/incus exec 'clone-agent' -- runuser -u 'orbit' -- bash -lc 'mkdir -p/")
+        // ACL-compatible launcher shape on the agent host (real file, not virtiofs symlink).
+        ->toContain('exec /home/orbit/orbit/bin/orbit')
+        ->not->toContain('ln -sfn ');
 });
 
 it('restores standalone wg-easy when post-convergence handoff cleanup fails', function (): void {
