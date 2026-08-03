@@ -1539,6 +1539,38 @@ describe(RemoteLocalExecutor::class, function (): void {
         ],
     ]);
 
+    it('redacts APP_KEY material from activity stdout and stderr summaries', function (): void {
+        $secret = 'base64:ActivityMustNotStoreThisKey==';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
+                exitCode: 0,
+                stdout: "{\"success\":{\"data\":{\"app_key\":\"{$secret}\"}}}\n",
+                stderr: "export APP_KEY={$secret}\n",
+                durationMs: 4,
+            ),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            arguments: [],
+            commandOptions: [],
+        );
+
+        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+        $logBlob = remoteLocalExecutorActivityLogBlob();
+
+        expect($completedProperties['stdout_summary'])
+            ->not->toContain($secret)
+            ->toContain('"<redacted>"')
+            ->and($completedProperties['stderr_summary'])
+            ->not->toContain($secret)
+            ->toContain('APP_KEY=<redacted>')
+            ->and($logBlob)
+            ->not->toContain($secret);
+    });
+
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             static function (Node $node, string $script, array $options): RemoteShellResult {

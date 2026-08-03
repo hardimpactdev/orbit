@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Updates;
 
 use App\Services\Version\InstallMetadataStore;
+use App\Services\Version\VersionOutputParser;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use JsonException;
@@ -42,11 +43,15 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     private readonly InstallMetadataStore $installMetadata;
 
+    private readonly VersionOutputParser $versionOutputParser;
+
     public function __construct(
         private readonly CheckoutPathResolver $checkoutPathResolver,
         ?InstallMetadataStore $installMetadata = null,
+        ?VersionOutputParser $versionOutputParser = null,
     ) {
         $this->installMetadata = $installMetadata ?? new InstallMetadataStore;
+        $this->versionOutputParser = $versionOutputParser ?? new VersionOutputParser;
     }
 
     /**
@@ -128,7 +133,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             return $this->failedDownloadFrom($chmodResult);
         }
 
-        $verifyResult = $this->runCommand([$stagedBinary, '--version'], 30);
+        $verifyResult = $this->runCommand([$stagedBinary, '--version', '--local', '--json'], 30);
 
         if (! $verifyResult->successful()) {
             $this->discard($stagedBinary);
@@ -193,7 +198,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedReplaceFrom($linkResult);
             }
 
-            $verifyResult = $this->runCommand([$linkPath, '--version'], 30);
+            $verifyResult = $this->runCommand([$linkPath, '--version', '--local', '--json'], 30);
 
             if (! $verifyResult->successful()) {
                 return $this->failedReplaceFrom($verifyResult);
@@ -368,8 +373,10 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     private function versionFromOutput(string $output): string
     {
-        if (preg_match('/\b\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?\b/', $output, $matches) === 1) {
-            return $matches[0];
+        $parsed = $this->versionOutputParser->fromAnyOutput($output);
+
+        if ($parsed !== null) {
+            return $parsed;
         }
 
         $configured = config('app.version');

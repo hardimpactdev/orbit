@@ -1211,13 +1211,26 @@ function matching_session_archive_dirs(string $root, string $branch): array
     }
 
     foreach (new DirectoryIterator($sessionsDirectory) as $entry) {
-        if ($entry->isDot() || ! $entry->isDir()) {
+        if ($entry->isDot() || $entry->isLink() || ! $entry->isDir()) {
             continue;
         }
 
         $name = $entry->getFilename();
 
+        if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9-]+$/', $name) !== 1) {
+            continue;
+        }
+
         if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-'.preg_quote($slug, '/').'$/', $name) === 1) {
+            $candidates[] = $entry->getPathname();
+
+            continue;
+        }
+
+        // Compact schema-v2 receipts may list compatible slugs / branch so a
+        // content-identical archive created under a short feature slug still
+        // satisfies branch-derived cleanup without a pre-success rename.
+        if (session_archive_receipt_matches_branch_slug($entry->getPathname(), $branch, $slug)) {
             $candidates[] = $entry->getPathname();
         }
     }
@@ -1225,6 +1238,55 @@ function matching_session_archive_dirs(string $root, string $branch): array
     sort($candidates);
 
     return $candidates;
+}
+
+function session_archive_receipt_matches_branch_slug(string $archiveDir, string $branch, string $slug): bool
+{
+    $receiptPath = $archiveDir.'/orbit-session-archive.json';
+
+    if (! is_file($receiptPath) || is_link($receiptPath)) {
+        return false;
+    }
+
+    $receipt = json_decode((string) file_get_contents($receiptPath), true);
+
+    if (! is_array($receipt)) {
+        return false;
+    }
+
+    if (($receipt['schema_version'] ?? null) !== 2 || ($receipt['archive_mode'] ?? null) !== 'compact') {
+        return false;
+    }
+
+    $receiptBranch = $receipt['branch'] ?? null;
+
+    if (is_string($receiptBranch) && $receiptBranch !== '') {
+        if ($receiptBranch === $branch || archive_slug($receiptBranch) === $slug) {
+            return true;
+        }
+    }
+
+    $candidates = [];
+
+    foreach (['slug', 'requested_slug'] as $key) {
+        $value = $receipt[$key] ?? null;
+
+        if (is_string($value) && $value !== '') {
+            $candidates[] = archive_slug($value);
+        }
+    }
+
+    $compatible = $receipt['compatible_slugs'] ?? null;
+
+    if (is_array($compatible)) {
+        foreach ($compatible as $value) {
+            if (is_string($value) && $value !== '') {
+                $candidates[] = archive_slug($value);
+            }
+        }
+    }
+
+    return in_array($slug, $candidates, true);
 }
 
 function healthy_agent_session_count(string $agentSessionsDir): int

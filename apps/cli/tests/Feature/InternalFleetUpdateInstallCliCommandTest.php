@@ -194,18 +194,16 @@ describe('internal fleet update install cli command', function (): void {
             ->toBeFalse();
     });
 
-    it('writes install metadata from the Version table line ignoring earlier semver-like stdout', function (): void {
+    it('writes install metadata from structured version JSON ignoring earlier semver-like stdout', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
         $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
 
-        // Real VersionCommand rows use %-14s label padding and may annotate updates.
+        // Progress noise may contain dotted triples; only JSON version wins.
         file_put_contents($artifactPath, <<<'SH'
             #!/usr/bin/env sh
             echo "pulling ghcr.io/hardimpactdev/orbit-reverb:1.2.3@sha256:deadbeef"
-            echo "Version       9.9.9 (new version available: 1.2.3)"
-            echo "Released at   unknown"
-            echo "Installed at  unknown"
+            printf '%s\n' '{"success":{"data":{"version":"9.9.9","latest_version":"1.2.3","update_available":true,"released_at":null,"installed_at":null},"meta":[]}}'
             SH);
         chmod(filename: $artifactPath, permissions: 0o755);
 
@@ -1398,16 +1396,22 @@ function fleet_update_install_cli_success_data(string $output): array
 }
 
 /**
- * Mirrors VersionCommand human --version --local output (three rows, %-14s labels).
+ * Mirrors VersionCommand --version --local --json success envelope.
  */
 function fleet_update_install_cli_fake_version_output(string $version = '9.9.9'): string
 {
-    return implode("\n", [
-        sprintf('%-14s%s', 'Version', $version),
-        sprintf('%-14s%s', 'Released at', 'unknown'),
-        sprintf('%-14s%s', 'Installed at', 'unknown'),
-        '',
-    ]);
+    return json_encode([
+        'success' => [
+            'data' => [
+                'version' => $version,
+                'latest_version' => null,
+                'update_available' => false,
+                'released_at' => null,
+                'installed_at' => null,
+            ],
+            'meta' => [],
+        ],
+    ], JSON_THROW_ON_ERROR)."\n";
 }
 
 function make_fleet_update_install_cli_workspace(): string
@@ -1418,12 +1422,10 @@ function make_fleet_update_install_cli_workspace(): string
     mkdir("{$workspace}/bin", recursive: true);
     $artifact = "{$workspace}/artifact/orbit";
 
-    // Match VersionCommand human contract: three %-14s rows from --version --local.
+    // Match VersionCommand JSON contract: --version --local --json.
     file_put_contents($artifact, <<<'SH'
         #!/usr/bin/env sh
-        echo "Version       9.9.9"
-        echo "Released at   unknown"
-        echo "Installed at  unknown"
+        printf '%s\n' '{"success":{"data":{"version":"9.9.9","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'
         SH);
     chmod(filename: $artifact, permissions: 0o755);
 

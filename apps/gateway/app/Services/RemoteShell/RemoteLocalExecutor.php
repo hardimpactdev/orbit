@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenEnvironment;
+use Orbit\Core\Security\SecretSummaryRedactor;
 use RuntimeException;
 use Throwable;
 
@@ -803,7 +804,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             return self::SUPPRESSED_OUTPUT_SUMMARY;
         }
 
-        return $this->truncate($this->redactOperationToken($output, $operationToken));
+        $redacted = $this->redactTransportSecrets($output, $operationToken);
+
+        return $this->truncate($redacted);
     }
 
     /**
@@ -943,7 +946,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
     private function redactTransportSecrets(string $value, string $operationToken): string
     {
-        return $this->redactOperationToken($value, $operationToken);
+        $redacted = $this->redactOperationToken($value, $operationToken);
+
+        return (new SecretSummaryRedactor)->redactString($redacted);
     }
 
     /**

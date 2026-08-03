@@ -10,17 +10,6 @@ use Throwable;
 /** @mago-expect lint:cyclomatic-complexity */
 final readonly class FleetUpdateInstallResultInspector
 {
-    public function shouldRetryAgentInstallAfterCliSelfUpdate(
-        RemoteShellResult $result,
-        string $installPayloadJson,
-    ): bool {
-        return (
-            $result->successful()
-            && $this->expectsAgentInstall($installPayloadJson)
-            && ! $this->installResultConfirmsAgentInstall($result)
-        );
-    }
-
     public function expectedAgentInstallWasConfirmed(RemoteShellResult $result, string $installPayloadJson): bool
     {
         if (! $this->expectsAgentInstall($installPayloadJson)) {
@@ -75,18 +64,24 @@ final readonly class FleetUpdateInstallResultInspector
      */
     private function hasNonEmptyListField(array $payload, string $key): bool
     {
-        $value = $payload[$key] ?? null;
-
-        return is_array($value) && $value !== [];
+        return array_key_exists($key, $payload)
+            && is_array($payload[$key])
+            && $payload[$key] !== [];
     }
 
     private function installResultConfirmsAgentInstall(RemoteShellResult $result): bool
     {
         $payload = $this->jsonObject($result->stdout);
-        $success = $payload['success'] ?? null;
-        $data = is_array($success) ? $success['data'] ?? null : null;
 
-        return is_array($data) && ($data['agent_installed'] ?? false) === true;
+        if (! array_key_exists('success', $payload) || ! is_array($payload['success'])) {
+            return false;
+        }
+
+        if (! array_key_exists('data', $payload['success']) || ! is_array($payload['success']['data'])) {
+            return false;
+        }
+
+        return ($payload['success']['data']['agent_installed'] ?? false) === true;
     }
 
     /**

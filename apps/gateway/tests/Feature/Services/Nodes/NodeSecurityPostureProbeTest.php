@@ -30,6 +30,101 @@ it('does not depend on host PHP for host-lane node security probes', function ()
         ->toContain('php -r');
 });
 
+it('forces the gateway host boundary for containerized gateway posture probes', function (): void {
+    $previous = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+    putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+
+    try {
+        $captured = null;
+        $executor = new class($captured) implements \App\Services\RemoteShell\RunsInternalCommands {
+            /** @param array<string, mixed>|null $captured */
+            public function __construct(
+                public ?array &$captured,
+            ) {}
+
+            public function runInternal(
+                Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                $this->captured = [
+                    'node' => $node->name,
+                    'command' => $commandName,
+                    'transportOptions' => $transportOptions,
+                ];
+
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: json_encode([
+                        'success' => [
+                            'data' => [
+                                'runtime_user' => true,
+                                'sshd_config' => true,
+                                'sshd_listen' => true,
+                                'sysctl' => true,
+                                'home_perms' => true,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        };
+
+        $node = Node::factory()
+            ->gateway()
+            ->managed()
+            ->create([
+                'platform' => 'ubuntu_24-04',
+                'status' => NodeStatus::Active,
+                'wireguard_address' => '10.44.0.1',
+                'user' => 'orbit',
+            ]);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'address_family' => 'v4',
+            'owner' => 'node-security',
+            'protected' => true,
+            'port' => '22',
+            'action' => 'deny',
+            'direction' => 'incoming',
+            'interface' => 'public',
+        ]);
+        FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'address_family' => 'v6',
+            'owner' => 'node-security',
+            'protected' => true,
+            'port' => '22',
+            'action' => 'deny',
+            'direction' => 'incoming',
+            'interface' => 'public',
+        ]);
+
+        $drift = new NodeSecurityPostureProbe(localExecutor: $executor)->diff($node);
+
+        expect($drift)
+            ->toBe([])
+            ->and($captured)
+            ->toMatchArray([
+                'node' => $node->name,
+                'command' => 'internal:node-security-posture:probe',
+            ])
+            ->and($captured['transportOptions']['force_remote_host'] ?? null)
+            ->toBeTrue();
+    } finally {
+        if ($previous === false) {
+            putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        } else {
+            putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previous}");
+        }
+    }
+});
+
 it('does not treat client-owned bootstrap SSH host keys as gateway steady-state posture', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',

@@ -1,0 +1,144 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Core\Security;
+
+/**
+ * Redacts secret-shaped values from activity and operation summary surfaces.
+ *
+ * Used at persistence boundaries for command lines, stdout/stderr summaries,
+ * and nested structured payloads so raw APP_KEY / password / token / api-key
+ * material never lands in activity_log or operation_runs summary columns.
+ *
+ * Matching is key-shaped (env, JSON, human key/value, nested array keys), not a
+ * blanket scan for ordinary words that merely contain those substrings.
+ */
+final class SecretSummaryRedactor
+{
+    public const string REDACTED = '<redacted>';
+
+    /**
+     * Case-insensitive exact keys whose values must never be retained.
+     *
+     * @var list<string>
+     */
+    private const array FORBIDDEN_KEYS = [
+        'app_key',
+        'appkey',
+        'application_key',
+        'operation_token',
+        'executor_secret',
+        'password',
+        'password_hash',
+        'secret',
+        'token',
+        'api_key',
+        'api-key',
+        'api_token',
+        'api-token',
+        'access_token',
+        'access-token',
+        'refresh_token',
+        'refresh-token',
+        'private_key',
+        'private-key',
+        'pre_shared_key',
+        'pre-shared-key',
+        'bearer',
+        'bearer_token',
+        'bearer-token',
+    ];
+
+    /**
+     * Identifier for env / JSON / human string forms.
+     * Optional single compound prefix allows user_password / reverb_app_key while
+     * word-boundaries keep token_count and ordinary prose intact.
+     */
+    private const string SECRET_KEY_CORE =
+        '(?:APP_KEY|APPLICATION_KEY|APPKEY|API[_-]?KEY|API[_-]?TOKEN|ACCESS[_-]?TOKEN|'
+        .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
+        .'PRE[_-]?SHARED[_-]?KEY|PASSWORD_HASH|PASSWORD|SECRET|TOKEN|BEARER[_-]?TOKEN|BEARER)';
+
+    private const string SECRET_KEY_IDENTIFIER =
+        '(?:[A-Za-z][A-Za-z0-9]*[_-])*'.self::SECRET_KEY_CORE;
+
+    public function redactString(string $value): string
+    {
+        $redacted = $value;
+        $keys = self::SECRET_KEY_IDENTIFIER;
+
+        // Env-style: PASSWORD=..., api_key='...', user_password=..., mixed case.
+        $redacted = preg_replace(
+            '/\b('.$keys.')\s*=\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
+            '$1='.self::REDACTED,
+            $redacted,
+        ) ?? $redacted;
+
+        // JSON object members: "password":"…", "api-key" : "…".
+        $redacted = preg_replace(
+            '/("(?:'.$keys.')"\s*:\s*)(?:"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|[^,}\s]+)/i',
+            '$1"'.self::REDACTED.'"',
+            $redacted,
+        ) ?? $redacted;
+
+        // Human key: value forms on their own line or after whitespace.
+        $redacted = preg_replace(
+            '/\b('.$keys.')\s*:\s*(?:"[^"]*"|\'[^\']*\'|\S+)/i',
+            '$1: '.self::REDACTED,
+            $redacted,
+        ) ?? $redacted;
+
+        return $redacted;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $payload
+     * @return array<array-key, mixed>
+     */
+    public function redactArray(array $payload): array
+    {
+        $result = [];
+
+        foreach ($payload as $key => $value) {
+            if (is_string($key) && $this->isForbiddenKey($key)) {
+                $result[$key] = self::REDACTED;
+
+                continue;
+            }
+
+            $result[$key] = $this->redactMixed($value);
+        }
+
+        return $result;
+    }
+
+    public function redactMixed(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            return $this->redactString($value);
+        }
+
+        if (is_array($value)) {
+            return $this->redactArray($value);
+        }
+
+        return $value;
+    }
+
+    public function isForbiddenKey(string $key): bool
+    {
+        $normalized = strtolower($key);
+
+        if (in_array($normalized, self::FORBIDDEN_KEYS, true)) {
+            return true;
+        }
+
+        // Suffix-shaped sibling secrets (user_password, reverb_app_key) without
+        // matching ordinary keys like secretary or token_count.
+        return preg_match(
+            '/(?:^|_)(app_?key|password(?:_hash)?|secret|token|api[_-]?key|api[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key|pre[_-]?shared[_-]?key|bearer(?:[_-]?token)?)$/',
+            $normalized,
+        ) === 1;
+    }
+}

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
+use App\Services\Tools\ManagedToolShell;
+
 /**
  * @mago-expect lint:too-many-methods
  */
@@ -71,6 +73,17 @@ final class HermesTool extends BaseTool
         $port = self::WEB_PORT;
         $username = self::AUTH_USERNAME;
 
+        $requirePassword = ManagedToolShell::requireNonEmptySecretFromFile(
+            fileVar: '${PASSWORD_FILE}',
+            targetVar: 'PASSWORD',
+            missingMessage: 'hermes dashboard password missing',
+        );
+        $requireSecret = ManagedToolShell::requireNonEmptySecretFromFile(
+            fileVar: '${SECRET_FILE}',
+            targetVar: 'SECRET',
+            missingMessage: 'hermes dashboard secret missing',
+        );
+
         return [
             'name' => self::PROCESS_NAME,
             'command' =>
@@ -81,10 +94,8 @@ final class HermesTool extends BaseTool
                     .'PUBLIC_URL_FILE="/home/agent/.hermes/dashboard.public_url"; '
                     // Canonical non-empty rule: missing/zero-byte/whitespace-only
                     // credential files fail closed (same normalization as regen).
-                    .'PASSWORD="$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)"; '
-                    .'SECRET="$(tr -d "[:space:]" < "${SECRET_FILE}" 2>/dev/null || true)"; '
-                    .'[ -n "${PASSWORD}" ] || { echo "hermes dashboard password missing" >&2; exit 1; }; '
-                    .'[ -n "${SECRET}" ] || { echo "hermes dashboard secret missing" >&2; exit 1; }; '
+                    .$requirePassword
+                    .$requireSecret
                     ."export HERMES_DASHBOARD_BASIC_AUTH_USERNAME={$username}; "
                     .'export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${PASSWORD}"; '
                     .'export HERMES_DASHBOARD_BASIC_AUTH_SECRET="${SECRET}"; '
@@ -144,7 +155,7 @@ final class HermesTool extends BaseTool
     public function credentialsScript(array $config = []): string
     {
         $hostname = $this->resolvedHostname($config);
-        $passwordFile = "'".str_replace(search: "'", replace: "'\\''", subject: self::PASSWORD_FILE)."'";
+        $passwordFile = ManagedToolShell::singleQuote(self::PASSWORD_FILE);
         $username = self::AUTH_USERNAME;
 
         return <<<BASH
@@ -153,7 +164,7 @@ final class HermesTool extends BaseTool
             PASSWORD_FILE={$passwordFile}
             PASSWORD=""
             if [ -f "\${PASSWORD_FILE}" ]; then
-              PASSWORD="\$(tr -d '\\r\\n' < "\${PASSWORD_FILE}")"
+              PASSWORD="\$(tr -d '[:space:]' < "\${PASSWORD_FILE}")"
             fi
             cat <<EOF
             {
@@ -198,8 +209,16 @@ final class HermesTool extends BaseTool
     private function configureManagedDashboardScript(array $config): string
     {
         $publicUrl = 'https://'.$this->resolvedHostname($config);
-        $publicUrlEnv = "'".str_replace(search: "'", replace: "'\\''", subject: $publicUrl)."'";
+        $publicUrlEnv = ManagedToolShell::singleQuote($publicUrl);
         $unit = self::PROCESS_NAME.'.service';
+        $ensurePassword = ManagedToolShell::ensureNonEmptySecretFile(
+            fileVar: '${PASSWORD_FILE}',
+            generateCommand: 'openssl rand -hex 24',
+        );
+        $ensureSecret = ManagedToolShell::ensureNonEmptySecretFile(
+            fileVar: '${SECRET_FILE}',
+            generateCommand: 'openssl rand -base64 32',
+        );
 
         return (
             'sudo -u agent -H env'
@@ -215,8 +234,8 @@ final class HermesTool extends BaseTool
             .'umask 077; '
             // Canonical non-empty rule: missing, zero-byte, or whitespace-only
             // (after stripping spaces/newlines) must be regenerated securely.
-            .'if [ -z "$(tr -d "[:space:]" < "${PASSWORD_FILE}" 2>/dev/null || true)" ]; then openssl rand -hex 24 > "${PASSWORD_FILE}"; chmod 600 "${PASSWORD_FILE}"; fi; '
-            .'if [ -z "$(tr -d "[:space:]" < "${SECRET_FILE}" 2>/dev/null || true)" ]; then openssl rand -base64 32 > "${SECRET_FILE}"; chmod 600 "${SECRET_FILE}"; fi; '
+            .$ensurePassword
+            .$ensureSecret
             .'printf "%s\n" "${ORBIT_HERMES_PUBLIC_URL}" > "${PUBLIC_URL_FILE}"; '
             .'chmod 600 "${PUBLIC_URL_FILE}"; '
             // Read-only unit ActiveState (no agent sudo). Treat active,

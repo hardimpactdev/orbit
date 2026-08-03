@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Services\Version\InstallMetadataStore;
+use App\Services\Version\VersionOutputParser;
 use JsonException;
 use Symfony\Component\Process\Process;
 
@@ -13,6 +14,7 @@ final readonly class LocalFleetUpdateInstallCliAction
     public function __construct(
         private LocalFleetUpdateInstallCliEnvironment $environment,
         private InstallMetadataStore $installMetadata = new InstallMetadataStore,
+        private VersionOutputParser $versionOutputParser = new VersionOutputParser,
     ) {}
 
     /**
@@ -57,7 +59,7 @@ final readonly class LocalFleetUpdateInstallCliAction
         LocalFleetUpdateInstallCliPayload $installPayload,
         string $stdout,
     ): void {
-        $version = $this->versionFromOutput($stdout);
+        $version = $this->versionOutputParser->fromAnyOutput($stdout);
 
         if ($version === null) {
             return;
@@ -68,26 +70,6 @@ final readonly class LocalFleetUpdateInstallCliAction
             binaryPath: $installPayload->binPath,
             installRoot: $installPayload->installRoot,
         );
-    }
-
-    private function versionFromOutput(string $output): ?string
-    {
-        // Match VersionCommand human rows: "Version       0.1.190" and optional
-        // "(new version available: x.y.z)" suffix. Ignore earlier dotted triples in
-        // install progress (image tags, retry noise, etc.).
-        $matches = null;
-
-        if (
-            preg_match(
-                '/^Version\s+(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)(?:\s|\(|$)/m',
-                $output,
-                $matches,
-            ) === 1
-        ) {
-            return $matches[1];
-        }
-
-        return null;
     }
 
     private function installScript(): string
@@ -511,7 +493,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             check_sha256 "$ORBIT_CLI_SHA256" "$link_target"
             resolved_binary="$(readlink -f "$bin_path" 2>/dev/null || printf %s "$bin_path")"
             check_sha256 "$ORBIT_CLI_SHA256" "$resolved_binary"
-            "$bin_path" --version --local
+            "$bin_path" --version --local --json
 
             if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
                 agent_bin_path="${ORBIT_AGENT_BIN_PATH:-$HOME/.local/bin/orbit-agent}"
@@ -605,7 +587,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             fi
 
             echo verify
-            "$bin_path" --version --local
+            "$bin_path" --version --local --json
             BASH;
     }
 

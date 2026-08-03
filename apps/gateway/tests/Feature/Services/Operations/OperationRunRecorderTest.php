@@ -199,6 +199,35 @@ describe('OperationRunRecorder', function (): void {
             ->not->toBeNull();
     });
 
+    it('redacts APP_KEY and app_key material from summaries and nested results', function (): void {
+        $secret = 'base64:PersistMeNeverInSummaries==';
+        $run = $this->recorder->queued((string) Str::uuid(), 'local', operationType: 'websocket-runtime.app-key:ensure');
+        $this->recorder->running($run->id);
+
+        $done = $this->recorder->succeeded(
+            id: $run->id,
+            exitCode: 0,
+            result: [
+                'app_key' => $secret,
+                'nested' => ['APP_KEY' => $secret, 'status' => 'present'],
+            ],
+            stdoutSummary: "export APP_KEY={$secret}\n{\"app_key\":\"{$secret}\"}\n",
+            stderrSummary: "app_key: {$secret}",
+        );
+
+        expect($done->stdout_summary)
+            ->not->toContain($secret)
+            ->toContain('APP_KEY=<redacted>')
+            ->and($done->stderr_summary)
+            ->not->toContain($secret)
+            ->toContain('app_key: <redacted>')
+            ->and($done->result)
+            ->toMatchArray([
+                'app_key' => '<redacted>',
+                'nested' => ['APP_KEY' => '<redacted>', 'status' => 'present'],
+            ]);
+    });
+
     it('preserves the first terminal result and warns on duplicate finalization', function (): void {
         $run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'tool.install');
         $first = $this->recorder->failed(

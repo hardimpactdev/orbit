@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
+use App\Services\Tools\ManagedToolShell;
+
 /**
  * @mago-expect lint:too-many-methods
  */
@@ -12,6 +14,10 @@ final class OpenClawTool extends BaseTool
     /**
      * OpenClaw's documented default gateway port (not Orbit Caddy's private 8081).
      * Co-hosts cleanly with Hermes on 8080 on the same agent node.
+     *
+     * A hypothetical 8081 fallback would require proving Hermes specifically owns
+     * a collision on this default and persisting the selected port; that path is
+     * not exercised today while Hermes remains on 8080.
      */
     public const int WEB_PORT = 18789;
 
@@ -61,14 +67,20 @@ final class OpenClawTool extends BaseTool
         // depend on outer systemd Environment=HOME (node user, usually orbit).
         // Shell variables still use `$` and survive systemd via SystemdUnitRenderer
         // `$$` escaping of ExecStart.
+        $requireToken = ManagedToolShell::requireNonEmptySecretFromFile(
+            fileVar: '${TOKEN_FILE}',
+            targetVar: 'TOKEN',
+            missingMessage: 'openclaw gateway token missing',
+        );
+
         return [
             'name' => 'openclaw-gateway',
             'command' =>
                 'sudo -u agent -H env OPENCLAW_SUPERVISOR_MODE=external OPENCLAW_SERVICE_REPAIR_POLICY=external bash -lc '
                     ."'set -euo pipefail; "
                     .'TOKEN_FILE="/home/agent/.openclaw/gateway.token"; '
-                    .'[ -f "${TOKEN_FILE}" ] || { echo "openclaw gateway token missing" >&2; exit 1; }; '
-                    .'export OPENCLAW_GATEWAY_TOKEN="$(tr -d "\r\n" < "${TOKEN_FILE}")"; '
+                    .$requireToken
+                    .'export OPENCLAW_GATEWAY_TOKEN="${TOKEN}"; '
                     ."exec openclaw gateway run --port {$port} --bind lan'",
             'runtime' => 'systemd',
             'tool' => 'openclaw',
@@ -118,7 +130,7 @@ final class OpenClawTool extends BaseTool
         $hostname = is_string($hostnameValue) && $hostnameValue !== ''
             ? $hostnameValue
             : 'openclaw.agent';
-        $tokenFile = "'".str_replace(search: "'", replace: "'\\''", subject: self::TOKEN_FILE)."'";
+        $tokenFile = ManagedToolShell::singleQuote(self::TOKEN_FILE);
 
         return <<<BASH
             #!/usr/bin/env bash
@@ -126,7 +138,7 @@ final class OpenClawTool extends BaseTool
             TOKEN_FILE={$tokenFile}
             TOKEN=""
             if [ -f "\${TOKEN_FILE}" ]; then
-              TOKEN="\$(tr -d '\\r\\n' < "\${TOKEN_FILE}")"
+              TOKEN="\$(tr -d '[:space:]' < "\${TOKEN_FILE}")"
             fi
             cat <<EOF
             {
@@ -176,7 +188,11 @@ final class OpenClawTool extends BaseTool
         $origin = "https://{$hostname}";
         $port = self::WEB_PORT;
         $allowedOriginsJson = json_encode([$origin], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $allowedOriginsEnv = "'".str_replace(search: "'", replace: "'\\''", subject: $allowedOriginsJson)."'";
+        $allowedOriginsEnv = ManagedToolShell::singleQuote($allowedOriginsJson);
+        $ensureToken = ManagedToolShell::ensureNonEmptySecretFile(
+            fileVar: '${TOKEN_FILE}',
+            generateCommand: 'openssl rand -hex 32',
+        );
 
         // Pass JSON via env so it is not nested as escapeshellarg inside bash -lc '...'.
         return (
@@ -191,7 +207,7 @@ final class OpenClawTool extends BaseTool
             .'TOKEN_FILE="${STATE_DIR}/gateway.token"; '
             .'mkdir -p "${STATE_DIR}"; '
             .'umask 077; '
-            .'if [ ! -f "${TOKEN_FILE}" ]; then openssl rand -hex 32 > "${TOKEN_FILE}"; chmod 600 "${TOKEN_FILE}"; fi; '
+            .$ensureToken
             .'openclaw config set gateway.mode local; '
             ."openclaw config set gateway.port {$port} --strict-json; "
             .'openclaw config set gateway.bind lan; '

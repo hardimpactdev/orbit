@@ -10,6 +10,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\PublicSshDenyInstaller;
@@ -177,6 +178,9 @@ final readonly class NodeSecurityPostureProbe
                     'metadata' => [
                         'ORBIT_OPERATION_ID' => 'node-security-posture.probe',
                     ],
+                    // Host-owned posture (sshd/sysctl/home) must not run as
+                    // gateway_local inside the orbit-gateway container.
+                    'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                     'timeout' => 30,
                     'throw' => false,
                 ],

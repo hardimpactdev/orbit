@@ -825,6 +825,179 @@ it('session archive refreshes the newest slug archive instead of minting duplica
     }
 });
 
+it('session archive reuses compact content-identical archives across compatible slugs without renaming', function (): void {
+    $workspace = session_archive_workspace(suffix: 'cross-slug-identity');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        session_archive_prepare_accepted_feature($paths);
+
+        $firstRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=token-transport-contract',
+            '--timestamp=2026-08-03-090000',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($firstRun->getExitCode())->toBe(0, $firstRun->getErrorOutput());
+
+        $firstSummary = session_archive_summary(process: $firstRun);
+        $firstArchiveDir = (string) $firstSummary['archive_dir'];
+        $firstLoop = (string) file_get_contents("{$firstArchiveDir}/loop.md");
+        $firstLoopDigest = is_array($firstSummary['entry_digests'] ?? null)
+            ? ($firstSummary['entry_digests']['loop.md'] ?? null)
+            : null;
+
+        expect($firstLoopDigest)
+            ->toBeString()
+            ->and(basename($firstArchiveDir))
+            ->toBe('2026-08-03-090000-token-transport-contract')
+            ->and($firstSummary['compatible_slugs'] ?? null)
+            ->toContain('token-transport-contract');
+
+        // Branch-derived cleanup slug differs only by a codex- prefix; content is identical.
+        // Refresh stays on the original path; receipt records the requested slug for cleanup.
+        $secondRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=codex-token-transport-contract',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($secondRun->getExitCode())->toBe(0, $secondRun->getErrorOutput());
+
+        $secondSummary = session_archive_summary(process: $secondRun);
+        $secondArchiveDir = (string) $secondSummary['archive_dir'];
+
+        expect($secondSummary)
+            ->toHaveKey('mode', 'refreshed')
+            ->and($secondArchiveDir)
+            ->toBe($firstArchiveDir)
+            ->and(basename($secondArchiveDir))
+            ->toBe('2026-08-03-090000-token-transport-contract')
+            ->and(session_archive_directories(archiveRoot: $paths['archiveRoot']))
+            ->toBe(['2026-08-03-090000-token-transport-contract'])
+            ->and($secondSummary['entry_digests']['loop.md'] ?? null)
+            ->toBe($firstLoopDigest)
+            ->and($secondSummary['requested_slug'] ?? null)
+            ->toBe('codex-token-transport-contract')
+            ->and($secondSummary['compatible_slugs'] ?? [])
+            ->toContain('token-transport-contract', 'codex-token-transport-contract')
+            ->and($secondSummary['branch'] ?? null)
+            ->toBe('feature')
+            ->and($secondRun->getErrorOutput())
+            ->toContain('Refresh')
+            ->and(file_get_contents("{$secondArchiveDir}/loop.md"))
+            ->toBe($firstLoop);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('failed cross-slug compact refresh leaves the original archive path and content intact', function (): void {
+    $workspace = session_archive_workspace(suffix: 'cross-slug-failure-atomic');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        session_archive_prepare_accepted_feature($paths);
+
+        $firstRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=token-transport-contract',
+            '--timestamp=2026-08-03-091500',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($firstRun->getExitCode())->toBe(0, $firstRun->getErrorOutput());
+
+        $firstSummary = session_archive_summary(process: $firstRun);
+        $firstArchiveDir = (string) $firstSummary['archive_dir'];
+        $originalLoop = (string) file_get_contents("{$firstArchiveDir}/loop.md");
+        $originalReceipt = (string) file_get_contents("{$firstArchiveDir}/orbit-session-archive.json");
+
+        // Deny writes in the archive root so the refresh cannot create a temp
+        // sibling or rename the existing archive. Resolve must not have already
+        // renamed the valid archive to the requested slug.
+        expect(chmod($paths['archiveRoot'], 0o555))->toBeTrue();
+
+        $secondRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=codex-token-transport-contract',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($secondRun->getExitCode())
+            ->not->toBe(0)
+            ->and(is_dir($firstArchiveDir))
+            ->toBeTrue()
+            ->and(basename($firstArchiveDir))
+            ->toBe('2026-08-03-091500-token-transport-contract')
+            ->and(session_archive_directories(archiveRoot: $paths['archiveRoot']))
+            ->toBe(['2026-08-03-091500-token-transport-contract'])
+            ->and(file_get_contents("{$firstArchiveDir}/loop.md"))
+            ->toBe($originalLoop)
+            ->and(file_get_contents("{$firstArchiveDir}/orbit-session-archive.json"))
+            ->toBe($originalReceipt);
+    } finally {
+        if (isset($paths['archiveRoot']) && is_dir($paths['archiveRoot'])) {
+            @chmod($paths['archiveRoot'], 0o755);
+        }
+
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive does not conflate different sessions when only the slug family overlaps', function (): void {
+    $workspace = session_archive_workspace(suffix: 'distinct-sessions');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        session_archive_prepare_accepted_feature($paths);
+
+        $firstRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=alpha-session',
+            '--timestamp=2026-08-03-100000',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($firstRun->getExitCode())->toBe(0, $firstRun->getErrorOutput());
+
+        file_put_contents(
+            $paths['loopPath'],
+            (string) file_get_contents($paths['loopPath'])."\n- Distinct session marker: beta\n",
+        );
+
+        $secondRun = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=beta-session',
+            '--timestamp=2026-08-03-100100',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($secondRun->getExitCode())->toBe(0, $secondRun->getErrorOutput());
+
+        expect(session_archive_directories(archiveRoot: $paths['archiveRoot']))
+            ->toBe([
+                '2026-08-03-100000-alpha-session',
+                '2026-08-03-100100-beta-session',
+            ]);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
 it('session archive writes its path back into the active loop evidence links', function (): void {
     $workspace = session_archive_workspace(suffix: 'write-back');
 

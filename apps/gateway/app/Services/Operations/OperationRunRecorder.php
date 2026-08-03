@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
+use Orbit\Core\Security\SecretSummaryRedactor;
 use RuntimeException;
 
 /**
@@ -18,9 +19,10 @@ use RuntimeException;
  * execution state. Per decision D5, each attempt gets a fresh per-attempt
  * `id` while `operation_id` groups re-mints of the same logical operation.
  *
- * Redaction of `result`, `error`, `stdout_summary`, and `stderr_summary` is
- * the caller's responsibility (typically `OperationResultHandler`); the
- * recorder writes the values as given and does not scrub them.
+ * Callers should still apply typed result-boundary policy. Independently, this
+ * recorder redacts secret-shaped strings and keys on `result`, `error`,
+ * `stdout_summary`, and `stderr_summary` so APP_KEY / app_key material cannot
+ * persist even when an upstream path forgets to scrub.
  */
 final readonly class OperationRunRecorder
 {
@@ -30,6 +32,7 @@ final readonly class OperationRunRecorder
         private OperationEventRecorder $events,
         private OperationEventStreamer $eventStreamer,
         private DatabaseLockRetry $databaseLockRetry,
+        private SecretSummaryRedactor $secretSummaryRedactor = new SecretSummaryRedactor,
     ) {}
 
     /**
@@ -63,10 +66,10 @@ final readonly class OperationRunRecorder
             'target_node_id' => $targetNodeId,
             'correlation_id' => $correlationId,
             'queue' => $queue,
-            'result' => $result,
-            'error' => $error,
-            'stdout_summary' => $stdoutSummary,
-            'stderr_summary' => $stderrSummary,
+            'result' => $this->redactPayload($result),
+            'error' => $this->redactPayload($error),
+            'stdout_summary' => $this->redactSummary($stdoutSummary),
+            'stderr_summary' => $this->redactSummary($stderrSummary),
         ]);
     }
 
@@ -317,19 +320,44 @@ final readonly class OperationRunRecorder
                     'status' => $status,
                     'finished_at' => Carbon::now(),
                     'exit_code' => $exitCode,
-                    'stdout_summary' => $stdoutSummary,
-                    'stderr_summary' => $stderrSummary,
+                    'stdout_summary' => $this->redactSummary($stdoutSummary),
+                    'stderr_summary' => $this->redactSummary($stderrSummary),
                 ],
                 fn (mixed $value): bool => $value !== null,
             );
 
-            $attributes['result'] = $result;
-            $attributes['error'] = $error;
+            $attributes['result'] = $this->redactPayload($result);
+            $attributes['error'] = $this->redactPayload($error);
 
             $run->forceFill($attributes)->save();
 
             return $run->refresh();
         });
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $payload
+     * @return array<string, mixed>|null
+     */
+    private function redactPayload(?array $payload): ?array
+    {
+        if ($payload === null) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $redacted */
+        $redacted = $this->secretSummaryRedactor->redactArray($payload);
+
+        return $redacted;
+    }
+
+    private function redactSummary(?string $summary): ?string
+    {
+        if ($summary === null) {
+            return null;
+        }
+
+        return $this->secretSummaryRedactor->redactString($summary);
     }
 
     private function findOrFail(string $id): OperationRun
