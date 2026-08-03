@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\OrbitConfigStoreException;
+use App\Services\Nodes\ManagedConfigAgentReadAclAssessor;
+use Closure;
 use JsonException;
+use Symfony\Component\Process\Process;
 
 /**
  * Per-operator-host JSON-backed CLI configuration.
@@ -36,12 +39,20 @@ use JsonException;
  * `orbit` system user; on developer Macs that means the operator's user. Consumer users may read
  * the owner config through a read-only ACL, but writes still require owner-user control.
  *
+ * Agent-node durability: when the managed `agent` runtime user exists, atomic saves re-apply
+ * the exact named ACL `u:agent:r--` (with effective mask read). Permission validation accepts
+ * that narrow extended ACL when traditional group bits only reflect the ACL mask, and still
+ * rejects ordinary group/other exposure. Do not broadly allow mode 0640.
+ *
  * Precedence (D13): env vars override JSON values. The precedence chain lives inside
  * `GatewayApiServiceProvider`'s binding closure for `GatewayApiClient`, not inside
  * `apps/cli/config/orbit.php`. The config file stays env-only so it survives `config:cache`.
  *
  * `config:cache` interaction: cached config does not see edits to this file until the next
  * command run rebuilds the provider binding. This is acceptable because the closure is lazy.
+ *
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  */
 final readonly class OrbitConfigStore
 {
@@ -57,8 +68,17 @@ final readonly class OrbitConfigStore
 
     public const int FILE_MODE = 0600;
 
+    public const string AGENT_CONFIG_ACL_SPEC = 'u:agent:r--';
+
+    /**
+     * @param  (Closure(): bool)|null  $agentUserExists
+     * @param  (Closure(list<string>, int): Process)|null  $processRunner
+     */
     public function __construct(
         private ?string $overridePath = null,
+        private ?Closure $agentUserExists = null,
+        private ?Closure $processRunner = null,
+        private ?ManagedConfigAgentReadAclAssessor $configAclAssessor = null,
     ) {}
 
     public function path(): string
@@ -147,7 +167,8 @@ final readonly class OrbitConfigStore
     /**
      * Write the config file atomically. Creates parent directories with mode 0700 and the
      * file with mode 0600. Refuses to write when an existing file is owned by another user
-     * (D8 owner-only model).
+     * (D8 owner-only model). On agent nodes, re-applies the exact named agent read ACL
+     * after the rename so routine config-writing commands do not revoke agent access.
      *
      * @param  array<string, mixed>  $config
      */
@@ -155,6 +176,7 @@ final readonly class OrbitConfigStore
     {
         $path = $this->path();
         $directory = dirname($path);
+        $preserveAgentReadAcl = $this->shouldPreserveAgentConfigReadAcl($path);
 
         if (! is_dir($directory)) {
             if (! @mkdir($directory, self::DIRECTORY_MODE, recursive: true) && ! is_dir($directory)) {
@@ -197,6 +219,10 @@ final readonly class OrbitConfigStore
         if (! @rename($tempPath, $path)) {
             @unlink($tempPath);
             throw new OrbitConfigStoreException("Failed to atomically rename config: {$path}", 'config_rename_failed');
+        }
+
+        if ($preserveAgentReadAcl) {
+            $this->applyAgentConfigReadAcl($path);
         }
     }
 
@@ -463,13 +489,112 @@ final readonly class OrbitConfigStore
             );
         }
 
-        if (! is_int($mode)) {
+        if (! is_int($mode) || $perms === null) {
             return;
         }
 
-        if (($perms & 0o077) !== 0) {
-            // Owner matches; silently tighten permissions.
-            @chmod($path, self::FILE_MODE);
+        // Other bits are never part of the allowed agent ACL contract.
+        if (($perms & 0o007) !== 0) {
+            $this->tightenOwnerOnlyMode($path);
+
+            if ($this->shouldPreserveAgentConfigReadAcl($path)) {
+                $this->applyAgentConfigReadAcl($path);
+            }
+
+            return;
         }
+
+        if (($perms & 0o070) === 0) {
+            return;
+        }
+
+        // Traditional group bits may only reflect the ACL mask for u:agent:r--.
+        // Do not chmod that shape away (chmod zeros the mask → effective:none).
+        if ($this->hasAllowedAgentConfigReadAcl($path)) {
+            return;
+        }
+
+        // Ordinary group exposure without the narrow agent ACL: tighten owner-only.
+        $this->tightenOwnerOnlyMode($path);
+    }
+
+    /**
+     * @mago-expect lint:no-error-control-operator
+     */
+    private function tightenOwnerOnlyMode(string $path): void
+    {
+        // Non-fatal: a failed chmod is re-checked on the next read/write.
+        @chmod($path, self::FILE_MODE);
+    }
+
+    private function shouldPreserveAgentConfigReadAcl(string $path): bool
+    {
+        if ($this->agentRuntimeUserExists()) {
+            return true;
+        }
+
+        return is_file($path) && $this->hasAllowedAgentConfigReadAcl($path);
+    }
+
+    private function agentRuntimeUserExists(): bool
+    {
+        if ($this->agentUserExists instanceof Closure) {
+            return ($this->agentUserExists)();
+        }
+
+        $probe = $this->runProcess(['id', '-u', ManagedConfigAgentReadAclAssessor::AGENT_USER], timeout: 5);
+
+        return $probe->isSuccessful();
+    }
+
+    private function hasAllowedAgentConfigReadAcl(string $path): bool
+    {
+        $process = $this->runProcess(['getfacl', '-p', $path], timeout: 5);
+
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        return $this->configAclAssessor()->isManagedAgentReadOnly($process->getOutput());
+    }
+
+    private function applyAgentConfigReadAcl(string $path): void
+    {
+        $process = $this->runProcess([
+            'setfacl',
+            '-m',
+            self::AGENT_CONFIG_ACL_SPEC,
+            $path,
+        ], timeout: 10);
+
+        if ($process->isSuccessful()) {
+            return;
+        }
+
+        throw new OrbitConfigStoreException(
+            "Failed to re-apply agent read ACL on config file: {$path}",
+            'config_agent_acl_failed',
+        );
+    }
+
+    private function configAclAssessor(): ManagedConfigAgentReadAclAssessor
+    {
+        return $this->configAclAssessor ?? new ManagedConfigAgentReadAclAssessor;
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function runProcess(array $command, int $timeout): Process
+    {
+        if ($this->processRunner instanceof Closure) {
+            return ($this->processRunner)($command, $timeout);
+        }
+
+        $process = new Process($command);
+        $process->setTimeout($timeout);
+        $process->run();
+
+        return $process;
     }
 }
