@@ -53,12 +53,157 @@ it('prepares owner-local launchers for source-mounted retained topology checkout
 
     $command = $method->invoke(null, '/home/orbit/orbit-run', 'orbit');
 
+    // Final runtime checkout: real home-FS wrapper exec'ing apps/cli/orbit (not a
+    // virtiofs/source symlink, and not a path that checkout.overlay may swap away).
     expect($command)
         ->toContain('/home/orbit/.local/bin')
         ->toContain('/home/orbit/.local/bin/orbit')
         ->toContain('/home/orbit/.config/orbit/install.json')
-        ->toContain('/home/orbit/orbit-run/bin/orbit')
-        ->toContain('{"bin_path":"\/home\/orbit\/.local\/bin\/orbit"}');
+        ->toContain('/home/orbit/orbit-run/apps/cli/orbit')
+        ->toMatch("/exec .*\/home\/orbit\/orbit-run\/apps\/cli\/orbit/")
+        ->toContain('sudo rm -f ')
+        ->toContain('printf %s ')
+        ->toContain('test -f ')
+        ->toContain('test ! -L ')
+        ->toContain('test -x ')
+        ->not->toContain('ln -sfn ')
+        ->not->toContain('/home/orbit/orbit-run/bin/orbit')->toContain(
+            '{"bin_path":"\/home\/orbit\/.local\/bin\/orbit"}',
+        );
+});
+
+it('re-ensures agent runtime against the final post-overlay runtime checkout', function (): void {
+    $command = E2ECurrentCheckout::agentRuntimeReadinessCommand('/home/orbit/orbit-run');
+
+    expect($command)
+        ->toContain("test -f '/home/orbit/.local/bin/orbit'")
+        ->toContain("test ! -L '/home/orbit/.local/bin/orbit'")
+        ->toContain("test -x '/home/orbit/.local/bin/orbit'")
+        ->toContain("test -x '/home/orbit/orbit-run/apps/cli/orbit'")
+        ->toContain("cd '/home/orbit/orbit-run/apps/cli'")
+        ->toContain('LocalAgentUserEnsure')
+        ->toContain('LocalAgentAclEnsure')
+        ->toContain('LocalAgentRuntimeProbe')
+        ->not->toContain('/home/orbit/orbit/apps/cli')
+        ->not->toContain('/home/orbit/orbit/bin/orbit');
+});
+
+it('runs agent runtime readiness only after checkout roles reach their final paths', function (): void {
+    $calls = [];
+    E2ECurrentCheckout::useInstallerForTests(function (string $role) use (&$calls): string {
+        $calls[] = "install:{$role}";
+
+        return match ($role) {
+            'agent' => '/home/orbit/orbit-run',
+            default => "/home/orbit/orbit-run-{$role}",
+        };
+    });
+
+    $agent = new class implements \App\E2E\Support\E2EInstance {
+        /** @var list<string> */
+        public array $commands = [];
+
+        public function name(): string
+        {
+            return 'clone-agent';
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): \Illuminate\Contracts\Process\ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return Process::result();
+        }
+
+        public function ssh(
+            string $user,
+            \App\E2E\Support\SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): \Illuminate\Contracts\Process\ProcessResult {
+            throw new RuntimeException('ssh not expected');
+        }
+
+        public function authorizeSsh(string $user, \App\E2E\Support\SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '127.0.0.1';
+        }
+
+        public function waitForSsh(string $user, \App\E2E\Support\SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+
+    $operator = new class implements \App\E2E\Support\E2EInstance {
+        public function name(): string
+        {
+            return 'clone-operator';
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): \Illuminate\Contracts\Process\ProcessResult
+        {
+            throw new RuntimeException('operator exec not expected');
+        }
+
+        public function ssh(
+            string $user,
+            \App\E2E\Support\SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): \Illuminate\Contracts\Process\ProcessResult {
+            throw new RuntimeException('ssh not expected');
+        }
+
+        public function authorizeSsh(string $user, \App\E2E\Support\SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '127.0.0.1';
+        }
+
+        public function waitForSsh(string $user, \App\E2E\Support\SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+
+    $topology = new \App\E2E\Support\E2ETopologyLease(
+        kind: \App\E2E\Support\E2ETopologyKind::OperatorGatewayAgent,
+        operator: $operator,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new \App\E2E\Support\SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        rebuild: fn (): array => ['instances' => [], 'snapshotReset' => null],
+        agent: $agent,
+    );
+
+    try {
+        $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['agent']);
+
+        expect($paths)
+            ->toBe(['agent' => '/home/orbit/orbit-run'])
+            ->and($calls)
+            ->toBe(['install:agent'])
+            ->and($agent->commands)
+            ->toHaveCount(1)
+            ->and($agent->commands[0])
+            ->toContain("cd '/home/orbit/orbit-run/apps/cli'")
+            ->toContain('LocalAgentAclEnsure')
+            ->toContain("test -f '/home/orbit/.local/bin/orbit'")
+            ->toContain("test -x '/home/orbit/orbit-run/apps/cli/orbit'");
+    } finally {
+        E2ECurrentCheckout::useInstallerForTests(null);
+    }
 });
 
 it('passes Docker gateway state environment through the current checkout wrapper', function (): void {

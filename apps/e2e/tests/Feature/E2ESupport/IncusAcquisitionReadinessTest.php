@@ -527,7 +527,7 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->and($legacyVpnRemoval)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
-        ->toContain('/home/orbit/orbit/bin/orbit');
+        ->toContain('/home/orbit/orbit/apps/cli/orbit');
 });
 
 it('installs a real home-local orbit launcher for source-mounted topologies', function (): void {
@@ -553,12 +553,12 @@ it('installs a real home-local orbit launcher for source-mounted topologies', fu
 
     $joined = implode("\n", $commands());
 
-    // Production installs a real file at ~/.local/bin/orbit. A symlink into the
-    // virtiofs source mount makes LocalAgentAclEnsure fail at stage=binary_acl.
+    // Pre-overlay prepare installs a real home launcher for bake/retarget. Final
+    // post-overlay shape is owned by E2ECurrentCheckout (orbit-run/apps/cli/orbit).
     expect($joined)
         ->toContain('/home/orbit/.local/bin/orbit')
-        ->toContain('/home/orbit/orbit/bin/orbit')
-        ->toContain('exec /home/orbit/orbit/bin/orbit')
+        ->toContain('/home/orbit/orbit/apps/cli/orbit')
+        ->toContain('exec /home/orbit/orbit/apps/cli/orbit')
         ->toContain('rm -f ')
         ->toContain('printf %s ')
         ->toContain('test -f ')
@@ -572,7 +572,7 @@ it('installs a real home-local orbit launcher for source-mounted topologies', fu
         ->toContain('/home/operator/.local/bin/orbit')
         ->toMatch('/rm -f .*\/home\/orbit\/\.local\/bin\/orbit/')
         ->toMatch('/test ! -L .*\/home\/orbit\/\.local\/bin\/orbit/')
-        ->toMatch('/printf %s .*exec \/home\/orbit\/orbit\/bin\/orbit/s');
+        ->toMatch('/printf %s .*exec \/home\/orbit\/orbit\/apps\/cli\/orbit/s');
 });
 
 it('prepares managed agent runtime user and CLI access before product proof on agent topologies', function (): void {
@@ -635,8 +635,8 @@ it('prepares managed agent runtime user and CLI access before product proof on a
         ->toContain("incus exec 'clone-agent' -- runuser -u 'orbit'")
         ->toContain('test -f /home/orbit/.config/orbit/config.json')
         ->toMatch("/incus exec 'clone-agent' -- runuser -u 'orbit' -- bash -lc 'mkdir -p/")
-        // ACL-compatible launcher shape on the agent host (real file, not virtiofs symlink).
-        ->toContain('exec /home/orbit/orbit/bin/orbit')
+        // Pre-overlay ACL-compatible launcher (final post-overlay uses orbit-run via checkout).
+        ->toContain('exec /home/orbit/orbit/apps/cli/orbit')
         ->not->toContain('ln -sfn ');
 });
 
@@ -716,7 +716,7 @@ it('starts the gateway api before snapshot reset retarget bakes downstream roles
         ->and($sourceMountedLauncher)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
-        ->toContain('/home/orbit/orbit/bin/orbit');
+        ->toContain('/home/orbit/orbit/apps/cli/orbit');
 });
 
 it('clears known hosts on every clone through one parallel host call', function (): void {

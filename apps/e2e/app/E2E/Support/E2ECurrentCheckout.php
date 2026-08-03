@@ -52,14 +52,18 @@ final class E2ECurrentCheckout
         $roles ??= self::availableTopologyRoles($topology);
 
         if (self::canInstallTopologyRolesConcurrently($topology, $roles, $users)) {
-            return self::installTopologyRolesConcurrently($topology, $roles, $users, $timer);
+            $paths = self::installTopologyRolesConcurrently($topology, $roles, $users, $timer);
+        } else {
+            $paths = [];
+
+            foreach ($roles as $role) {
+                $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
+            }
         }
 
-        $paths = [];
-
-        foreach ($roles as $role) {
-            $paths[$role] = self::installTopologyRole($topology, $role, $users, $timer?->child($role));
-        }
+        // Checkout overlay / runtime-state rewrites the home launcher. Final
+        // agent readiness must run only after roles reach their runtime checkout.
+        self::ensureAgentRuntimeReadinessAfterCheckout($topology, $paths, $timer);
 
         return $paths;
     }
@@ -1580,11 +1584,27 @@ final class E2ECurrentCheckout
         return null;
     }
 
+    /**
+     * Install a real home-local launcher that execs the checkout CLI binary.
+     * Symlinks into source/overlay mounts break LocalAgentAclEnsure (setfacl)
+     * and can disappear when overlay runtime-state rewrites paths. Production
+     * installs a real file at `$HOME/.local/bin/orbit`; prepared topologies
+     * must match that shape and target the final runtime checkout launcher
+     * (`…/apps/cli/orbit`), not a pre-overlay source path that may be swapped.
+     */
     private static function ownerLocalLauncherActivationCommand(string $remotePath, string $user): string
     {
         $home = "/home/{$user}";
         $binPath = "{$home}/.local/bin/orbit";
+        $cliLauncher = rtrim($remotePath, '/').'/apps/cli/orbit';
         $installMetadataPath = self::OrbitConfigRoot.'/install.json';
+        $wrapperContents = implode("\n", [
+            '#!/usr/bin/env bash',
+            'set -euo pipefail',
+            '',
+            'exec '.escapeshellarg($cliLauncher).' "$@"',
+            '',
+        ]);
 
         return implode(' && ', [
             'sudo install -d -m 0755 -o '
@@ -1594,8 +1614,15 @@ final class E2ECurrentCheckout
                 .' '
                 .escapeshellarg("{$home}/.local/bin"),
             'sudo install -d -m 0700 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot),
-            'sudo ln -sfn '.escapeshellarg("{$remotePath}/bin/orbit").' '.escapeshellarg($binPath),
-            'sudo chown -h '.escapeshellarg("{$user}:{$user}").' '.escapeshellarg($binPath),
+            // Drop any prior symlink/wrapper so setfacl can target a real home-FS file.
+            'sudo rm -f '.escapeshellarg($binPath),
+            'printf %s '.escapeshellarg($wrapperContents).' | sudo tee '.escapeshellarg($binPath).' >/dev/null',
+            'sudo chmod 0755 '.escapeshellarg($binPath),
+            'sudo chown '.escapeshellarg("{$user}:{$user}").' '.escapeshellarg($binPath),
+            'test -x '.escapeshellarg($cliLauncher),
+            'test -f '.escapeshellarg($binPath),
+            'test ! -L '.escapeshellarg($binPath),
+            'test -x '.escapeshellarg($binPath),
             'printf %s '
                 .escapeshellarg(json_encode(['bin_path' => $binPath], JSON_THROW_ON_ERROR))
                 .' | sudo tee '
@@ -1603,6 +1630,69 @@ final class E2ECurrentCheckout
                 .' >/dev/null',
             'sudo chown orbit:orbit '.escapeshellarg($installMetadataPath),
             'sudo chmod 0644 '.escapeshellarg($installMetadataPath),
+        ]);
+    }
+
+    /**
+     * After checkout.overlay installs the final runtime checkout, re-apply
+     * agent user + ACL + runtime probe. Pre-overlay readiness is non-authoritative:
+     * overlay rewrites `~/.local/bin/orbit`, so ACL and probe must run against
+     * the final launcher shape.
+     *
+     * @param  array<string, string>  $paths
+     */
+    private static function ensureAgentRuntimeReadinessAfterCheckout(
+        E2ETopologyLease $topology,
+        array $paths,
+        ?E2EPhaseTimer $timer,
+    ): void {
+        $checkoutPath = $paths['agent'] ?? null;
+        $agent = $topology->agent();
+
+        if (! is_string($checkoutPath) || $checkoutPath === '' || $agent === null) {
+            return;
+        }
+
+        self::runTimed(
+            $timer,
+            'agent-runtime-readiness',
+            fn () => E2ECommand::exec(
+                $agent,
+                self::agentRuntimeReadinessCommand($checkoutPath),
+                'Could not prepare the managed agent runtime user and Orbit CLI access after checkout overlay.',
+                timeoutSeconds: 180,
+            ),
+        );
+    }
+
+    /**
+     * @internal Exposed for focused topology-shape tests.
+     */
+    public static function agentRuntimeReadinessCommand(string $checkoutPath): string
+    {
+        $checkoutPath = rtrim($checkoutPath, '/');
+        $cliRoot = "{$checkoutPath}/apps/cli";
+        $cliLauncher = "{$checkoutPath}/apps/cli/orbit";
+        $homeLauncher = '/home/orbit/.local/bin/orbit';
+
+        $php =
+            'require "vendor/autoload.php"; '
+            .'(new App\\Services\\Nodes\\LocalAgentUserEnsure)->ensure(); '
+            .'(new App\\Services\\Nodes\\LocalAgentAclEnsure)->ensure(); '
+            .'$probe = (new App\\Services\\Nodes\\LocalAgentRuntimeProbe)->check(); '
+            .'if (($probe["runtime_user"] ?? false) !== true || ($probe["orbit_cli"] ?? false) !== true) { '
+            .'fwrite(STDERR, json_encode($probe)."\\n"); exit(1); }';
+
+        return implode("\n", [
+            'set -euo pipefail',
+            // Final post-overlay contract: real home launcher + agent can exec it.
+            'test -f '.escapeshellarg($homeLauncher),
+            'test ! -L '.escapeshellarg($homeLauncher),
+            'test -x '.escapeshellarg($homeLauncher),
+            'test -x '.escapeshellarg($cliLauncher),
+            'test -f /home/orbit/.config/orbit/config.json',
+            'cd '.escapeshellarg($cliRoot),
+            'php -r '.escapeshellarg($php),
         ]);
     }
 

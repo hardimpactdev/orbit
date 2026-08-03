@@ -1888,7 +1888,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EConfig $config,
         ?E2EPhaseTimer $timer = null,
     ): void {
-        $sourceLauncher = '/home/orbit/orbit/bin/orbit';
+        // Pre-overlay only: bake/retarget need a home launcher before checkout.overlay
+        // installs the final /home/orbit/orbit-run runtime. Final proof must not
+        // rely on this path — E2ECurrentCheckout rewrites the wrapper after overlay.
+        $sourceLauncher = '/home/orbit/orbit/apps/cli/orbit';
         $tasks = [];
 
         foreach ($instances as $role => $instance) {
@@ -1901,7 +1904,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 #!/usr/bin/env bash
                 set -euo pipefail
 
-                exec /home/orbit/orbit/bin/orbit "$@"
+                exec /home/orbit/orbit/apps/cli/orbit "$@"
                 BASH;
 
             $tasks[$role] = sprintf(
