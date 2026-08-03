@@ -1,0 +1,30 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-03T12:35:43+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-finish-live-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-143543-codex-finish-live-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/2026-08-03-agent-config-acl-durability-dev-9da8c1.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T122829Z-0727e896cbc9.json"
+    ],
+    "entry_digests": {
+        "evidence/2026-08-03-agent-config-acl-durability-dev-9da8c1.md": "8ae878d0d9c5ffc3ed0352df0f3069ca442b5a07b27cdd0a251aec4415b934d0",
+        "loop.md": "7e3dbe7935e31241ab5256ee166785f997fb353007018f95b071a9684cdfa747",
+        "quality-gates/quality-check-2026-08-03T122829Z-0727e896cbc9.json": "a8e1e619098bbb9e15364fe0ec77d2d244435147fba1a39a4a0eeccff58b25f7"
+    },
+    "slug": "codex-finish-live-drift",
+    "requested_slug": "codex-finish-live-drift",
+    "compatible_slugs": [
+        "codex-finish-live-drift"
+    ],
+    "branch": "codex-finish-live-drift",
+    "candidate_commit": "064642c8888915a3d167c776cb54d624fe240d24",
+    "accepted_feature_tip": "064642c8888915a3d167c776cb54d624fe240d24",
+    "accepted_main_tip": "4ac0b86351a01250381e4b3fd42295b736a14c68",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
