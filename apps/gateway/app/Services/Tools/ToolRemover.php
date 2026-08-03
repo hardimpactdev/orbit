@@ -18,6 +18,7 @@ final readonly class ToolRemover
         private ToolScriptDispatcher $toolScriptDispatcher,
         private StaleToolIntentRemover $staleIntentRemover,
         private RelatedToolProcessRemover $relatedProcessRemover,
+        private LegacyOpenClawRuntimeCleanup $legacyOpenClawCleanup,
     ) {}
 
     /**
@@ -25,6 +26,13 @@ final readonly class ToolRemover
      */
     public function remove(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
     {
+        // OpenClaw is no longer a first-party catalog tool, but residual runtime
+        // may still exist after prior removals. Always use the removal-only
+        // migration path for this exact tool slug.
+        if ($this->legacyOpenClawCleanup->applies($tool)) {
+            return $this->legacyOpenClawCleanup->remove(node: $node, app: $app);
+        }
+
         $stored = $this->registry->findStored(tool: $tool, node: $node, app: $app);
 
         if ($this->isStaleStoredTool($tool, $stored)) {

@@ -79,6 +79,27 @@ It may remove a process the tool definition already declared via
 creation. Tool-owned endpoint cleanup is allowed only when declared by the
 selected tool definition. Related drift belongs to each owning family doctor contract.
 
+### OpenClaw Removal-Only Migration
+
+The slug `openclaw` is not catalog-supported. `tool:remove openclaw` is routed
+to `LegacyOpenClawRuntimeCleanup` instead of the normal catalog remove path:
+
+1. Resolve an active tool-host node (agent nodes qualify).
+2. Remove process intent named `openclaw-gateway` or `tool=openclaw` when present
+   (typed `RemoveProcess`, including runtime unit teardown).
+3. Run the fixed host cleanup script via `internal:tool:run-script` action
+   `remove`: stop/disable Orbit and native OpenClaw units, kill listeners on
+   port `18789`, pkill residual agent openclaw processes, `rm -rf
+   /home/agent/.openclaw`.
+4. Remove tool-owned proxy domains with `owner_name=openclaw` via
+   `ProxyRouteFixer::removeExtra` then registry delete.
+5. Delete any remaining `NodeTool` row named `openclaw`.
+
+JSON success includes `legacy_runtime_cleanup=true`, `stale_record=true`,
+`routes_removed`, and `tool_row_removed`. Failed host cleanup returns
+`tool.remote_action_failed` and must be retried. This is not install or
+product support.
+
 ## Renderer Contracts
 
 - [Human renderer](6.1_tool-remove_output-render_human.md)

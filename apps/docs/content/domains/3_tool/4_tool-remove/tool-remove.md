@@ -73,6 +73,25 @@ Tools that currently declare a related process include `hermes` (`orbit-hermes-d
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.
 
+### OpenClaw removal-only migration
+
+OpenClaw is **not** a supported first-party agent tool (no install, update,
+reconfigure, or credentials). The exact slug `openclaw` remains accepted by
+`tool:remove` as a **removal-only migration**:
+
+```bash
+orbit tool:remove openclaw --node=<agent-node> --force --json
+```
+
+That path runs even when no `NodeTool` row remains. It stops residual
+OpenClaw systemd/user units, terminates listeners on the historical port
+`18789` and leftover agent-owned OpenClaw processes, deletes
+`/home/agent/.openclaw`, clears matching process intent, and removes
+tool-owned proxy backend/TLS plus registry rows. Hermes is not affected.
+Successful historical process-unit removal alone is not sufficient proof that
+port `18789` is free; operators should re-check `https://openclaw.<tld>` and
+direct `http://<node>:18789/` only after this migration remove returns success.
+
 ## Output
 
 Use `--json` to get a machine-readable result; omit it for progress.

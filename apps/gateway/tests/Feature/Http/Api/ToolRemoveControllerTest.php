@@ -390,9 +390,9 @@ describe('ToolRemoveController', function (): void {
             ->toBeTrue();
     });
 
-    it('cleans orphan tool-owned proxy rows for a removed catalog tool without a NodeTool row', function (): void {
-        // Residual shape after a successful tool remove that left a proxy row:
-        // no NodeTool, tool no longer in catalog, tool-owned route still present.
+    it('runs removal-only openclaw legacy cleanup for detached runtime without NodeTool intent', function (): void {
+        // Live residual shape: process/tool intent gone, proxy may remain, daemon
+        // still listening on 18789. tool:remove openclaw must still run host cleanup.
         $caller = createToolRemoveApiCallerNode();
         NodeRoleAssignment::factory()->create([
             'node_id' => $caller->id,
@@ -451,19 +451,90 @@ describe('ToolRemoveController', function (): void {
             ->assertJsonPath('success.data.tool.name', 'openclaw')
             ->assertJsonPath('success.data.tool.node', $node->name)
             ->assertJsonPath('success.data.tool.stale_record', true)
-            ->assertJsonPath('success.data.tool.stale_routes_removed', 1);
+            ->assertJsonPath('success.data.tool.legacy_runtime_cleanup', true)
+            ->assertJsonPath('success.data.tool.routes_removed', 1)
+            ->assertJsonPath('success.data.tool.tool_row_removed', false);
+
+        $legacyScript = collect($shell->scripts)
+            ->first(static fn (string $script): bool => str_contains($script, 'orbit legacy-remove openclaw'));
 
         expect(ProxyRoute::find($route->id))
             ->toBeNull()
+            ->and($legacyScript)
+            ->not
+            ->toBeNull()
+            ->and($legacyScript)
+            ->toContain('sport = :18789')
+            ->toContain('openclaw-gateway.service')
+            ->toContain('rm -rf "${HOME}/.openclaw"')
             ->and($shell->proxyRemoveSiteObservations)
             ->toBe([[
                 'domain' => 'openclaw.agent',
                 'route_present' => true,
-            ]])
+            ]]);
+    });
+
+    it('legacy openclaw removal clears process intent and fails closed when host cleanup script fails', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-openclaw-process',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'openclaw-gateway',
+                'command' => 'openclaw gateway run --port 18789 --bind lan',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'openclaw',
+            ]);
+        $shell = new ToolRemoveApiRecordingShell(failLegacyOpenClawScript: true);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/openclaw',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        // Process intent is removed before the host cleanup script. A failed
+        // cleanup script must not report overall success so operators retry.
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'tool.remote_action_failed');
+
+        expect(Process::find($process->id))
+            ->toBeNull()
+            ->and(NodeTool::find($tool->id))
+            ->not
+            ->toBeNull()
             ->and(collect($shell->scripts)
-                ->contains(
-                    static fn (string $script): bool => str_contains($script, "internal:caddy-config 'remove-site'"),
-                ))
+                ->contains(static fn (string $script): bool => str_contains($script, 'orbit legacy-remove openclaw')))
             ->toBeTrue();
     });
 
@@ -699,6 +770,7 @@ final class ToolRemoveApiRecordingShell implements RemoteShell
 
     public function __construct(
         public bool $failRemoveSite = false,
+        public bool $failLegacyOpenClawScript = false,
     ) {}
 
     /**
@@ -707,6 +779,15 @@ final class ToolRemoveApiRecordingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+
+        if ($this->failLegacyOpenClawScript && str_contains($script, 'orbit legacy-remove openclaw')) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'legacy openclaw runtime cleanup failed',
+                durationMs: 1,
+            );
+        }
 
         if (str_contains($script, "internal:caddy-config 'remove-site'")) {
             $payload = tool_remove_decode_shell_input($options['input'] ?? null);
