@@ -73,32 +73,8 @@ final class DoctorIssueCatalog
 
         foreach (self::providers() as $provider) {
             foreach ($provider->definitions() as $definition) {
-                if (array_key_exists($definition->code, $definitions)) {
-                    throw new \LogicException(
-                        "Duplicate Doctor issue definition for '{$definition->code}'.",
-                    );
-                }
-
-                if ($definition->disposition === DoctorIssueDisposition::GenuineDrift) {
-                    if (! is_string($definition->restoreAction) || $definition->restoreAction === '') {
-                        throw new \LogicException(
-                            "Genuine drift '{$definition->code}' is missing a restore action.",
-                        );
-                    }
-
-                    if (! DoctorRestoreSupport::supports($definition->code)) {
-                        throw new \LogicException(
-                            "Genuine drift '{$definition->code}' is not registered in DoctorRestoreSupport.",
-                        );
-                    }
-
-                    if ($definition->restoreAction !== DoctorRestoreSupport::actionId($definition->code)) {
-                        throw new \LogicException(
-                            "Genuine drift '{$definition->code}' restore_action must match DoctorRestoreSupport.",
-                        );
-                    }
-                }
-
+                self::assertUniqueDefinition($definitions, $definition);
+                self::assertGenuineDefinitionIsDispatchable($definition);
                 $definitions[$definition->code] = $definition;
             }
         }
@@ -106,6 +82,43 @@ final class DoctorIssueCatalog
         ksort($definitions);
 
         return $definitions;
+    }
+
+    /**
+     * @param  array<string, DoctorIssueDefinition>  $definitions
+     */
+    private static function assertUniqueDefinition(array $definitions, DoctorIssueDefinition $definition): void
+    {
+        if (array_key_exists($definition->code, $definitions)) {
+            throw new \LogicException(
+                "Duplicate Doctor issue definition for '{$definition->code}'.",
+            );
+        }
+    }
+
+    private static function assertGenuineDefinitionIsDispatchable(DoctorIssueDefinition $definition): void
+    {
+        if ($definition->disposition !== DoctorIssueDisposition::GenuineDrift) {
+            return;
+        }
+
+        if (! is_string($definition->restoreAction) || $definition->restoreAction === '') {
+            throw new \LogicException(
+                "Genuine drift '{$definition->code}' is missing a restore action.",
+            );
+        }
+
+        if (! DoctorRestoreSupport::supports($definition->code)) {
+            throw new \LogicException(
+                "Genuine drift '{$definition->code}' is not registered in DoctorRestoreSupport.",
+            );
+        }
+
+        if ($definition->restoreAction !== DoctorRestoreSupport::actionId($definition->code)) {
+            throw new \LogicException(
+                "Genuine drift '{$definition->code}' restore_action must match DoctorRestoreSupport.",
+            );
+        }
     }
 
     public static function definition(string $code): ?DoctorIssueDefinition
