@@ -45,6 +45,12 @@ Gateway exposure has two modes:
   certificate chains to the Orbit root CA, and firewall rules restrict access
   for TCP/443 and UDP/443 to the Orbit/WireGuard path.
 
+In both modes the gateway leaf SANs cover the short host `gateway`, the
+configured browser Gateway hostname (default `gateway.orbit` for Toolbar /
+TypeScript SDK / EventSource), and the gateway WireGuard API IP. Fresh install
+and convergence reissue the leaf when that SAN set is incomplete; complete
+leaves stay idempotent. TLS verification is never weakened.
+
 ## Streaming under Docker runtime
 
 The containerized gateway API preserves four transitional progress/SSE

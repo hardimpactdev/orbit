@@ -211,7 +211,11 @@ overlay `orbit-network`, and `orbit-gateway` publishes no host ports. In
 `gateway-direct` mode, the `orbit-gateway` service publishes gateway HTTPS
 directly. In both modes the gateway leaf certificate chains to the Orbit root
 CA, and WireGuard/firewall policy restricts TCP/443 and UDP/443 access to the
-Orbit control plane.
+Orbit control plane. The gateway leaf SANs cover the short host `gateway`, the
+configured browser Gateway hostname (default `gateway.orbit`, the private
+Toolbar/TypeScript SDK/EventSource URL host), and the gateway WireGuard API
+IP. Installer and convergence reissue a fresh leaf when any required SAN is
+missing; they do not weaken TLS verification.
 
 In router-colocated mode, the gateway API route is an internal `proxy` entry.
 Its proxy and TLS artifact is repaired by `doctor --family=proxy --restore`,

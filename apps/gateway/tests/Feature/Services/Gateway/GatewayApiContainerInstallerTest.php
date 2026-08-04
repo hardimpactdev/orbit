@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\GatewayApiContainerInstaller;
+use App\Services\Gateway\GatewayLeafIdentity;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
@@ -159,6 +161,76 @@ describe('GatewayApiContainerInstaller', function (): void {
         Process::assertRan(
             'sudo install -m 0600 '.escapeshellarg("{$certsDir}/10.6.0.2.key")." '/etc/orbit/certs/10.6.0.2.key'",
         );
+    });
+
+    it('issues the legacy WireGuard-IP leaf with short host and configured browser hostname SANs', function (): void {
+        $certsDir = $this->tempConfigRoot.'/certs';
+        File::ensureDirectoryExists($certsDir);
+
+        config()->set('orbit.gateway.hostname', 'api.orbit.test');
+
+        $recorder = new class {
+            /** @var list<array{host: string, additionalSans: list<string>}> */
+            public array $issueLeafCalls = [];
+        };
+
+        $recordingCa = new readonly class($certsDir, $recorder) extends OrbitCaService {
+            public function __construct(
+                private string $certsDir,
+                private object $recorder,
+            ) {}
+
+            /**
+             * @param  list<string>  $additionalSans
+             * @return array{cert: string, key: string}
+             */
+            public function issueLeaf(string $host, array $additionalSans = []): array
+            {
+                $this->recorder->issueLeafCalls[] = [
+                    'host' => $host,
+                    'additionalSans' => $additionalSans,
+                ];
+
+                File::ensureDirectoryExists($this->certsDir);
+                File::put("{$this->certsDir}/{$host}.crt", "issued-cert\n");
+                File::put("{$this->certsDir}/{$host}.key", "issued-key\n");
+                File::put(
+                    "{$this->certsDir}/{$host}.sans",
+                    implode("\n", [$host, ...$additionalSans])."\n",
+                );
+
+                return [
+                    'cert' => "{$this->certsDir}/{$host}.crt",
+                    'key' => "{$this->certsDir}/{$host}.key",
+                ];
+            }
+        };
+
+        app()->instance(OrbitCaService::class, $recordingCa);
+
+        Process::fake(function ($process) {
+            if (str_contains($process->command, 'docker container inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            if (str_contains($process->command, 'docker network inspect')) {
+                return Process::result(exitCode: 1);
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+
+        app(GatewayApiContainerInstaller::class)->install('10.6.0.2', orbitPath: '/home/orbit/orbit');
+
+        expect($recorder->issueLeafCalls)
+            ->toHaveCount(1)
+            ->and($recorder->issueLeafCalls[0]['host'])
+            ->toBe('10.6.0.2')
+            ->and($recorder->issueLeafCalls[0]['additionalSans'])
+            ->toBe([GatewayLeafIdentity::ShortHost, 'api.orbit.test'])
+            ->and(File::get("{$certsDir}/10.6.0.2.sans"))
+            ->toBe("10.6.0.2\ngateway\napi.orbit.test\n");
     });
 
     it('preserves real-time streaming through the containerized gateway api with flush_interval disabled', function (): void {

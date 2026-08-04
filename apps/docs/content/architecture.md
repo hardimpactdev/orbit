@@ -125,8 +125,11 @@ Gateway HTTPS exposure has two modes:
   attachable overlay `orbit-network` by the `orbit-gateway` service alias.
 - `gateway-direct`: when the router role lives elsewhere, `orbit-gateway`
   publishes gateway HTTPS directly on the gateway host. The gateway leaf
-  certificate still chains to the Orbit root CA. Orbit configures Docker's
-  firewall path so only Orbit/WireGuard peers can reach TCP/443 or UDP/443.
+  certificate still chains to the Orbit root CA and must cover the short host
+  `gateway`, the configured browser Gateway hostname (default `gateway.orbit`),
+  and the gateway WireGuard API IP so CLI, SDK, and browser callers can verify
+  TLS without disabling verification. Orbit configures Docker's firewall path
+  so only Orbit/WireGuard peers can reach TCP/443 or UDP/443.
 
 Workload nodes run the public Orbit CLI as a gateway client and run workloads
 in role-specific runtime containers. Moving the API into Docker does not make

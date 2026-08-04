@@ -30,6 +30,10 @@ return [
 
     'gateway' => [
         'exposure_mode' => env('ORBIT_GATEWAY_EXPOSURE_MODE', 'router-colocated'),
+        // Private browser/SDK/EventSource hostname for the gateway API leaf SAN.
+        // Default matches the fleet `.orbit` service-name convention and the
+        // TypeScript SDK / Toolbar contract (https://gateway.orbit).
+        'hostname' => env('ORBIT_GATEWAY_HOSTNAME', 'gateway.orbit'),
     ],
 
     'paths' => [

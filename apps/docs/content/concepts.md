@@ -186,6 +186,7 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Configured gateway endpoint**
 - **Active gateway**
 - **Gateway WireGuard API address**
+- **Browser Gateway hostname**
 - **Gateway API runtime**
 - **Local gateway configuration**
 - **Gateway root CA**

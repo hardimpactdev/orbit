@@ -50,7 +50,11 @@ class GatewaySwarmInstaller
         File::ensureDirectoryExists("{$configRoot}/certs", 0700);
         $this->bootstrapConfigRoot($configRoot);
 
-        $gatewayLeaf = $this->caService->issueLeaf('gateway', [$wireguardAddress]);
+        $browserHostname = GatewayLeafIdentity::browserHostname();
+        $gatewayLeaf = $this->caService->issueLeaf(
+            GatewayLeafIdentity::ShortHost,
+            GatewayLeafIdentity::additionalSansForShortHost($wireguardAddress),
+        );
         File::chmod($gatewayLeaf['cert'], 0o644);
         File::chmod($gatewayLeaf['key'], 0o600);
         $this->imageAcquirer->ensure($image, $imageArchive);
@@ -75,7 +79,12 @@ class GatewaySwarmInstaller
 
         if ($exposureMode->isRouterColocated()) {
             $this->transitionGuard->assertPublicPortsReleased();
-            $this->convergeRouterOwnedOrbitCaddy($wireguardAddress, $wireguardCidr, $gatewayLeaf);
+            $this->convergeRouterOwnedOrbitCaddy(
+                wireguardAddress: $wireguardAddress,
+                wireguardCidr: $wireguardCidr,
+                gatewayLeaf: $gatewayLeaf,
+                browserHostname: $browserHostname,
+            );
         }
     }
 
@@ -91,6 +100,7 @@ class GatewaySwarmInstaller
         string $wireguardAddress,
         string $wireguardCidr,
         array $gatewayLeaf,
+        string $browserHostname,
     ): void {
         $this->installCaddyReadableGatewayLeaf($gatewayLeaf);
 
@@ -104,7 +114,7 @@ class GatewaySwarmInstaller
         $this->runRequiredWithInput(
             'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
             $this->gatewayRouteRenderer->render(
-                serverNames: [$wireguardAddress, ':443'],
+                serverNames: [$wireguardAddress, $browserHostname, ':443'],
                 wireguardCidr: $wireguardCidr,
                 certPath: self::GatewayCertPath,
                 keyPath: self::GatewayKeyPath,
