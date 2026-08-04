@@ -35,7 +35,7 @@ final class ProjectInstancePermissionMigrator
     ];
 
     /**
-     * Removed ADE/OpenCode permissions and predecessors. Never expand or retain.
+     * Removed permissions and predecessors. Never expand or retain.
      *
      * @var list<string>
      */
