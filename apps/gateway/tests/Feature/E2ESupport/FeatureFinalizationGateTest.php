@@ -641,6 +641,28 @@ it('rejects unresolved actionable feedback before merge', function (): void {
     }
 });
 
+it('keeps finalization quality-check subgates aligned with the pre-tool-use hook and typescript lanes', function (): void {
+    $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    expect(preg_match(
+        '/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s',
+        $hook,
+        $matches,
+    ))->toBe(1);
+
+    preg_match_all("/'([^']+)'/", $matches[1], $labelMatches);
+    $hookLabels = $labelMatches[1];
+    $fixtureLabels = array_keys(finalization_quality_check_subgates());
+
+    sort($hookLabels);
+    sort($fixtureLabels);
+
+    expect($fixtureLabels)
+        ->toBe($hookLabels)
+        ->and($hookLabels)
+        ->toContain('sdk_typescript_build')
+        ->toContain('sdk_typescript_typecheck');
+});
+
 it('rejects forged or incomplete reserved quality-check evidence', function (
     string $mutation,
     string $reason,
@@ -3941,6 +3963,8 @@ function finalization_quality_check_subgates(): array
         'sdk_mago_lint',
         'sdk_pest',
         'sdk_rector',
+        'sdk_typescript_build',
+        'sdk_typescript_typecheck',
     ];
 
     return array_fill_keys($labels, 0);

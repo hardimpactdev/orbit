@@ -58,6 +58,8 @@ const QUALITY_CHECK_EXPECTED_SUBGATES = [
     'sdk_mago_lint',
     'sdk_pest',
     'sdk_rector',
+    'sdk_typescript_build',
+    'sdk_typescript_typecheck',
 ];
 
 if (($argv[1] ?? null) === '--lint') {
