@@ -248,11 +248,14 @@ from the filtered public OpenAPI input. The generated TypeScript package is a
 thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri,
 TanStack Query, and browser toolbar callers; it must consume the classified
 OpenAPI contract instead of hand-maintaining route definitions. Browser toolbar
-callers use `createOrbitGatewayClient` against the existing process list and
-lifecycle routes with the same auth model as the CLI (WireGuard peer source IP
-plus grants/permissions; no bearer and no client peer-IP header), the `app`
-hostname selector, and CORS Origin admission that only matches a registered
-origin to the requested `app` and never authenticates the caller.
+callers use `createOrbitGatewayClient` for process list and lifecycle commands
+and a durable native `EventSource` process-stream subscriber for
+`GET /processes/stream?app=<hostname>` (no client polling). Auth matches the
+CLI model (WireGuard peer source IP plus grants/permissions; no bearer and no
+client peer-IP header). The `app` hostname is the only browser stream selector;
+CORS Origin admission only matches a registered origin to the requested `app`
+and never authenticates the caller. `X-Orbit-Client` is optional and never
+required for EventSource.
 Internal-only operations, including local executor token
 verification, process event ingest, Solo proxy routes, and update artifact
 plumbing, must not be emitted as public SDK methods. Deferred optional groups

@@ -1,83 +1,91 @@
-# Technical Contract: `orbit process-event:stream`
+# Technical Contract: process lifecycle stream (browser gateway SSE)
 
-[Back to internal `process-event:stream` documentation.](../process-event-stream.md)
+[Back to internal stream documentation.](../process-event-stream.md)
 
 **Owner:** `process`.
 
-**Effects:** `stream`, `internal`.
+**Effects:** `stream`.
 
 **Prerequisites:**
-- The CLI or API caller can reach the Orbit gateway.
-- The current node identity is authorized on the selected node or instance serving node to inspect the instance, workspace, node, or process scope.
+- The browser or SDK client can reach the Orbit gateway over WireGuard.
+- Peer identity maps to a node with `process:read` on the serving node for the
+  resolved app hostname.
+- Optional `Origin` is admitted only when it matches the requested `app`
+  hostname as a registered app/workspace proxy domain (default scheme/port).
 
-## Signature
+## Public browser route
 
-```bash
-orbit process-event:stream [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--process=<name>] [--after-id=<id>] [--json]
+```http
+GET /api/processes/stream?app=<hostname>
 ```
-
-## Input Contract
-
-This command follows the shared [Invocation Model](../../../../README.md#invocation-model).
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `--instance` | Optional. | Never. | None. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must authorize inspection. |
-| `workspace` | `--workspace` | Optional. | Never. | None. | Must resolve to a workspace, its instance, and a serving node the caller may inspect. |
-| `node` | `--node` | Optional. | Never. | None. | Must resolve to a node whose process events are visible to the caller. |
-| `process` | `--process` | Optional. | Never. | None. | Process slug filter. |
-| `after_id` | `--after-id` | Optional. | Never. | None. | Positive event id used to resume a stream. |
-| `json` | `--json` | Optional. | Never. | `false`. | Streams structured event objects. |
+| `app` | query | Always. | Never. | None. | Strict hostname only (exact registered proxy route domain). No scheme, path, or port. |
+| `url` | query | Never. | Always. | — | Rejected. |
+| other selectors (`node`, `instance`, `workspace`, timing knobs) | query | Never. | Always on this route. | — | Rejected with `stream_app_only`. |
+| `Last-Event-ID` | header | Optional native EventSource reconnect. | Never required. | None. | Accepted; **never** used to replay rows at or below the connect-time high-water mark after the fresh snapshot. |
 
-## Stream Output Contract
+`X-Orbit-Client` is optional and never required (native EventSource cannot set it).
 
-`process-event:stream --json` is an internal stream contract, not a single JSON response. It is exempt from the standard `success`/`error` command envelope after the stream opens because it emits multiple newline-delimited JSON frames.
+## Stream output contract
 
-Failures before the stream opens use the standard command error envelope. After the stream opens, terminal stream failures emit one error frame and close the stream.
+Response headers include `Content-Type: text/event-stream`, `Cache-Control: no-cache`,
+`Connection: keep-alive`, and `X-Accel-Buffering: no`. Heartbeats are SSE
+comments (`: heartbeat`) on a heartbeat cadence independent of the internal DB
+poll interval.
 
-Every stream frame is one JSON object with a `type` discriminator:
+| Frame | SSE | Required data | Meaning |
+| --- | --- | --- | --- |
+| `snapshot` | `event: snapshot`, `id: <high_water>` | `app`, `context`, `processes[]`, `cursor.high_water_mark` | Full canonical process list for the app scope at connect. `id` is the durable high-water (`0` when no events). |
+| `update` | `event: update`, `id: <process_events.id>` | `id`, `event`, `status`, `name`, scope fields | Ordered lifecycle row after the snapshot high-water. |
+| `error` | `event: error` | `code`, `message`, `meta` | Terminal stream failure after open. |
 
-| Frame type | Required fields | Meaning |
-| --- | --- | --- |
-| `snapshot` | `scope`, `processes[]` | Initial derived runtime status for the selected scope. Snapshot items may include `status="unverifiable"` when one runtime unit cannot be probed. |
-| `event` | `id`, `event`, `scope`, `process`, `occurred_at` | Durable lifecycle event read from `process_events`. `event` is one of `started`, `stopped`, or `crashed`. |
-| `error` | `code`, `message`, `meta` | Terminal stream failure after the stream has opened. |
+### Status and event values
 
-`scope` contains the stable filters applied to the stream: `project`,
-`instance`, `workspace`, `node`, and `process`, with absent filters omitted.
-Instance/workspace frames include both `project` and `instance`. Stream frames do
-not include top-level `success` or `error` keys.
+| Durable `event` | Normalized `status` |
+| --- | --- |
+| `starting` | `starting` |
+| `started` | `running` |
+| `stopping` | `stopping` |
+| `stopped` | `stopped` |
+| `restarting` | `restarting` |
+| `crashed` | `crashed` |
+| `failed` | `unknown` |
+| (none) | `unknown` |
 
-## Behavior Contract
+Lifecycle commands record the transitional event **before** the runtime call and
+the terminal event **after** success or failure (including when the driver
+throws: record `failed`, then rethrow). Failed actions must not leave status
+stuck at starting/stopping/restarting and must not fabricate crashed/running/stopped.
 
-1. Resolve the requested event scope.
-2. Send an initial snapshot for the selected runtime scope by deriving process units and probing live status.
-3. Stream later `started`, `stopped`, and `crashed` events from durable process event history.
-4. Resume after `after_id` when supplied.
-5. Keep the stream open until the client disconnects or the stream fails.
+## Behavior contract
 
-This internal command does not mutate process configuration or runtime state.
+1. Resolve `app` hostname to concrete app instance (and optional workspace) plus
+   serving node; authorize `process:read`.
+2. In one DB transaction, capture high-water for scope
+   (`app_instance_id`, `workspace_id` or null, `node_id`) and build the process
+   list snapshot for that app context.
+3. Emit `snapshot` with SSE id = high-water.
+4. Tail durable `process_events` after high-water by the same scope filters
+   (not a frozen process-id list) so newly configured processes stream.
+5. Emit ordered `update` frames; heartbeat comments on the heartbeat interval;
+   exit on client disconnect.
 
-## Failure Semantics
-Standard failures defined in [Common Failures](../../../../README.md#common-failures) apply; command-specific failures below.
+## Failure semantics
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
-| Stream failed | The event stream cannot be opened or resumed. | Failure (`error.code=process.event_stream_failed`). |
+| Missing app | `app` absent. | `validation_failed`, `field=app`. |
+| Non-app query | Any query key other than `app`. | `validation_failed`, `reason=stream_app_only`. |
+| Authorization | Unknown peer or missing `process:read`. | `authorization_failed`. |
+| Origin mismatch | Browser `Origin` not admitted for `app`. | `authorization_failed` (CORS). |
+| Stream failed | Follow loop throws after open. | SSE `error` frame `process.event_stream_failed`. |
 
-If the live snapshot cannot probe one runtime unit, the stream emits an unverifiable snapshot item for that unit when possible instead of dropping the whole stream.
-
-## Doctor Relationship
-
-[`process-doctor.md`](../../../process-doctor.md) verifies rendered runtime artifacts and lifecycle event notifier material. Event history itself is not desired state.
-
-## Test Mapping
-
-Primary test owners:
+## Test mapping
 
 | Path | Coverage |
 | --- | --- |
-
-No executable gateway test currently maps this internal stream contract. Add
-coverage before changing or implementing `process-event:stream` behavior.
+| `apps/gateway/tests/Feature/Http/Api/ProcessStreamControllerTest.php` | Auth, CORS, app-only query, snapshot id/high-water, Last-Event-ID no regression, ordered updates, new process after connect. |
+| `apps/gateway/tests/Feature/Services/Processes/ProcessEventStreamerTest.php` | Scope high-water, follow after mark, post-connect process events, heartbeat vs poll. |
+| `apps/gateway/tests/Feature/Actions/Processes/ProcessLifecycleTransitionEventsTest.php` | Transitional→terminal ordering; false and exception → failed/unknown. |

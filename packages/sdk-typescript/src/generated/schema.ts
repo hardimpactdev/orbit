@@ -948,6 +948,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/processes/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required. */
+        get: operations["processesStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/proxy-routes/{domain}": {
         parameters: {
             query?: never;
@@ -5065,10 +5082,10 @@ export interface operations {
                                     service?: Record<string, never> | null;
                                     runtime_unit: string;
                                     /**
-                                     * @description Concrete runtime status derived from durable process lifecycle events: running, stopped, crashed, or unknown.
+                                     * @description Runtime status from the latest durable process lifecycle event: transitional starting/stopping/restarting, terminal running/stopped/crashed, or unknown (including failed lifecycle actions and no event yet).
                                      * @enum {string}
                                      */
-                                    status: "running" | "stopped" | "crashed" | "unknown";
+                                    status: "starting" | "running" | "stopping" | "stopped" | "restarting" | "crashed" | "unknown";
                                     last_event?: {
                                         id: number;
                                         type: string;
@@ -5234,7 +5251,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process restart result with durable stop/start events when the backend action succeeds. */
+            /** @description Process restart result with ordered durable events (restarting then started/failed). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5291,7 +5308,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process start/stop result with a singular durable event when the backend action succeeds. */
+            /** @description Process start/stop result with ordered durable events (transitional then terminal, including failed→unknown). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5312,6 +5329,10 @@ export interface operations {
                                         id: number;
                                         type: string;
                                     } | null;
+                                    events?: {
+                                        id: number;
+                                        type: string;
+                                    }[];
                                 }[];
                             };
                             meta: {
@@ -5348,7 +5369,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process start/stop result with a singular durable event when the backend action succeeds. */
+            /** @description Process start/stop result with ordered durable events (transitional then terminal, including failed→unknown). */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5369,11 +5390,97 @@ export interface operations {
                                         id: number;
                                         type: string;
                                     } | null;
+                                    events?: {
+                                        id: number;
+                                        type: string;
+                                    }[];
                                 }[];
                             };
                             meta: {
                                 [key: string]: unknown;
                             };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    processesStream: {
+        parameters: {
+            query?: {
+                /** @description Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected. */
+                app?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description text/event-stream of process lifecycle frames: snapshot (SSE id = high-water mark, 0 when none), ordered update events, optional SSE comment heartbeats, and terminal error frames. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: string | {
+                                /** @constant */
+                                field: "app";
+                                /** @constant */
+                                reason: "stream_scope_required";
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The process stream accepts only the app hostname selector.";
+                            meta: string | {
+                                field: string | "query";
+                                /** @constant */
+                                reason: "stream_app_only";
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The app hostname is required for the process stream.";
+                            meta: string | {
+                                /** @constant */
+                                field: "app";
+                            };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string | string[];
                         };
                     };
                 };

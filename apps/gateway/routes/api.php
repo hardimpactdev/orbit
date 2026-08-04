@@ -78,6 +78,7 @@ use App\Http\Controllers\Api\ProcessRestartController;
 use App\Http\Controllers\Api\ProcessStartController;
 use App\Http\Controllers\Api\ProcessStopController;
 use App\Http\Controllers\Api\ProcessStoreController;
+use App\Http\Controllers\Api\ProcessStreamController;
 use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProxyRouteDestroyController;
 use App\Http\Controllers\Api\ProxyRouteListController;
@@ -224,6 +225,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/firewall-rules', FirewallRuleStoreController::class);
         Route::delete('/firewall-rules/{name}', FirewallRuleDestroyController::class);
         Route::get('/processes', ProcessListController::class);
+        Route::get('/processes/stream', ProcessStreamController::class)
+            ->name('api.processes.stream');
         Route::post('/processes', ProcessStoreController::class);
         Route::post('/processes/restart', ProcessRestartController::class);
         Route::post('/processes/start', ProcessStartController::class);

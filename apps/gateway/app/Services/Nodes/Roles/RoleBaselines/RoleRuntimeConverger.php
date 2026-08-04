@@ -87,7 +87,40 @@ class RoleRuntimeConverger
             );
         }
 
-        if (! $driver->start($node, $runtimeUnit)) {
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Starting,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
+
+        try {
+            $started = $driver->start($node, $runtimeUnit);
+        } catch (\Throwable $exception) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
+            throw $exception;
+        }
+
+        if (! $started) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
             throw new RuntimeException(
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be started.",
             );

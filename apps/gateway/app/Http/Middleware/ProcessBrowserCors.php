@@ -42,6 +42,7 @@ final readonly class ProcessBrowserCors
     private const array AllowedHeaders = [
         'Accept',
         'Content-Type',
+        'Last-Event-ID',
         'X-Orbit-Client',
         'X-Correlation-Id',
     ];
@@ -54,6 +55,7 @@ final readonly class ProcessBrowserCors
 
     private const array ProcessPaths = [
         'api/processes',
+        'api/processes/stream',
         'api/processes/start',
         'api/processes/stop',
         'api/processes/restart',

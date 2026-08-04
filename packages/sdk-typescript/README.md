@@ -61,9 +61,37 @@ await orbit.POST('/processes/restart', {
 });
 ```
 
-Process list items include a concrete `status` (`running` | `stopped` |
-`crashed` | `unknown`) derived from durable gateway lifecycle events, plus
-compatible `last_event` when present.
+Process list items include a concrete `status` (`starting` | `running` |
+`stopping` | `stopped` | `restarting` | `crashed` | `unknown`) derived from
+durable gateway lifecycle events, plus compatible `last_event` when present.
+
+### Process lifecycle SSE (no polling)
+
+```ts
+import { subscribeProcessStream } from '@hardimpactdev/orbit-sdk-typescript';
+
+const sub = subscribeProcessStream({
+    baseUrl: 'https://gateway.orbit',
+    app: window.location.hostname,
+    onSnapshot: (snapshot) => {
+        // snapshot.cursor.high_water_mark is the durable SSE id
+    },
+    onUpdate: (update) => {
+        // update.event / update.status are closed durable unions
+    },
+    onError: (error) => {
+        // server frames, protocol parse failures, or transport Event
+    },
+    onReconnect: () => {
+        // fires once per re-open after a transport error
+    },
+});
+
+// sub.close();
+```
+
+Native `EventSource` cannot set `X-Orbit-Client`; the gateway does not require
+it for the stream.
 
 ### Node / dashboard clients
 
@@ -95,10 +123,11 @@ The wrapper is intentionally thin around `openapi-fetch`: macOS/Tauri, TanStack 
 ## Versioning and publication
 
 This package is **independently versioned** from Orbit monorepo root `VERSION`.
-The version in this `package.json` is authoritative (public stream starts at
-`0.1.0`). Canonical source remains `packages/sdk-typescript` in
-`hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install from
-npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
+The version in this `package.json` is authoritative (additive public SSE
+subscriber surface prepares `0.2.0`; initial public release was `0.1.0`).
+Canonical source remains `packages/sdk-typescript` in `hardimpactdev/orbit`
+(`private: true` in-tree). Durable consumers install from npm and/or the
+generated repository `hardimpactdev/orbit-sdk-typescript`.
 
 Publication path (package repository only; monorepo never holds npm secrets):
 

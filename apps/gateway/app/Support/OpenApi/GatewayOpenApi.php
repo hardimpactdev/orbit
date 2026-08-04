@@ -33,6 +33,7 @@ final class GatewayOpenApi
         'post tools/{tool}/restart' => 'toolRestart',
         'post tools/{tool}/reload' => 'toolReload',
         'get tools/{tool}/logs' => 'toolLogs',
+        'get processes/stream' => 'processesStream',
     ];
 
     public static function register(): void
@@ -167,6 +168,34 @@ final class GatewayOpenApi
                 continue;
             }
 
+            if ($path->path === 'processes/stream') {
+                foreach ($path->operations as $method => $operation) {
+                    if ($method === 'options') {
+                        unset($path->operations[$method]);
+
+                        continue;
+                    }
+
+                    if ($method !== 'get') {
+                        continue;
+                    }
+
+                    $operation->parameters = [];
+                    $operation->addParameters([
+                        self::stringQueryParameter(
+                            'app',
+                            'Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected.',
+                        ),
+                    ]);
+                    $operation->description(
+                        'Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.',
+                    );
+                    $operation->addResponse(self::processStreamSuccessResponse());
+                }
+
+                continue;
+            }
+
             if (! in_array($path->path, ['processes/start', 'processes/stop', 'processes/restart'], true)) {
                 continue;
             }
@@ -228,7 +257,7 @@ final class GatewayOpenApi
         $status = new StringType;
         $status->enum(ProcessRuntimeStatus::values());
         $status->setDescription(
-            'Concrete runtime status derived from durable process lifecycle events: running, stopped, crashed, or unknown.',
+            'Runtime status from the latest durable process lifecycle event: transitional starting/stopping/restarting, terminal running/stopped/crashed, or unknown (including failed lifecycle actions and no event yet).',
         );
 
         $lastEvent = new ObjectType;
@@ -294,14 +323,17 @@ final class GatewayOpenApi
     {
         $event = self::processEventObject();
         $event->nullable(true);
+        $events = new ArrayType;
+        $events->setItems(self::processEventObject());
 
         $runtime = self::processLifecycleRuntimeObject();
         $runtime->addProperty('event', $event);
+        $runtime->addProperty('events', $events);
         $runtime->setRequired(['process', 'node', 'runtime_unit', 'state']);
 
         return self::processLifecycleEnvelopeResponse(
             runtime: $runtime,
-            description: 'Process start/stop result with a singular durable event when the backend action succeeds.',
+            description: 'Process start/stop result with ordered durable events (transitional then terminal, including failed→unknown).',
         );
     }
 
@@ -318,8 +350,20 @@ final class GatewayOpenApi
 
         return self::processLifecycleEnvelopeResponse(
             runtime: $runtime,
-            description: 'Process restart result with durable stop/start events when the backend action succeeds.',
+            description: 'Process restart result with ordered durable events (restarting then started/failed).',
         );
+    }
+
+    private static function processStreamSuccessResponse(): Response
+    {
+        /** @var Response $response */
+        $response = Response::make(200);
+        $response->setDescription(
+            'text/event-stream of process lifecycle frames: snapshot (SSE id = high-water mark, 0 when none), ordered update events, optional SSE comment heartbeats, and terminal error frames.',
+        );
+        $response->setContent('text/event-stream', self::schemaFrom(new StringType));
+
+        return $response;
     }
 
     private static function processEventObject(): ObjectType

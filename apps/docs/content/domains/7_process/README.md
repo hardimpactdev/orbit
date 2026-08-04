@@ -100,9 +100,12 @@ an operator command for posting events and is not tied to external notification 
 These rules describe the durable history that records process state transitions.
 
 - Process lifecycle events are durable history, not process-unit configuration.
-  Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
-  CLI streams, and automation.
-- `started` and `stopped` events are recorded by successful gateway service lifecycle actions.
+  Orbit records transitional `starting`/`stopping`/`restarting`, terminal
+  `started`/`stopped`/`crashed`, and `failed` (status `unknown`) for gateway
+  SSE consumers, list surfaces, and automation.
+- Gateway start/stop/restart and normal creation/convergence start paths record
+  the transitional event before the runtime call and the terminal event after
+  success or failure (including thrown driver errors).
 - `crashed` events are recorded when the runtime hook on the node reports an exit.
 
 ### Read commands
@@ -111,7 +114,10 @@ These rules describe what default process read commands cover and where live dat
 
 - Default process read commands report gateway configuration and the latest durable process events.
 - They do not SSH to nodes or run live process manager probes.
-- Live runtime verification belongs to [`doctor --family=process`](process-doctor.md). Live event delivery belongs to the internal event stream.
+- Live runtime verification belongs to [`doctor --family=process`](process-doctor.md).
+  Live toolbar delivery is gateway SSE
+  [`GET /api/processes/stream`](internal/1_process-event-stream/process-event-stream.md)
+  (not client polling).
 
 ### Runtime lifecycle commands
 

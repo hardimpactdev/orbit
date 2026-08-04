@@ -360,9 +360,41 @@ final readonly class AddProcess
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $started = $driver->start($context->node, $name);
+            $workspace = $this->workspaceForRuntimeUnit($context, $runtimeUnit);
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Starting,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $name,
+            );
+
+            try {
+                $started = $driver->start($context->node, $name);
+            } catch (\Throwable $exception) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $name,
+                );
+
+                throw $exception;
+            }
 
             if (! $started) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $name,
+                );
                 $warnings[] = [
                     'code' => 'process.runtime_unit_start_failed',
                     'family' => 'process',
@@ -376,7 +408,7 @@ final readonly class AddProcess
             $this->recordProcessEvent->handle(
                 ProcessEventType::Started,
                 $context->eventApp(),
-                $this->workspaceForRuntimeUnit($context, $runtimeUnit),
+                $workspace,
                 $process,
                 $context->node,
                 $name,

@@ -30,8 +30,8 @@ final class ProcessStartController implements Loggable
 
     #[OpenApiResponse(
         status: 200,
-        description: 'Started process runtime units with durable started events when successful.',
-        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, project: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, event: array{id: int, type: string}|null}>}, meta: object}}',
+        description: 'Started process runtime units with ordered durable events (starting then started/failed).',
+        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, project: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, event: array{id: int, type: string}|null, events: list<array{id: int, type: string}>}>}, meta: object}}',
     )]
     public function __invoke(Request $request, ProcessLifecycle $processLifecycle): JsonResponse
     {

@@ -30,15 +30,21 @@ These terms define how process definitions are identified, scoped, and ordered.
   selector key is `app` only; `url` is never accepted. `app` is mutually
   exclusive with `node`, `instance`, and `workspace` target modes (the existing
   `instance`+`workspace` pairing remains valid only for those two keys).
-- **Browser process CORS admission:** For browser process list/lifecycle calls
-  that send `Origin`, the gateway admits only a registered app/workspace proxy
-  domain Origin that matches the requested `app` hostname and uses a default
-  scheme/port tuple (`http` with no port or `:80`, `https` with no port or
-  `:443`). Non-default ports are distinct browser origins and are rejected.
+- **Browser process CORS admission:** For browser process list/lifecycle/stream
+  calls that send `Origin`, the gateway admits only a registered app/workspace
+  proxy domain Origin that matches the requested `app` hostname and uses a
+  default scheme/port tuple (`http` with no port or `:80`, `https` with no port
+  or `:443`). Non-default ports are distinct browser origins and are rejected.
   CORS never authenticates the caller. CLI, TypeScript SDK, and browser clients
   share one auth model: actual WireGuard peer source IP, then grant, permission,
   and target-node authorization. Clients send no bearer token and no peer-IP
-  identity header.
+  identity header. Optional `X-Orbit-Client` is a non-identity label only;
+  native EventSource streams must not require it. CORS may allow `Last-Event-ID`
+  for EventSource reconnect on the stream route.
+- **Browser process SSE:** Toolbars subscribe to
+  `GET /api/processes/stream?app=<hostname>` (app-only). No client polling and
+  no Laravel Toolbar PHP/filesystem watcher. See the process stream technical
+  contract under `internal/1_process-event-stream`.
 - **Canonical project identity:** Instance and workspace process identities and
   JSON include both the logical `project` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
@@ -180,18 +186,20 @@ These terms define per-process behavioral rules that apply to every derived runt
 
 These terms define the durable lifecycle records that process commands produce and consume.
 
-- **Process event:** Durable lifecycle history record. `started` and `stopped`
-  events are recorded by successful gateway service lifecycle actions,
-  including ordinary creation paths that start runtime units (for example
-  `process:add --start` / API create with start). `crashed` events are recorded
-  when the runtime hook on the node reports an exit. Gateway lifecycle event
-  history is the authoritative process runtime state for list and toolbar
-  consumers; list does not live-probe nodes.
-- **Process status:** Concrete normalized runtime status property on process
-  list items derived from the latest durable lifecycle event for that process
-  and runtime context. Allowed values are `running` (latest event `started`),
-  `stopped` (latest event `stopped`), `crashed` (latest event `crashed`), and
-  `unknown` when no durable event exists yet (rows without a recorded event).
+- **Process event:** Durable lifecycle history record. Gateway lifecycle actions
+  record transitional `starting` / `stopping` / `restarting` **before** the
+  runtime call, then terminal `started` / `stopped` on success or `failed` when
+  the backend returns false or throws (exception is rethrown after recording).
+  Ordinary creation/convergence paths that start units (for example
+  `process:add --start`, workspace setup, role/doctor restore starts) use the
+  same starting→started/failed pattern. `crashed` events are recorded when the
+  runtime hook on the node reports an exit. Gateway lifecycle event history is
+  the authoritative process runtime state for list and toolbar consumers; list
+  does not live-probe nodes.
+- **Process status:** Normalized runtime status from the latest durable
+  lifecycle event: `starting`, `running` (`started`), `stopping`, `stopped`,
+  `restarting`, `crashed`, and `unknown` (no event yet, or latest event
+  `failed`). Transitional values appear only when truthfully persisted.
   Compatible `last_event` fields remain present when an event exists.
 - **Crash event:** A process event emitted by the runtime hooks that Orbit
   manages on nodes, for definitions whose crash-notification policy is

@@ -68,7 +68,7 @@ describe('ProcessRestartController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_development_main_vite')
-            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'stopped')
+            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'restarting')
             ->assertJsonPath('success.data.runtimes.0.events.1.type', 'started');
 
         expect(ProcessEvent::query()->where('event', 'started')->exists())->toBeTrue();

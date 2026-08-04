@@ -39,6 +39,9 @@ use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
+use App\Services\Processes\ProcessStreamRuntimeConfig;
+use App\Services\Processes\ProcessStreamSleeper;
+use App\Services\Processes\UsleepProcessStreamSleeper;
 use App\Services\Php\AgentPushPhpRuntimeArtifactConverger;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -151,6 +154,8 @@ class AppServiceProvider extends ServiceProvider
         });
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
+        $this->app->singleton(ProcessStreamRuntimeConfig::class);
+        $this->app->bind(ProcessStreamSleeper::class, UsleepProcessStreamSleeper::class);
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);

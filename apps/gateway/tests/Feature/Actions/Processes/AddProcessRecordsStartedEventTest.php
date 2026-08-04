@@ -52,18 +52,17 @@ it('records a started process event when AddProcess successfully starts runtime 
         runtime: ProcessRuntime::Systemd,
     );
 
-    $event = ProcessEvent::query()->first();
+    $types = ProcessEvent::query()->orderBy('id')->pluck('event')->map(
+        static fn (ProcessEventType $type): string => $type->value,
+    )->all();
 
-    expect($event)
-        ->not
-        ->toBeNull()
-        ->and($event?->event)
-        ->toBe(ProcessEventType::Started)
-        ->and($event?->unit_name)
+    expect($types)
+        ->toBe(['starting', 'started'])
+        ->and(ProcessEvent::query()->where('event', ProcessEventType::Started)->first()?->unit_name)
         ->toContain('vite');
 });
 
-it('does not record a started process event when the runtime backend fails to start', function (): void {
+it('records starting then failed when the runtime backend fails to start', function (): void {
     $appNode = createTestAppHostNode(['name' => 'app-1']);
     $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     $instance = AppInstance::factory()->create([
@@ -100,8 +99,12 @@ it('does not record a started process event when the runtime backend fails to st
         runtime: ProcessRuntime::Systemd,
     );
 
-    expect(ProcessEvent::query()->count())
-        ->toBe(0)
+    $types = ProcessEvent::query()->orderBy('id')->pluck('event')->map(
+        static fn (ProcessEventType $type): string => $type->value,
+    )->all();
+
+    expect($types)
+        ->toBe(['starting', 'failed'])
         ->and($result['warnings'])
         ->not->toBeEmpty();
 });

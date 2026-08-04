@@ -450,6 +450,13 @@
       "follow_up": "Add a dedicated PHP SDK request class for starting process log operation streams."
     },
     {
+      "operation": "GET /processes/stream",
+      "operation_id": "processesStream",
+      "classification": "public_sdk",
+      "group": "process_stream",
+      "reason": "Browser toolbar process lifecycle SSE is public SDK surface with app-only selector, durable DB cursor, and native EventSource subscription."
+    },
+    {
       "operation": "GET /s3/credentials",
       "operation_id": "s3Credentials",
       "classification": "deferred_optional",

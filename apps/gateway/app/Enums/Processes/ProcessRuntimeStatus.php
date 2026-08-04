@@ -8,18 +8,24 @@ use App\Enums\ProcessEventType;
 
 enum ProcessRuntimeStatus: string
 {
+    case Starting = 'starting';
     case Running = 'running';
+    case Stopping = 'stopping';
     case Stopped = 'stopped';
+    case Restarting = 'restarting';
     case Crashed = 'crashed';
     case Unknown = 'unknown';
 
     public static function fromEventType(?ProcessEventType $type): self
     {
         return match ($type) {
+            ProcessEventType::Starting => self::Starting,
             ProcessEventType::Started => self::Running,
+            ProcessEventType::Stopping => self::Stopping,
             ProcessEventType::Stopped => self::Stopped,
+            ProcessEventType::Restarting => self::Restarting,
             ProcessEventType::Crashed => self::Crashed,
-            null => self::Unknown,
+            ProcessEventType::Failed, null => self::Unknown,
         };
     }
 
@@ -32,5 +38,13 @@ enum ProcessRuntimeStatus: string
             static fn (self $status): string => $status->value,
             self::cases(),
         );
+    }
+
+    public function isTransitional(): bool
+    {
+        return match ($this) {
+            self::Starting, self::Stopping, self::Restarting => true,
+            default => false,
+        };
     }
 }

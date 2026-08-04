@@ -1,4 +1,13 @@
-import { createOrbitGatewayClient, type OrbitGatewayClient } from '../src/index.js';
+import {
+    createOrbitGatewayClient,
+    subscribeProcessStream,
+    type OrbitGatewayClient,
+    type ProcessLifecycleEventType,
+    type ProcessRuntimeStatus,
+    type ProcessStreamLastEvent,
+    type ProcessStreamSnapshot,
+    type ProcessStreamUpdate,
+} from '../src/index.js';
 import type { paths } from '../src/generated/schema.js';
 
 type ProcessListQuery = NonNullable<
@@ -109,11 +118,71 @@ type ProcessStatus = ProcessListItem extends { status?: infer S } ? S : never;
 
 const statusOk: ProcessStatus = 'running';
 void statusOk;
+const transitionalOk: ProcessRuntimeStatus = 'starting';
+void transitionalOk;
+const lifecycleOk: ProcessLifecycleEventType = 'failed';
+void lifecycleOk;
+const lastEventOk: ProcessStreamLastEvent = { id: 1, type: 'started' };
+void lastEventOk;
 
 // Invalid: status is a concrete enum, not free-form text.
-// @ts-expect-error process status must be running|stopped|crashed|unknown
-const invalidStatus: ProcessStatus = 'booting';
+// @ts-expect-error process status must be the durable gateway union
+const invalidStatus: ProcessRuntimeStatus = 'booting';
 void invalidStatus;
+
+// @ts-expect-error lifecycle event type is a closed union
+const invalidLifecycle: ProcessLifecycleEventType = 'booting';
+void invalidLifecycle;
+
+// Snapshot required shape (no optional collapse to string).
+const snapshotOk: ProcessStreamSnapshot = {
+    app: 'test.app.example',
+    context: {
+        node: 'app-1',
+        project: 'docs',
+        instance: 'development',
+        workspace: null,
+    },
+    processes: [
+        {
+            node: 'app-1',
+            project: 'docs',
+            instance: 'development',
+            workspace: null,
+            name: 'vite',
+            command: null,
+            restart_policy: 'never',
+            crash_notification: 'none',
+            runtime: 'systemd',
+            tool: null,
+            service: null,
+            runtime_unit: 'orbit_docs_development_main_vite',
+            status: 'running',
+            last_event: { id: 1, type: 'started' },
+        },
+    ],
+    cursor: { high_water_mark: 1 },
+};
+void snapshotOk;
+
+const updateOk: ProcessStreamUpdate = {
+    id: 2,
+    event: 'stopping',
+    status: 'stopping',
+    name: 'vite',
+    node: 'app-1',
+    project: 'docs',
+    instance: 'development',
+    workspace: null,
+    unit_name: 'orbit_docs_development_main_vite',
+    occurred_at: null,
+    exit_code: null,
+    exit_status: null,
+};
+void updateOk;
+
+// subscribeProcessStream is the durable EventSource surface (commands stay on createOrbitGatewayClient).
+void subscribeProcessStream;
 
 // Invalid: url is never a process list query key.
 const invalidQuery = {
@@ -134,19 +203,19 @@ void invalidRestartBody;
 const knownRestartKeys: Array<keyof ProcessRestartBody> = ['app', 'node', 'instance', 'workspace', 'name'];
 void knownRestartKeys;
 
-// Restart runtimes expose plural events; start keeps singular event.
+// Restart and start both expose ordered durable events; start keeps singular terminal event.
 type RestartEvents = ProcessRestartRuntime extends { events: infer E } ? E : never;
 type StartEvent = ProcessStartRuntime extends { event?: infer E } ? E : never;
+type StartEvents = ProcessStartRuntime extends { events?: infer E } ? E : never;
 const restartEventsOk: RestartEvents = [];
 void restartEventsOk;
 const startEventOk: StartEvent = null;
 void startEventOk;
+const startEventsOk: StartEvents = [];
+void startEventsOk;
 type RestartHasEvent = ProcessRestartRuntime extends { event?: unknown } ? true : false;
-type StartHasEvents = ProcessStartRuntime extends { events?: unknown } ? true : false;
 const restartDoesNotUseEvent: RestartHasEvent = false;
 void restartDoesNotUseEvent;
-const startDoesNotUseEvents: StartHasEvents = false;
-void startDoesNotUseEvents;
 
 await client.GET('/tools', {
     params: {

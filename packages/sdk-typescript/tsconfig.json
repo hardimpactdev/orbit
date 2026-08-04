@@ -22,6 +22,9 @@
     },
     "include": [
         "src/**/*.ts",
-        "tests/**/*.ts"
+        "tests/typecheck.ts"
+    ],
+    "exclude": [
+        "tests/process-stream.test.ts"
     ]
 }

@@ -37,6 +37,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
+use Throwable;
 
 class MetricsRoleBaseline implements RoleBaseline
 {
@@ -397,7 +398,40 @@ class MetricsRoleBaseline implements RoleBaseline
             throw new RuntimeException("Metrics process runtime unit '{$runtimeUnit}' could not be rendered.");
         }
 
-        if (! $driver->start($node, $runtimeUnit)) {
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Starting,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
+
+        try {
+            $started = $driver->start($node, $runtimeUnit);
+        } catch (Throwable $exception) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
+            throw $exception;
+        }
+
+        if (! $started) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
             throw new RuntimeException("Metrics process runtime unit '{$runtimeUnit}' could not be started.");
         }
 

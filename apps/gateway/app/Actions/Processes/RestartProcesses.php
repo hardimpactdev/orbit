@@ -8,6 +8,7 @@ use App\Enums\ProcessEventType;
 use App\Models\ProcessEvent;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeTargets;
+use Throwable;
 
 final readonly class RestartProcesses
 {
@@ -29,26 +30,44 @@ final readonly class RestartProcesses
             $process = $target['process'];
             $runtimeUnit = $target['runtime_unit'];
             $workspace = $context->runtimeWorkspaceFor($process);
-            $ok = $target['driver']->restart($context->node, $runtimeUnit);
-            $events = [];
+
+            $events = [
+                $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Restarting,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                )),
+            ];
+
+            try {
+                $ok = $target['driver']->restart($context->node, $runtimeUnit);
+            } catch (Throwable $exception) {
+                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                ));
+
+                throw $exception;
+            }
+
+            $terminal = $this->recordProcessEvent->handle(
+                $ok ? ProcessEventType::Started : ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit,
+            );
+            $events[] = $this->eventPayload($terminal);
 
             if ($ok) {
-                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
-                    ProcessEventType::Stopped,
-                    $context->eventApp(),
-                    $workspace,
-                    $process,
-                    $context->node,
-                    $runtimeUnit,
-                ));
-                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
-                    ProcessEventType::Started,
-                    $context->eventApp(),
-                    $workspace,
-                    $process,
-                    $context->node,
-                    $runtimeUnit,
-                ));
                 $restarted++;
             }
 

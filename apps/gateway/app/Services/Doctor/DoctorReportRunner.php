@@ -3579,18 +3579,38 @@ final readonly class DoctorReportRunner
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
-        $started = $driver->start($node, $runtimeUnit);
+        $this->recordProcessEvent->handle(
+            ProcessEventType::Starting,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
 
-        if ($started) {
+        try {
+            $started = $driver->start($node, $runtimeUnit);
+        } catch (\Throwable $exception) {
             $this->recordProcessEvent->handle(
-                ProcessEventType::Started,
+                ProcessEventType::Failed,
                 $context->eventApp(),
                 $workspace,
                 $process,
                 $node,
                 $runtimeUnit,
             );
+
+            throw $exception;
         }
+
+        $this->recordProcessEvent->handle(
+            $started ? ProcessEventType::Started : ProcessEventType::Failed,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
 
         return [
             'family' => 'process',

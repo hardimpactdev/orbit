@@ -369,7 +369,40 @@ final readonly class SetupWorkspace
                 ];
             }
 
-            if (! $driver->start($node, $runtimeUnit)) {
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Starting,
+                $context->eventApp(),
+                $runtimeWorkspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
+            try {
+                $started = $driver->start($node, $runtimeUnit);
+            } catch (\Throwable $exception) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $runtimeWorkspace,
+                    $process,
+                    $node,
+                    $runtimeUnit,
+                );
+
+                throw $exception;
+            }
+
+            if (! $started) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $runtimeWorkspace,
+                    $process,
+                    $node,
+                    $runtimeUnit,
+                );
+
                 return [
                     'success' => false,
                     'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",
