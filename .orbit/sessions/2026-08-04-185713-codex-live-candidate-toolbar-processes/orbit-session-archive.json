@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T16:57:14+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-live-candidate-toolbar-processes/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-185713-codex-live-candidate-toolbar-processes",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T164855Z-40a87a583def.json"
+    ],
+    "entry_digests": {
+        "loop.md": "197696622166047263c3f13e492389af223a84569ccf7adfbabdadd7a4a59477",
+        "quality-gates/quality-check-2026-08-04T164855Z-40a87a583def.json": "49bf7606caeea9777335686cb523af5f84f4b13e447cbcfaaa237e3d3717c82d"
+    },
+    "slug": "codex-live-candidate-toolbar-processes",
+    "requested_slug": "codex-live-candidate-toolbar-processes",
+    "compatible_slugs": [
+        "codex-live-candidate-toolbar-processes"
+    ],
+    "branch": "codex/live-candidate-toolbar-processes",
+    "candidate_commit": "9eee39feab84c7ac40147e6b98c58a33b775f5fc",
+    "accepted_feature_tip": "9eee39feab84c7ac40147e6b98c58a33b775f5fc",
+    "accepted_main_tip": "65396c9f3a9b6f58638eb710d2ec22c944890ae8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
