@@ -35,10 +35,18 @@ npm install @hardimpactdev/orbit-sdk-typescript
 ```
 
 ```ts
-import { createOrbitGatewayClient } from '@hardimpactdev/orbit-sdk-typescript';
+import {
+    createOrbitGatewayClient,
+    subscribeProcessStream,
+} from '@hardimpactdev/orbit-sdk-typescript';
+
+// One gateway-root baseUrl drives HTTP and SSE. The client resolves
+// https://gateway.orbit → https://gateway.orbit/api for OpenAPI paths such as
+// /processes/start. A base that already ends with /api is not doubled.
+const gatewayRoot = 'https://gateway.orbit';
 
 const orbit = createOrbitGatewayClient({
-    baseUrl: 'https://gateway.orbit',
+    baseUrl: gatewayRoot,
     // Optional non-identity client label only. Do not send bearer or peer-IP headers.
     headers: {
         'X-Orbit-Client': 'laravel-toolbar',
@@ -69,8 +77,8 @@ durable gateway lifecycle events, plus compatible `last_event` when present.
 
 `subscribeProcessStream` opens native `EventSource` against the exact gateway
 route `GET /api/processes/stream?app=<hostname>` (app hostname URL-encoded).
-Unlike `createOrbitGatewayClient` (OpenAPI paths relative to the `/api` server
-base), EventSource requires the full path including `/api`. Snapshot
+Pass the same gateway-root `baseUrl` as `createOrbitGatewayClient`; the
+subscriber builds the full `/api/processes/stream` path. Snapshot
 `high_water_mark`, snapshot `last_event.id`, and update `id` must be
 non-negative safe integers or the subscriber surfaces
 `process.stream_protocol_error`.
@@ -79,7 +87,7 @@ non-negative safe integers or the subscriber surfaces
 import { subscribeProcessStream } from '@hardimpactdev/orbit-sdk-typescript';
 
 const sub = subscribeProcessStream({
-    baseUrl: 'https://gateway.orbit',
+    baseUrl: gatewayRoot,
     app: window.location.hostname,
     onSnapshot: (snapshot) => {
         // snapshot.cursor.high_water_mark is the durable SSE id
@@ -131,11 +139,11 @@ The wrapper is intentionally thin around `openapi-fetch`: macOS/Tauri, TanStack 
 ## Versioning and publication
 
 This package is **independently versioned** from Orbit monorepo root `VERSION`.
-The version in this `package.json` is authoritative (additive public SSE
-subscriber surface prepares `0.2.0`; initial public release was `0.1.0`).
-Canonical source remains `packages/sdk-typescript` in `hardimpactdev/orbit`
-(`private: true` in-tree). Durable consumers install from npm and/or the
-generated repository `hardimpactdev/orbit-sdk-typescript`.
+The version in this `package.json` is authoritative (gateway-root `/api` base
+resolution patch prepares `0.2.1`; public SSE subscriber was `0.2.0`; initial
+public release was `0.1.0`). Canonical source remains `packages/sdk-typescript`
+in `hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install
+from npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
 
 Publication path (package repository only; monorepo never holds npm secrets):
 
