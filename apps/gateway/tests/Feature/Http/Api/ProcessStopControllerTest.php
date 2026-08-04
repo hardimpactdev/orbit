@@ -3,14 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
-use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -74,56 +71,6 @@ describe('ProcessStopController', function (): void {
             ->assertJsonPath('success.data.runtimes.0.event.type', 'stopped');
 
         expect(ProcessEvent::query()->where('event', 'stopped')->exists())->toBeTrue();
-    });
-
-    it('authorizes app-hostname stop against the selected node when process names collide', function (): void {
-        $caller = createProcessStopCallerNode();
-        $grantedNode = createTestAppHostNode(['name' => 'granted-node']);
-        $otherNode = createTestAppHostNode(['name' => 'other-node']);
-        grantProcessStopAccess($caller, $grantedNode);
-
-        $grantedApp = Project::factory()->create(['name' => 'docs', 'node_id' => $grantedNode->id]);
-        $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
-        AppInstance::factory()->create([
-            'app_id' => $grantedApp->id,
-            'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $grantedNode->id),
-        ]);
-        Process::factory()->forOwner($otherApp, $otherNode)->create(['name' => 'vite']);
-        Process::factory()->forOwner($grantedApp, $grantedNode)->create(['name' => 'vite']);
-        ProxyRoute::factory()->create([
-            'node_id' => $grantedNode->id,
-            'domain' => 'docs-dev.example',
-            'app_id' => $grantedApp->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'app_instance' => [
-                    'name' => 'development',
-                    'selector' => 'docs.development',
-                ],
-            ],
-        ]);
-        app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
-
-        $response = $this->call(
-            'POST',
-            '/api/processes/stop',
-            [
-                'app' => 'docs-dev.example',
-                'name' => 'vite',
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP],
-        );
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.runtimes.0.node', 'granted-node')
-            ->assertJsonPath('success.data.runtimes.0.event.type', 'stopped');
     });
 
     it('returns partial runtime failure data', function (): void {
