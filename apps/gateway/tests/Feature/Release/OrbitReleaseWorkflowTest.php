@@ -97,7 +97,8 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
     expect($packageVersion)
         ->toBe('0.1.0')
         ->and($packageVersion)
-        ->not->toBe($rootVersion)
+        ->not
+        ->toBe($rootVersion)
         ->and($sourcePackage['private'] ?? false)
         ->toBeTrue();
 
@@ -163,35 +164,24 @@ it('prepares a local durable sdk-typescript package with independent package.jso
         ->and($packageJson['version'] ?? null)
         ->toBe($packageVersion)
         ->and($packageJson['version'] ?? null)
-        ->not->toBe($rootVersion)
-        ->and($packageJson['private'] ?? true)
-        ->toBeFalse()
-        ->and($packageJson['license'] ?? null)
-        ->toBe('MIT')
-        ->and($packageJson['publishConfig'] ?? null)
-        ->toMatchArray([
+        ->not->toBe($rootVersion)->and($packageJson['private'] ?? true)->toBeFalse()->and(
+            $packageJson['license'] ?? null,
+        )->toBe('MIT')->and($packageJson['publishConfig'] ?? null)->toMatchArray([
             'access' => 'public',
             'registry' => 'https://registry.npmjs.org/',
-        ])
-        ->and(data_get($packageJson, 'repository.url'))
-        ->toBe('https://github.com/hardimpactdev/orbit-sdk-typescript.git')
-        ->and(data_get($packageJson, 'repository.directory'))
-        ->toBeNull()
-        ->and($packageJson['homepage'] ?? null)
-        ->toBe('https://github.com/hardimpactdev/orbit-sdk-typescript')
-        ->and($packageJson['files'] ?? null)
-        ->toBe([
+        ])->and(data_get($packageJson, 'repository.url'))->toBe(
+            'https://github.com/hardimpactdev/orbit-sdk-typescript.git',
+        )->and(data_get($packageJson, 'repository.directory'))->toBeNull()->and($packageJson['homepage'] ?? null)->toBe(
+            'https://github.com/hardimpactdev/orbit-sdk-typescript',
+        )->and($packageJson['files'] ?? null)->toBe([
             'dist',
             'openapi/public-gateway-openapi.json',
             'README.md',
-        ])
-        ->and($packageJson['scripts'] ?? null)
-        ->toBe([
+        ])->and($packageJson['scripts'] ?? null)->toBe([
             'build' => 'tsc -p tsconfig.build.json',
             'typecheck' => 'tsc --noEmit',
             'test' => 'npm run typecheck',
-        ])
-        ->and(json_encode($packageJson))
+        ])->and(json_encode($packageJson))
         ->not->toContain('@orbit/sdk-typescript');
 
     $sourcePackageJson = (string) file_get_contents(repo_path('packages/sdk-typescript/package.json'));
@@ -236,7 +226,8 @@ it('stamps prepared sdk-typescript package-lock identity to the package version 
         ->and($packageLock['version'] ?? null)
         ->toBe($packageVersion)
         ->and($packageLock['version'] ?? null)
-        ->not->toBe($rootVersion)
+        ->not
+        ->toBe($rootVersion)
         ->and($lockRoot['name'] ?? null)
         ->toBe('@hardimpactdev/orbit-sdk-typescript')
         ->and($lockRoot['version'] ?? null)
@@ -257,7 +248,8 @@ it('rejects preparing sdk-typescript with a version that is not package.json', f
     $process->run();
 
     expect($process->getExitCode())
-        ->not->toBe(0)
+        ->not
+        ->toBe(0)
         ->and($process->getErrorOutput())
         ->toContain('must match packages/sdk-typescript/package.json version');
 
