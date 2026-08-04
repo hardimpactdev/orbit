@@ -109,6 +109,7 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
     expect($publishWorkflow)
         ->toContain('name: Publish package to npm')
         ->toContain('types: [published]')
+        ->toContain('workflow_dispatch:')
         ->toContain('contents: read')
         ->toContain('id-token: write')
         ->toContain('actions/setup-node@v6')
@@ -120,14 +121,34 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
         ->toContain('npm run build')
         ->toContain('npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version')
         ->toContain('npm publish --provenance --access public')
-        ->not->toContain('NPM_TOKEN')
-        ->not->toContain('NODE_AUTH_TOKEN');
+        // Steady-state release path is token-free OIDC.
+        ->toContain('github.event_name == \'release\'')
+        ->toContain('Publish release via OIDC Trusted Publisher')
+        // One-time bootstrap is fail-closed and split-repo secret only.
+        ->toContain('github.event_name == \'workflow_dispatch\'')
+        ->toContain('Guard one-time bootstrap publish')
+        ->toContain('Bootstrap refuses version')
+        ->toContain('already exists on the registry; bootstrap is one-time only')
+        ->toContain('only exact 0.1.0 is allowed')
+        ->toContain('secrets.NPM_BOOTSTRAP_TOKEN')
+        ->toContain('Publish bootstrap with short-lived split-repo credential')
+        // Monorepo durable secret name must not appear (bootstrap uses NPM_BOOTSTRAP_TOKEN only).
+        ->not->toContain('secrets.NPM_TOKEN')
+        ->not->toContain('${{ secrets.NPM_TOKEN }}');
+
+    // Release publish step must not inject a long-lived monorepo token.
+    expect($publishWorkflow)
+        ->toMatch(
+            '/Publish release via OIDC Trusted Publisher[\s\S]*?if: github\.event_name == \'release\'[\s\S]*?run: npm publish --provenance --access public/',
+        );
 
     $rootWorkflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
 
     expect($rootWorkflow)
         ->not->toContain('publish_sdk_typescript_npm')
-        ->not->toContain('npm publish --access public --provenance');
+        ->not->toContain('npm publish --access public --provenance')
+        ->not->toContain('NPM_BOOTSTRAP_TOKEN')
+        ->not->toContain('NPM_TOKEN');
 });
 
 it('prepares a local durable sdk-typescript package with independent package.json version', function (): void {

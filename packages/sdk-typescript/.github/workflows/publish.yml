@@ -3,6 +3,12 @@ name: Publish package to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version for one-time bootstrap publish (must be 0.1.0)
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -30,7 +36,56 @@ jobs:
         run: npm run build
 
       - name: Set version from release tag
+        if: github.event_name == 'release'
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
-      - name: Publish to npm
+      - name: Guard one-time bootstrap publish
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BOOTSTRAP_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+
+          if [ "$BOOTSTRAP_VERSION" != "0.1.0" ]; then
+            echo "Bootstrap refuses version [$BOOTSTRAP_VERSION]; only exact 0.1.0 is allowed." >&2
+            exit 1
+          fi
+
+          if [ "$package_version" != "0.1.0" ]; then
+            echo "package.json version is [$package_version]; bootstrap requires exact 0.1.0." >&2
+            exit 1
+          fi
+
+          # Fail closed once the package (any version) or 0.1.0 specifically exists.
+          if npm view "$package_name" version >/dev/null 2>&1; then
+            echo "Package [$package_name] already exists on the registry; bootstrap is one-time only." >&2
+            exit 1
+          fi
+
+          if npm view "${package_name}@0.1.0" version >/dev/null 2>&1; then
+            echo "Package version ${package_name}@0.1.0 already exists; bootstrap is one-time only." >&2
+            exit 1
+          fi
+
+          echo "Bootstrap guards passed for ${package_name}@0.1.0 (package absent from registry)."
+
+      - name: Publish release via OIDC Trusted Publisher
+        if: github.event_name == 'release'
         run: npm publish --provenance --access public
+
+      - name: Publish bootstrap with short-lived split-repo credential
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          # Split-repo short-lived bootstrap credential only (not a monorepo durable secret).
+          # setup-node injects NODE_AUTH_TOKEN for the registry; override only here.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ] || [ "$NODE_AUTH_TOKEN" = "XXXXX-XXXXX-XXXXX-XXXXX" ]; then
+            echo "NPM_BOOTSTRAP_TOKEN is missing. Set a short-lived least-privilege granular token on this repository only for first publish." >&2
+            exit 1
+          fi
+          npm version "0.1.0" --no-git-tag-version --allow-same-version
+          npm publish --provenance --access public
