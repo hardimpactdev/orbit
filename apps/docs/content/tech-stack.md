@@ -279,13 +279,24 @@ metadata to the durable generated package repository
 `.github/workflows/publish.yml`. Install trees (`node_modules`) are never
 committed. `composer quality-check` still runs package `typecheck` and `build`.
 
-npm publication is **not** performed by monorepo `.github/workflows/orbit-release.yml`.
-Instead, operators push the prepared split tree to
-`hardimpactdev/orbit-sdk-typescript` and publish a GitHub Release tag
-(`v0.1.0`, …). That package repository’s Craft-style OIDC workflow
-(Node 24, `id-token: write`, `npm publish --provenance --access public`) is the
-only npm publish path. Configure npm Trusted Publisher for
-`hardimpactdev/orbit-sdk-typescript` / `.github/workflows/publish.yml`.
+npm publication is **not** performed by monorepo `.github/workflows/orbit-release.yml`
+and the monorepo never holds a durable npm publish secret for this package.
+
+Operators push the prepared split tree to `hardimpactdev/orbit-sdk-typescript`.
+That repository’s `.github/workflows/publish.yml` has two paths:
+
+1. **One-time bootstrap** (`workflow_dispatch`, exact version input `0.1.0`):
+   fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+   `E404` absence for the package and `0.1.0`, a successful lookup refuses as
+   already existing, any non-E404 registry/DNS/TLS/rate/auth error stops, and
+   the input matches `package.json` `0.1.0`. May use a short-lived
+   least-privilege split-repo secret `NPM_BOOTSTRAP_TOKEN` only for that
+   create, then the secret/token is deleted/revoked.
+2. **Steady-state** (`release: published`): Craft-style OIDC Trusted Publisher
+   (Node 24, `id-token: write`, `npm publish --provenance --access public`)
+   with **no** token. Configure Trusted Publisher for
+   `hardimpactdev/orbit-sdk-typescript` / `publish.yml` after the first package
+   exists (npm cannot attach Trusted Publisher before the package name exists).
 
 #### Remote command progress
 

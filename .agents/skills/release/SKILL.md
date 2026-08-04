@@ -23,13 +23,18 @@ manifests.
   `VERSION` (package `package.json` is authoritative; initial public version
   `0.1.0`). Canonical source is `packages/sdk-typescript` in this monorepo
   (`private=true`). npm publish is **not** part of monorepo
-  `orbit-release.yml`. Prepare with
+  `orbit-release.yml` and this monorepo must not hold a durable npm publish
+  secret for it. Prepare with
   `bin/orbit-prepare-release-package --package=sdk-typescript` (version from
-  package.json), push the prepared tree to
-  `hardimpactdev/orbit-sdk-typescript`, and publish a GitHub Release there so
-  the package repository’s OIDC workflow (`publish.yml`) runs
-  `npm publish --provenance --access public`. Configure Trusted Publisher on
-  that package repository, not on monorepo `orbit-release.yml`.
+  package.json) and push the prepared tree to
+  `hardimpactdev/orbit-sdk-typescript`. **First package creation** uses the
+  package repo `publish.yml` `workflow_dispatch` bootstrap (exact `0.1.0`,
+  fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+  `E404` absence; successful lookup and non-E404 registry errors refuse;
+  short-lived split-repo `NPM_BOOTSTRAP_TOKEN` only). Then configure Trusted
+  Publisher on that package repository and delete/revoke the bootstrap
+  credential. **All later versions** use GitHub Release `published` → OIDC
+  Craft-style `npm publish --provenance --access public` with no token.
 - Release artifacts are built once as release candidates and exposed through a
   topology-reachable `topology-candidate` manifest. Candidate CLI binaries,
   manifests, and private runtime image archives live in the central artifact

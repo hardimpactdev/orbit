@@ -100,7 +100,7 @@ The version in this `package.json` is authoritative (public stream starts at
 `hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install from
 npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
 
-Publication path (Craft-style, package-repo OIDC only):
+Publication path (package repository only; monorepo never holds npm secrets):
 
 1. Prepare a durable split tree from the monorepo (does not publish):
 
@@ -112,11 +112,38 @@ Publication path (Craft-style, package-repo OIDC only):
    ```
 
 2. Push the prepared tree to `hardimpactdev/orbit-sdk-typescript` `main`.
-3. Create and **publish** a GitHub Release tag `v0.1.0` (or later) on that
-   repository. The package’s `.github/workflows/publish.yml` runs on
-   `release: published` with Node 24, `id-token: write`, `npm ci`, `npm test`,
-   `npm run build`, `npm version` from the tag, and
-   `npm publish --provenance --access public`.
+3. **First publish only (bootstrap):** npm cannot authorize Trusted Publisher
+   before the package exists. Operational order:
+
+   ```bash
+   # Create a short-lived least-privilege granular token with bypass-2FA for
+   # package create under @hardimpactdev (not a monorepo secret).
+   # Set it only on hardimpactdev/orbit-sdk-typescript as NPM_BOOTSTRAP_TOKEN.
+   gh secret set NPM_BOOTSTRAP_TOKEN --repo hardimpactdev/orbit-sdk-typescript
+
+   # Dispatch exact 0.1.0 bootstrap. Guard uses scripts/npm-bootstrap-registry-absent.sh:
+   # only confirmed npm E404 permits create; existing package or non-E404
+   # registry/DNS/TLS/rate/auth errors fail closed.
+   gh workflow run publish.yml \
+     --repo hardimpactdev/orbit-sdk-typescript \
+     -f version=0.1.0
+
+   # Verify, then attach Trusted Publisher and remove the bootstrap credential.
+   npm view @hardimpactdev/orbit-sdk-typescript@0.1.0
+   npm trust github @hardimpactdev/orbit-sdk-typescript \
+     --repo hardimpactdev/orbit-sdk-typescript \
+     --file publish.yml \
+     --allow-publish
+   gh secret delete NPM_BOOTSTRAP_TOKEN --repo hardimpactdev/orbit-sdk-typescript
+   # Revoke the granular token in the npm account UI.
+   ```
+
+4. **All later releases:** create and **publish** a GitHub Release tag
+   (`v0.1.1`, …) on the package repository. `release: published` runs the same
+   workflow’s OIDC path (Node 24, `id-token: write`, no token): `npm ci`,
+   `npm test`, `npm run build`, `npm version` from the tag, and
+   `npm publish --provenance --access public`. Bootstrap refuses once the
+   package exists (successful lookup) or when registry checks are non-E404.
 
 Monorepo `.github/workflows/orbit-release.yml` does **not** publish this package
 to npm and does not stamp root Orbit VERSION into it.
