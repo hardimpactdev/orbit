@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Enums\ProcessEventType;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Process;
 use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use Throwable;
 
 final readonly class EditProcessRuntimeUnits
 {
@@ -16,6 +18,7 @@ final readonly class EditProcessRuntimeUnits
         private EditProcessRuntimeUnitCleaner $cleaner,
         private EditProcessRuntimeUnitResolver $resolver,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private RecordProcessEvent $recordProcessEvent,
     ) {}
 
     public function fixedRuntimeUnitName(Process $process): ?string
@@ -94,6 +97,11 @@ final readonly class EditProcessRuntimeUnits
      * Restart the rendered runtime units after a successful apply through the
      * process runtime driver selected by `$process->runtime`.
      *
+     * Ordered durable lifecycle: restarting, then started or failed. On
+     * exception, failed is recorded before rethrow so status is never left
+     * transitional. process_name is the immutable snapshot from the Process
+     * model at record time (includes renames applied earlier in process:update).
+     *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
      */
@@ -103,7 +111,42 @@ final readonly class EditProcessRuntimeUnits
         $driver = $this->runtimeDrivers->forProcess($process);
 
         foreach ($runtimeUnits as $runtimeUnit) {
-            if ($driver->restart($context->node, $runtimeUnit['name'])) {
+            $workspace = $context->runtimeWorkspaceFor($process);
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Restarting,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit['name'],
+            );
+
+            try {
+                $ok = $driver->restart($context->node, $runtimeUnit['name']);
+            } catch (Throwable $exception) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit['name'],
+                );
+
+                throw $exception;
+            }
+
+            $this->recordProcessEvent->handle(
+                $ok ? ProcessEventType::Started : ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit['name'],
+            );
+
+            if ($ok) {
                 continue;
             }
 

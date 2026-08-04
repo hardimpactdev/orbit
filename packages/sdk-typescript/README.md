@@ -67,6 +67,14 @@ durable gateway lifecycle events, plus compatible `last_event` when present.
 
 ### Process lifecycle SSE (no polling)
 
+`subscribeProcessStream` opens native `EventSource` against the exact gateway
+route `GET /api/processes/stream?app=<hostname>` (app hostname URL-encoded).
+Unlike `createOrbitGatewayClient` (OpenAPI paths relative to the `/api` server
+base), EventSource requires the full path including `/api`. Snapshot
+`high_water_mark`, snapshot `last_event.id`, and update `id` must be
+non-negative safe integers or the subscriber surfaces
+`process.stream_protocol_error`.
+
 ```ts
 import { subscribeProcessStream } from '@hardimpactdev/orbit-sdk-typescript';
 

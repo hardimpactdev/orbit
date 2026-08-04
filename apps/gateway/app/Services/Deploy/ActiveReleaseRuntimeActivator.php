@@ -113,6 +113,12 @@ final readonly class ActiveReleaseRuntimeActivator
         $this->ensureFrankenPhpRuntimeProcess->forApp($instance->app, $instance);
         $outcome = $this->appRuntimeContainerManager->apply($node, $container);
 
+        // Deploy active-release FrankenPHP container restart only. This is not a
+        // configured process lifecycle path (process:restart / process:update
+        // --restart): the container is deploy infrastructure, not a process
+        // definition unit, so durable process_events are intentionally not
+        // recorded here. Failures surface as deploy.runtime_restart_failed.
+        // Explicit exclusion: not a configured process lifecycle path.
         if (
             $outcome === AppRuntimeContainerApplyOutcome::Unchanged
             && ! $this->processDockerRuntimeManager->restart($node, $container->name())

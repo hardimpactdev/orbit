@@ -1,9 +1,11 @@
 /**
- * Durable native EventSource subscriber for GET /processes/stream?app=…
+ * Durable native EventSource subscriber for GET /api/processes/stream?app=…
  *
  * Browser toolbars subscribe directly to the gateway. Native EventSource cannot
  * set custom headers (including X-Orbit-Client); the gateway never requires them.
  * createOrbitGatewayClient remains for process list/lifecycle commands.
+ * OpenAPI paths are relative to the `/api` server base; EventSource builds the
+ * full gateway path including `/api`.
  */
 
 /** Durable process_events.event values persisted by the gateway. */
@@ -137,7 +139,7 @@ const RUNTIME_STATUSES = new Set<string>([
 
 export function buildProcessStreamUrl(baseUrl: string, app: string): string {
     const normalizedBase = baseUrl.replace(/\/+$/, '');
-    const url = new URL('processes/stream', ensureTrailingSlash(normalizedBase));
+    const url = new URL('api/processes/stream', ensureTrailingSlash(normalizedBase));
     url.searchParams.set('app', app);
 
     return url.toString();
@@ -309,7 +311,7 @@ function asSnapshot(value: unknown): ProcessStreamSnapshot | null {
         processes.push(process);
     }
 
-    if (! isRecord(value.cursor) || typeof value.cursor.high_water_mark !== 'number') {
+    if (! isRecord(value.cursor) || ! isNonNegativeSafeInteger(value.cursor.high_water_mark)) {
         return null;
     }
 
@@ -416,7 +418,7 @@ function asProcess(value: unknown): ProcessStreamProcess | null {
 }
 
 function asLastEvent(value: unknown): ProcessStreamLastEvent | null {
-    if (! isRecord(value) || typeof value.id !== 'number' || ! isLifecycleEvent(value.type)) {
+    if (! isRecord(value) || ! isNonNegativeSafeInteger(value.id) || ! isLifecycleEvent(value.type)) {
         return null;
     }
 
@@ -432,7 +434,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
     }
 
     if (
-        typeof value.id !== 'number'
+        ! isNonNegativeSafeInteger(value.id)
         || ! isLifecycleEvent(value.event)
         || ! isRuntimeStatus(value.status)
         || typeof value.name !== 'string'
@@ -528,7 +530,15 @@ function asNullableNumber(value: unknown): number | null | false {
         return null;
     }
 
-    return typeof value === 'number' ? value : false;
+    return typeof value === 'number' && Number.isFinite(value) ? value : false;
+}
+
+/**
+ * Durable SSE/event ids must be non-negative IEEE-754 safe integers.
+ * Rejects fractional, negative, NaN, infinite, and unsafe integers.
+ */
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

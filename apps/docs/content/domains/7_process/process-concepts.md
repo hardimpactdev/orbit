@@ -192,10 +192,13 @@ These terms define the durable lifecycle records that process commands produce a
   the backend returns false or throws (exception is rethrown after recording).
   Ordinary creation/convergence paths that start units (for example
   `process:add --start`, workspace setup, role/doctor restore starts) use the
-  same starting→started/failed pattern. `crashed` events are recorded when the
-  runtime hook on the node reports an exit. Gateway lifecycle event history is
-  the authoritative process runtime state for list and toolbar consumers; list
-  does not live-probe nodes.
+  same starting→started/failed pattern. `process:update --restart` records
+  restarting→started/failed with the current process name snapshot (including
+  renames applied in the same update). Deploy active-release FrankenPHP
+  container restarts are not process lifecycle events. `crashed` events are
+  recorded when the runtime hook on the node reports an exit. Gateway lifecycle
+  event history is the authoritative process runtime state for list and toolbar
+  consumers; list does not live-probe nodes.
 - **Process status:** Normalized runtime status from the latest durable
   lifecycle event: `starting`, `running` (`started`), `stopping`, `stopped`,
   `restarting`, `crashed`, and `unknown` (no event yet, or latest event

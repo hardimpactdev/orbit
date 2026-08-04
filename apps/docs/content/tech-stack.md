@@ -250,7 +250,7 @@ TanStack Query, and browser toolbar callers; it must consume the classified
 OpenAPI contract instead of hand-maintaining route definitions. Browser toolbar
 callers use `createOrbitGatewayClient` for process list and lifecycle commands
 and a durable native `EventSource` process-stream subscriber for
-`GET /processes/stream?app=<hostname>` (no client polling). Auth matches the
+`GET /api/processes/stream?app=<hostname>` (no client polling). Auth matches the
 CLI model (WireGuard peer source IP plus grants/permissions; no bearer and no
 client peer-IP header). The `app` hostname is the only browser stream selector;
 CORS Origin admission only matches a registered origin to the requested `app`

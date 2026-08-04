@@ -63,17 +63,17 @@ class FakeEventSource {
 }
 
 describe('buildProcessStreamUrl', () => {
-    it('URL-encodes the app hostname and uses /processes/stream', () => {
+    it('URL-encodes the app hostname and uses exact /api/processes/stream', () => {
         const url = buildProcessStreamUrl('https://gateway.orbit', 'app.example.test');
 
-        assert.equal(url, 'https://gateway.orbit/processes/stream?app=app.example.test');
+        assert.equal(url, 'https://gateway.orbit/api/processes/stream?app=app.example.test');
     });
 
     it('encodes special characters in app', () => {
         const url = buildProcessStreamUrl('https://gateway.orbit/', 'my app.example');
 
         assert.ok(url.includes('app=my+app.example') || url.includes('app=my%20app.example'));
-        assert.ok(url.startsWith('https://gateway.orbit/processes/stream?'));
+        assert.ok(url.startsWith('https://gateway.orbit/api/processes/stream?'));
     });
 });
 
@@ -120,7 +120,7 @@ describe('subscribeProcessStream', () => {
         assert.ok(source);
         assert.equal(
             source.url,
-            'https://gateway.orbit/processes/stream?app=test.app.example',
+            'https://gateway.orbit/api/processes/stream?app=test.app.example',
         );
 
         source.emit(
@@ -228,6 +228,164 @@ describe('subscribeProcessStream', () => {
         const error = errors[0] as ProcessStreamError;
         assert.equal(error.code, 'process.stream_protocol_error');
         assert.match(error.message, /Update payload failed schema/);
+    });
+
+    it('rejects non-safe-integer cursor and event ids as protocol errors', () => {
+        const cases: Array<{ type: 'snapshot' | 'update'; payload: unknown }> = [
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [],
+                    cursor: { high_water_mark: 1.5 },
+                },
+            },
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [],
+                    cursor: { high_water_mark: -1 },
+                },
+            },
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [],
+                    cursor: { high_water_mark: Number.NaN },
+                },
+            },
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [],
+                    cursor: { high_water_mark: Number.POSITIVE_INFINITY },
+                },
+            },
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [],
+                    cursor: { high_water_mark: Number.MAX_SAFE_INTEGER + 1 },
+                },
+            },
+            {
+                type: 'snapshot',
+                payload: {
+                    app: 'test.app.example',
+                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    processes: [
+                        {
+                            node: 'app-1',
+                            project: null,
+                            instance: null,
+                            workspace: null,
+                            name: 'vite',
+                            command: null,
+                            restart_policy: 'never',
+                            crash_notification: 'none',
+                            runtime: 'systemd',
+                            tool: null,
+                            service: null,
+                            runtime_unit: 'orbit_docs_vite',
+                            status: 'running',
+                            last_event: { id: -3, type: 'started' },
+                        },
+                    ],
+                    cursor: { high_water_mark: 0 },
+                },
+            },
+            {
+                type: 'update',
+                payload: {
+                    id: 2.5,
+                    event: 'started',
+                    status: 'running',
+                    name: 'vite',
+                    node: null,
+                    project: null,
+                    instance: null,
+                    workspace: null,
+                    unit_name: null,
+                    occurred_at: null,
+                    exit_code: null,
+                    exit_status: null,
+                },
+            },
+            {
+                type: 'update',
+                payload: {
+                    id: -1,
+                    event: 'started',
+                    status: 'running',
+                    name: 'vite',
+                    node: null,
+                    project: null,
+                    instance: null,
+                    workspace: null,
+                    unit_name: null,
+                    occurred_at: null,
+                    exit_code: null,
+                    exit_status: null,
+                },
+            },
+            {
+                type: 'update',
+                payload: {
+                    id: Number.MAX_SAFE_INTEGER + 1,
+                    event: 'started',
+                    status: 'running',
+                    name: 'vite',
+                    node: null,
+                    project: null,
+                    instance: null,
+                    workspace: null,
+                    unit_name: null,
+                    occurred_at: null,
+                    exit_code: null,
+                    exit_status: null,
+                },
+            },
+        ];
+
+        for (const testCase of cases) {
+            FakeEventSource.reset();
+            const errors: Array<ProcessStreamError | Event> = [];
+            const snapshots: ProcessStreamSnapshot[] = [];
+            const updates: ProcessStreamUpdate[] = [];
+
+            subscribeProcessStream({
+                baseUrl: 'https://gateway.orbit',
+                app: 'test.app.example',
+                EventSourceImpl: FakeEventSource as unknown as typeof EventSource,
+                onSnapshot: (snapshot) => {
+                    snapshots.push(snapshot);
+                },
+                onUpdate: (update) => {
+                    updates.push(update);
+                },
+                onError: (error) => {
+                    errors.push(error);
+                },
+            });
+
+            FakeEventSource.instances[0]?.emit(testCase.type, JSON.stringify(testCase.payload));
+
+            assert.equal(errors.length, 1, `expected protocol error for ${JSON.stringify(testCase.payload)}`);
+            assert.equal(snapshots.length, 0);
+            assert.equal(updates.length, 0);
+            const error = errors[0] as ProcessStreamError;
+            assert.equal(error.code, 'process.stream_protocol_error');
+            assert.match(error.message, /schema validation/);
+        }
     });
 
     it('delivers server error events as ProcessStreamError', () => {
