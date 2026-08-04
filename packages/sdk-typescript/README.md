@@ -121,7 +121,9 @@ Publication path (package repository only; monorepo never holds npm secrets):
    # Set it only on hardimpactdev/orbit-sdk-typescript as NPM_BOOTSTRAP_TOKEN.
    gh secret set NPM_BOOTSTRAP_TOKEN --repo hardimpactdev/orbit-sdk-typescript
 
-   # Dispatch exact 0.1.0 bootstrap (fail-closed if package already exists).
+   # Dispatch exact 0.1.0 bootstrap. Guard uses scripts/npm-bootstrap-registry-absent.sh:
+   # only confirmed npm E404 permits create; existing package or non-E404
+   # registry/DNS/TLS/rate/auth errors fail closed.
    gh workflow run publish.yml \
      --repo hardimpactdev/orbit-sdk-typescript \
      -f version=0.1.0
@@ -141,7 +143,7 @@ Publication path (package repository only; monorepo never holds npm secrets):
    workflow’s OIDC path (Node 24, `id-token: write`, no token): `npm ci`,
    `npm test`, `npm run build`, `npm version` from the tag, and
    `npm publish --provenance --access public`. Bootstrap refuses once the
-   package exists on the registry.
+   package exists (successful lookup) or when registry checks are non-E404.
 
 Monorepo `.github/workflows/orbit-release.yml` does **not** publish this package
 to npm and does not stamp root Orbit VERSION into it.

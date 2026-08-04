@@ -286,7 +286,9 @@ Operators push the prepared split tree to `hardimpactdev/orbit-sdk-typescript`.
 That repository’s `.github/workflows/publish.yml` has two paths:
 
 1. **One-time bootstrap** (`workflow_dispatch`, exact version input `0.1.0`):
-   fail-closed unless the package and `0.1.0` are absent on the registry and
+   fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+   `E404` absence for the package and `0.1.0`, a successful lookup refuses as
+   already existing, any non-E404 registry/DNS/TLS/rate/auth error stops, and
    the input matches `package.json` `0.1.0`. May use a short-lived
    least-privilege split-repo secret `NPM_BOOTSTRAP_TOKEN` only for that
    create, then the secret/token is deleted/revoked.

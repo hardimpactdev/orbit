@@ -58,18 +58,13 @@ jobs:
             exit 1
           fi
 
-          # Fail closed once the package (any version) or 0.1.0 specifically exists.
-          if npm view "$package_name" version >/dev/null 2>&1; then
-            echo "Package [$package_name] already exists on the registry; bootstrap is one-time only." >&2
-            exit 1
-          fi
+          # Fail closed unless npm confirms E404 absence. Success => exists;
+          # non-E404 registry/DNS/TLS/rate/auth errors must stop (do not treat
+          # every nonzero npm view as absent).
+          bash scripts/npm-bootstrap-registry-absent.sh "$package_name"
+          bash scripts/npm-bootstrap-registry-absent.sh "${package_name}@0.1.0"
 
-          if npm view "${package_name}@0.1.0" version >/dev/null 2>&1; then
-            echo "Package version ${package_name}@0.1.0 already exists; bootstrap is one-time only." >&2
-            exit 1
-          fi
-
-          echo "Bootstrap guards passed for ${package_name}@0.1.0 (package absent from registry)."
+          echo "Bootstrap guards passed for ${package_name}@0.1.0 (confirmed npm E404 absence)."
 
       - name: Publish release via OIDC Trusted Publisher
         if: github.event_name == 'release'

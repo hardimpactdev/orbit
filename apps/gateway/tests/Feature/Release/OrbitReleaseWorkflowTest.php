@@ -128,13 +128,27 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
         ->toContain('github.event_name == \'workflow_dispatch\'')
         ->toContain('Guard one-time bootstrap publish')
         ->toContain('Bootstrap refuses version')
-        ->toContain('already exists on the registry; bootstrap is one-time only')
+        ->toContain('scripts/npm-bootstrap-registry-absent.sh')
         ->toContain('only exact 0.1.0 is allowed')
+        ->toContain('confirmed npm E404 absence')
         ->toContain('secrets.NPM_BOOTSTRAP_TOKEN')
         ->toContain('Publish bootstrap with short-lived split-repo credential')
         // Monorepo durable secret name must not appear (bootstrap uses NPM_BOOTSTRAP_TOKEN only).
         ->not->toContain('secrets.NPM_TOKEN')
         ->not->toContain('${{ secrets.NPM_TOKEN }}');
+
+    $registryGuard = (string) file_get_contents(
+        repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'),
+    );
+
+    expect(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'))
+        ->toBeFile()
+        ->and(is_executable(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh')))
+        ->toBeTrue()
+        ->and($registryGuard)
+        ->toContain('already exists on the registry; bootstrap is one-time only')
+        ->toContain('non-E404 error; bootstrap refuses to proceed')
+        ->toContain('code E404');
 
     // Release publish step must not inject a long-lived monorepo token.
     expect($publishWorkflow)
@@ -149,6 +163,100 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
         ->not->toContain('npm publish --access public --provenance')
         ->not->toContain('NPM_BOOTSTRAP_TOKEN')
         ->not->toContain('NPM_TOKEN');
+});
+
+it('executes npm bootstrap registry absence checks with fail-closed E404 semantics', function (): void {
+    $script = repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh');
+    $mockRoot = sys_get_temp_dir().'/orbit-npm-bootstrap-mock-'.bin2hex(random_bytes(6));
+    $mockBin = $mockRoot.'/bin';
+
+    mkdir($mockBin, 0755, true);
+
+    $npmStub = <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        mode="${ORBIT_NPM_VIEW_MODE:-}"
+        spec="${2:-}"
+
+        case "$mode" in
+          e404)
+            echo "npm error code E404" >&2
+            echo "npm error 404 Not Found - GET https://registry.npmjs.org/${spec} - Not found" >&2
+            exit 1
+            ;;
+          exists)
+            echo "0.1.0"
+            exit 0
+            ;;
+          network)
+            echo "npm error code ENOTFOUND" >&2
+            echo "npm error network request failed" >&2
+            exit 1
+            ;;
+          auth)
+            echo "npm error code E401" >&2
+            echo "npm error 401 Unauthorized" >&2
+            exit 1
+            ;;
+          *)
+            echo "unknown ORBIT_NPM_VIEW_MODE [$mode]" >&2
+            exit 2
+            ;;
+        esac
+        BASH;
+
+    file_put_contents($mockBin.'/npm', $npmStub);
+    chmod($mockBin.'/npm', 0755);
+
+    $run = static function (string $mode, string $spec) use ($script, $mockBin): Process {
+        $process = new Process(
+            ['bash', $script, $spec],
+            null,
+            [
+                'PATH' => $mockBin.PATH_SEPARATOR.getenv('PATH'),
+                'ORBIT_NPM_VIEW_MODE' => $mode,
+            ],
+        );
+        $process->run();
+
+        return $process;
+    };
+
+    try {
+        $absent = $run('e404', '@hardimpactdev/orbit-sdk-typescript');
+        expect($absent->getExitCode())
+            ->toBe(0, $absent->getErrorOutput().$absent->getOutput());
+
+        $absentVersion = $run('e404', '@hardimpactdev/orbit-sdk-typescript@0.1.0');
+        expect($absentVersion->getExitCode())
+            ->toBe(0, $absentVersion->getErrorOutput().$absentVersion->getOutput());
+
+        $exists = $run('exists', '@hardimpactdev/orbit-sdk-typescript');
+        expect($exists->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($exists->getErrorOutput())
+            ->toContain('already exists on the registry; bootstrap is one-time only');
+
+        $network = $run('network', '@hardimpactdev/orbit-sdk-typescript');
+        expect($network->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($network->getErrorOutput())
+            ->toContain('non-E404 error; bootstrap refuses to proceed')
+            ->toContain('ENOTFOUND');
+
+        $auth = $run('auth', '@hardimpactdev/orbit-sdk-typescript@0.1.0');
+        expect($auth->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($auth->getErrorOutput())
+            ->toContain('non-E404 error; bootstrap refuses to proceed')
+            ->toContain('E401');
+    } finally {
+        File::deleteDirectory($mockRoot);
+    }
 });
 
 it('prepares a local durable sdk-typescript package with independent package.json version', function (): void {

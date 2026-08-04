@@ -29,11 +29,12 @@ manifests.
   package.json) and push the prepared tree to
   `hardimpactdev/orbit-sdk-typescript`. **First package creation** uses the
   package repo `publish.yml` `workflow_dispatch` bootstrap (exact `0.1.0`,
-  fail-closed if the package already exists, short-lived split-repo
-  `NPM_BOOTSTRAP_TOKEN` only). Then configure Trusted Publisher on that package
-  repository and delete/revoke the bootstrap credential. **All later versions**
-  use GitHub Release `published` → OIDC Craft-style
-  `npm publish --provenance --access public` with no token.
+  fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+  `E404` absence; successful lookup and non-E404 registry errors refuse;
+  short-lived split-repo `NPM_BOOTSTRAP_TOKEN` only). Then configure Trusted
+  Publisher on that package repository and delete/revoke the bootstrap
+  credential. **All later versions** use GitHub Release `published` → OIDC
+  Craft-style `npm publish --provenance --access public` with no token.
 - Release artifacts are built once as release candidates and exposed through a
   topology-reachable `topology-candidate` manifest. Candidate CLI binaries,
   manifests, and private runtime image archives live in the central artifact
