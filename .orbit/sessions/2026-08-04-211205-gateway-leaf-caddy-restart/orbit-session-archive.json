@@ -1,0 +1,30 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T19:12:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/gateway-leaf-caddy-restart/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-211205-gateway-leaf-caddy-restart",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T191117Z-46b0a4230d6a.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "loop.md": "3faeb30c3ff12828828b151c7f416a819d19105ed8334a812bcf8d2f08178d5f",
+        "quality-gates/quality-check-2026-08-04T191117Z-46b0a4230d6a.json": "0f23cad08bcc60a3f5a3773d8913c3f626b59fd9fea0eb521a13075db90b0df9"
+    },
+    "slug": "gateway-leaf-caddy-restart",
+    "requested_slug": "gateway-leaf-caddy-restart",
+    "compatible_slugs": [
+        "gateway-leaf-caddy-restart"
+    ],
+    "branch": "gateway-leaf-caddy-restart",
+    "candidate_commit": "e3d86dc3c6587448a4abdf23ed32a569355af439",
+    "accepted_feature_tip": "e3d86dc3c6587448a4abdf23ed32a569355af439",
+    "accepted_main_tip": "e8a7c668e3ef68c312402a721c4e3233423a6218",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
