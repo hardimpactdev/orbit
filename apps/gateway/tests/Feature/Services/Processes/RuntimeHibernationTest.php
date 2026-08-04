@@ -1046,7 +1046,7 @@ it('leaves a partially stopped process group asleep so the next request reconcil
         ]);
 });
 
-it('initiates soft-wake lifecycle process starts concurrently with overlapping remote start work', function (): void {
+it('dispatches soft-wake lifecycle process starts as one full concurrent batch', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
@@ -1071,7 +1071,7 @@ it('initiates soft-wake lifecycle process starts concurrently with overlapping r
         ]);
 
     $executor = new RuntimeWakeConcurrentStartRecordingExecutor(expectedStarts: 2);
-    $runner = new ObservingRuntimeWakeConcurrentRunner;
+    $runner = new SingleBatchRuntimeWakeConcurrentRunner;
     app()->instance(RunsInternalCommands::class, $executor);
     app()->instance(RuntimeWakeConcurrentRunner::class, $runner);
 
@@ -1089,10 +1089,8 @@ it('initiates soft-wake lifecycle process starts concurrently with overlapping r
 
     expect($run->refresh()->status)
         ->toBe(OperationStatus::Succeeded)
-        ->and($runner->maxConcurrentTasks())
-        ->toBeGreaterThanOrEqual(2)
-        ->and($runner->maxInFlightTasks())
-        ->toBeGreaterThanOrEqual(2)
+        ->and($runner->batchSizes())
+        ->toBe([2])
         ->and($executor->actions())
         ->toContain('internal:caddy-config:runtime-awake');
 });
@@ -1118,7 +1116,7 @@ it('marks the scope awake only after aggregate readiness observes every expected
         readinessRunningAfterProbes: 2,
     );
     app()->instance(RunsInternalCommands::class, $executor);
-    app()->instance(RuntimeWakeConcurrentRunner::class, new ObservingRuntimeWakeConcurrentRunner);
+    app()->instance(RuntimeWakeConcurrentRunner::class, new SingleBatchRuntimeWakeConcurrentRunner);
 
     $this->call(
         'GET',
@@ -1163,7 +1161,7 @@ it('keeps the scope asleep and stops the group when readiness does not observe e
         readinessAlwaysNotRunning: true,
     );
     app()->instance(RunsInternalCommands::class, $executor);
-    app()->instance(RuntimeWakeConcurrentRunner::class, new ObservingRuntimeWakeConcurrentRunner);
+    app()->instance(RuntimeWakeConcurrentRunner::class, new SingleBatchRuntimeWakeConcurrentRunner);
 
     $this->call(
         'GET',
@@ -1409,16 +1407,16 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
 }
 
 /**
- * Wake-only concurrent runner that proves multi-task dispatch overlap without
- * wall-clock races: every task is marked in-flight before any task body runs.
+ * Test double for feature tests: records each full-set batch size, then runs
+ * tasks sequentially so faked executors stay in-process. Real process overlap
+ * is proven by ProcessRuntimeWakeConcurrentRunnerTest.
  *
  * @mago-expect lint:file-name
  */
-final class ObservingRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
+final class SingleBatchRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
 {
-    private int $maxConcurrentTasks = 0;
-
-    private int $maxInFlightTasks = 0;
+    /** @var list<int> */
+    private array $batchSizes = [];
 
     /**
      * @param  array<array-key, callable(): bool>  $tasks
@@ -1426,8 +1424,7 @@ final class ObservingRuntimeWakeConcurrentRunner implements RuntimeWakeConcurren
      */
     public function run(array $tasks): array
     {
-        $this->maxConcurrentTasks = max($this->maxConcurrentTasks, count($tasks));
-        $this->maxInFlightTasks = max($this->maxInFlightTasks, count($tasks));
+        $this->batchSizes[] = count($tasks);
 
         $results = [];
 
@@ -1438,14 +1435,12 @@ final class ObservingRuntimeWakeConcurrentRunner implements RuntimeWakeConcurren
         return $results;
     }
 
-    public function maxConcurrentTasks(): int
+    /**
+     * @return list<int>
+     */
+    public function batchSizes(): array
     {
-        return $this->maxConcurrentTasks;
-    }
-
-    public function maxInFlightTasks(): int
-    {
-        return $this->maxInFlightTasks;
+        return $this->batchSizes;
     }
 }
 

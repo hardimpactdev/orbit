@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Actions\Processes\RecordProcessEvent;
+use App\Actions\Processes\RuntimeWakeProcessStarter;
 use App\Actions\Processes\StopProcesses;
 use App\Enums\ProcessEventType;
 use App\Models\Node;
@@ -130,9 +131,14 @@ final readonly class RuntimeHibernation
         $tasks = [];
 
         foreach ($targets as $index => $target) {
-            $driver = $target['driver'];
+            $nodeId = $node->id;
+            $processId = $target['process']->id;
             $runtimeUnit = $target['runtime_unit'];
-            $tasks[$index] = static fn (): bool => $driver->start($node, $runtimeUnit);
+
+            // Scalars only: fresh process workers must not inherit models/services/PDO.
+            $tasks[$index] = static function () use ($nodeId, $processId, $runtimeUnit): bool {
+                return app(RuntimeWakeProcessStarter::class)->start($nodeId, $processId, $runtimeUnit);
+            };
         }
 
         $results = $this->wakeConcurrentRunner->run($tasks);

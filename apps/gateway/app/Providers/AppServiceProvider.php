@@ -40,8 +40,8 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\Php\AgentPushPhpRuntimeArtifactConverger;
-use App\Services\Processes\ForkRuntimeWakeConcurrentRunner;
 use App\Services\Processes\PhpProcessStreamConnection;
+use App\Services\Processes\ProcessRuntimeWakeConcurrentRunner;
 use App\Services\Processes\ProcessStreamClock;
 use App\Services\Processes\ProcessStreamConnection;
 use App\Services\Processes\ProcessStreamRuntimeConfig;
@@ -166,7 +166,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProcessStreamConnection::class, PhpProcessStreamConnection::class);
         $this->app->bind(
             RuntimeWakeConcurrentRunner::class,
-            fn (Application $app): RuntimeWakeConcurrentRunner => new ForkRuntimeWakeConcurrentRunner(
+            fn (Application $app): RuntimeWakeConcurrentRunner => new ProcessRuntimeWakeConcurrentRunner(
                 forceSequential: $app->runningUnitTests(),
             ),
         );
