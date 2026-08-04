@@ -430,6 +430,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
             $certReadableCommand => Process::result(),
             $keyReadableCommand => Process::result(),
             CaddyTool::reloadCommand('orbit-caddy') => Process::result(),
+            CaddyTool::restartCommand('orbit-caddy') => Process::result(),
             "sudo ss -H -ltn 'sport = :80' | grep -q ." => Process::result(exitCode: 1),
             "sudo ss -H -ltn 'sport = :443' | grep -q ." => Process::result(exitCode: 1),
             "sudo ss -H -lun 'sport = :443' | grep -q ." => Process::result(exitCode: 1),
@@ -488,7 +489,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
     );
     Process::assertRan($certReadableCommand);
     Process::assertRan($keyReadableCommand);
-    Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
+    Process::assertRan(CaddyTool::restartCommand('orbit-caddy'));
 
     $stackDeploy = array_search('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'", $invocations, true);
     $routeWrite = array_search(
@@ -498,7 +499,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
     );
     $certReadable = array_search($certReadableCommand, $invocations, true);
     $keyReadable = array_search($keyReadableCommand, $invocations, true);
-    $caddyReload = array_search(CaddyTool::reloadCommand('orbit-caddy'), $invocations, true);
+    $caddyRestart = array_search(CaddyTool::restartCommand('orbit-caddy'), $invocations, true);
     $tcp80Check = array_search("sudo ss -H -ltn 'sport = :80' | grep -q .", $invocations, true);
     $tcp443Check = array_search("sudo ss -H -ltn 'sport = :443' | grep -q .", $invocations, true);
     $udp443Check = array_search("sudo ss -H -lun 'sport = :443' | grep -q .", $invocations, true);
@@ -512,14 +513,14 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         ->not->toBeFalse()->and($routeWrite)
         ->not->toBeFalse()->and($certReadable)
         ->not->toBeFalse()->and($keyReadable)
-        ->not->toBeFalse()->and($caddyReload)
+        ->not->toBeFalse()->and($caddyRestart)
         ->not->toBeFalse()->and($stackDeploy)->toBeLessThan($tcp80Check)->and($tcp80Check)->toBeLessThan(
             $caddyConverge,
         )->and($tcp443Check)->toBeLessThan($caddyConverge)->and($udp443Check)->toBeLessThan($caddyConverge)->and(
             $caddyConverge,
         )->toBeLessThan($routeWrite)->and($routeWrite)->toBeLessThan($certReadable)->and($certReadable)->toBeLessThan(
             $keyReadable,
-        )->and($keyReadable)->toBeLessThan($caddyReload);
+        )->and($keyReadable)->toBeLessThan($caddyRestart);
 });
 
 it('writes router gateway leaf artifacts through ORBIT_HOST_PATH_PREFIX during update-path convergence', function (): void {
@@ -574,11 +575,12 @@ it('writes router gateway leaf artifacts through ORBIT_HOST_PATH_PREFIX during u
     );
     Process::assertRan('sudo install -d -m 0755 '.escapeshellarg($hostCaddyDir));
     Process::assertRan('sudo tee '.escapeshellarg("{$hostCaddyDir}/orbit-gateway.caddy").' > /dev/null');
-    Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
+    Process::assertRan(CaddyTool::restartCommand('orbit-caddy'));
 
     expect($invocations)
         ->not->toContain('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null')->and($invocations)
-        ->not->toContain('sudo install -d -m 0755 /etc/orbit/certs');
+        ->not->toContain('sudo install -d -m 0755 /etc/orbit/certs')->and($invocations)
+        ->not->toContain(CaddyTool::reloadCommand('orbit-caddy'));
 });
 
 readonly class GatewaySwarmInstallerFakeCa extends OrbitCaService

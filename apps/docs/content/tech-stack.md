@@ -142,8 +142,11 @@ run through the gateway container entrypoint or durable one-shot runner. The
 durable update runner must mount the same host path-prefix trees as the Swarm
 gateway service (`/etc/caddy`, `/etc/orbit`, and host `/home` under
 `ORBIT_HOST_PATH_PREFIX`) so entrypoint ownership resolution and host leaf
-install share one layout. Source development can still use
-`bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
+install share one layout. After installing a new gateway API leaf into the
+router-owned host cert paths, fleet update restarts `orbit-caddy` so the served
+TLS certificate matches the files on disk; Caddy `reload` alone keeps stale
+in-memory leaves when only cert/key bytes change. Source development can still
+use `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
 controlled checkout for local ergonomics.
 The public `orbit` command never dispatches to gateway Artisan. Every public
 gateway-backed or remote command uses the typed gateway HTTPS API over

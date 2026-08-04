@@ -181,7 +181,13 @@ class GatewaySwarmInstaller
 
         $this->assertRouterCaddyCanReadGatewayLeaf();
 
-        $this->runRequired(CaddyTool::reloadCommand('orbit-caddy'), 'reload router-owned orbit-caddy container');
+        // File-backed TLS leaves: reload keeps stale in-memory certs when only the
+        // cert/key bytes change and the Caddyfile text is unchanged. Restart forces
+        // router-owned orbit-caddy to serve the leaf just installed on the host.
+        $this->runRequired(
+            CaddyTool::restartCommand('orbit-caddy'),
+            'restart router-owned orbit-caddy to load gateway leaf certificate',
+        );
     }
 
     private function assertRouterCaddyCanReadGatewayLeaf(): void

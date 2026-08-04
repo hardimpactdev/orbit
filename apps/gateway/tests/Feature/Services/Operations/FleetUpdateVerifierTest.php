@@ -773,7 +773,7 @@ function fleet_verifier_gateway_leaf_converge_commands(): array
         'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null',
         "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",
         "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'",
-        CaddyTool::reloadCommand('orbit-caddy'),
+        CaddyTool::restartCommand('orbit-caddy'),
     ];
 }
 
