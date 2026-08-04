@@ -26,6 +26,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
         public readonly string $crashNotification = 'none',
         public readonly bool $start = false,
         public readonly ?string $runtime = null,
+        public readonly ?string $label = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,6 +50,10 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
 
         if ($this->runtime !== null) {
             $body['runtime'] = $this->runtime;
+        }
+
+        if ($this->label !== null) {
+            $body['label'] = $this->label;
         }
 
         return $body;

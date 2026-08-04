@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
+orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--label=<label>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -24,8 +24,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
-| `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. |
+| `name` | `[name]` | Always. | Never. | None. | Existing process identity slug (`key`) within the resolved owner scope. |
+| `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. Renaming identity never rewrites the persisted display `label`. |
+| `label` | `--label` / body `label` | Optional. At least one editable field is required. | Never. | Current value. | Trimmed non-empty string; max 255 characters. Updates only the display label. |
 | `node` | `--node` | Required when updating a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |
 | `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
 | `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
@@ -66,23 +67,27 @@ commands.
 2. Validate that at least one editable field is supplied.
 3. When `--name` is supplied, validate that the new slug is unique in the owning
    scope and that the selected runtime/backend can safely replace derived unit
-   identity before gateway state changes.
-4. Send the request to the gateway, which validates the authenticated peer's authorization.
-5. Update gateway-owned process configuration. Rename updates are atomic at the
+   identity before gateway state changes. Identity rename does not change
+   `label`.
+4. When `--label` is supplied, validate the trimmed non-empty display label
+   (max 255) without changing the identity slug.
+5. Send the request to the gateway, which validates the authenticated peer's authorization.
+6. Update gateway-owned process configuration. Rename updates are atomic at the
    gateway state layer: either the process row has the new identity and
    dependent gateway records point at it, or the previous identity remains active.
-6. Re-render the runtime units that the process definition produces on the
+7. Re-render the runtime units that the process definition produces on the
    resolved node or instance serving node. Node-owned and workspace-owned
    processes normally derive one unit. Instance-owned processes derive one
    main-instance unit plus one unit for each active workspace belonging to that
    same instance. Canonical identities include both project and instance slugs.
-7. When identity changes, remove or replace derived runtime units for the
+   Label-only updates do not require runtime-unit identity replacement.
+8. When identity changes, remove or replace derived runtime units for the
    previous identity after the current desired units have been rendered, so
    `doctor --family=process --restore`
    can converge without orphaning the replaced unit.
-8. When `--restart` is present, restart affected running runtime units and
+9. When `--restart` is present, restart affected running runtime units and
    record lifecycle events for units that restart successfully.
-9. Render the selected output.
+10. Render the selected output.
 
 If process configuration is updated but re-rendering or optional restart fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
 

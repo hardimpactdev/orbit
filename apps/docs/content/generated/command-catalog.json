@@ -6022,6 +6022,7 @@
                 "node",
                 "instance",
                 "workspace",
+                "label",
                 "tool",
                 "service",
                 "service-version",
@@ -6510,6 +6511,7 @@
             ],
             "options": [
                 "name",
+                "label",
                 "node",
                 "instance",
                 "workspace",

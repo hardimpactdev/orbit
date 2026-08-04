@@ -139,6 +139,8 @@ describe('subscribeProcessStream', () => {
                         project: 'docs',
                         instance: 'development',
                         workspace: null,
+                        key: 'vite',
+                        label: 'Vite Dev Server',
                         name: 'vite',
                         command: 'npm run dev',
                         restart_policy: 'never',
@@ -161,7 +163,9 @@ describe('subscribeProcessStream', () => {
                 id: 4,
                 event: 'stopping',
                 status: 'stopping',
+                key: 'vite',
                 name: 'vite',
+                label: 'Vite Dev Server',
                 node: 'app-1',
                 project: 'docs',
                 instance: 'development',
@@ -176,10 +180,16 @@ describe('subscribeProcessStream', () => {
         assert.equal(snapshots.length, 1);
         assert.equal(snapshots[0]?.cursor.high_water_mark, 3);
         assert.equal(snapshots[0]?.processes[0]?.status, 'running');
+        assert.equal(snapshots[0]?.processes[0]?.key, 'vite');
+        assert.equal(snapshots[0]?.processes[0]?.label, 'Vite Dev Server');
+        assert.equal(snapshots[0]?.processes[0]?.name, 'vite');
         assert.equal(snapshots[0]?.processes[0]?.last_event?.type, 'started');
         assert.equal(updates.length, 1);
         assert.equal(updates[0]?.event, 'stopping');
         assert.equal(updates[0]?.status, 'stopping');
+        assert.equal(updates[0]?.key, 'vite');
+        assert.equal(updates[0]?.label, 'Vite Dev Server');
+        assert.equal(updates[0]?.name, 'vite');
 
         sub.close();
         assert.equal(source.readyState, FakeEventSource.CLOSED);

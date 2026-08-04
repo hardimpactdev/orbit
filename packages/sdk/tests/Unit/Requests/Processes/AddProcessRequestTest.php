@@ -62,6 +62,30 @@ it('serializes an explicit runtime override into the request body', function ():
     ]);
 });
 
+it('serializes an optional label into the request body when supplied', function (): void {
+    $request = new AddProcessRequest(
+        instance: 'docs',
+        name: 'vite',
+        command: 'npm run dev',
+        label: 'Vite Dev Server',
+    );
+
+    expect($request->body()->all())
+        ->toMatchArray([
+            'instance' => 'docs',
+            'name' => 'vite',
+            'label' => 'Vite Dev Server',
+        ])
+        ->and($request->body()->all())
+        ->not->toHaveKey('runtime');
+});
+
+it('omits label from the request body when none was supplied', function (): void {
+    $request = new AddProcessRequest(instance: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('label');
+});
+
 it('returns a ProcessAddResponse DTO with warnings', function (): void {
     $mock = new MockClient([
         AddProcessRequest::class => MockResponse::make([

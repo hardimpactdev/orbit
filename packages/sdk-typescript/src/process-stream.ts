@@ -45,6 +45,13 @@ export interface ProcessStreamProcess {
     project: string | null;
     instance: string | null;
     workspace: string | null;
+    /** Stable process identity slug (current Process.name). */
+    key: string;
+    /** Durable human display label. */
+    label: string;
+    /**
+     * @deprecated Compatibility alias equal to `key`. New consumers must use `key` + `label`.
+     */
     name: string;
     command: string | null;
     restart_policy: string;
@@ -70,8 +77,17 @@ export interface ProcessStreamUpdate {
     id: number;
     event: ProcessLifecycleEventType;
     status: ProcessRuntimeStatus;
-    /** Durable process_name snapshot; always present for new gateway events. */
+    /** Durable process identity key (process_name snapshot). */
+    key: string;
+    /**
+     * @deprecated Compatibility alias equal to `key`. New consumers must use `key` (+ `label`).
+     */
     name: string;
+    /**
+     * Current process label when the related process key matches this update's
+     * durable key; otherwise falls back to `key` (snapshot-authoritative labels).
+     */
+    label: string;
     node: string | null;
     project: string | null;
     instance: string | null;
@@ -351,7 +367,13 @@ function asProcess(value: unknown): ProcessStreamProcess | null {
         return null;
     }
 
-    if (typeof value.node !== 'string' || typeof value.name !== 'string' || typeof value.runtime_unit !== 'string') {
+    if (typeof value.node !== 'string' || typeof value.runtime_unit !== 'string') {
+        return null;
+    }
+
+    const key = resolveProcessKey(value);
+
+    if (key === null || typeof value.label !== 'string' || value.label === '') {
         return null;
     }
 
@@ -404,7 +426,9 @@ function asProcess(value: unknown): ProcessStreamProcess | null {
         project,
         instance,
         workspace,
-        name: value.name,
+        key,
+        label: value.label,
+        name: key,
         command,
         restart_policy: value.restart_policy,
         crash_notification: value.crash_notification,
@@ -433,15 +457,20 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         return null;
     }
 
+    const key = resolveProcessKey(value);
+
     if (
         ! isNonNegativeSafeInteger(value.id)
         || ! isLifecycleEvent(value.event)
         || ! isRuntimeStatus(value.status)
-        || typeof value.name !== 'string'
-        || value.name === ''
+        || key === null
     ) {
         return null;
     }
+
+    const label = typeof value.label === 'string' && value.label !== ''
+        ? value.label
+        : key;
 
     const node = asNullableString(value.node);
     const project = asNullableString(value.project);
@@ -469,7 +498,9 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         id: value.id,
         event: value.event,
         status: value.status,
-        name: value.name,
+        key,
+        name: key,
+        label,
         node,
         project,
         instance,
@@ -479,6 +510,20 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         exit_code: exitCode,
         exit_status: exitStatus,
     };
+}
+
+/**
+ * Prefer `key`; accept deprecated `name` only when equal or when `key` is absent.
+ */
+function resolveProcessKey(value: Record<string, unknown>): string | null {
+    const key = typeof value.key === 'string' && value.key !== '' ? value.key : null;
+    const name = typeof value.name === 'string' && value.name !== '' ? value.name : null;
+
+    if (key !== null && name !== null && key !== name) {
+        return null;
+    }
+
+    return key ?? name;
 }
 
 function asStreamError(value: unknown): ProcessStreamError | null {

@@ -955,7 +955,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required. */
+        /** @description Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Snapshot process items expose key, label, and deprecated name (= key). Update frames expose key/name aliases and include current label only when the related process key matches the durable event key; otherwise label falls back to that key (snapshot-authoritative labels). Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required. */
         get: operations["processesStream"];
         put?: never;
         post?: never;
@@ -5073,6 +5073,11 @@ export interface operations {
                                     project: string | null;
                                     instance: string | null;
                                     workspace: string | null;
+                                    /** @description Stable process identity slug (current Process.name). New consumers must use key + label. */
+                                    key: string;
+                                    /** @description Durable human display label for the process. */
+                                    label: string;
+                                    /** @description Deprecated compatibility alias equal to key. New consumers must use key + label. */
                                     name: string;
                                     command: string | null;
                                     restart_policy: string;

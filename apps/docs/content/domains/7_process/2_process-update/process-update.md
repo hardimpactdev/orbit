@@ -13,6 +13,7 @@ derived unit names so they match the current identity slug.
 
 ```bash
 orbit process:update vite --instance=docs.production --command="npm run dev"
+orbit process:update vite --instance=docs.production --label="Vite Dev Server"
 orbit process:update queue --instance=docs.production --restart-policy=on_failure --restart
 orbit process:update horizon --instance=docs.development --workspace=feature-docs --command="php artisan horizon"
 orbit process:update orbit-hermes-dashboard --node=app-dev-1 --command="hermes dashboard --no-open" --runtime=systemd
@@ -25,9 +26,12 @@ orbit process:update vite --instance=docs.production --command="npm run dev" --j
 ## Behavior Summary
 
 Use this command to update a process definition, optionally rename its identity
-slug, and re-render its runtime units.
+slug, change its display label, and re-render its runtime units.
 
 - **Gateway Update**: Updates the gateway-owned process definition.
+- **Display Label**: `--label` updates only the durable human display label.
+  Identity rename via `--name` does not rewrite a persisted label (defaulted or
+  custom).
 - **Identity Rename**: `--name=<new-slug>` renames the process identity inside
   the owning scope after uniqueness validation.
 - **Scope Resolution**: `--node` updates a node-owned process and cannot be

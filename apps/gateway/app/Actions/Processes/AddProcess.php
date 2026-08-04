@@ -52,6 +52,7 @@ final readonly class AddProcess
         array $serviceOptions = [],
         array $replaceContainers = [],
         ?Node $consumer = null,
+        ?string $label = null,
     ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
@@ -143,9 +144,12 @@ final readonly class AddProcess
 
         $replacedContainers = $this->removeReplacementContainers($context, $replaceContainers);
 
+        $resolvedLabel = $label ?? $name;
+
         $process = DB::transaction(function () use (
             $context,
             $name,
+            $resolvedLabel,
             $command,
             $restartPolicy,
             $crashNotification,
@@ -165,6 +169,7 @@ final readonly class AddProcess
                     'node_id' => $context->node->id,
                     'app_instance_id' => $context->appInstance?->id,
                     'name' => $name,
+                    'label' => $resolvedLabel,
                     'command' => $command,
                     'restart_policy' => $restartPolicy,
                     'crash_notification' => $crashNotification,

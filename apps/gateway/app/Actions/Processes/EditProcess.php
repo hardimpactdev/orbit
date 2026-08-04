@@ -23,7 +23,7 @@ final readonly class EditProcess
     ) {}
 
     /**
-     * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
+     * @param  array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(
@@ -93,8 +93,14 @@ final readonly class EditProcess
                 );
             }
 
+            // Identity rename must not rewrite a defaulted or custom display label.
             $process->name = $changes['name'];
             $changed[] = 'name';
+        }
+
+        if (array_key_exists('label', $changes) && $process->label !== $changes['label']) {
+            $process->label = $changes['label'];
+            $changed[] = 'label';
         }
 
         if (array_key_exists('command', $changes) && $process->command !== $changes['command']) {

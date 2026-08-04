@@ -36,6 +36,7 @@ class ProcessFactory extends Factory
             'owner_type' => Project::class,
             'owner_id' => Project::factory(),
             'name' => fake()->unique()->slug(1),
+            // Omit label so Process::saving defaults it to name unless tests set one.
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,

@@ -37,6 +37,8 @@ function assert_process_open_api_contracts(array $schema): void
             'project',
             'instance',
             'workspace',
+            'key',
+            'label',
             'name',
             'command',
             'restart_policy',

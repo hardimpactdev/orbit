@@ -191,7 +191,7 @@ final class GatewayOpenApi
                         ),
                     ]);
                     $operation->description(
-                        'Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.',
+                        'Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Snapshot process items expose key, label, and deprecated name (= key). Update frames expose key/name aliases and include current label only when the related process key matches the durable event key; otherwise label falls back to that key (snapshot-authoritative labels). Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.',
                     );
                     $operation->addResponse(self::processStreamSuccessResponse());
                 }
@@ -274,7 +274,17 @@ final class GatewayOpenApi
         $process->addProperty('project', new StringType()->nullable(true));
         $process->addProperty('instance', new StringType()->nullable(true));
         $process->addProperty('workspace', new StringType()->nullable(true));
-        $process->addProperty('name', new StringType);
+        $key = new StringType;
+        $key->setDescription(
+            'Stable process identity slug (current Process.name). New consumers must use key + label.',
+        );
+        $process->addProperty('key', $key);
+        $label = new StringType;
+        $label->setDescription('Durable human display label for the process.');
+        $process->addProperty('label', $label);
+        $name = new StringType;
+        $name->setDescription('Deprecated compatibility alias equal to key. New consumers must use key + label.');
+        $process->addProperty('name', $name);
         $process->addProperty('command', new StringType()->nullable(true));
         $process->addProperty('restart_policy', new StringType);
         $process->addProperty('crash_notification', new StringType);
@@ -292,6 +302,8 @@ final class GatewayOpenApi
             'project',
             'instance',
             'workspace',
+            'key',
+            'label',
             'name',
             'command',
             'restart_policy',
