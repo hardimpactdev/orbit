@@ -143,7 +143,8 @@ describe('internal process launchd service command', function (): void {
             action: 'is-active',
             label: 'dev.hardimpact.orbit.test-unit',
             plistPath: null,
-        ))->toThrow(LocalLaunchdServiceFailure::class);
+        ))
+            ->toThrow(LocalLaunchdServiceFailure::class);
     });
 
     it('rejects launchd actions on non macOS hosts before writing LaunchAgents', function (): void {

@@ -192,13 +192,10 @@ final readonly class RuntimeHibernation
      */
     private function allRunning(Node $node, array $targets): bool
     {
-        foreach ($targets as $target) {
-            if (! $target['driver']->isRunning($node, $target['runtime_unit'])) {
-                return false;
-            }
-        }
-
-        return true;
+        return array_all(
+            $targets,
+            static fn (array $target): bool => $target['driver']->isRunning($node, $target['runtime_unit']),
+        );
     }
 
     private function stopAfterFailedStart(RuntimeHibernationScope $scope): void

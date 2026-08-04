@@ -16,7 +16,7 @@ use Throwable;
  * @mago-expect lint:kan-defect
  * @mago-expect lint:cyclomatic-complexity
  */
-final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
+final readonly class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
 {
     /**
      * @param  (Closure(): int)|null  $fork  Returns child pid (>0), 0 in child, or -1 on failure.
@@ -24,10 +24,10 @@ final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunn
      * @param  (Closure(): never)|null  $exitChild  Terminates the forked child process.
      */
     public function __construct(
-        private readonly bool $forceSequential = false,
-        private readonly ?Closure $fork = null,
-        private readonly ?Closure $wait = null,
-        private readonly ?Closure $exitChild = null,
+        private bool $forceSequential = false,
+        private ?Closure $fork = null,
+        private ?Closure $wait = null,
+        private ?Closure $exitChild = null,
     ) {}
 
     /**

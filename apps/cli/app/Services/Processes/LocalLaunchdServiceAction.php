@@ -322,7 +322,7 @@ final readonly class LocalLaunchdServiceAction
             return false;
         }
 
-        return ((int) $matches[1]) > 0;
+        return (int) $matches[1] > 0;
     }
 
     private function action(string $value): string

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Process as ProcessFacade;
 /**
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:too-many-methods
+ * @mago-expect lint:kan-defect
  */
 final readonly class LocalDockerSwarmServiceAction
 {
@@ -288,9 +289,16 @@ final readonly class LocalDockerSwarmServiceAction
             return false;
         }
 
-        $parts = preg_split('/\s+/', trim($result->output())) ?: [];
-        $running = isset($parts[0]) && ctype_digit($parts[0]) ? (int) $parts[0] : 0;
-        $desired = isset($parts[1]) && ctype_digit($parts[1]) ? (int) $parts[1] : 0;
+        $parts = preg_split('/\s+/', trim($result->output()));
+
+        if (! is_array($parts)) {
+            return false;
+        }
+
+        $runningToken = $parts[0] ?? null;
+        $desiredToken = $parts[1] ?? null;
+        $running = is_string($runningToken) && ctype_digit($runningToken) ? (int) $runningToken : 0;
+        $desired = is_string($desiredToken) && ctype_digit($desiredToken) ? (int) $desiredToken : 0;
 
         return $desired > 0 && $running >= $desired;
     }
