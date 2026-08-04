@@ -78,9 +78,8 @@ The following steps describe what the command does during a successful run.
 
 - **Gateway Configuration**: Creates initial workspace configuration on the
   gateway with a non-null `instance_id`.
-- **Workspace Source**: Creates a new workspace source for the selected concrete
-  instance on its owning node. Generic and OpenCode-backed sources use Git
-  worktrees; PolyScope-backed sources are provisioned through the PolyScope SDK.
+- **Workspace Source**: Creates a new Git worktree for the selected concrete
+  instance on its owning node through the worktree source driver.
 - **Setup Pipeline**: Runs the same setup behavior exposed by
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md). The pipeline
   creates workspace-owned proxy routes, renders workspace runtime container artifacts,

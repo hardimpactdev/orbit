@@ -15,7 +15,7 @@ derived unit names so they match the current identity slug.
 orbit process:update vite --instance=docs.production --command="npm run dev"
 orbit process:update queue --instance=docs.production --restart-policy=on_failure --restart
 orbit process:update horizon --instance=docs.development --workspace=feature-docs --command="php artisan horizon"
-orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
+orbit process:update orbit-hermes-dashboard --node=app-dev-1 --command="hermes dashboard --no-open" --runtime=systemd
 orbit process:update watcher --instance=docs.production --runtime=systemd
 orbit process:update worker --instance=feedback.development --runtime=launchd --restart
 orbit process:update mysql --node=database-1 --name=app-mysql --json

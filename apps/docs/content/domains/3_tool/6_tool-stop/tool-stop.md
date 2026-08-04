@@ -7,7 +7,7 @@ Stop a lifecycle-capable tool on a target node.
 ```bash
 orbit tool:stop <tool> --node=<node>
 orbit tool:stop orbstack --node=<mac-node>
-orbit tool:stop opencode-cli --instance=<project.instance>
+orbit tool:stop hermes --instance=<project.instance>
 orbit tool:stop orbstack --node=<mac-node> --json
 ```
 

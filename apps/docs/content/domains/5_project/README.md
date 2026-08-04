@@ -114,7 +114,7 @@ These rules govern all instance family commands.
   logs, and latest status belong to one concrete instance. `deploy:run`
   accepts the canonical dotted instance selector, while a bare project name is
   shorthand only when that project has exactly one instance.
-  not doctor drift repair. It checks that instance's effective agent IDE
+  not doctor drift repair. It checks that instance's effective
   adapter, uses workspace removal semantics for stale workspaces owned by that
   instance, and can be scheduled through normal schedules.
 - Project dependency audit posture is gateway-owned summary state for registered
@@ -204,7 +204,7 @@ rows belong to `project:show` and `instance`.
 `project:show` follows this rule: `success.data.project` is the canonical
 project entity, while show-only registry expansion such as concrete
 instances, instance-nested workspaces, process definitions, routes, and
-effective agent IDE details lives under `success.data.details`. Do not merge
+effective instance details live under `success.data.details`. Do not merge
 those show-only relationships into the canonical project entity. There is no flat
 project workspace fallback. Workspace expansion includes only active
 `app-dev` placements and is omitted entirely for `app-prod` callers.

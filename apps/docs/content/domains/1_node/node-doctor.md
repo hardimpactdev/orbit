@@ -36,7 +36,7 @@ The node family owns these facts:
   active node and wildcard records for active development and agent roles,
   alongside `vpn` role settings and WireGuard runtime, local
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
-  and agent IDE defaults at the node level.
+  at the node level.
 
 Tools, firewall rules, projects, instances, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -171,7 +171,7 @@ The node probe reads gateway node records and checks these layers:
    `database` and `gateway` assignments have no role settings in v1.
 15. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-dev` nodes when `--self` inspects the CLI's
-   local configuration, and agent IDE defaults at the node level point at
+   local configuration at the node level point at
    supported adapters.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,

@@ -8,7 +8,7 @@ Restart a lifecycle-capable tool on a target node.
 orbit tool:restart <tool> --node=<node>
 orbit tool:restart orbstack --node=<mac-node>
 orbit tool:restart dns
-orbit tool:restart opencode-cli --instance=<project.instance>
+orbit tool:restart hermes --instance=<project.instance>
 orbit tool:restart orbstack --node=<mac-node> --json
 ```
 

@@ -72,7 +72,6 @@ belong to that concrete instance.
    - owning node: name and host (from the workspace's effective node);
    - runtime expectations: effective PHP version and inheritance source,
      runtime container, derived hostname;
-   - agent IDE configuration: effective adapter, resolution source, and
      workspace discovery capability;
    - inherited process: instance-owned process definitions inherited by this
      workspace (registry-shaped, not live status);

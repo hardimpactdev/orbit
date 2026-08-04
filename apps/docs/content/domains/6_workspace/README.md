@@ -95,22 +95,17 @@ These rules govern all workspace family commands.
 
 ## Workspace Source Drivers
 
-Workspace source creation is driver-owned. `workspace:new` resolves the parent
-then no adapter. The selected source driver creates the source directory and
-returns the physical path that Orbit stores on the gateway workspace record.
+Workspace source creation is driver-owned. The only current product source
+driver is the generic Git worktree driver (`WorktreeWorkspaceDriver`).
+`workspace:new` creates a Git worktree at
+`<app path>/.worktrees/<workspace>` using branch `<workspace>` from the
+requested `--base` ref and stores that absolute path on the gateway workspace
+record.
 
-- **Generic worktree driver:** used when no effective adapter exists. It
-  creates a Git worktree at `<app path>/.worktrees/<workspace>` using branch
-  `<workspace>` from the requested `--base` ref. Generic worktree rows store
-  resolves the parent OpenCode project, asks OpenCode to create a UI-visible
-  workspace, then aligns the returned workspace worktree to branch
-  `<workspace>` from the requested `--base` ref. Orbit stores
-  session id when session creation succeeds (stored on a best-effort basis).
-  creates the workspace through the PolyScope SDK using the node's
-  PolyScope server identity and the parent project's PolyScope repository id.
-  Orbit stores the PolyScope-returned path and workspace id. PolyScope paths
-  are allowed to live outside the parent project path, for example under
-  `~/.polyscope/clones/...`.
+Operators may also adopt an existing on-disk worktree path (for example a
+Codex Git worktree under `~/.codex/worktrees/...`) through `workspace:setup
+--path`. Adoption still stores the observed absolute path; Orbit does not
+require a external workspace adapter service to register the path.
 
 No workspace command may derive a physical path as `<app path>/<workspace>`.
 Setup, runtime rendering, doctor checks, and teardown use the path stored on
@@ -156,10 +151,6 @@ entity does not define.
   "url": "https://feature-docs.docs.test",
   "php_version": "8.5",
   "php_inherited": true,
-  "agent_ide": {
-    "adapter": null,
-    "workspace_id": null
-  },
   "adopted": false,
   "lifecycle_status": "expected"
 }

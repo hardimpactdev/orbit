@@ -14,7 +14,7 @@ node and records durable `started` events.
 orbit process:start vite --instance=docs.production
 orbit process:start vite --instance=docs.development --workspace=feature-docs
 orbit process:start vite --app=test.app.example
-orbit process:start opencode-server --node=app-dev-1
+orbit process:start orbit-hermes-dashboard --node=app-dev-1
 orbit process:start vite --instance=docs.production --json
 orbit process:start --instance=docs.development --workspace=feature-docs
 ```

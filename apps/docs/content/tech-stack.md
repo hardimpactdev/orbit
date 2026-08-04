@@ -197,7 +197,6 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 
 - A configuration row describes a desired physical fact on a node; the node-side artifact is the applied representation of that row.
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
-- Agent IDE defaults are gateway configuration owned by nodes and instances — not a separate state family.
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
 - Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, systemd unit names, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 

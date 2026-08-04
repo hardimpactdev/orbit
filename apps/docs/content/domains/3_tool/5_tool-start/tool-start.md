@@ -7,7 +7,7 @@ Start a lifecycle-capable tool on a target node.
 ```bash
 orbit tool:start <tool> --node=<node>
 orbit tool:start orbstack --node=<mac-node>
-orbit tool:start opencode-cli --instance=<project.instance>
+orbit tool:start hermes --instance=<project.instance>
 orbit tool:start orbstack --node=<mac-node> --json
 ```
 

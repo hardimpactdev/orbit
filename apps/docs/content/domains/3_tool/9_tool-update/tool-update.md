@@ -20,8 +20,8 @@ orbit tool:update [tool] [--instance=<project.instance>] [--node=<node>] [--expe
 orbit tool:update composer --node=app-1
 orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
-orbit tool:update opencode-cli --instance=docs --json
-orbit tool:update opencode-cli --instance=docs --stream-json
+orbit tool:update hermes --instance=docs --json
+orbit tool:update hermes --instance=docs --stream-json
 ```
 
 ## Arguments and options

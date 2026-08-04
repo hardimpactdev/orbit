@@ -13,7 +13,7 @@ node and records durable `stopped` events.
 ```bash
 orbit process:stop vite --instance=docs.production
 orbit process:stop vite --instance=docs.development --workspace=feature-docs
-orbit process:stop opencode-server --node=app-dev-1
+orbit process:stop orbit-hermes-dashboard --node=app-dev-1
 orbit process:stop vite --instance=docs.production --json
 orbit process:stop --instance=docs.development --workspace=feature-docs
 ```

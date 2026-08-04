@@ -86,7 +86,6 @@ The instance probe reads gateway project and instance records and checks these l
 8. **Production runtime security:** instances on nodes with the `app-prod`
    role satisfy the instance-owned security posture. These findings use
    `instance.security.*` keys and do not depend on workspaces.
-9. **Instance agent IDE default:** a configured agent IDE default set on an instance must point at a supported adapter.
 10. **Instance runtime targets:** Orbit instances whose driver
    configuration places them on the selected node are probed for instance-owned
    PHP/image requirements, managed config such as
@@ -171,7 +170,7 @@ diagnostic, but concrete repair is handed to
 `doctor --family=process --restore` through the app's canonical FrankenPHP
 process row. Missing source, invalid roots, unsupported PHP versions, unhealthy application
 code, deployment policy changes for an instance, failed deployment recovery, stuck deployment
-triage, and agent IDE preference changes remain explicit app or deploy commands
+triage, and preference changes remain explicit app or deploy commands
 or operator work. Instance doctor never creates a new project or instance record, moves an app to
 another node, changes an project name, edits instance-owned proxy routes, edits
 workspace/process/schedule configuration, runs deployments, clears deployment history,
@@ -223,5 +222,5 @@ No current E2E test is mapped for instance-family doctor coverage.
 path, document root, PHP runtime, managed runtime configuration, the
 configuration for instance runtime targets, production
 user policy, and production health. It also covers deployment pipeline
-configuration per instance, latest deployment status, agent IDE defaults, stale artifacts, and exclusion of
+configuration per instance, latest deployment status, stale artifacts, and exclusion of
 proxy/workspace/process/schedule/node/tool/firewall drift.

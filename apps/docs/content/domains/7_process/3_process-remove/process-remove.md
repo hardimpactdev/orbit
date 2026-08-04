@@ -14,7 +14,7 @@ removes the derived runtime units for the resolved owner scope.
 orbit process:remove vite --instance=docs.production
 orbit process:remove queue --instance=docs.production --force
 orbit process:remove horizon --instance=docs.development --workspace=feature-docs --force
-orbit process:remove opencode-server --node=app-dev-1 --force
+orbit process:remove orbit-hermes-dashboard --node=app-dev-1 --force
 orbit process:remove vite --instance=docs.production --force --json
 ```
 

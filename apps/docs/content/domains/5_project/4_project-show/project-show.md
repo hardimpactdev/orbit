@@ -6,7 +6,7 @@ Show one app's gateway registry details.
 
 Use `project:show` when you need an app's gateway-owned registry record and
 placement breakdown: repository, shared PHP version, visible instances,
-and each instance's path, effective agent IDE, workspaces, processes, and
+and each instance's path, workspaces, processes, and
 WebSocket, analytics, or route bindings. Live
 runtime drift, readiness, and repair belong to
 [`doctor --family=instance`](../instance-doctor.md).
@@ -55,7 +55,7 @@ Run `project:show` to inspect a single project's gateway configuration without t
 3. Reads the project record from gateway-owned configuration: name,
    repository, shared runtime policy, and PHP version.
 4. Aggregates caller-visible instances. Each instance nests only its own
-   effective agent IDE, workspaces, processes, and WebSocket, analytics, and
+   workspaces, processes, and WebSocket, analytics, and
    route bindings.
 5. Returns the app detail view backed by the registry.
 

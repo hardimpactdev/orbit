@@ -42,7 +42,7 @@ These terms define how process definitions are identified, scoped, and ordered.
 - **Canonical project identity:** Instance and workspace process identities and
   JSON include both the logical `project` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
-  such as `php-cli`, `viteplus`, `opencode-cli`, or `polyscope`. The dependency
+  such as `php-cli`, `viteplus`, or `hermes`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
 - **External macOS runtime provider:** macOS applications such as OrbStack may
@@ -94,9 +94,9 @@ These terms describe the runtime objects that Orbit derives from process definit
   Instance/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,
-  including node-level services such as OpenCode Server or PolyScope Server and
-  instance/workspace command processes. The process row owns start/stop/restart/log
-  lifecycle; any related tool row supplies only the installed capability.
+  including node-level host services and instance/workspace command processes.
+  The process row owns start/stop/restart/log lifecycle; any related tool row
+  supplies only the installed capability.
 - **Launchd process runtime:** Runtime backend for macOS host command units.
   The first slice renders user LaunchAgent plists under the configured node
   user's `~/Library/LaunchAgents`, uses Orbit-owned labels under
@@ -165,12 +165,9 @@ These terms define per-process behavioral rules that apply to every derived runt
   succeed. Dependencies are single-flight across scopes sharing a node and
   source path, while process startup and warm markers remain scope-owned. Stale
   takeover must acquire both fences.
-- **Crash notification policy:** Process-definition opt-in for crash event
-  delivery. When the policy is enabled, `crashed` events resolve the effective
-  agent IDE and notify the active session when one is available. Units that use
-  launchd reject `none` crash notification in this slice with
-  `launchd_crash_notification_deferred` until Orbit owns a macOS crash wrapper
-  that can emit gateway-authenticated `crashed` events.
+- **Crash notification policy:** Process-definition field for crash
+  notification delivery. The only supported value is `none`. Orbit does not
+  deliver crash notifications through an external notification adapter.
 - **Process runtime selection:** Process-definition field that records which
   backend renders the runtime units. Instance and workspace host-command processes
   default to `systemd` on Linux and `launchd` on macOS. Node-owned host-command

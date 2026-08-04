@@ -6,7 +6,7 @@ Install or configure a managed host tool on a node.
 
 `tool:install` bootstraps a supported tool capability on a target node and
 records gateway configuration for that node. When the tool backs a singleton
-service (such as `opencode-cli` backing `opencode-server`), install also configures that tool's
+service (such as `hermes` backing `orbit-hermes-dashboard`), install also configures that tool's
 related process by default so the capability comes up running; pass
 `--no-process` to install the capability only. Multi-instance services such as
 MySQL or Valkey are not tool installs; use `process:add --service=<identifier>` for those.
@@ -22,7 +22,7 @@ orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--too
 ```bash
 orbit tool:install composer --node=app-1
 orbit tool:install composer --node=app-1 --tool-version=2.9.2
-orbit tool:install opencode-cli --node=agent-1
+orbit tool:install hermes --node=agent-1
 orbit tool:install composer --node=app-1 --json
 orbit tool:install composer --node=app-1 --stream-json
 orbit tool:install claude-code --node=app-1

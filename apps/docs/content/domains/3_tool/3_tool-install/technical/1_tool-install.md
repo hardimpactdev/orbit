@@ -91,8 +91,8 @@ the concrete Claude Code binary version returned by `claude --version`.
   `--no-process` is not supplied, `tool:install` converges that process through
   the process family after the capability install succeeds. The process is
   node-owned and uses the runtime, command, and `--tool` dependency declared by
-  the tool definition (for `opencode-cli`: related process `opencode-server`,
-  `runtime=systemd`, command `opencode serve -a`, `tool=opencode-cli`).
+  the tool definition (for `hermes`: related process `orbit-hermes-dashboard`,
+  `runtime=systemd`, command `hermes dashboard --no-open`, `tool=hermes`).
 - The convergence is idempotent: a newly created process is reported as
   `configured`; an existing related process is reported as `converged`. It never
   creates a duplicate.

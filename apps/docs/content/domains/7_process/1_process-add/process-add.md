@@ -12,11 +12,11 @@ long-running instance or workspace workers, and development servers.
 ## Usage
 
 ```bash
-orbit process:add vite "npm run dev" --instance=docs.production --crash-notification=agent_ide
+orbit process:add vite "npm run dev" --instance=docs.production --crash-notification=none
 orbit process:add queue "php artisan queue:work" --instance=docs.production --restart-policy=always
 orbit process:add horizon "php artisan horizon" --instance=docs.development --workspace=feature-docs --runtime=systemd
 orbit process:add feedback "php artisan feedback:work" --instance=feedback.development --runtime=launchd
-orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode-cli
+orbit process:add orbit-hermes-dashboard "hermes dashboard --no-open" --node=app-dev-1 --runtime=systemd --tool=hermes
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --version=8

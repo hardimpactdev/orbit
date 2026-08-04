@@ -74,7 +74,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
      version, with no placement defaults;
    - caller-visible instances and their concrete placement fields, ordered
      by instance name;
-   - each instance's effective agent IDE, workspaces, process definitions, and
+   - each instance's workspaces, process definitions, and
      WebSocket, analytics, and proxy-route bindings, nested only under that
      instance (registry-shaped, not live status).
 
@@ -89,7 +89,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    visible; project and instance details remain readable.
 
    The response has no flat `details.workspaces`, `details.processes`,
-   `details.agent_ide`, or `details.bindings` fallback and no project
+   `details.bindings` fallback and no project
    `node`, `path`, `root`, `url`, `domain`, or `environment` field.
 
    Default `project:show` is a registry read, not a live readiness command.

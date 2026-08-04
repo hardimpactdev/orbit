@@ -8,7 +8,7 @@ Read retained log lines from a tool that declares a logs capability.
 
 ```bash
 orbit tool:logs <tool> --node=<node>
-orbit tool:logs opencode-cli --instance=<project.instance> --lines=200
+orbit tool:logs hermes --instance=<project.instance> --lines=200
 orbit tool:logs dns --lines=50
 orbit tool:logs dns --json
 ```

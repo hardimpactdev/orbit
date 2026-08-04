@@ -119,9 +119,9 @@ the generated install/update scripts for macOS client targets.
 6. [`antigravity-cli`](antigravity-cli.md)
 7. [`cursor-cli`](cursor-cli.md)
 
-### Agent IDE servers, operator tools, and autonomous agent tools
+### Operator tools and autonomous agent tools
 
-These installable tools support agent IDE sessions, operator application
+These installable tools support operator application
 configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.

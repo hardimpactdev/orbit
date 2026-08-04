@@ -16,11 +16,6 @@ node, and runs configured setup steps.
 cd /var/www/my-app/.worktrees/feature-a
 orbit workspace:setup
 
-# Register and set up an adapter-managed worktree (e.g. a PolyScope worktree
-# Orbit does not yet know about): identity discovered from the adapter
-cd /var/www/my-app/.worktrees/feature-a
-orbit workspace:setup
-
 # Set up or adopt a workspace by explicit identity
 orbit workspace:setup feature-a --instance=my-app
 
@@ -40,9 +35,9 @@ orbit workspace:setup feature-a --instance=my-app --stream-json
 
 ## Arguments and options
 
-- `name`: The workspace identity slug. Required unless local workspace context,
-  structured Codex Git-worktree metadata for an explicit `--path`, or an Agent
-  IDE adapter can resolve it; can be prompted in interactive mode.
+- `name`: The workspace identity slug. Required unless local workspace context
+  or structured Codex Git-worktree metadata for an explicit `--path` can
+  resolve it; can be prompted in interactive mode.
 - `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
   A bare project slug is shorthand only when it resolves to exactly one concrete
@@ -78,13 +73,13 @@ on (caller node identity, absolute CWD) returns one of:
 - **A path inside a registered app** — the CWD is under a known app's path
   but not a registered workspace. The parent project is resolved from the lookup.
   The lookup must also resolve exactly one concrete instance or fail with
-  `instance_required`. The workspace identity is filled in through the
-  adapter probe described in the next subsection, or falls through to prompts.
+  `instance_required`. The workspace identity is filled in through local Codex
+  Git-worktree metadata when available, or falls through to prompts / explicit
+  input.
 - **An unregistered path** — the CWD does not match any known app or
-  workspace path. The agent-IDE adapter probe runs across the caller's
-  configured adapters; on a single match, identity is resolved from the
-  adapter. Otherwise the command falls through to explicit input (`[name]`,
-  `--instance`, `--path`) or interactive prompts.
+  workspace path. The command falls through to explicit input (`[name]`,
+  `--instance`, `--path`), local Codex Git-worktree metadata for an absolute
+  path when present, or interactive prompts.
 
 ### Local Codex worktree metadata
 
@@ -95,49 +90,20 @@ metadata without executing a shell command. A synced
 workspace slug. Otherwise, a valid `codex-thread.json` identifies the worktree
 and the CLI uses `codex-<key>`. The result is deterministic, valid, and at most
 63 characters. Explicit `[name]` always wins, and paths without valid Codex
-
-### Agent-IDE adapter probe
-
-`workspace:setup` registers adapter-managed worktrees on first run. Some
-adapters expose a `workspace_path_resolution` capability. PolyScope is one.
-An adapter with this capability answers a single question: which managed
-workspace does this absolute path belong to?
-
-Orbit consults the probe when `[name]` is missing and either the gateway lookup
-returned `inside_app`/`unregistered` or an explicit `--path` was supplied for an
-app with an effective adapter. A successful probe fills in the workspace name
-and parent project. The adapter also returns its own id for the workspace, which
-Orbit stores. Adoption then proceeds as usual (`result.action=adopted`). A
-dotted `--instance` selects the concrete instance explicitly; a bare project selector
-must resolve to exactly one instance. Adapter-provided identity never creates
-a parent-project-only workspace row.
-
-See
-for the capability definition.
-
-Probe outcomes:
-
-- **One adapter resolves the path** — adoption proceeds using the adapter's
-  answer. `--instance` and `[name]`, if also supplied, must agree with the
-  adapter or the command fails with `validation_failed`.
-- **No adapter resolves the path** — fall through to prompts (interactive)
-  or `validation_failed` (non-interactive).
-- **Multiple adapters claim the path** — fails with `validation_failed`
-  asking the operator to disambiguate with `--instance`.
+metadata require an explicit workspace name or interactive prompt.
 
 ## Behavior Summary
 
 The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
-  resolution, or interactive prompts.
+  Codex Git-worktree metadata for an explicit path, or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
   Adoption is based on explicit command input and, when `[name]` is omitted,
-  local Codex Git-worktree metadata for an explicit `--path` or Agent IDE
-  adapter path resolution;
-  `workspace:setup` does not inspect project files to discover workspace
-  identity.
+  local Codex Git-worktree metadata for an explicit `--path`.
+  `workspace:setup` does not consult a external workspace adapter service and does
+  not inspect project files to invent workspace identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.

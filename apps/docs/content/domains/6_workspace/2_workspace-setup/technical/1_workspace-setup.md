@@ -49,7 +49,7 @@ the parent project path, including external agent worktree directories.
      available, a valid `codex-thread.json` resolves to `codex-<key>`. The
      resulting slug is deterministic, valid, and at most 63 characters.
      Explicit `[name]` takes precedence; paths lacking valid Codex metadata
-     continue to the gateway lookup and adapter flow. Codex is not an Agent IDE
+     continue to the gateway lookup flow. Codex is not a workspace source driver
      adapter.
    - **Explicit `--path` adapter lookup:** when `[name]` is missing and
      `--path` plus `--instance` are supplied, Orbit first asks the selected app's
@@ -79,22 +79,18 @@ the parent project path, including external agent worktree directories.
        parent project and exactly one concrete instance are resolved from the
        lookup. Zero or multiple instance matches fail with
        `error.meta.reason=instance_required`; the workspace name is
-       resolved through the adapter probe below, or through interactive
+       resolved through local Codex Git-worktree metadata when available, or through interactive
        prompts.
      - `unregistered` — CWD does not match any known app or workspace path.
-       The adapter probe below runs across all of the caller node's
-       configured adapters; otherwise fall through to local-context
-       defaults (`.orbit/config` marker for `--instance`) and interactive
+       The command does not run a external workspace path probe.
        prompts. Non-interactive mode without an adapter resolution fails
        fast with `validation_failed`.
-   - **Agent-IDE adapter probe** (after an explicit `--path` lookup or after
      the CWD lookup, when `[name]` is still missing and the lookup outcome was
      `inside_app` or `unregistered`):
      - The CLI gathers the **effective adapters** to probe:
        - On `inside_app`, only the parent project's effective adapter.
        - On `unregistered`, every adapter currently effective for any app
          owned by the caller's node.
-     - Each effective adapter that exposes the `workspace_path_resolution`
        capability is asked to resolve the absolute CWD to one of its
        managed workspaces. The adapter returns either no match or a
        descriptor with workspace name, parent project slug, absolute path, and
@@ -212,9 +208,7 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
   configuration (typically just created by `workspace:new`).
 - `adopted` — first-time setup where the path existed on the node but was
   unmanaged. Identity may come from explicit input, local Codex Git-worktree
-  metadata for an explicit `--path`, or an agent-IDE adapter probe (for
-  example, a PolyScope worktree the adapter manages but Orbit did not yet know
-  about). The durable `workspace.adopted` boolean is set to `true` for this
+  metadata for an explicit `--path`. The durable `workspace.adopted` boolean is set to `true` for this
   run; subsequent re-runs report
   `result.action=converged` with `workspace.adopted=true` preserved. When
   the adapter resolved identity, the workspace row records `none` and
@@ -247,11 +241,7 @@ registry, Agent-push, or runtime effects. This failure uses
   `error.meta.next_command=orbit workspace:new`. The app root is not a
   workspace and `workspace:setup` never promotes it to one. The hint points
   the operator at [`workspace:new`](../../1_workspace-new/workspace-new.md).
-- **Agent IDE Path Resolution Failed**: An effective agent-IDE adapter
-  errored while resolving the CWD to a managed workspace (transport, auth,
-  or unexpected adapter response). Fails before side effects with
-  `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
-  does not silently fall through on adapter errors.
+
 - **Path Is Instance Root (Explicit `--path`)**: The supplied `--path` equals the
   parent project's own root path. Fails before side effects with
   `error.code=workspace.path_is_app_root`, `error.meta.project=<project>`,

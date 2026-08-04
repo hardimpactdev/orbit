@@ -83,24 +83,17 @@ Restart policy is process configuration. Each derived main-instance or workspace
 
 ### Crash notification policy
 
-Process definitions may opt in to crash notification. When the policy is enabled, a `crashed` event resolves the effective agent IDE and notifies the active session when one is available. Crash notification delivery is best-effort and must not prevent the event from being recorded.
+Process definitions store a crash-notification policy. The only supported
+value is `none`. Orbit does not deliver crash notifications through an agent
+IDE or other external adapter. Historical rows that stored a removed
+`agent_ide` policy are cleared to `none` by the Release A storage cleanup
+migration.
 
-Launchd-backed units reject `crash_notification=agent_ide` in this slice with
-the validation reason `launchd_crash_notification_deferred`. Launchd can
-restart jobs, but Orbit needs an owned wrapper or equivalent hook before it can
-emit stable gateway-authenticated `crashed` events for macOS host-command
-units.
+### Crash event history
 
-### Crash event intake
-
-These rules describe the narrow internal path that delivers crash events from nodes to the gateway.
-
-- Crash events come from a narrow internal app-host-to-gateway intake path
-  emitted by Orbit-managed runtime hooks.
-- Crash intake accepts only authenticated active app-host identities and only
-  `crashed` events.
-- The intake is idempotent by event id.
-- The intake path is not a CLI command contract.
+Process lifecycle history may still record start/stop/crash observations that
+operators inspect through process list and show surfaces. Crash history is not
+an operator command for posting events and is not tied to external notification delivery.
 
 ### Lifecycle events
 
@@ -284,13 +277,13 @@ Equivalent package-manager or framework adapter commands are valid when they pro
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
 
-## Crash Event Delivery
+## Crash Event History
 
-The crash hooks that Orbit manages on nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
-
-When the runtime unit name resolves to active process configuration, the event is linked to the process, project, concrete instance, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
-
-Agent IDE crash notification is a consumer of the recorded crash event. For `none`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
+With `crash_notification=none`, Orbit does not install external crash hooks or
+post crash notifications to third-party tools. Operators still use process list,
+logs, and doctor to observe unit health. Historical crash rows that remain in
+storage after Release A cleanup are inspection-only; there is no active product
+command that ingests or fans out crash notifications.
 
 ## Commands
 

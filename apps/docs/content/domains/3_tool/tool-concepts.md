@@ -13,7 +13,7 @@ These terms define the core vocabulary used across tool command contracts and th
   units. A tool row is not itself a runtime unit, but a definition may expose
   lifecycle or logs capabilities when it maps to exactly one direct runtime.
 - **Tool process dependency:** Optional relationship from a process to the
-  tool capability it uses, such as `opencode-cli`, `viteplus`, or `php-cli`.
+  tool capability it uses, such as `hermes`, `viteplus`, or `php-cli`.
   The process owns lifecycle; the tool supplies the capability. A tool
   definition may also declare a related singleton process (runtime, command,
   and `--tool` dependency); `tool:install` configures that process by default so

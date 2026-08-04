@@ -27,7 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent project. |
 | `--instance` | `text` | No explicit selector or usable local context. | CWD-inferred concrete instance. | Dotted selectors choose one instance directly. A bare project or path context must resolve uniquely. |
-| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
+| `--base` | `text` | Optional. | `main` | Source git ref/branch used by the worktree source driver. Orbit creates branch `<workspace>` from this ref. |
 | `--php-version` | `text` | Optional. | (parent project PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent project's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
@@ -116,29 +116,16 @@ support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use
 `doctor --family=workspace --adopt` instead. The command performs:
 
-1. **Workspace Source Provisioning:** Resolve the parent project's effective
-   source through the selected source driver.
-   - With no effective adapter, create a generic Git worktree on the effective
-     workspace node at `<selected app path>/.worktrees/<name>` by creating
-     branch `<name>` from the requested `--base` ref.
-   - With effective adapter `opencode`, resolve the parent OpenCode project
-     through the OpenCode API, ask OpenCode to create a UI-visible workspace,
-     align the returned workspace worktree to branch `<name>` from the
-     requested `--base` ref, and best-effort create an OpenCode session titled
-     `<name>` attached to that OpenCode workspace id.
-   - With effective adapter `polyscope`, create the workspace through the
-     PolyScope SDK using the node's PolyScope server identity, the parent
-     app's PolyScope repository id, `branch=<name>`, and
-     `base_branch=<base>`.
-   - Any effective adapter without a dedicated workspace source driver fails
+1. **Workspace Source Provisioning:** Create a generic Git worktree on the
+   effective workspace node at `<selected app path>/.worktrees/<name>` by
+   creating branch `<name>` from the requested `--base` ref through the
+   worktree source driver (`WorktreeWorkspaceDriver`). This is the only
+   product workspace source driver.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
-   the source-driver-returned `name` and physical `path`, `app_id`, a mandatory
+   the driver-returned `name` and physical `path`, `app_id`, a mandatory
    non-null `instance_id`, derived hostname, `php_version` (or `null` for
-   inheritance), adapter metadata, and lifecycle fields. For
-   OpenCode, store `agent_ide=opencode` and the
-   one. For PolyScope, store `agent_ide=polyscope` and the PolyScope workspace
-   `null`. Workspace identity uniqueness is enforced before any side effects
-   and again at this step.
+   inheritance), and lifecycle fields. Workspace identity uniqueness is
+   enforced before any side effects and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace

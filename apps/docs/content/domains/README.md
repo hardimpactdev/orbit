@@ -198,7 +198,7 @@ normalize these into a generic parent/owner vocabulary when the domain model
 uses a more specific relationship name.
 
 Other documentation domains, such as operations, deployments, VPN
-administration, PHP runtime, and agent IDE commands, may call or affect state
+administration and PHP runtime commands may call or affect state
 families without becoming state families themselves.
 
 Converted documentation domains that are not state families must include a
@@ -714,7 +714,7 @@ operations on top of the foundation.
 
 ### Runtime integration and observability domains
 
-These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs,
+These domains integrate Orbit with Cloudflare, VPN, PHP runtimes,
 DNS, activity logs, object-storage workflows owned by the S3 role, and
 observability workflows owned by the metrics role, and analytics workflows
 owned by the analytics role.

@@ -17,10 +17,10 @@ orbit tool:reconfigure [tool] [--instance=<project.instance>] [--node=<node>] [-
 ## Examples
 
 ```bash
-orbit tool:reconfigure opencode-cli --node=agent-1
-orbit tool:reconfigure opencode-cli --instance=docs --password=<new-password>
-orbit tool:reconfigure opencode-cli --node=agent-1 --json
-orbit tool:reconfigure opencode-cli --node=agent-1 --stream-json
+orbit tool:reconfigure hermes --node=agent-1
+orbit tool:reconfigure hermes --instance=docs --password=<new-password>
+orbit tool:reconfigure hermes --node=agent-1 --json
+orbit tool:reconfigure hermes --node=agent-1 --stream-json
 ```
 
 ## Arguments and options
