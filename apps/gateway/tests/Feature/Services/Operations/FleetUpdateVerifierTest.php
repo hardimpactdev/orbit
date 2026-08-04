@@ -759,8 +759,14 @@ function fleet_verifier_gateway_leaf_converge_commands(): array
 
     return [
         'sudo install -d -m 0755 '.escapeshellarg('/etc/orbit/certs'),
-        'sudo install -m 0644 '.escapeshellarg("{$configRoot}/certs/gateway.crt").' '.escapeshellarg('/etc/orbit/certs/gateway.crt'),
-        'sudo install -m 0600 '.escapeshellarg("{$configRoot}/certs/gateway.key").' '.escapeshellarg('/etc/orbit/certs/gateway.key'),
+        'sudo install -m 0644 '
+            .escapeshellarg("{$configRoot}/certs/gateway.crt")
+            .' '
+            .escapeshellarg('/etc/orbit/certs/gateway.crt'),
+        'sudo install -m 0600 '
+            .escapeshellarg("{$configRoot}/certs/gateway.key")
+            .' '
+            .escapeshellarg('/etc/orbit/certs/gateway.key'),
         'sudo install -d -m 0755 '.escapeshellarg('/etc/caddy/orbit'),
         'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null',
         "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",

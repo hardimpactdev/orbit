@@ -243,7 +243,8 @@ class GatewaySwarmInstaller
             || str_contains($prefix, "\0")
             || array_any(
                 explode('/', $prefix),
-                static fn (string $segment): bool => $segment === '.' || $segment === '..',
+                static fn (string $segment): bool => $segment === '.'
+                || $segment === '..',
             )
         ) {
             throw new RuntimeException('Gateway host path prefix is invalid.');

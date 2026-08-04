@@ -483,9 +483,8 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
 
     Process::assertRan('sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null');
     Process::assertRan(
-        'sudo install -m 0600 '
-        .escapeshellarg("{$this->configRoot}/certs/gateway.key")
-        .' '.escapeshellarg('/etc/orbit/certs/gateway.key'),
+        'sudo install -m 0600 '.escapeshellarg("{$this->configRoot}/certs/gateway.key").' '
+            .escapeshellarg('/etc/orbit/certs/gateway.key'),
     );
     Process::assertRan($certReadableCommand);
     Process::assertRan($keyReadableCommand);
@@ -566,22 +565,19 @@ it('writes router gateway leaf artifacts through ORBIT_HOST_PATH_PREFIX during u
 
     Process::assertRan('sudo install -d -m 0755 '.escapeshellarg($hostCertDir));
     Process::assertRan(
-        'sudo install -m 0644 '
-        .escapeshellarg("{$this->configRoot}/certs/gateway.crt")
-        .' '.escapeshellarg("{$hostCertDir}/gateway.crt"),
+        'sudo install -m 0644 '.escapeshellarg("{$this->configRoot}/certs/gateway.crt").' '
+            .escapeshellarg("{$hostCertDir}/gateway.crt"),
     );
     Process::assertRan(
-        'sudo install -m 0600 '
-        .escapeshellarg("{$this->configRoot}/certs/gateway.key")
-        .' '.escapeshellarg("{$hostCertDir}/gateway.key"),
+        'sudo install -m 0600 '.escapeshellarg("{$this->configRoot}/certs/gateway.key").' '
+            .escapeshellarg("{$hostCertDir}/gateway.key"),
     );
     Process::assertRan('sudo install -d -m 0755 '.escapeshellarg($hostCaddyDir));
     Process::assertRan('sudo tee '.escapeshellarg("{$hostCaddyDir}/orbit-gateway.caddy").' > /dev/null');
     Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
 
     expect($invocations)
-        ->not->toContain('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null')
-        ->and($invocations)
+        ->not->toContain('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null')->and($invocations)
         ->not->toContain('sudo install -d -m 0755 /etc/orbit/certs');
 });
 
