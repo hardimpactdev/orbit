@@ -1,0 +1,428 @@
+[
+  {
+    "node": "NMBP",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-dev"
+    ]
+  },
+  {
+    "node": "agent",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "agent"
+    ]
+  },
+  {
+    "node": "beast",
+    "agent_ide": {
+      "adapter": "polyscope",
+      "source": "node"
+    },
+    "roles": [
+      "app-dev",
+      "database"
+    ]
+  },
+  {
+    "node": "database1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "database"
+    ]
+  },
+  {
+    "node": "gateway",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "gateway",
+      "metrics",
+      "router",
+      "vpn"
+    ]
+  },
+  {
+    "node": "ingress1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "ingress"
+    ]
+  },
+  {
+    "node": "main1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-prod"
+    ]
+  },
+  {
+    "node": "mini",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-dev"
+    ]
+  },
+  {
+    "node": "services1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "analytics",
+      "s3",
+      "websocket"
+    ]
+  }
+]
+===== node=agent tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+agent tool:list failed
+===== node=agent process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+agent process:list failed
+===== node=services1 tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+services1 tool:list failed
+===== node=services1 process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+services1 process:list failed
+===== node=beast tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+beast tool:list failed
+===== node=beast process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+beast process:list failed
+===== node=mini tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+mini tool:list failed
+===== node=mini process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+mini process:list failed
+===== node=NMBP tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+NMBP tool:list failed
+===== node=NMBP process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+NMBP process:list failed
+===== node=main1 tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+main1 tool:list failed
+===== node=main1 process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+main1 process:list failed
+===== node=database1 tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+database1 tool:list failed
+===== node=database1 process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+database1 process:list failed
+===== node=gateway tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+gateway tool:list failed
+===== node=gateway process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+gateway process:list failed
+===== node=ingress1 tool:list =====
+  File "<string>", line 1
+    import sys,json; d=json.load(sys.stdin); tools=(d.get("success") or {}).get("data",{}).get("tools") or []; print(f"{sys.argv[1]}: tools={[t.get(\"name\") for t in tools]}")
+                                                                                                                                                     ^
+SyntaxError: unexpected character after line continuation character
+ingress1 tool:list failed
+===== node=ingress1 process:list =====
+  File "<string>", line 2
+    print(f"{sys.argv[1]}: process keys={list(data.keys()) if isinstance(data,dict) else type(data).__name__} error={(d.get(\"error\") or {}).get(\"message\")}")
+                                                                                                                             ^
+SyntaxError: unexpected character after line continuation character
+ingress1 process:list failed
+=== live probe opencode-cli @ agent ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'agent'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "agent"
+    }
+  }
+}
+=== live probe polyscope-server @ agent ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'polyscope-server' not found on node 'agent'.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "agent"
+    }
+  }
+}
+=== live probe opencode-cli @ services1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'services1'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "services1"
+    }
+  }
+}
+=== live probe polyscope-server @ services1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'polyscope-server' not found on node 'services1'.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "services1"
+    }
+  }
+}
+=== live probe opencode-cli @ beast ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'beast'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "beast"
+    }
+  }
+}
+=== live probe polyscope-server @ beast ===
+{
+  "success": {
+    "data": {
+      "tool": {
+        "name": "polyscope-server",
+        "node": "beast",
+        "expected_state": "installed",
+        "observed_state": "installed",
+        "observed_version": null,
+        "version": null,
+        "managed": true,
+        "endpoints": []
+      }
+    },
+    "meta": []
+  }
+}
+=== live probe opencode-cli @ mini ===
+{
+  "error": {
+    "code": "tool.unsupported_on_node",
+    "message": "Tool 'opencode-cli' does not support node 'mini' platform.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "mini",
+      "platform": "darwin",
+      "supported_operating_systems": [
+        "linux"
+      ]
+    }
+  }
+}
+=== live probe polyscope-server @ mini ===
+{
+  "error": {
+    "code": "tool.unsupported_on_node",
+    "message": "Tool 'polyscope-server' does not support node 'mini' platform.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "mini",
+      "platform": "darwin",
+      "supported_operating_systems": [
+        "linux"
+      ]
+    }
+  }
+}
+=== live probe opencode-cli @ NMBP ===
+{
+  "error": {
+    "code": "tool.unsupported_on_node",
+    "message": "Tool 'opencode-cli' does not support node 'NMBP' platform.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "NMBP",
+      "platform": "macos_26-5-1",
+      "supported_operating_systems": [
+        "linux"
+      ]
+    }
+  }
+}
+=== live probe polyscope-server @ NMBP ===
+{
+  "error": {
+    "code": "tool.unsupported_on_node",
+    "message": "Tool 'polyscope-server' does not support node 'NMBP' platform.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "NMBP",
+      "platform": "macos_26-5-1",
+      "supported_operating_systems": [
+        "linux"
+      ]
+    }
+  }
+}
+=== live probe opencode-cli @ main1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'main1'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "main1"
+    }
+  }
+}
+=== live probe polyscope-server @ main1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'polyscope-server' not found on node 'main1'.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "main1"
+    }
+  }
+}
+=== live probe opencode-cli @ database1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'database1'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "database1"
+    }
+  }
+}
+=== live probe polyscope-server @ database1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'polyscope-server' not found on node 'database1'.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "database1"
+    }
+  }
+}
+=== live probe opencode-cli @ gateway ===
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Invalid value for --node: 'gateway'. Expected a visible tool node name.",
+    "meta": {
+      "field": "node",
+      "value": "gateway"
+    }
+  }
+}
+=== live probe polyscope-server @ gateway ===
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Invalid value for --node: 'gateway'. Expected a visible tool node name.",
+    "meta": {
+      "field": "node",
+      "value": "gateway"
+    }
+  }
+}
+=== live probe opencode-cli @ ingress1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'opencode-cli' not found on node 'ingress1'.",
+    "meta": {
+      "tool": "opencode-cli",
+      "node": "ingress1"
+    }
+  }
+}
+=== live probe polyscope-server @ ingress1 ===
+{
+  "error": {
+    "code": "tool.not_found",
+    "message": "Tool 'polyscope-server' not found on node 'ingress1'.",
+    "meta": {
+      "tool": "polyscope-server",
+      "node": "ingress1"
+    }
+  }
+}
+PER_NODE_BASH_DONE

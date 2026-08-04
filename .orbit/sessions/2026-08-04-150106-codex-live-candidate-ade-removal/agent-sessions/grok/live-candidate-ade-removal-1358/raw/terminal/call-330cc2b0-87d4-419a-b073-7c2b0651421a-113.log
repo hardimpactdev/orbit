@@ -1,0 +1,52 @@
+bin/orbit-feature-acceptance:90:    $minimum = orbitLoopAcceptanceVenue($changedFiles);
+bin/orbit-feature-acceptance:91:    $venue = (string) ($options['venue'] ?? $minimum);
+bin/orbit-feature-acceptance:93:    if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+bin/orbit-feature-acceptance:97:    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+bin/orbit-feature-acceptance:98:        throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
+bin/orbit-feature-acceptance:155:    $minimum = orbitLoopAcceptanceVenue($changedFiles);
+bin/orbit-feature-acceptance:158:    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+bin/orbit-feature-acceptance:159:        throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
+bin/orbit-loop-contract.php:5:const ORBIT_LOOP_STATES = ['frame', 'build', 'prove', 'accept', 'accepted', 'land', 'blocked'];
+bin/orbit-loop-contract.php:7:const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
+bin/orbit-loop-contract.php:9:const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
+bin/orbit-loop-contract.php:19:const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES = [
+bin/orbit-loop-contract.php:23:function orbitLoopIsCompact(string $markdown): bool
+bin/orbit-loop-contract.php:32:function orbitLoopSection(string $markdown, string $heading): ?string
+bin/orbit-loop-contract.php:57:function orbitLoopLabel(string $markdown, string $section, string $label): ?string
+bin/orbit-loop-contract.php:72:function orbitLoopNestedLabel(string $markdown, string $section, string $parent, string $label): ?string
+bin/orbit-loop-contract.php:95:function orbitLoopSetLabel(string $markdown, string $section, string $label, string $value): string
+bin/orbit-loop-contract.php:131:function orbitLoopSetNestedLabel(
+bin/orbit-loop-contract.php:191:function orbitLoopStatusHead(?string $value): ?string
+bin/orbit-loop-contract.php:202:function orbitLoopReviewPassed(?string $review): bool
+bin/orbit-loop-contract.php:207:function orbitLoopReviewHumanJudgment(?string $review): ?string
+bin/orbit-loop-contract.php:224:function orbitLoopReviewRequiresHumanJudgment(?string $review): bool
+bin/orbit-loop-contract.php:229:function orbitLoopReviewSaysNoHumanJudgment(?string $review): bool
+bin/orbit-loop-contract.php:235:function orbitLoopBlastRadiusProblem(string $markdown, array $changedFiles = []): ?string
+bin/orbit-loop-contract.php:272:function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
+bin/orbit-loop-contract.php:277:        if (in_array($normalizedPath, ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS, true)) {
+bin/orbit-loop-contract.php:281:        foreach (ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES as $prefix) {
+bin/orbit-loop-contract.php:292:function orbitLoopProofReferences(string $markdown): array
+bin/orbit-loop-contract.php:357:function orbitLoopProofReferenceContainingToken(string $markdown, int $offset): string
+bin/orbit-loop-contract.php:374:function orbitLoopProofReferenceToken(string $candidate): string
+bin/orbit-loop-contract.php:383:function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string
+bin/orbit-loop-contract.php:404:function orbitLoopTopLabel(string $markdown, string $label): ?string
+bin/orbit-loop-contract.php:419:function orbitLoopVenueSatisfies(string $actual, string $required): bool
+bin/orbit-loop-contract.php:421:    return in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
+bin/orbit-loop-contract.php:425:function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
+bin/orbit-loop-contract.php:440:function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, string $mainTip): ?string
+bin/orbit-loop-contract.php:472:function orbitLoopAcceptanceVenue(array $changedFiles): string
+bin/orbit-loop-contract.php:496:        $venue = orbitLoopStrongerVenue($venue, 'retained-incus');
+bin/orbit-loop-contract.php:502:function orbitLoopPathIsAutomationOnly(string $path): bool
+bin/orbit-loop-contract.php:527:function orbitLoopStrongerVenue(string $left, string $right): string
+bin/orbit-loop-contract.php:531:        'retained-incus' => 1,
+bin/orbit-loop-contract.php:542:function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+bin/orbit-loop-contract.php:591:function orbitLoopGitValue(string $cwd, array $arguments): ?string
+bin/orbit-loop-contract.php:598:function orbitLoopGitOutput(string $cwd, array $arguments): ?string
+bin/orbit-loop-contract.php:7:const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
+bin/orbit-loop-contract.php:419:function orbitLoopVenueSatisfies(string $actual, string $required): bool
+bin/orbit-loop-contract.php:496:        $venue = orbitLoopStrongerVenue($venue, 'retained-incus');
+bin/orbit-loop-contract.php:531:        'retained-incus' => 1,
+bin/orbit-loop-contract.php
+e2e-dev-topology
+e2e-dev-topology-release
+e2e-incus

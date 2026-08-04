@@ -1,0 +1,8 @@
+files:
+  apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php auto=n
+  apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php auto=n
+  apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php auto=y
+  apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php auto=y
+  docker/orbit-gateway/Dockerfile auto=n
+  docker/orbit-gateway/Dockerfile.dockerignore auto=n
+venue=retained-incus

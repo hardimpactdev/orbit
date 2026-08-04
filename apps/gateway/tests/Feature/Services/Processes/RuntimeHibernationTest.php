@@ -412,7 +412,7 @@ it('preserves the failed soft progress page when the scope is still asleep and r
     $executor = new RuntimeHibernationRecordingExecutor(awake: false);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
+    $failedResponse = $this
         ->call(
             'GET',
             "/api/runtime-activations/app-instance/{$instance->id}",
@@ -421,14 +421,15 @@ it('preserves the failed soft progress page when the scope is still asleep and r
                 'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
                 'HTTP_X_FORWARDED_URI' => '/dashboard?tab=jobs',
             ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('orbit-spin', false)
+        );
+
+    assert_runtime_activation_failed_screen(
+        $failedResponse,
+        '/dashboard?tab=jobs&orbit-wake-retry=1',
+    );
+    $failedResponse
         ->assertSee('logo-rotor', false)
-        ->assertDontSee('Wake-up paused')
-        ->assertDontSee('role="progressbar"', false)
-        ->assertSee('Try again')
-        ->assertSee('/dashboard?tab=jobs&orbit-wake-retry=1');
+        ->assertDontSee('Wake-up paused');
 
     expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
         ->toBe(1)

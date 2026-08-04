@@ -191,17 +191,26 @@ sweeps do not inspect or prune it again; only activation may change that state.
 
 A request for an asleep (soft) or cold scope creates or follows one serialized
 activation operation. Through the existing stock-Caddy wake pre-check, the
-gateway returns a minimal auto-refreshing boot response immediately without
-starting processes or restoring dependencies inline. Soft and cold share that
-page and operation machinery; the plan records the mode. Soft runners only fence
-process activation. Cold runners restore and verify only the missing dependency
+gateway returns a minimal boot response immediately without starting processes
+or restoring dependencies inline. Soft and cold share that page and operation
+machinery; the plan records the mode. Soft runners only fence process
+activation. Cold runners restore and verify only the missing dependency
 families, fence process activation, and clear that scope's cold marker only
 after ready. The response presents one indeterminate animated Orbit mark only
-(no soft/cold copy, progress bar, step rows, or diagnostics). Mode, steps, and
-determinate progress remain internal to the operation. Once the pre-check
-succeeds, the refreshed original request passes through to the application. A
-failed or partially completed prune remains cold. Each detached runner atomically
-claims its operation once and heartbeats the operation journal while it works.
+(no soft/cold copy, progress bar, step rows, or diagnostics). While activation
+is pending, the page stays mounted and, after five seconds, probes the original
+same-origin path and query with non-overlapping background fetches (credentials
+same-origin, cache no-store, redirect manual). Orbit pending and failed
+responses set `X-Orbit-Runtime-Activation-State` (`pending` or `failed`) so the
+client does not treat application HTTP status alone as Orbit pending. Pending
+keeps the page mounted; network errors retry after five seconds; failed is
+terminal and keeps the existing retry experience; any response without that
+header (including opaque redirects from awake applications) means Caddy has
+handed off to the application and the browser navigates once to the original
+URI. Mode, steps, and determinate progress remain internal to the
+operation. A failed or partially completed prune remains cold. Each detached
+runner atomically claims its operation once and heartbeats the operation journal
+while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
 once. A dependency waiter uses the full bounded activation-fence duration

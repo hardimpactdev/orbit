@@ -1,0 +1,643 @@
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 15/25 [================🍺-----------]  60%
+ 18/25 [====================🍺-------]  72%
+ 20/25 [======================🍺-----]  80%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%
+ 29/29 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.Me9Fo3/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  mac - arm ·············································· ✅
+
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 15/25 [================🍺-----------]  60%
+ 18/25 [====================🍺-------]  72%
+ 20/25 [======================🍺-----]  80%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.sgrJrQ/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  linux - x64 ············································ ✅
+
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cfg-if v1.0.4
+  Downloaded zerofrom-derive v0.1.7
+  Downloaded zmij v1.0.21
+  Downloaded zeroize v1.9.0
+  Downloaded idna_adapter v1.2.2
+  Downloaded zerofrom v0.1.8
+  Downloaded openssl-probe v0.1.6
+  Downloaded percent-encoding v2.3.2
+  Downloaded zerovec v0.11.6
+  Downloaded zerotrie v0.2.4
+  Downloaded http-body v1.0.1
+  Downloaded potential_utf v0.1.5
+  Downloaded pin-project-lite v0.2.17
+  Downloaded utf8_iter v1.0.4
+  Downloaded atomic-waker v1.1.2
+  Downloaded subtle v2.6.1
+  Downloaded matchit v0.8.4
+  Downloaded untrusted v0.9.0
+  Downloaded tower-layer v0.3.3
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded toml_datetime v0.6.11
+  Downloaded tokio-macros v2.7.0
+  Downloaded rustls-native-certs v0.7.3
+  Downloaded serde_spanned v0.6.9
+  Downloaded slab v0.4.12
+  Downloaded icu_provider v2.2.0
+  Downloaded quote v1.0.46
+  Downloaded webpki-roots v0.26.11
+  Downloaded yoke-derive v0.8.2
+  Downloaded writeable v0.6.3
+  Downloaded httparse v1.10.1
+  Downloaded proc-macro2 v1.0.106
+  Downloaded yoke v0.8.3
+  Downloaded base64 v0.22.1
+  Downloaded toml v0.8.23
+  Downloaded unicode-ident v1.0.24
+  Downloaded tracing-core v0.1.36
+  Downloaded socket2 v0.6.4
+  Downloaded serde_derive v1.0.228
+  Downloaded toml_edit v0.22.27
+  Downloaded url v2.5.8
+  Downloaded ureq v2.12.1
+  Downloaded hashbrown v0.17.1
+  Downloaded idna v1.1.0
+  Downloaded hyper v1.10.1
+  Downloaded serde_json v1.0.150
+  Downloaded winnow v0.7.15
+  Downloaded webpki-roots v1.0.8
+  Downloaded icu_properties_data v2.2.0
+  Downloaded axum v0.8.9
+  Downloaded futures-util v0.3.32
+  Downloaded tower v0.5.3
+  Downloaded syn v2.0.118
+  Downloaded http v1.4.2
+  Downloaded rustls-webpki v0.103.13
+  Downloaded mio v1.2.1
+  Downloaded rustls v0.23.41
+  Downloaded serde v1.0.228
+  Downloaded memchr v2.8.2
+  Downloaded tracing v0.1.44
+  Downloaded icu_locale_core v2.2.0
+  Downloaded icu_normalizer v2.2.0
+  Downloaded rustls-pki-types v1.15.0
+  Downloaded miniz_oxide v0.8.9
+  Downloaded serde_core v1.0.228
+  Downloaded ryu v1.0.23
+  Downloaded icu_collections v2.2.0
+  Downloaded smallvec v1.15.2
+  Downloaded once_cell v1.21.4
+  Downloaded libc v0.2.186
+  Downloaded indexmap v2.14.0
+  Downloaded icu_properties v2.2.0
+  Downloaded hyper-util v0.1.20
+  Downloaded synstructure v0.13.2
+  Downloaded tokio v1.52.3
+  Downloaded simd-adler32 v0.3.9
+  Downloaded tinystr v0.8.3
+  Downloaded shlex v2.0.1
+  Downloaded rustls-pemfile v2.2.0
+  Downloaded axum-core v0.5.6
+  Downloaded sync_wrapper v1.0.2
+  Downloaded futures-core v0.3.32
+  Downloaded toml_write v0.1.2
+  Downloaded mime v0.3.17
+  Downloaded getrandom v0.2.17
+  Downloaded tower-service v0.3.3
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded litemap v0.8.2
+  Downloaded futures-channel v0.3.32
+  Downloaded itoa v1.0.18
+  Downloaded http-body-util v0.1.3
+  Downloaded icu_normalizer_data v2.2.0
+  Downloaded log v0.4.33
+  Downloaded form_urlencoded v1.2.2
+  Downloaded flate2 v1.1.9
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded crc32fast v1.5.0
+  Downloaded bytes v1.12.0
+  Downloaded zerovec-derive v0.11.3
+  Downloaded httpdate v1.0.3
+  Downloaded futures-task v0.3.32
+  Downloaded cc v1.2.65
+  Downloaded adler2 v2.0.1
+  Downloaded serde_path_to_error v0.1.20
+  Downloaded equivalent v1.0.2
+  Downloaded displaydoc v0.2.6
+  Downloaded ring v0.17.14
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling stable_deref_trait v1.2.1
+   Compiling libc v0.2.186
+   Compiling serde_core v1.0.228
+   Compiling itoa v1.0.18
+   Compiling pin-project-lite v0.2.17
+   Compiling zeroize v1.9.0
+   Compiling smallvec v1.15.2
+   Compiling serde v1.0.228
+   Compiling find-msvc-tools v0.1.9
+   Compiling litemap v0.8.2
+   Compiling futures-core v0.3.32
+   Compiling writeable v0.6.3
+   Compiling shlex v2.0.1
+   Compiling bytes v1.12.0
+   Compiling icu_normalizer_data v2.2.0
+   Compiling cfg-if v1.0.4
+   Compiling cc v1.2.65
+   Compiling rustls-pki-types v1.15.0
+   Compiling utf8_iter v1.0.4
+   Compiling once_cell v1.21.4
+   Compiling icu_properties_data v2.2.0
+   Compiling log v0.4.33
+   Compiling httparse v1.10.1
+   Compiling percent-encoding v2.3.2
+   Compiling tower-service v0.3.3
+   Compiling zmij v1.0.21
+   Compiling untrusted v0.9.0
+   Compiling crc32fast v1.5.0
+   Compiling http v1.4.2
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling futures-channel v0.3.32
+   Compiling httpdate v1.0.3
+   Compiling atomic-waker v1.1.2
+   Compiling adler2 v2.0.1
+   Compiling mio v1.2.1
+   Compiling socket2 v0.6.4
+   Compiling getrandom v0.2.17
+   Compiling equivalent v1.0.2
+   Compiling ring v0.17.14
+   Compiling futures-task v0.3.32
+   Compiling serde_json v1.0.150
+   Compiling http-body v1.0.1
+   Compiling tracing v0.1.44
+   Compiling sync_wrapper v1.0.2
+   Compiling slab v0.4.12
+   Compiling syn v2.0.118
+   Compiling simd-adler32 v0.3.9
+   Compiling tower-layer v0.3.3
+   Compiling hashbrown v0.17.1
+   Compiling rustls v0.23.41
+   Compiling http-body-util v0.1.3
+   Compiling webpki-roots v1.0.8
+   Compiling futures-util v0.3.32
+   Compiling rustls-pemfile v2.2.0
+   Compiling miniz_oxide v0.8.9
+   Compiling toml_write v0.1.2
+   Compiling ryu v1.0.23
+   Compiling mime v0.3.17
+   Compiling subtle v2.6.1
+   Compiling openssl-probe v0.1.6
+   Compiling memchr v2.8.2
+   Compiling winnow v0.7.15
+   Compiling webpki-roots v0.26.11
+   Compiling indexmap v2.14.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling base64 v0.22.1
+   Compiling flate2 v1.1.9
+   Compiling rustls-native-certs v0.7.3
+   Compiling axum-core v0.5.6
+   Compiling matchit v0.8.4
+   Compiling synstructure v0.13.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.6
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.7.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling tokio v1.52.3
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling serde_urlencoded v0.7.1
+   Compiling toml_edit v0.22.27
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling hyper v1.10.1
+   Compiling tower v0.5.3
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling hyper-util v0.1.20
+   Compiling icu_provider v2.2.0
+   Compiling axum v0.8.9
+   Compiling toml v0.8.23
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling idna_adapter v1.2.2
+   Compiling rustls-webpki v0.103.13
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling ureq v2.12.1
+   Compiling orbit-agent v0.1.0 (/workspace/apps/agent)
+    Finished `release` profile [optimized] target(s) in 44.81s
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.228
+   Compiling itoa v1.0.18
+   Compiling pin-project-lite v0.2.17
+   Compiling writeable v0.6.3
+   Compiling zeroize v1.9.0
+   Compiling shlex v2.0.1
+   Compiling smallvec v1.15.2
+   Compiling find-msvc-tools v0.1.9
+   Compiling litemap v0.8.2
+   Compiling serde v1.0.228
+   Compiling futures-core v0.3.32
+   Compiling icu_normalizer_data v2.2.0
+   Compiling bytes v1.12.0
+   Compiling rustls-pki-types v1.15.0
+   Compiling icu_properties_data v2.2.0
+   Compiling cc v1.2.65
+   Compiling once_cell v1.21.4
+   Compiling cfg-if v1.0.4
+   Compiling utf8_iter v1.0.4
+   Compiling log v0.4.33
+   Compiling percent-encoding v2.3.2
+   Compiling httparse v1.10.1
+   Compiling core-foundation-sys v0.8.7
+   Compiling crc32fast v1.5.0
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling zmij v1.0.21
+   Compiling tower-service v0.3.3
+   Compiling untrusted v0.9.0
+   Compiling futures-channel v0.3.32
+   Compiling atomic-waker v1.1.2
+   Compiling http v1.4.2
+   Compiling tracing v0.1.44
+   Compiling equivalent v1.0.2
+   Compiling sync_wrapper v1.0.2
+   Compiling bitflags v2.13.0
+   Compiling simd-adler32 v0.3.9
+   Compiling adler2 v2.0.1
+   Compiling futures-task v0.3.32
+   Compiling tower-layer v0.3.3
+   Compiling hashbrown v0.17.1
+   Compiling httpdate v1.0.3
+   Compiling slab v0.4.12
+   Compiling rustls v0.23.41
+   Compiling serde_json v1.0.150
+   Compiling futures-util v0.3.32
+   Compiling ring v0.17.14
+   Compiling miniz_oxide v0.8.9
+   Compiling webpki-roots v1.0.8
+   Compiling http-body v1.0.1
+   Compiling rustls-pemfile v2.2.0
+   Compiling mime v0.3.17
+   Compiling http-body-util v0.1.3
+   Compiling ryu v1.0.23
+   Compiling subtle v2.6.1
+   Compiling memchr v2.8.2
+   Compiling toml_write v0.1.2
+   Compiling winnow v0.7.15
+   Compiling axum-core v0.5.6
+   Compiling webpki-roots v0.26.11
+   Compiling flate2 v1.1.9
+   Compiling syn v2.0.118
+   Compiling mio v1.2.1
+   Compiling socket2 v0.6.4
+   Compiling getrandom v0.2.17
+   Compiling security-framework-sys v2.17.0
+   Compiling core-foundation v0.9.4
+   Compiling indexmap v2.14.0
+   Compiling matchit v0.8.4
+   Compiling base64 v0.22.1
+   Compiling security-framework v2.11.1
+   Compiling rustls-native-certs v0.7.3
+   Compiling serde_path_to_error v0.1.20
+   Compiling synstructure v0.13.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.6
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.7.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling tokio v1.52.3
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling rustls-webpki v0.103.13
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling serde_urlencoded v0.7.1
+   Compiling toml_edit v0.22.27
+   Compiling icu_provider v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling hyper v1.10.1
+   Compiling tower v0.5.3
+   Compiling hyper-util v0.1.20
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling toml v0.8.23
+   Compiling axum v0.8.9
+   Compiling url v2.5.8
+   Compiling ureq v2.12.1
+   Compiling orbit-agent v0.1.0 (/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/agent)
+    Finished `release` profile [optimized] target(s) in 10.40s
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 6.99kB done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/dunglas/frankenphp:1-php8.5-bookworm
+#2 DONE 0.0s
+
+#3 [base 1/2] FROM docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f
+#3 resolve docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f 0.0s done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 6.73MB 0.1s
+#4 transferring context: 6.75MB 0.1s done
+#4 DONE 0.2s
+
+#5 [dependencies 2/5] COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
+#5 CACHED
+
+#6 [application  7/17] COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+#6 CACHED
+
+#7 [dependencies 4/5] COPY packages/sdk/composer.json packages/sdk/composer.lock /srv/orbit/packages/sdk/
+#7 CACHED
+
+#8 [dependencies 5/5] RUN install -d "/home/orbit/.config/orbit"     && cp .env.example "/home/orbit/.config/orbit/.env"     && touch "/home/orbit/.config/orbit/gateway.sqlite"     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite|" "/home/orbit/.config/orbit/.env"     && composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts     && rm -rf "/home/orbit/.config/orbit" /root/.composer/cache
+#8 CACHED
+
+#9 [dependencies 3/5] COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
+#9 CACHED
+
+#10 [application  4/17] COPY apps/gateway/database /srv/orbit/apps/gateway/database
+#10 CACHED
+
+#11 [application  5/17] COPY apps/gateway/public /srv/orbit/apps/gateway/public
+#11 CACHED
+
+#12 [application  3/17] COPY apps/gateway/config /srv/orbit/apps/gateway/config
+#12 CACHED
+
+#13 [base 2/2] RUN apt-get update     && apt-get install -y --no-install-recommends         bash         ca-certificates         curl         git         iputils-ping         openssh-client         procps         sudo         tini         unzip         zip         gnupg     && install -m 0755 -d /etc/apt/keyrings     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc     && chmod a+r /etc/apt/keyrings/docker.asc     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends         docker-ce-cli         docker-compose-plugin     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/bin/composer     && chmod 755 /usr/bin/composer     && install-php-extensions bcmath curl intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip     && groupadd --system orbit     && useradd --system --gid orbit --create-home --home-dir /home/orbit --shell /bin/bash orbit     && printf '%s\n' 'max_execution_time=0' > /usr/local/etc/php/conf.d/orbit-gateway.ini     && install -d -m 700 -o orbit -g orbit /home/orbit/.config/orbit     && rm -rf /var/lib/apt/lists/*
+#13 CACHED
+
+#14 [application  6/17] COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+#14 CACHED
+
+#15 [application  1/17] COPY apps/gateway/app /srv/orbit/apps/gateway/app
+#15 CACHED
+
+#16 [application  2/17] COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+#16 CACHED
+
+#17 [application  8/17] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+#17 ERROR: failed to calculate checksum of ref lbd1inkwmo32mk02j0l7xffv0::6ux96omf782ghgzmnia9xvevw: "/apps/gateway/resources/node-scripts": not found
+
+#18 [dependencies 1/5] WORKDIR /srv/orbit/apps/gateway
+#18 CANCELED
+------
+ > [application  8/17] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts:
+------
+Dockerfile:64
+--------------------
+  62 |     COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+  63 |     COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+  64 | >>> COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+  65 |     COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+  66 |     COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+--------------------
+ERROR: failed to build: failed to solve: failed to compute cache key: failed to calculate checksum of ref lbd1inkwmo32mk02j0l7xffv0::6ux96omf782ghgzmnia9xvevw: "/apps/gateway/resources/node-scripts": not found

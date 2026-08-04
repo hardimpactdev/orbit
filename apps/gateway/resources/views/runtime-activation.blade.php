@@ -3,9 +3,6 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    @unless ($failed)
-        <meta http-equiv="refresh" content="2;url={{ $refreshUri }}">
-    @endunless
     <title>{{ $name }}</title>
     @php
         // Perspective timing: keyframe % from time density; degrees are uniform polar
@@ -181,6 +178,56 @@
             text-underline-offset: 3px;
         }
     </style>
+    @unless ($failed)
+        <script nonce="{{ $scriptNonce }}">
+            (function () {
+                const uri = @json($refreshUri);
+                const headerName = @json($activationStateHeader);
+                const pendingState = @json($pendingState);
+                const intervalMs = {{ (int) $pollIntervalMs }};
+
+                function schedule() {
+                    setTimeout(probe, intervalMs);
+                }
+
+                function navigateOnce() {
+                    window.location.replace(uri);
+                }
+
+                function probe() {
+                    fetch(uri, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        // manual: opaque redirects have no Orbit pending header and trigger
+                        // one real navigation (avoids CORS failures on cross-origin app redirects).
+                        redirect: 'manual',
+                        headers: {
+                            Accept: 'text/html',
+                        },
+                    })
+                        .then(function (response) {
+                            const state = response.headers.get(headerName);
+
+                            // Only continue polling while Orbit explicitly reports pending.
+                            // Missing header, failed header, or opaque redirect => one navigation.
+                            if (response.type !== 'opaqueredirect' && state === pendingState) {
+                                schedule();
+
+                                return;
+                            }
+
+                            navigateOnce();
+                        })
+                        .catch(function () {
+                            schedule();
+                        });
+                }
+
+                schedule();
+            })();
+        </script>
+    @endunless
 </head>
 <body>
     <main>

@@ -669,9 +669,11 @@ function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $
         ->assertServiceUnavailable()
         ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
         ->assertHeader('Cache-Control', 'no-store, private')
-        ->assertHeader('Retry-After', '2')
+        ->assertHeader('Retry-After', '5')
         ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
-        ->assertSee('url='.$refreshUrl, false)
+        ->assertHeader('X-Orbit-Runtime-Activation-State', 'pending')
+        ->assertDontSee('http-equiv="refresh"', false)
+        ->assertDontSee('content="2;url=', false)
         ->assertSee('orbit-spin', false)
         ->assertSee('0.325s', false)
         ->assertSee('will-change: transform', false)
@@ -686,7 +688,22 @@ function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $
         ->assertDontSee('progress-value', false)
         ->assertDontSee('Wake-up progress', false)
         ->assertDontSee('prefers-reduced-motion', false)
-        ->assertDontSee('<script', false);
+        ->assertSee('<script', false)
+        ->assertSee('setTimeout', false)
+        ->assertSee('fetch(', false)
+        ->assertSee('same-origin', false)
+        ->assertSee('no-store', false)
+        ->assertSee("redirect: 'manual'", false)
+        ->assertDontSee("redirect: 'follow'", false)
+        ->assertSee('opaqueredirect', false)
+        ->assertSee('X-Orbit-Runtime-Activation-State', false)
+        ->assertSee('5000', false)
+        ->assertDontSee('setInterval', false)
+        ->assertSee('const uri', false)
+        ->assertSee('const headerName', false)
+        ->assertSee('const pendingState', false)
+        ->assertSee('const intervalMs', false)
+        ->assertSee('const state', false);
 
     $content = (string) $response->getContent();
     // Base rotor rule + 129 @keyframes orbit-spin samples (128 intervals).
@@ -695,6 +712,77 @@ function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $
         ->and(preg_match_all('/\d+(?:\.\d+)?%\s*\{\s*transform:\s*translate3d/', $content))
         ->toBe(129);
 
+    // Original path/query is embedded safely for same-origin probes (JSON-escaped via @json).
+    $embeddedUri = json_encode(
+        $refreshUrl,
+        JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_THROW_ON_ERROR,
+    );
+    expect($content)
+        ->toContain($embeddedUri);
+
+    // Non-overlap: recursive setTimeout after each request completes; never setInterval.
+    // Spatie JS: const/let only — no JS `var` declarations (CSS var() remains allowed).
+    expect(substr_count($content, 'setTimeout'))
+        ->toBe(1)
+        ->and(substr_count($content, 'setInterval'))
+        ->toBe(0)
+        ->and($content)
+        ->toMatch('/function schedule\(\)\s*\{\s*setTimeout\(probe,\s*intervalMs\);/')
+        ->toMatch('/if\s*\([\s\S]*state\s*===\s*pendingState[\s\S]*\)\s*\{\s*schedule\(\);/')
+        ->toMatch('/\.catch\(function\s*\(\)\s*\{\s*schedule\(\);/')
+        ->not->toMatch('/\bvar\s+[A-Za-z_$]/');
+
+    $csp = (string) $response->headers->get('Content-Security-Policy');
+    expect($csp)
+        ->toContain("default-src 'none'")
+        ->toContain("style-src 'unsafe-inline'")
+        ->toContain('img-src data:')
+        ->toContain("connect-src 'self'")
+        ->toContain("base-uri 'none'")
+        ->toContain("frame-ancestors 'none'")
+        ->toMatch("/script-src 'nonce-[A-Za-z0-9+\/=]+'/")
+        ->not->toContain("script-src 'unsafe-inline'")
+        ->not->toContain('script-src *');
+
+    expect(preg_match("/<script\b[^>]*\bnonce=\"[A-Za-z0-9+\/=]+\"/", $content))
+        ->toBe(1);
+
+    // Application-status ambiguity + opaque redirects: only explicit pending continues polling.
+    expect($content)
+        ->toMatch('/headers\.get\(headerName\)/')
+        ->toMatch('/location\.replace\(/')
+        ->toMatch("/redirect:\s*'manual'/")
+        ->not
+        ->toMatch("/redirect:\s*'follow'/")
+        ->toMatch("/response\.type\s*!==\s*'opaqueredirect'/");
+}
+
+/**
+ * Terminal failed runtime-activation boot screen contract.
+ */
+function assert_runtime_activation_failed_screen(Illuminate\Testing\TestResponse $response, string $retryUrl): void
+{
+    $response
+        ->assertServiceUnavailable()
+        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
+        ->assertHeader('Cache-Control', 'no-store, private')
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
+        ->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
+        ->assertDontSee('http-equiv="refresh"', false)
+        ->assertSee('orbit-spin', false)
+        ->assertSee('Try again', false)
+        ->assertSee($retryUrl)
+        ->assertDontSee('setTimeout', false)
+        ->assertDontSee('fetch(', false)
+        ->assertDontSee('role="progressbar"', false);
+
+    expect($response->headers->has('Retry-After'))
+        ->toBeFalse();
+
+    $content = (string) $response->getContent();
+    expect($content)
+        ->not->toContain('<script');
+
     $csp = (string) $response->headers->get('Content-Security-Policy');
     expect($csp)
         ->toContain("default-src 'none'")
@@ -702,5 +790,6 @@ function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $
         ->toContain('img-src data:')
         ->toContain("base-uri 'none'")
         ->toContain("frame-ancestors 'none'")
-        ->not->toContain('script-src');
+        ->not->toContain('script-src')
+        ->not->toContain('connect-src');
 }

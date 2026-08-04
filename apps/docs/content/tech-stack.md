@@ -494,11 +494,14 @@ endpoint using the installed Orbit root CA; the gateway accepts only the exact
 serving node's WireGuard identity and does not require a user grant. When the
 scope is already awake, the pre-check returns success so the original request
 continues. When soft or cold wake work is required, the pre-check starts or
-follows one detached activation operation and returns the minimal auto-refreshing
-boot page immediately (one indeterminate animated Orbit mark only; no soft/cold
-UI distinction or progress bar) until a later request succeeds; soft runners only
-fence process activation, while dependency inspection, restoration, readiness,
-and cold-marker clearing remain cold-only.
+follows one detached activation operation and returns the minimal boot page
+immediately (one indeterminate animated Orbit mark only; no soft/cold UI
+distinction or progress bar). That page stays mounted and probes the original
+same-origin URI every five seconds with non-overlapping background fetches
+until an explicit Orbit activation-state header is absent (application handoff)
+or reports terminal failure; soft runners only fence process activation, while
+dependency inspection, restoration, readiness, and cold-marker clearing remain
+cold-only.
 A dedicated JSON access log in `/data/caddy/orbit/hibernation` supplies the
 scope's last HTTP activity time. Awake and hibernated markers live under Caddy's
 ephemeral `/dev/shm`, so a host or Caddy restart cannot preserve a stale awake

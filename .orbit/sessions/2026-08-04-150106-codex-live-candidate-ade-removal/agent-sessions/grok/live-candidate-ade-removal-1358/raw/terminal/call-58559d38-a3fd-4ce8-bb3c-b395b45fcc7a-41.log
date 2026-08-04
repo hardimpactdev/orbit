@@ -1,0 +1,235 @@
+{
+  "healthy": false,
+  "summary": {
+    "issues": 13,
+    "fixed": 0,
+    "adopted": 0,
+    "skipped": 0,
+    "conflicts": 0,
+    "failed": 0,
+    "planned": 0
+  },
+  "issue_count": 13,
+  "issues": [
+    {
+      "node": "NMBP",
+      "family": "process",
+      "code": "process.remote_shell_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor process probe failed on node 'NMBP': Remote local executor transport failed: cURL error 52: Empty reply from server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'NMBP': Remote local executor transport failed: cURL error 7: Failed to connect to 10.6.0.3 port 9477 after 15 ms: Couldn't connect to server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process prometheus endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Docker runtime backend is unavailable for process prometheus on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process grafana endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Docker runtime backend is unavailable for process grafana on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process node-exporter endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "systemd runtime backend is unavailable for process node-exporter on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Managed process runtime inventory could not be scanned on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'gateway': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+    },
+    {
+      "node": "gateway",
+      "family": "tool",
+      "code": "tool.capability_missing",
+      "disposition": "genuine_drift",
+      "kind": "missing",
+      "summary": "Tool docker is missing on the target node."
+    },
+    {
+      "node": "gateway",
+      "family": "tool",
+      "code": "tool.capability_missing",
+      "disposition": "genuine_drift",
+      "kind": "missing",
+      "summary": "Tool node-exporter is missing on the target node."
+    },
+    {
+      "node": "ingress1",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'ingress1': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+    }
+  ],
+  "nodes": [
+    {
+      "node": "NMBP",
+      "healthy": false,
+      "summary": {
+        "issues": 2,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 2,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "agent",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "beast",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "database1",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 15/25 [================🍺-----------]  60%
+ 18/25 [====================🍺-------]  72%
+ 20/25 [======================🍺-----]  80%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.sgrJrQ/repo/apps/cli/builds/orbit.phar
+total 104
+drwxr-xr-x@ 14 nckrtl  staff    448 Aug  4 14:43 .
+drwxr-xr-x@  3 nckrtl  staff     96 Aug  4 14:37 ..
+-rw-r--r--@  1 nckrtl  staff     21 Aug  4 14:37 00-start-timestamp.txt
+-rw-r--r--@  1 nckrtl  staff    228 Aug  4 14:37 01-source-identity.txt
+-rw-r--r--@  1 nckrtl  staff   1062 Aug  4 14:37 02-focused-release-tests.txt
+-rw-r--r--@  1 nckrtl  staff    455 Aug  4 14:37 03-docker-info-head.txt
+-rw-r--r--@  1 nckrtl  staff      8 Aug  4 14:37 03-orbstack-status.txt
+-rw-r--r--@  1 nckrtl  staff    205 Aug  4 14:43 04-quality-check-retry.txt
+-rw-r--r--@  1 nckrtl  staff   1431 Aug  4 14:41 04-quality-check.txt
+-rw-r--r--@  1 nckrtl  staff   3208 Aug  4 14:43 05-quality-gate-final-check.txt
+-rw-r--r--@  1 nckrtl  staff    115 Aug  4 14:43 06-candidate-build-start.txt
+-rw-r--r--@  1 nckrtl  staff  14073 Aug  4 14:43 06-candidate-build.log
+drwxr-xr-x@ 10 nckrtl  staff    320 Aug  4 14:43 baseline
+drwxr-xr-x@ 17 nckrtl  staff    544 Aug  4 14:41 inventory

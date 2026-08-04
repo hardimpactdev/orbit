@@ -1,0 +1,1 @@
+{"error":{"code":"tool.not_found","message":"Tool 'opencode-cli' not found on node 'database1'.","meta":{"tool":"opencode-cli","node":"database1"}}}

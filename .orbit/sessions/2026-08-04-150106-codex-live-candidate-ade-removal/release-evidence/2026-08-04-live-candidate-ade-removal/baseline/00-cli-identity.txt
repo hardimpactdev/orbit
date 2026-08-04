@@ -1,0 +1,5 @@
+CLI=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/cli/orbit
+2026-08-04T12:37:33Z
+Version       0.1.190
+Released at   04-08-2026 - 12:01
+Installed at  04-08-2026 - 12:16

@@ -1,0 +1,13 @@
+{
+    "status": "ok",
+    "source": "grok_signals_json",
+    "metric_confidence": "proxy",
+    "artifact_match": "start_distance",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019fccc5-ed44-7521-b358-8b5c3a66d0c3/signals.json",
+    "model": "grok-4.5",
+    "context_tokens_used": 170276,
+    "context_window_tokens": 500000,
+    "context_window_usage_percent": 34,
+    "tool_call_count": 107,
+    "session_duration_seconds": 1273
+}

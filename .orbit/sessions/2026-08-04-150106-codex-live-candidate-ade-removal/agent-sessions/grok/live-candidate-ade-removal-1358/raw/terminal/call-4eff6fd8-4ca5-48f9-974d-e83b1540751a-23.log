@@ -1,0 +1,32 @@
+NO_PATTERN_MATCHES_IN_GATEWAY_INVENTORIES
+HIT_COUNT=0
+NODES: agent
+services1
+beast
+mini
+NMBP
+main1
+database1
+gateway
+ingress1
+=== node=agent
+services1
+beast
+mini
+NMBP
+main1
+database1
+gateway
+ingress1 tool:list ===
+{"error":{"code":"validation_failed","message":"Invalid value for --node: 'agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1'. Expected a visible tool node name.","meta":{"field":"node","value":"agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1"}}}
+=== node=agent
+services1
+beast
+mini
+NMBP
+main1
+database1
+gateway
+ingress1 process:list ===
+{"error":{"code":"validation_failed","message":"Node 'agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1' not found or not visible.","meta":{"field":"node","value":"agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1"}}}
+PER_NODE_INVENTORY_DONE

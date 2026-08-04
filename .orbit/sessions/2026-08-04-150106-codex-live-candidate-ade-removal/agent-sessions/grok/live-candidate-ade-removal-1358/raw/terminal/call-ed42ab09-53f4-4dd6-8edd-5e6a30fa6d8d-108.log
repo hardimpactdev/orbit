@@ -1,0 +1,14 @@
+=== feature ===
+8ae06ade95405b5c08eccbc6056d74ee1f5b334a
+## codex/live-candidate-ade-removal
+8ae06ade9 Drop stale node-scripts fingerprint paths and harden COPY test
+=== primary main ===
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+a9fb5932d4b78e04577ce4142c486a90e3bbd764	refs/heads/main
+## main...origin/main
+bin/orbit-feature-acceptance
+bin/orbit-feature-finalization-check
+bin/orbit-prepare-worktree
+bin/orbit-session-archive

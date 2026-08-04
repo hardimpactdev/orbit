@@ -1,0 +1,9 @@
+ INFO All files are already formatted.
+ INFO Your baseline file contains 7310 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO No issues found.
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m40 passed[39;22m[90m (814 assertions)[39m
+  [90mDuration:[39m [39m3.60s[39m
+

@@ -1,0 +1,1 @@
+===== node=agent services1 beast mini NMBP main1 database1 gateway ingress1 =====

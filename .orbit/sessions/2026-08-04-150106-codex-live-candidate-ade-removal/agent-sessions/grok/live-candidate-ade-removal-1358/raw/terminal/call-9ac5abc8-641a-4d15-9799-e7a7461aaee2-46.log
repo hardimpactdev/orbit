@@ -1,0 +1,79 @@
+D	apps/gateway/resources/node-scripts/orbit-notify-exit.sh
+=== parent Dockerfile node-scripts ===
+FROM dependencies AS application
+
+COPY apps/gateway/app /srv/orbit/apps/gateway/app
+COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+COPY apps/gateway/config /srv/orbit/apps/gateway/config
+COPY apps/gateway/database /srv/orbit/apps/gateway/database
+COPY apps/gateway/public /srv/orbit/apps/gateway/public
+COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+COPY bin/install-orbit /srv/orbit/bin/install-orbit
+COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
+COPY packages/core/src /srv/orbit/packages/core/src
+# Runtime consumer catalog only — required by PhpCliArtifactCatalog::load() on gateway.
+COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json
+COPY packages/sdk/src /srv/orbit/packages/sdk/src
+COPY VERSION /srv/orbit/VERSION
+
+RUN install -d "$ORBIT_CONFIG_ROOT" \
+=== HEAD Dockerfile node-scripts ===
+FROM dependencies AS application
+
+COPY apps/gateway/app /srv/orbit/apps/gateway/app
+COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+COPY apps/gateway/config /srv/orbit/apps/gateway/config
+COPY apps/gateway/database /srv/orbit/apps/gateway/database
+COPY apps/gateway/public /srv/orbit/apps/gateway/public
+COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+COPY bin/install-orbit /srv/orbit/bin/install-orbit
+COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
+COPY packages/core/src /srv/orbit/packages/core/src
+# Runtime consumer catalog only — required by PhpCliArtifactCatalog::load() on gateway.
+COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json
+COPY packages/sdk/src /srv/orbit/packages/sdk/src
+COPY VERSION /srv/orbit/VERSION
+
+RUN install -d "$ORBIT_CONFIG_ROOT" \
+=== dockerignore ===
+!apps/gateway/public/**
+!apps/gateway/resources/
+!apps/gateway/resources/css/
+!apps/gateway/resources/css/**
+!apps/gateway/resources/js/
+!apps/gateway/resources/js/**
+!apps/gateway/resources/node-scripts/
+!apps/gateway/resources/node-scripts/**
+!apps/gateway/resources/views/
+!apps/gateway/resources/views/**
+!apps/gateway/routes/
+!apps/gateway/routes/**
+!bin/
+!bin/install-orbit
+!packages/
+!packages/core/
+no release-candidates dir
+## codex/live-candidate-ade-removal
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+0.1.190
+timestamp=2026-08-04T12:45:10Z
+status=BLOCKED_SOURCE_BUG
+commit=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+version=0.1.190
+removal_commit=8fba1581a (Remove OpenCode, PolyScope, and Agent IDE active product surface)
+deleted_path=apps/gateway/resources/node-scripts/orbit-notify-exit.sh
+stale_dockerfile=docker/orbit-gateway/Dockerfile line 64 COPY apps/gateway/resources/node-scripts
+stale_dockerignore=docker/orbit-gateway/Dockerfile.dockerignore still force-includes node-scripts/
+docker_error=failed to calculate checksum ... /apps/gateway/resources/node-scripts: not found
+boundary=no-GitHub live candidate refresh STOPPED before publication
+no_code_change=true
+no_github_release=true
+no_e2e=true

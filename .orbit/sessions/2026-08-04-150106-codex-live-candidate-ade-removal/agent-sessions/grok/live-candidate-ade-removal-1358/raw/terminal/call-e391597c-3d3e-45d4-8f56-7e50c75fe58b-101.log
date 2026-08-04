@@ -1,0 +1,19 @@
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m6 passed[39;22m[90m (121 assertions)[39m
+  [90mDuration:[39m [39m0.29s[39m
+
+GATEWAY_EXIT=0
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m19 passed[39;22m[90m (75 assertions)[39m
+  [90mDuration:[39m [39m0.47s[39m
+
+E2E_SUPPORT_EXIT=0
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:16:it('does not fingerprint the removed gateway node-scripts packaging path', function (): void {
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:21:        ->not->toContain('apps/gateway/resources/node-scripts')
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:23:        ->not->toContain('apps/gateway/resources/node-scripts');
+./apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:50:        ->not->toContain('apps/gateway/resources/node-scripts')
+./apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:113:        ->not->toContain('node-scripts');

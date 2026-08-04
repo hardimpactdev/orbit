@@ -202,7 +202,6 @@ final readonly class E2EProvisionFingerprint
             'apps/gateway/public',
             'apps/gateway/resources/css',
             'apps/gateway/resources/js',
-            'apps/gateway/resources/node-scripts',
             'apps/gateway/resources/views',
             'apps/gateway/routes',
             'apps/gateway/.env.example',

@@ -1,0 +1,93 @@
+===== agent tools =====
+count 5
+- caddy expected= installed observed= None
+- claude-code expected= installed observed= None
+- git expected= installed observed= None
+- hermes expected= installed observed= None
+- node-exporter expected= installed observed= None
+===== agent processes =====
+count 2
+- node-exporter tool= node-exporter runtime= systemd status= unknown
+LEGACY? {"node": "agent", "project": null, "instance": null, "workspace": null, "name": "orbit-hermes-dashboard", "command": "sudo -u agent -H bash -lc 'set -euo pipefail; export PATH=\"$HOME/.npm-global/bin:$PATH\"; PASSWORD_FILE=\"/home/agent/.hermes/dashboard.password\"; SECRET_FILE=\"/home/agent/.hermes/dashboard.secret\"; PUBLIC_URL_FILE=\"/home/agent/.hermes/dashboard.public_url\"; PASSWORD=\"$(tr -
+===== services1 tools =====
+count 2
+- docker expected= installed observed= None
+- seaweedfs expected= installed observed= None
+===== services1 processes =====
+count 2
+- seaweedfs tool= seaweedfs runtime= docker status= unknown
+- plausible tool= None runtime= docker status= unknown
+===== beast tools =====
+count 10
+- caddy expected= installed observed= None
+- composer expected= installed observed= None
+- docker expected= installed observed= None
+- gh expected= installed observed= None
+- git expected= installed observed= None
+- laravel-installer expected= installed observed= None
+- node-exporter expected= installed observed= None
+- php expected= installed observed= None
+- php-cli expected= installed observed= None
+- polyscope-server expected= installed observed= None
+===== beast processes =====
+count 4
+- node-exporter tool= node-exporter runtime= systemd status= unknown
+- mysql8 tool= None runtime= docker status= running
+- mailpit tool= None runtime= docker status= running
+LEGACY? {"node": "beast", "project": null, "instance": null, "workspace": null, "name": "craft-ui-react-storybook", "command": "docker rm -f craft-ui-react-storybook >/dev/null 2>&1 || true; exec docker run --rm --name craft-ui-react-storybook --network orbit-network --network-alias craft-ui-react-storybook -v /home/nckrtl/projects/craft-ui-react:/app -w /app -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e 
+===== mini tools =====
+count 6
+- caddy expected= installed observed= None
+- composer expected= installed observed= None
+- docker expected= installed observed= None
+- laravel-installer expected= installed observed= None
+- orbstack expected= installed observed= None
+- php-cli expected= installed observed= None
+===== mini processes =====
+count 0
+===== NMBP tools =====
+count 5
+- caddy expected= installed observed= None
+- composer expected= installed observed= None
+- docker expected= installed observed= None
+- laravel-installer expected= installed observed= None
+- php-cli expected= installed observed= None
+===== NMBP processes =====
+count 2
+- horizon-demo-valkey tool= None runtime= docker status= unknown
+- horizon-demo-postgres tool= None runtime= docker status= unknown
+===== main1 tools =====
+count 6
+- caddy expected= installed observed= None
+- composer expected= installed observed= None
+- gh expected= installed observed= None
+- laravel-installer expected= installed observed= None
+- node-exporter expected= installed observed= None
+- php-cli expected= installed observed= None
+===== main1 processes =====
+count 1
+- node-exporter tool= node-exporter runtime= systemd status= running
+===== database1 tools =====
+count 2
+- docker expected= installed observed= None
+- node-exporter expected= installed observed= None
+===== database1 processes =====
+count 5
+- node-exporter tool= node-exporter runtime= systemd status= unknown
+- postgres tool= None runtime= docker status= unknown
+- clickhouse tool= None runtime= docker status= unknown
+- valkey tool= None runtime= docker status= running
+- postgres-food tool= None runtime= docker status= running
+===== ingress1 tools =====
+count 2
+- caddy expected= installed observed= None
+- node-exporter expected= installed observed= None
+===== ingress1 processes =====
+count 1
+- node-exporter tool= node-exporter runtime= systemd status= unknown
+===== beast process filter =====
+{"success":{"data":{"context":{"node":"beast","project":null,"instance":null,"workspace":null},"processes":[{"node":"beast","project":null,"instance":null,"workspace":null,"name":"node-exporter","command":"/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100","restart_policy":"always","crash_notification":"none","runtime":"systemd","tool":"node-exporter","service":{"service":"node-exporter","version_family":"1","version":"1.11.1","service_name":"orbit-node-exporter","endpoint":{"name":"node-exporter","host":"10.6.0.7","port":9100},"endpoints":[{"name":"node-exporter","host":"10.6.0.7","port":9100}],"credential_fields":[]},"runtime_unit":"node-exporter","status":"unknown","last_event":null},{"node":"beast","project":null,"instance":null,"workspace":null,"name":"mysql8","command":"mysqld","restart_policy":"never","crash_notification":"none","runtime":"docker","tool":null,"service":{"service":"mysql","version_family":"8","version":"8.3","service_name":"orbit-dlf-leden-mysql","endpoint":{"name":"dlf-leden-mysql","host":"10.6.0.7","port":3308},"endpoints":[{"name":"dlf-leden-mysql","host":"10.6.0.7","port":3308}],"credential_fields":["database","password","username"]},"runtime_unit":"mysql8","status":"running","last_event":{"id":460,"type":"started"}},{"node":"beast","project":null,"instance":null,"workspace":null,"name":"mailpit","command":"/mailpit","restart_policy":"always","crash_notification":"none","runtime":"docker","tool":null,"service":{"service":"mailpit","version_family":"latest","version":"latest","service_name":"orbit-mailpit","endpoint":{"name":"smtp","host":"10.6.0.7","port":1025},"endpoints":[{"name":"smtp","host":"10.6.0.7","port":1025}],"credential_fields":[]},"runtime_unit":"mailpit","status":"running","last_event":{"id":529,"type":"started"}},{"node":"beast","project":null,"instance":null,"workspace":null,"name":"craft-ui-react-storybook","command":"docker rm -f craft-ui-react-storybook >/dev/null 2>&1 || true; exec docker run --rm --name craft-ui-react-storybook --network orbit-network --network-alias craft-ui-react-storybook -v /home/nckrtl/projects/craft-ui-react:/app -w /app -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/.npm -e STORYBOOK_DISABLE_TELEMETRY=1 -e ORBIT_STORYBOOK_PROXY=craft-ui-react.test node:24-bookworm sh -lc \"git config --global --add safe.directory /app >/dev/null 2>&1 || true; ./node_modules/.bin/vp exec storybook dev -p 6007 --no-open --host 0.0.0.0\"","restart_policy":"always","crash_notification":"agent_ide","runtime":"systemd","tool":null,"service":null,"runtime_unit":"craft-ui-react-storybook","status":"running","last_event":{"id":121,"type":"started"}}]},"meta":[]}}
+
+===== beast tools full =====
+{"success":{"data":{"tools":[{"name":"caddy","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"composer","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"docker","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"gh","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"git","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"laravel-installer","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"node-exporter","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"php","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"php-cli","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"polyscope-server","node":"beast","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]}]},"meta":[]}}
+

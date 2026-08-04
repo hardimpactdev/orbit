@@ -1,0 +1,48 @@
+events 348
+step {"key": "NMBP", "status": "running", "compact_progress": true, "node": "NMBP", "phase": "running", "message": "Checking NMBP"}
+step {"key": "NMBP", "status": "running", "compact_progress": true, "node": "NMBP", "phase": "running", "message": "Checking NMBP"}
+step {"key": "NMBP", "status": "running", "compact_progress": true, "node": "NMBP", "phase": "running", "message": "Checking NMBP"}
+step {"key": "NMBP", "status": "done", "compact_progress": true, "node": "NMBP", "phase": "done", "message": "NMBP checked"}
+error {"event": "error", "error": {"code": "drift_detected", "message": "Doctor detected drift.", "meta": [], "data": {"doctor": {"healthy": false, "mode": "verify", "scope": {"families": ["node", "instance", "workspace", "process", "proxy", "tool", "database_connection", "schedule", "firewall_rule"], "node": null, "role": "fleet", "self": false, "project": null, "workspace": null, "key": null, "targets": ["NMBP", "agent", "beast", "database1", "gateway", "ingress1", "main1", "mini", "services1"]}, "s
+--- final candidate ---
+none
+--- terminal step statuses ---
+/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/inventory/10-affected-nodes-and-cleanup-plan.json
+[
+  {
+    "node": "beast",
+    "platform": "ubuntu_24-04",
+    "roles": [
+      "app-dev",
+      "database"
+    ],
+    "findings": [
+      {
+        "kind": "tool_row",
+        "slug": "polyscope-server",
+        "expected_state": "installed",
+        "source": "tool:list --node=beast"
+      },
+      {
+        "kind": "live_probe",
+        "slug": "polyscope-server",
+        "observed_state": "installed",
+        "managed": true,
+        "source": "tool:show polyscope-server --node=beast --live --json"
+      },
+      {
+        "kind": "agent_ide_config",
+        "adapter": "polyscope",
+        "source_field": "node",
+        "source": "node:show beast"
+      }
+    ],
+    "applicable_cleanup": [
+      "polyscope-server"
+    ],
+    "not_applicable": [
+      "opencode-cli"
+    ],
+    "notes": "opencode-cli tool:show --live returned tool.not_found; no opencode-cli/opencode-server process row in process:list"
+  }
+]

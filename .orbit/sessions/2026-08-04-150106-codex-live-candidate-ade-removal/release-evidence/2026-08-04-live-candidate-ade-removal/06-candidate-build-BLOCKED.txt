@@ -1,0 +1,13 @@
+timestamp=2026-08-04T12:45:10Z
+status=BLOCKED_SOURCE_BUG
+commit=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+version=0.1.190
+removal_commit=8fba1581a (Remove OpenCode, PolyScope, and Agent IDE active product surface)
+deleted_path=apps/gateway/resources/node-scripts/orbit-notify-exit.sh
+stale_dockerfile=docker/orbit-gateway/Dockerfile line 64 COPY apps/gateway/resources/node-scripts
+stale_dockerignore=docker/orbit-gateway/Dockerfile.dockerignore still force-includes node-scripts/
+docker_error=failed to calculate checksum ... /apps/gateway/resources/node-scripts: not found
+boundary=no-GitHub live candidate refresh STOPPED before publication
+no_code_change=true
+no_github_release=true
+no_e2e=true
