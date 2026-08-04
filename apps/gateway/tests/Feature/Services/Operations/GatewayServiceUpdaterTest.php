@@ -204,7 +204,7 @@ it('updates gateway and scheduler services to the plan image after target image 
     });
 });
 
-it('reissues incomplete gateway leaf SANs and reloads router caddy before gateway service replacement', function (): void {
+it('reissues incomplete gateway leaf SANs and restarts router caddy before gateway service replacement', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
