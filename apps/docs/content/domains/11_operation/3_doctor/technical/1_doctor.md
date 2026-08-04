@@ -298,7 +298,7 @@ Converted family doctor contracts:
 - [`process-doctor.md`](../../../7_process/process-doctor.md)
 - [`proxy-doctor.md`](../../../8_proxy/proxy-doctor.md)
 - [`schedule-doctor.md`](../../../9_schedule/schedule-doctor.md)
-- [`database-doctor.md`](../../../18_database/database-doctor.md)
+- [`database-doctor.md`](../../../17_database/database-doctor.md)
 
 ## Test Mapping
 

@@ -37,6 +37,6 @@ return [
     ],
     'database_connection' => [
         'singular' => 'database_connection',
-        'doctor_doc' => 'domains/18_database/database-doctor.md',
+        'doctor_doc' => 'domains/17_database/database-doctor.md',
     ],
 ];

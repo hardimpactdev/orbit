@@ -109,4 +109,4 @@ These are the commands in the Cloudflare domain.
 
 - [`orbit proxy:*`](../8_proxy/README.md)
 - [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
-- [`orbit dns:*`](../16_dns/README.md)
+- [`orbit dns:*`](../15_dns/README.md)

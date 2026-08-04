@@ -76,7 +76,7 @@ Use these commands when you need to manage the instance or attach generated env
 values.
 
 - [`instance:show`](../26_instance-show/instance-show.md) - inspect the concrete instance.
-- [`database:attach`](../../18_database/6_database-attach/database-attach.md) -
+- [`database:attach`](../../17_database/6_database-attach/database-attach.md) -
   attach database connections to an instance.
 
 ## Technical Contract

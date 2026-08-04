@@ -1103,7 +1103,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                         commandName: 'internal:workspace-source:create',
                         arguments: ['/srv/docs', 'feature-docs', 'main'],
                         options: [
-                'enabled' => true,
+                            'enabled' => true,
                             'attempts' => 3,
                         ],
                         operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,

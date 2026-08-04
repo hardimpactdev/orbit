@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Release A: clear ADE/OpenCode/PolyScope intent while retaining physical
  * rollback-shadow columns for start-first gateway cutover.
  */
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * @var list<string>
      */
@@ -63,7 +63,7 @@ return new class extends Migration
             ->delete();
 
         DB::table('processes')
-            ->where(function ($query): void {
+            ->where(function (Builder $query): void {
                 $query->whereIn('name', self::RemovedProcessNames)
                     ->orWhereIn('tool', self::RemovedToolNames);
             })
@@ -91,8 +91,7 @@ return new class extends Migration
             $filtered = array_values(array_filter(
                 $permissions,
                 static fn (mixed $permission): bool => (
-                    is_string($permission)
-                    && ! in_array($permission, self::RemovedPermissions, true)
+                    is_string($permission) && ! in_array($permission, self::RemovedPermissions, true)
                 ),
             ));
 

@@ -654,7 +654,7 @@ Orbit has nine state families:
 | `schedule` | Recurring tasks for instances, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
 | `tool` | Node-level capabilities installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
-| `database_connection` | Reusable database connection intent mapped into instance and workspace `.env` files | [Database Concepts](domains/18_database/database-concepts.md) |
+| `database_connection` | Reusable database connection intent mapped into instance and workspace `.env` files | [Database Concepts](domains/17_database/database-concepts.md) |
 
 Security is not a tenth state family. Security findings are sections inside the
 family that owns the protected state: host security under `node.security.*`,

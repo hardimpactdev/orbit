@@ -34,13 +34,10 @@ it('fails nonzero when a simulated PolyScope process cannot be reaped', function
     $result = polyscope_cleanup_run_script($root, $script);
 
     expect($result['exit'])
-        ->not
-        ->toBe(0)
-        ->and($result['stderr'])
-        ->toContain('polyscope-server process still running')
-        ->and(trim((string) file_get_contents($root.'/state/processes')))
-        ->not
-        ->toBe('');
+        ->not->toBe(0)->and($result['stderr'])->toContain(
+            'polyscope-server process still running',
+        )->and(trim((string) file_get_contents($root.'/state/processes')))
+        ->not->toBe('');
 });
 
 it('fails nonzero when the Orbit-managed PolyScope binary cannot be removed', function (): void {

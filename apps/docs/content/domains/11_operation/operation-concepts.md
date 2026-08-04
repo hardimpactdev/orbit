@@ -129,7 +129,7 @@ These terms describe how doctor modes map to scoped node-access permissions.
 
 ## Activity
 
-Activity logging and history reads live in the activity family. See [`docs/domains/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).
+Activity logging and history reads live in the activity family. See [`docs/domains/16_activity/activity-concepts.md`](../16_activity/activity-concepts.md).
 
 ## Profiling
 

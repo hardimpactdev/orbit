@@ -11,7 +11,7 @@ referenced from
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/domains/16_dns/**`. The **node family** owns
+covered by `docs/domains/15_dns/**`. The **node family** owns
 `dnsmasq.d/10-node-records.conf`; the **proxy family** owns
 `dnsmasq.d/20-proxy-records.conf`; and the **tool family** owns base
 `dnsmasq.conf` plus the DNS runtime, listener, VPN forwarding, and client-DNS

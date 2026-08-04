@@ -145,4 +145,4 @@ The extension family has three commands.
 ## Related
 
 - [`orbit cf-*`](../12_cf/README.md)
-- [`orbit codex:app`](../23_codex/1_codex-app/codex-app.md)
+- [`orbit codex:app`](../22_codex/1_codex-app/codex-app.md)

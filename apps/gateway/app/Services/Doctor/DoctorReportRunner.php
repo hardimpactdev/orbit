@@ -3468,7 +3468,6 @@ final readonly class DoctorReportRunner
             return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
         }
 
-
         if (! in_array(
             $key,
             [
@@ -4000,11 +3999,6 @@ final readonly class DoctorReportRunner
             ],
         ];
     }
-
-    /**
-     * @return array<string, mixed>
-     */
-
 
     private function refreshManagedFrankenPhpProcessIntent(Process $process): void
     {

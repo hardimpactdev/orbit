@@ -263,7 +263,8 @@ describe('node permission registry', function (): void {
             ->and($namespaces->toArray())
             ->toContain('tool')
             ->and($namespaces->toArray())
-            ->not->toContain('agent-ide')
+            ->not
+            ->toContain('agent-ide')
             ->and($namespaces->toArray())
             ->toContain('project')
             ->and($namespaces->toArray())

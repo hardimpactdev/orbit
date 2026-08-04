@@ -38,6 +38,6 @@ The Codex family has one command in this slice.
 
 ## Related
 
-- [`orbit extension:enable codex`](../22_extension/2_extension-enable/extension-enable.md)
+- [`orbit extension:enable codex`](../21_extension/2_extension-enable/extension-enable.md)
 - [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
 - [`codex-app` tool catalog entry](../3_tool/catalog/codex-app.md)

@@ -184,7 +184,7 @@ return [
             'terms' => ['app:codex'],
             'decision' => '2026-06-28 Codex App registration moved to the codex extension command family',
             'replacement' => '`codex:app`',
-            'allow_paths' => ['domains/23_codex/README.md'],
+            'allow_paths' => ['domains/22_codex/README.md'],
         ],
         [
             'terms' => ['caller-role authorization'],

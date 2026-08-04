@@ -23,7 +23,6 @@ final class NodePermissionRegistry
             'activity:show',
             'activity:read',
 
-
             // Project
             'project:*',
             'project:list',

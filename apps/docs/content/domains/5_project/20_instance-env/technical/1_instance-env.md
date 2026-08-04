@@ -105,7 +105,7 @@ serving node. These defaults are not stored as explicit instance env rows.
 [`instance-doctor.md`](../../instance-doctor.md) does not write instance env files in
 this slice. Instance env rendering is gateway state. Database connection
 drift and restore for instance/workspace `.env` files remain owned by
-[`doctor --family=database_connection`](../../../18_database/database-doctor.md).
+[`doctor --family=database_connection`](../../../17_database/database-doctor.md).
 
 ## Test Mapping
 

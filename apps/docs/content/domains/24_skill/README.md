@@ -41,6 +41,6 @@ The skill family has one command in this slice.
 ## Related
 
 - The Orbit skill source lives at `.agents/skills/orbit/SKILL.md`.
-- [Extension commands](../22_extension/README.md)
+- [Extension commands](../21_extension/README.md)
 - [`doctor --family=tool`](../3_tool/tool-doctor.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)

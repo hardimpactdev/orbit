@@ -170,8 +170,6 @@ it('reports direct log transport failures as an unreachable Agent', function ():
         ->assertJsonPath('error.meta.action', 'logs');
 });
 
-
-
 it('fails unsupported lifecycle tools before running host commands', function (): void {
     $caller = createToolLifecycleApiCallerNode();
     $node = Node::factory()->create([
@@ -395,7 +393,6 @@ it('denies gateway-local logs when the gateway grant has the wrong permission', 
 
     ProcessFacade::assertNothingRan();
 });
-
 
 it('fails unsupported orbstack platforms before running host commands', function (): void {
     $caller = createToolLifecycleApiCallerNode();

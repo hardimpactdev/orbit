@@ -231,7 +231,6 @@ Required test files:
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for tool family scope, tool drift reporting, and restore behavior. |
 | `apps/gateway/tests/Feature/Services/Doctor/DnsRuntimeProbeTest.php` | DNS base configuration and granular container, listener, client-DNS, and forwarding issue codes. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
-| `apps/e2e/tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
 
 No current E2E test is mapped for tool-family read-only or adopt coverage.
 

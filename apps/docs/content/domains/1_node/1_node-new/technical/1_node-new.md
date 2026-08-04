@@ -351,7 +351,7 @@ not expose gateway progress.
 ## Activity Logging
 
 Emitted through the cross-cutting Loggable contract. See
-[`activity-concepts.md`](../../../17_activity/activity-concepts.md).
+[`activity-concepts.md`](../../../16_activity/activity-concepts.md).
 
 | Field | Value |
 | --- | --- |

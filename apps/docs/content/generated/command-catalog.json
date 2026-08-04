@@ -26,12 +26,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/17_activity/1_activity-list",
-                "public": "domains/17_activity/1_activity-list/activity-list.md",
-                "technical": "domains/17_activity/1_activity-list/technical/1_activity-list.md",
-                "repo_directory": "apps/docs/content/domains/17_activity/1_activity-list",
-                "repo_public": "apps/docs/content/domains/17_activity/1_activity-list/activity-list.md",
-                "repo_technical": "apps/docs/content/domains/17_activity/1_activity-list/technical/1_activity-list.md"
+                "directory": "domains/16_activity/1_activity-list",
+                "public": "domains/16_activity/1_activity-list/activity-list.md",
+                "technical": "domains/16_activity/1_activity-list/technical/1_activity-list.md",
+                "repo_directory": "apps/docs/content/domains/16_activity/1_activity-list",
+                "repo_public": "apps/docs/content/domains/16_activity/1_activity-list/activity-list.md",
+                "repo_technical": "apps/docs/content/domains/16_activity/1_activity-list/technical/1_activity-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -97,12 +97,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/17_activity/2_activity-show",
-                "public": "domains/17_activity/2_activity-show/activity-show.md",
-                "technical": "domains/17_activity/2_activity-show/technical/1_activity-show.md",
-                "repo_directory": "apps/docs/content/domains/17_activity/2_activity-show",
-                "repo_public": "apps/docs/content/domains/17_activity/2_activity-show/activity-show.md",
-                "repo_technical": "apps/docs/content/domains/17_activity/2_activity-show/technical/1_activity-show.md"
+                "directory": "domains/16_activity/2_activity-show",
+                "public": "domains/16_activity/2_activity-show/activity-show.md",
+                "technical": "domains/16_activity/2_activity-show/technical/1_activity-show.md",
+                "repo_directory": "apps/docs/content/domains/16_activity/2_activity-show",
+                "repo_public": "apps/docs/content/domains/16_activity/2_activity-show/activity-show.md",
+                "repo_technical": "apps/docs/content/domains/16_activity/2_activity-show/technical/1_activity-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -168,12 +168,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/21_analytics/1_analytics-update",
-                "public": "domains/21_analytics/1_analytics-update/analytics-update.md",
-                "technical": "domains/21_analytics/1_analytics-update/technical/1_analytics-update.md",
-                "repo_directory": "apps/docs/content/domains/21_analytics/1_analytics-update",
-                "repo_public": "apps/docs/content/domains/21_analytics/1_analytics-update/analytics-update.md",
-                "repo_technical": "apps/docs/content/domains/21_analytics/1_analytics-update/technical/1_analytics-update.md"
+                "directory": "domains/20_analytics/1_analytics-update",
+                "public": "domains/20_analytics/1_analytics-update/analytics-update.md",
+                "technical": "domains/20_analytics/1_analytics-update/technical/1_analytics-update.md",
+                "repo_directory": "apps/docs/content/domains/20_analytics/1_analytics-update",
+                "repo_public": "apps/docs/content/domains/20_analytics/1_analytics-update/analytics-update.md",
+                "repo_technical": "apps/docs/content/domains/20_analytics/1_analytics-update/technical/1_analytics-update.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -840,12 +840,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/23_codex/1_codex-app",
-                "public": "domains/23_codex/1_codex-app/codex-app.md",
-                "technical": "domains/23_codex/1_codex-app/technical/1_codex-app.md",
-                "repo_directory": "apps/docs/content/domains/23_codex/1_codex-app",
-                "repo_public": "apps/docs/content/domains/23_codex/1_codex-app/codex-app.md",
-                "repo_technical": "apps/docs/content/domains/23_codex/1_codex-app/technical/1_codex-app.md"
+                "directory": "domains/22_codex/1_codex-app",
+                "public": "domains/22_codex/1_codex-app/codex-app.md",
+                "technical": "domains/22_codex/1_codex-app/technical/1_codex-app.md",
+                "repo_directory": "apps/docs/content/domains/22_codex/1_codex-app",
+                "repo_public": "apps/docs/content/domains/22_codex/1_codex-app/codex-app.md",
+                "repo_technical": "apps/docs/content/domains/22_codex/1_codex-app/technical/1_codex-app.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -912,12 +912,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/3_database-add",
-                "public": "domains/18_database/3_database-add/database-add.md",
-                "technical": "domains/18_database/3_database-add/technical/1_database-add.md",
-                "repo_directory": "apps/docs/content/domains/18_database/3_database-add",
-                "repo_public": "apps/docs/content/domains/18_database/3_database-add/database-add.md",
-                "repo_technical": "apps/docs/content/domains/18_database/3_database-add/technical/1_database-add.md"
+                "directory": "domains/17_database/3_database-add",
+                "public": "domains/17_database/3_database-add/database-add.md",
+                "technical": "domains/17_database/3_database-add/technical/1_database-add.md",
+                "repo_directory": "apps/docs/content/domains/17_database/3_database-add",
+                "repo_public": "apps/docs/content/domains/17_database/3_database-add/database-add.md",
+                "repo_technical": "apps/docs/content/domains/17_database/3_database-add/technical/1_database-add.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -988,12 +988,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/12_database-add-user",
-                "public": "domains/18_database/12_database-add-user/database-add-user.md",
-                "technical": "domains/18_database/12_database-add-user/technical/1_database-add-user.md",
-                "repo_directory": "apps/docs/content/domains/18_database/12_database-add-user",
-                "repo_public": "apps/docs/content/domains/18_database/12_database-add-user/database-add-user.md",
-                "repo_technical": "apps/docs/content/domains/18_database/12_database-add-user/technical/1_database-add-user.md"
+                "directory": "domains/17_database/12_database-add-user",
+                "public": "domains/17_database/12_database-add-user/database-add-user.md",
+                "technical": "domains/17_database/12_database-add-user/technical/1_database-add-user.md",
+                "repo_directory": "apps/docs/content/domains/17_database/12_database-add-user",
+                "repo_public": "apps/docs/content/domains/17_database/12_database-add-user/database-add-user.md",
+                "repo_technical": "apps/docs/content/domains/17_database/12_database-add-user/technical/1_database-add-user.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1062,12 +1062,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/6_database-attach",
-                "public": "domains/18_database/6_database-attach/database-attach.md",
-                "technical": "domains/18_database/6_database-attach/technical/1_database-attach.md",
-                "repo_directory": "apps/docs/content/domains/18_database/6_database-attach",
-                "repo_public": "apps/docs/content/domains/18_database/6_database-attach/database-attach.md",
-                "repo_technical": "apps/docs/content/domains/18_database/6_database-attach/technical/1_database-attach.md"
+                "directory": "domains/17_database/6_database-attach",
+                "public": "domains/17_database/6_database-attach/database-attach.md",
+                "technical": "domains/17_database/6_database-attach/technical/1_database-attach.md",
+                "repo_directory": "apps/docs/content/domains/17_database/6_database-attach",
+                "repo_public": "apps/docs/content/domains/17_database/6_database-attach/database-attach.md",
+                "repo_technical": "apps/docs/content/domains/17_database/6_database-attach/technical/1_database-attach.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1135,12 +1135,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/11_database-describe",
-                "public": "domains/18_database/11_database-describe/database-describe.md",
-                "technical": "domains/18_database/11_database-describe/technical/1_database-describe.md",
-                "repo_directory": "apps/docs/content/domains/18_database/11_database-describe",
-                "repo_public": "apps/docs/content/domains/18_database/11_database-describe/database-describe.md",
-                "repo_technical": "apps/docs/content/domains/18_database/11_database-describe/technical/1_database-describe.md"
+                "directory": "domains/17_database/11_database-describe",
+                "public": "domains/17_database/11_database-describe/database-describe.md",
+                "technical": "domains/17_database/11_database-describe/technical/1_database-describe.md",
+                "repo_directory": "apps/docs/content/domains/17_database/11_database-describe",
+                "repo_public": "apps/docs/content/domains/17_database/11_database-describe/database-describe.md",
+                "repo_technical": "apps/docs/content/domains/17_database/11_database-describe/technical/1_database-describe.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1193,12 +1193,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/7_database-detach",
-                "public": "domains/18_database/7_database-detach/database-detach.md",
-                "technical": "domains/18_database/7_database-detach/technical/1_database-detach.md",
-                "repo_directory": "apps/docs/content/domains/18_database/7_database-detach",
-                "repo_public": "apps/docs/content/domains/18_database/7_database-detach/database-detach.md",
-                "repo_technical": "apps/docs/content/domains/18_database/7_database-detach/technical/1_database-detach.md"
+                "directory": "domains/17_database/7_database-detach",
+                "public": "domains/17_database/7_database-detach/database-detach.md",
+                "technical": "domains/17_database/7_database-detach/technical/1_database-detach.md",
+                "repo_directory": "apps/docs/content/domains/17_database/7_database-detach",
+                "repo_public": "apps/docs/content/domains/17_database/7_database-detach/database-detach.md",
+                "repo_technical": "apps/docs/content/domains/17_database/7_database-detach/technical/1_database-detach.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1265,12 +1265,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/1_database-list",
-                "public": "domains/18_database/1_database-list/database-list.md",
-                "technical": "domains/18_database/1_database-list/technical/1_database-list.md",
-                "repo_directory": "apps/docs/content/domains/18_database/1_database-list",
-                "repo_public": "apps/docs/content/domains/18_database/1_database-list/database-list.md",
-                "repo_technical": "apps/docs/content/domains/18_database/1_database-list/technical/1_database-list.md"
+                "directory": "domains/17_database/1_database-list",
+                "public": "domains/17_database/1_database-list/database-list.md",
+                "technical": "domains/17_database/1_database-list/technical/1_database-list.md",
+                "repo_directory": "apps/docs/content/domains/17_database/1_database-list",
+                "repo_public": "apps/docs/content/domains/17_database/1_database-list/database-list.md",
+                "repo_technical": "apps/docs/content/domains/17_database/1_database-list/technical/1_database-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1341,12 +1341,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/8_database-query",
-                "public": "domains/18_database/8_database-query/database-query.md",
-                "technical": "domains/18_database/8_database-query/technical/1_database-query.md",
-                "repo_directory": "apps/docs/content/domains/18_database/8_database-query",
-                "repo_public": "apps/docs/content/domains/18_database/8_database-query/database-query.md",
-                "repo_technical": "apps/docs/content/domains/18_database/8_database-query/technical/1_database-query.md"
+                "directory": "domains/17_database/8_database-query",
+                "public": "domains/17_database/8_database-query/database-query.md",
+                "technical": "domains/17_database/8_database-query/technical/1_database-query.md",
+                "repo_directory": "apps/docs/content/domains/17_database/8_database-query",
+                "repo_public": "apps/docs/content/domains/17_database/8_database-query/database-query.md",
+                "repo_technical": "apps/docs/content/domains/17_database/8_database-query/technical/1_database-query.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1430,12 +1430,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/5_database-remove",
-                "public": "domains/18_database/5_database-remove/database-remove.md",
-                "technical": "domains/18_database/5_database-remove/technical/1_database-remove.md",
-                "repo_directory": "apps/docs/content/domains/18_database/5_database-remove",
-                "repo_public": "apps/docs/content/domains/18_database/5_database-remove/database-remove.md",
-                "repo_technical": "apps/docs/content/domains/18_database/5_database-remove/technical/1_database-remove.md"
+                "directory": "domains/17_database/5_database-remove",
+                "public": "domains/17_database/5_database-remove/database-remove.md",
+                "technical": "domains/17_database/5_database-remove/technical/1_database-remove.md",
+                "repo_directory": "apps/docs/content/domains/17_database/5_database-remove",
+                "repo_public": "apps/docs/content/domains/17_database/5_database-remove/database-remove.md",
+                "repo_technical": "apps/docs/content/domains/17_database/5_database-remove/technical/1_database-remove.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1502,12 +1502,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/10_database-schema",
-                "public": "domains/18_database/10_database-schema/database-schema.md",
-                "technical": "domains/18_database/10_database-schema/technical/1_database-schema.md",
-                "repo_directory": "apps/docs/content/domains/18_database/10_database-schema",
-                "repo_public": "apps/docs/content/domains/18_database/10_database-schema/database-schema.md",
-                "repo_technical": "apps/docs/content/domains/18_database/10_database-schema/technical/1_database-schema.md"
+                "directory": "domains/17_database/10_database-schema",
+                "public": "domains/17_database/10_database-schema/database-schema.md",
+                "technical": "domains/17_database/10_database-schema/technical/1_database-schema.md",
+                "repo_directory": "apps/docs/content/domains/17_database/10_database-schema",
+                "repo_public": "apps/docs/content/domains/17_database/10_database-schema/database-schema.md",
+                "repo_technical": "apps/docs/content/domains/17_database/10_database-schema/technical/1_database-schema.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1565,12 +1565,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/2_database-show",
-                "public": "domains/18_database/2_database-show/database-show.md",
-                "technical": "domains/18_database/2_database-show/technical/1_database-show.md",
-                "repo_directory": "apps/docs/content/domains/18_database/2_database-show",
-                "repo_public": "apps/docs/content/domains/18_database/2_database-show/database-show.md",
-                "repo_technical": "apps/docs/content/domains/18_database/2_database-show/technical/1_database-show.md"
+                "directory": "domains/17_database/2_database-show",
+                "public": "domains/17_database/2_database-show/database-show.md",
+                "technical": "domains/17_database/2_database-show/technical/1_database-show.md",
+                "repo_directory": "apps/docs/content/domains/17_database/2_database-show",
+                "repo_public": "apps/docs/content/domains/17_database/2_database-show/database-show.md",
+                "repo_technical": "apps/docs/content/domains/17_database/2_database-show/technical/1_database-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1637,12 +1637,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/9_database-tables",
-                "public": "domains/18_database/9_database-tables/database-tables.md",
-                "technical": "domains/18_database/9_database-tables/technical/1_database-tables.md",
-                "repo_directory": "apps/docs/content/domains/18_database/9_database-tables",
-                "repo_public": "apps/docs/content/domains/18_database/9_database-tables/database-tables.md",
-                "repo_technical": "apps/docs/content/domains/18_database/9_database-tables/technical/1_database-tables.md"
+                "directory": "domains/17_database/9_database-tables",
+                "public": "domains/17_database/9_database-tables/database-tables.md",
+                "technical": "domains/17_database/9_database-tables/technical/1_database-tables.md",
+                "repo_directory": "apps/docs/content/domains/17_database/9_database-tables",
+                "repo_public": "apps/docs/content/domains/17_database/9_database-tables/database-tables.md",
+                "repo_technical": "apps/docs/content/domains/17_database/9_database-tables/technical/1_database-tables.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -1710,12 +1710,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/18_database/4_database-update",
-                "public": "domains/18_database/4_database-update/database-update.md",
-                "technical": "domains/18_database/4_database-update/technical/1_database-update.md",
-                "repo_directory": "apps/docs/content/domains/18_database/4_database-update",
-                "repo_public": "apps/docs/content/domains/18_database/4_database-update/database-update.md",
-                "repo_technical": "apps/docs/content/domains/18_database/4_database-update/technical/1_database-update.md"
+                "directory": "domains/17_database/4_database-update",
+                "public": "domains/17_database/4_database-update/database-update.md",
+                "technical": "domains/17_database/4_database-update/technical/1_database-update.md",
+                "repo_directory": "apps/docs/content/domains/17_database/4_database-update",
+                "repo_public": "apps/docs/content/domains/17_database/4_database-update/database-update.md",
+                "repo_technical": "apps/docs/content/domains/17_database/4_database-update/technical/1_database-update.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -2274,12 +2274,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/16_dns/2_dns-list",
-                "public": "domains/16_dns/2_dns-list/dns-list.md",
-                "technical": "domains/16_dns/2_dns-list/technical/1_dns-list.md",
-                "repo_directory": "apps/docs/content/domains/16_dns/2_dns-list",
-                "repo_public": "apps/docs/content/domains/16_dns/2_dns-list/dns-list.md",
-                "repo_technical": "apps/docs/content/domains/16_dns/2_dns-list/technical/1_dns-list.md"
+                "directory": "domains/15_dns/2_dns-list",
+                "public": "domains/15_dns/2_dns-list/dns-list.md",
+                "technical": "domains/15_dns/2_dns-list/technical/1_dns-list.md",
+                "repo_directory": "apps/docs/content/domains/15_dns/2_dns-list",
+                "repo_public": "apps/docs/content/domains/15_dns/2_dns-list/dns-list.md",
+                "repo_technical": "apps/docs/content/domains/15_dns/2_dns-list/technical/1_dns-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -2326,12 +2326,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/16_dns/1_dns-resolve-tld",
-                "public": "domains/16_dns/1_dns-resolve-tld/dns-resolve-tld.md",
-                "technical": "domains/16_dns/1_dns-resolve-tld/technical/1_dns-resolve-tld.md",
-                "repo_directory": "apps/docs/content/domains/16_dns/1_dns-resolve-tld",
-                "repo_public": "apps/docs/content/domains/16_dns/1_dns-resolve-tld/dns-resolve-tld.md",
-                "repo_technical": "apps/docs/content/domains/16_dns/1_dns-resolve-tld/technical/1_dns-resolve-tld.md"
+                "directory": "domains/15_dns/1_dns-resolve-tld",
+                "public": "domains/15_dns/1_dns-resolve-tld/dns-resolve-tld.md",
+                "technical": "domains/15_dns/1_dns-resolve-tld/technical/1_dns-resolve-tld.md",
+                "repo_directory": "apps/docs/content/domains/15_dns/1_dns-resolve-tld",
+                "repo_public": "apps/docs/content/domains/15_dns/1_dns-resolve-tld/dns-resolve-tld.md",
+                "repo_technical": "apps/docs/content/domains/15_dns/1_dns-resolve-tld/technical/1_dns-resolve-tld.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -2498,12 +2498,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/22_extension/3_extension-disable",
-                "public": "domains/22_extension/3_extension-disable/extension-disable.md",
-                "technical": "domains/22_extension/3_extension-disable/technical/1_extension-disable.md",
-                "repo_directory": "apps/docs/content/domains/22_extension/3_extension-disable",
-                "repo_public": "apps/docs/content/domains/22_extension/3_extension-disable/extension-disable.md",
-                "repo_technical": "apps/docs/content/domains/22_extension/3_extension-disable/technical/1_extension-disable.md"
+                "directory": "domains/21_extension/3_extension-disable",
+                "public": "domains/21_extension/3_extension-disable/extension-disable.md",
+                "technical": "domains/21_extension/3_extension-disable/technical/1_extension-disable.md",
+                "repo_directory": "apps/docs/content/domains/21_extension/3_extension-disable",
+                "repo_public": "apps/docs/content/domains/21_extension/3_extension-disable/extension-disable.md",
+                "repo_technical": "apps/docs/content/domains/21_extension/3_extension-disable/technical/1_extension-disable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -2556,12 +2556,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/22_extension/2_extension-enable",
-                "public": "domains/22_extension/2_extension-enable/extension-enable.md",
-                "technical": "domains/22_extension/2_extension-enable/technical/1_extension-enable.md",
-                "repo_directory": "apps/docs/content/domains/22_extension/2_extension-enable",
-                "repo_public": "apps/docs/content/domains/22_extension/2_extension-enable/extension-enable.md",
-                "repo_technical": "apps/docs/content/domains/22_extension/2_extension-enable/technical/1_extension-enable.md"
+                "directory": "domains/21_extension/2_extension-enable",
+                "public": "domains/21_extension/2_extension-enable/extension-enable.md",
+                "technical": "domains/21_extension/2_extension-enable/technical/1_extension-enable.md",
+                "repo_directory": "apps/docs/content/domains/21_extension/2_extension-enable",
+                "repo_public": "apps/docs/content/domains/21_extension/2_extension-enable/extension-enable.md",
+                "repo_technical": "apps/docs/content/domains/21_extension/2_extension-enable/technical/1_extension-enable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -2610,12 +2610,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/22_extension/1_extension-list",
-                "public": "domains/22_extension/1_extension-list/extension-list.md",
-                "technical": "domains/22_extension/1_extension-list/technical/1_extension-list.md",
-                "repo_directory": "apps/docs/content/domains/22_extension/1_extension-list",
-                "repo_public": "apps/docs/content/domains/22_extension/1_extension-list/extension-list.md",
-                "repo_technical": "apps/docs/content/domains/22_extension/1_extension-list/technical/1_extension-list.md"
+                "directory": "domains/21_extension/1_extension-list",
+                "public": "domains/21_extension/1_extension-list/extension-list.md",
+                "technical": "domains/21_extension/1_extension-list/technical/1_extension-list.md",
+                "repo_directory": "apps/docs/content/domains/21_extension/1_extension-list",
+                "repo_public": "apps/docs/content/domains/21_extension/1_extension-list/extension-list.md",
+                "repo_technical": "apps/docs/content/domains/21_extension/1_extension-list/technical/1_extension-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4664,12 +4664,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/20_metrics/4_metrics-credentials",
-                "public": "domains/20_metrics/4_metrics-credentials/metrics-credentials.md",
-                "technical": "domains/20_metrics/4_metrics-credentials/technical/1_metrics-credentials.md",
-                "repo_directory": "apps/docs/content/domains/20_metrics/4_metrics-credentials",
-                "repo_public": "apps/docs/content/domains/20_metrics/4_metrics-credentials/metrics-credentials.md",
-                "repo_technical": "apps/docs/content/domains/20_metrics/4_metrics-credentials/technical/1_metrics-credentials.md"
+                "directory": "domains/19_metrics/4_metrics-credentials",
+                "public": "domains/19_metrics/4_metrics-credentials/metrics-credentials.md",
+                "technical": "domains/19_metrics/4_metrics-credentials/technical/1_metrics-credentials.md",
+                "repo_directory": "apps/docs/content/domains/19_metrics/4_metrics-credentials",
+                "repo_public": "apps/docs/content/domains/19_metrics/4_metrics-credentials/metrics-credentials.md",
+                "repo_technical": "apps/docs/content/domains/19_metrics/4_metrics-credentials/technical/1_metrics-credentials.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4729,12 +4729,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/20_metrics/2_metrics-disable",
-                "public": "domains/20_metrics/2_metrics-disable/metrics-disable.md",
-                "technical": "domains/20_metrics/2_metrics-disable/technical/1_metrics-disable.md",
-                "repo_directory": "apps/docs/content/domains/20_metrics/2_metrics-disable",
-                "repo_public": "apps/docs/content/domains/20_metrics/2_metrics-disable/metrics-disable.md",
-                "repo_technical": "apps/docs/content/domains/20_metrics/2_metrics-disable/technical/1_metrics-disable.md"
+                "directory": "domains/19_metrics/2_metrics-disable",
+                "public": "domains/19_metrics/2_metrics-disable/metrics-disable.md",
+                "technical": "domains/19_metrics/2_metrics-disable/technical/1_metrics-disable.md",
+                "repo_directory": "apps/docs/content/domains/19_metrics/2_metrics-disable",
+                "repo_public": "apps/docs/content/domains/19_metrics/2_metrics-disable/metrics-disable.md",
+                "repo_technical": "apps/docs/content/domains/19_metrics/2_metrics-disable/technical/1_metrics-disable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4784,12 +4784,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/20_metrics/1_metrics-enable",
-                "public": "domains/20_metrics/1_metrics-enable/metrics-enable.md",
-                "technical": "domains/20_metrics/1_metrics-enable/technical/1_metrics-enable.md",
-                "repo_directory": "apps/docs/content/domains/20_metrics/1_metrics-enable",
-                "repo_public": "apps/docs/content/domains/20_metrics/1_metrics-enable/metrics-enable.md",
-                "repo_technical": "apps/docs/content/domains/20_metrics/1_metrics-enable/technical/1_metrics-enable.md"
+                "directory": "domains/19_metrics/1_metrics-enable",
+                "public": "domains/19_metrics/1_metrics-enable/metrics-enable.md",
+                "technical": "domains/19_metrics/1_metrics-enable/technical/1_metrics-enable.md",
+                "repo_directory": "apps/docs/content/domains/19_metrics/1_metrics-enable",
+                "repo_public": "apps/docs/content/domains/19_metrics/1_metrics-enable/metrics-enable.md",
+                "repo_technical": "apps/docs/content/domains/19_metrics/1_metrics-enable/technical/1_metrics-enable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4847,12 +4847,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/20_metrics/3_metrics-status",
-                "public": "domains/20_metrics/3_metrics-status/metrics-status.md",
-                "technical": "domains/20_metrics/3_metrics-status/technical/1_metrics-status.md",
-                "repo_directory": "apps/docs/content/domains/20_metrics/3_metrics-status",
-                "repo_public": "apps/docs/content/domains/20_metrics/3_metrics-status/metrics-status.md",
-                "repo_technical": "apps/docs/content/domains/20_metrics/3_metrics-status/technical/1_metrics-status.md"
+                "directory": "domains/19_metrics/3_metrics-status",
+                "public": "domains/19_metrics/3_metrics-status/metrics-status.md",
+                "technical": "domains/19_metrics/3_metrics-status/technical/1_metrics-status.md",
+                "repo_directory": "apps/docs/content/domains/19_metrics/3_metrics-status",
+                "repo_public": "apps/docs/content/domains/19_metrics/3_metrics-status/metrics-status.md",
+                "repo_technical": "apps/docs/content/domains/19_metrics/3_metrics-status/technical/1_metrics-status.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7204,12 +7204,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/19_s3/3_s3-credentials",
-                "public": "domains/19_s3/3_s3-credentials/s3-credentials.md",
-                "technical": "domains/19_s3/3_s3-credentials/technical/1_s3-credentials.md",
-                "repo_directory": "apps/docs/content/domains/19_s3/3_s3-credentials",
-                "repo_public": "apps/docs/content/domains/19_s3/3_s3-credentials/s3-credentials.md",
-                "repo_technical": "apps/docs/content/domains/19_s3/3_s3-credentials/technical/1_s3-credentials.md"
+                "directory": "domains/18_s3/3_s3-credentials",
+                "public": "domains/18_s3/3_s3-credentials/s3-credentials.md",
+                "technical": "domains/18_s3/3_s3-credentials/technical/1_s3-credentials.md",
+                "repo_directory": "apps/docs/content/domains/18_s3/3_s3-credentials",
+                "repo_public": "apps/docs/content/domains/18_s3/3_s3-credentials/s3-credentials.md",
+                "repo_technical": "apps/docs/content/domains/18_s3/3_s3-credentials/technical/1_s3-credentials.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7271,12 +7271,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/19_s3/1_s3-publish",
-                "public": "domains/19_s3/1_s3-publish/s3-publish.md",
-                "technical": "domains/19_s3/1_s3-publish/technical/1_s3-publish.md",
-                "repo_directory": "apps/docs/content/domains/19_s3/1_s3-publish",
-                "repo_public": "apps/docs/content/domains/19_s3/1_s3-publish/s3-publish.md",
-                "repo_technical": "apps/docs/content/domains/19_s3/1_s3-publish/technical/1_s3-publish.md"
+                "directory": "domains/18_s3/1_s3-publish",
+                "public": "domains/18_s3/1_s3-publish/s3-publish.md",
+                "technical": "domains/18_s3/1_s3-publish/technical/1_s3-publish.md",
+                "repo_directory": "apps/docs/content/domains/18_s3/1_s3-publish",
+                "repo_public": "apps/docs/content/domains/18_s3/1_s3-publish/s3-publish.md",
+                "repo_technical": "apps/docs/content/domains/18_s3/1_s3-publish/technical/1_s3-publish.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7347,12 +7347,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/19_s3/2_s3-unpublish",
-                "public": "domains/19_s3/2_s3-unpublish/s3-unpublish.md",
-                "technical": "domains/19_s3/2_s3-unpublish/technical/1_s3-unpublish.md",
-                "repo_directory": "apps/docs/content/domains/19_s3/2_s3-unpublish",
-                "repo_public": "apps/docs/content/domains/19_s3/2_s3-unpublish/s3-unpublish.md",
-                "repo_technical": "apps/docs/content/domains/19_s3/2_s3-unpublish/technical/1_s3-unpublish.md"
+                "directory": "domains/18_s3/2_s3-unpublish",
+                "public": "domains/18_s3/2_s3-unpublish/s3-unpublish.md",
+                "technical": "domains/18_s3/2_s3-unpublish/technical/1_s3-unpublish.md",
+                "repo_directory": "apps/docs/content/domains/18_s3/2_s3-unpublish",
+                "repo_public": "apps/docs/content/domains/18_s3/2_s3-unpublish/s3-unpublish.md",
+                "repo_technical": "apps/docs/content/domains/18_s3/2_s3-unpublish/technical/1_s3-unpublish.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7872,12 +7872,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/25_skill/1_skill-install",
-                "public": "domains/25_skill/1_skill-install/skill-install.md",
-                "technical": "domains/25_skill/1_skill-install/technical/1_skill-install.md",
-                "repo_directory": "apps/docs/content/domains/25_skill/1_skill-install",
-                "repo_public": "apps/docs/content/domains/25_skill/1_skill-install/skill-install.md",
-                "repo_technical": "apps/docs/content/domains/25_skill/1_skill-install/technical/1_skill-install.md"
+                "directory": "domains/24_skill/1_skill-install",
+                "public": "domains/24_skill/1_skill-install/skill-install.md",
+                "technical": "domains/24_skill/1_skill-install/technical/1_skill-install.md",
+                "repo_directory": "apps/docs/content/domains/24_skill/1_skill-install",
+                "repo_public": "apps/docs/content/domains/24_skill/1_skill-install/skill-install.md",
+                "repo_technical": "apps/docs/content/domains/24_skill/1_skill-install/technical/1_skill-install.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7923,12 +7923,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/24_solo-agent-tool-list",
-                "public": "domains/24_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
-                "technical": "domains/24_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list",
-                "repo_public": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md"
+                "directory": "domains/23_solo/24_solo-agent-tool-list",
+                "public": "domains/23_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
+                "technical": "domains/23_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/24_solo-agent-tool-list",
+                "repo_public": "apps/docs/content/domains/23_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -7992,12 +7992,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/56_solo-lock-acquire",
-                "public": "domains/24_solo/56_solo-lock-acquire/solo-lock-acquire.md",
-                "technical": "domains/24_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/56_solo-lock-acquire",
-                "repo_public": "apps/docs/content/domains/24_solo/56_solo-lock-acquire/solo-lock-acquire.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md"
+                "directory": "domains/23_solo/56_solo-lock-acquire",
+                "public": "domains/23_solo/56_solo-lock-acquire/solo-lock-acquire.md",
+                "technical": "domains/23_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/56_solo-lock-acquire",
+                "repo_public": "apps/docs/content/domains/23_solo/56_solo-lock-acquire/solo-lock-acquire.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8061,12 +8061,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/57_solo-lock-release",
-                "public": "domains/24_solo/57_solo-lock-release/solo-lock-release.md",
-                "technical": "domains/24_solo/57_solo-lock-release/technical/1_solo-lock-release.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/57_solo-lock-release",
-                "repo_public": "apps/docs/content/domains/24_solo/57_solo-lock-release/solo-lock-release.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/57_solo-lock-release/technical/1_solo-lock-release.md"
+                "directory": "domains/23_solo/57_solo-lock-release",
+                "public": "domains/23_solo/57_solo-lock-release/solo-lock-release.md",
+                "technical": "domains/23_solo/57_solo-lock-release/technical/1_solo-lock-release.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/57_solo-lock-release",
+                "repo_public": "apps/docs/content/domains/23_solo/57_solo-lock-release/solo-lock-release.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/57_solo-lock-release/technical/1_solo-lock-release.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8128,12 +8128,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/55_solo-lock-status",
-                "public": "domains/24_solo/55_solo-lock-status/solo-lock-status.md",
-                "technical": "domains/24_solo/55_solo-lock-status/technical/1_solo-lock-status.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/55_solo-lock-status",
-                "repo_public": "apps/docs/content/domains/24_solo/55_solo-lock-status/solo-lock-status.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/55_solo-lock-status/technical/1_solo-lock-status.md"
+                "directory": "domains/23_solo/55_solo-lock-status",
+                "public": "domains/23_solo/55_solo-lock-status/solo-lock-status.md",
+                "technical": "domains/23_solo/55_solo-lock-status/technical/1_solo-lock-status.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/55_solo-lock-status",
+                "repo_public": "apps/docs/content/domains/23_solo/55_solo-lock-status/solo-lock-status.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/55_solo-lock-status/technical/1_solo-lock-status.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8198,12 +8198,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/21_solo-process-clear-output",
-                "public": "domains/24_solo/21_solo-process-clear-output/solo-process-clear-output.md",
-                "technical": "domains/24_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/21_solo-process-clear-output",
-                "repo_public": "apps/docs/content/domains/24_solo/21_solo-process-clear-output/solo-process-clear-output.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md"
+                "directory": "domains/23_solo/21_solo-process-clear-output",
+                "public": "domains/23_solo/21_solo-process-clear-output/solo-process-clear-output.md",
+                "technical": "domains/23_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/21_solo-process-clear-output",
+                "repo_public": "apps/docs/content/domains/23_solo/21_solo-process-clear-output/solo-process-clear-output.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8268,12 +8268,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/23_solo-process-close",
-                "public": "domains/24_solo/23_solo-process-close/solo-process-close.md",
-                "technical": "domains/24_solo/23_solo-process-close/technical/1_solo-process-close.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/23_solo-process-close",
-                "repo_public": "apps/docs/content/domains/24_solo/23_solo-process-close/solo-process-close.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/23_solo-process-close/technical/1_solo-process-close.md"
+                "directory": "domains/23_solo/23_solo-process-close",
+                "public": "domains/23_solo/23_solo-process-close/solo-process-close.md",
+                "technical": "domains/23_solo/23_solo-process-close/technical/1_solo-process-close.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/23_solo-process-close",
+                "repo_public": "apps/docs/content/domains/23_solo/23_solo-process-close/solo-process-close.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/23_solo-process-close/technical/1_solo-process-close.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8338,12 +8338,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/16_solo-process-input",
-                "public": "domains/24_solo/16_solo-process-input/solo-process-input.md",
-                "technical": "domains/24_solo/16_solo-process-input/technical/1_solo-process-input.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/16_solo-process-input",
-                "repo_public": "apps/docs/content/domains/24_solo/16_solo-process-input/solo-process-input.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/16_solo-process-input/technical/1_solo-process-input.md"
+                "directory": "domains/23_solo/16_solo-process-input",
+                "public": "domains/23_solo/16_solo-process-input/solo-process-input.md",
+                "technical": "domains/23_solo/16_solo-process-input/technical/1_solo-process-input.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/16_solo-process-input",
+                "repo_public": "apps/docs/content/domains/23_solo/16_solo-process-input/solo-process-input.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/16_solo-process-input/technical/1_solo-process-input.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8405,12 +8405,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/13_solo-process-list",
-                "public": "domains/24_solo/13_solo-process-list/solo-process-list.md",
-                "technical": "domains/24_solo/13_solo-process-list/technical/1_solo-process-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/13_solo-process-list",
-                "repo_public": "apps/docs/content/domains/24_solo/13_solo-process-list/solo-process-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/13_solo-process-list/technical/1_solo-process-list.md"
+                "directory": "domains/23_solo/13_solo-process-list",
+                "public": "domains/23_solo/13_solo-process-list/solo-process-list.md",
+                "technical": "domains/23_solo/13_solo-process-list/technical/1_solo-process-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/13_solo-process-list",
+                "repo_public": "apps/docs/content/domains/23_solo/13_solo-process-list/solo-process-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/13_solo-process-list/technical/1_solo-process-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8475,12 +8475,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/15_solo-process-output",
-                "public": "domains/24_solo/15_solo-process-output/solo-process-output.md",
-                "technical": "domains/24_solo/15_solo-process-output/technical/1_solo-process-output.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/15_solo-process-output",
-                "repo_public": "apps/docs/content/domains/24_solo/15_solo-process-output/solo-process-output.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/15_solo-process-output/technical/1_solo-process-output.md"
+                "directory": "domains/23_solo/15_solo-process-output",
+                "public": "domains/23_solo/15_solo-process-output/solo-process-output.md",
+                "technical": "domains/23_solo/15_solo-process-output/technical/1_solo-process-output.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/15_solo-process-output",
+                "repo_public": "apps/docs/content/domains/23_solo/15_solo-process-output/solo-process-output.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/15_solo-process-output/technical/1_solo-process-output.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8545,12 +8545,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/22_solo-process-rename",
-                "public": "domains/24_solo/22_solo-process-rename/solo-process-rename.md",
-                "technical": "domains/24_solo/22_solo-process-rename/technical/1_solo-process-rename.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/22_solo-process-rename",
-                "repo_public": "apps/docs/content/domains/24_solo/22_solo-process-rename/solo-process-rename.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/22_solo-process-rename/technical/1_solo-process-rename.md"
+                "directory": "domains/23_solo/22_solo-process-rename",
+                "public": "domains/23_solo/22_solo-process-rename/solo-process-rename.md",
+                "technical": "domains/23_solo/22_solo-process-rename/technical/1_solo-process-rename.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/22_solo-process-rename",
+                "repo_public": "apps/docs/content/domains/23_solo/22_solo-process-rename/solo-process-rename.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/22_solo-process-rename/technical/1_solo-process-rename.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8615,12 +8615,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/20_solo-process-restart",
-                "public": "domains/24_solo/20_solo-process-restart/solo-process-restart.md",
-                "technical": "domains/24_solo/20_solo-process-restart/technical/1_solo-process-restart.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/20_solo-process-restart",
-                "repo_public": "apps/docs/content/domains/24_solo/20_solo-process-restart/solo-process-restart.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/20_solo-process-restart/technical/1_solo-process-restart.md"
+                "directory": "domains/23_solo/20_solo-process-restart",
+                "public": "domains/23_solo/20_solo-process-restart/solo-process-restart.md",
+                "technical": "domains/23_solo/20_solo-process-restart/technical/1_solo-process-restart.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/20_solo-process-restart",
+                "repo_public": "apps/docs/content/domains/23_solo/20_solo-process-restart/solo-process-restart.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/20_solo-process-restart/technical/1_solo-process-restart.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8684,12 +8684,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/14_solo-process-show",
-                "public": "domains/24_solo/14_solo-process-show/solo-process-show.md",
-                "technical": "domains/24_solo/14_solo-process-show/technical/1_solo-process-show.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/14_solo-process-show",
-                "repo_public": "apps/docs/content/domains/24_solo/14_solo-process-show/solo-process-show.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/14_solo-process-show/technical/1_solo-process-show.md"
+                "directory": "domains/23_solo/14_solo-process-show",
+                "public": "domains/23_solo/14_solo-process-show/solo-process-show.md",
+                "technical": "domains/23_solo/14_solo-process-show/technical/1_solo-process-show.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/14_solo-process-show",
+                "repo_public": "apps/docs/content/domains/23_solo/14_solo-process-show/solo-process-show.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/14_solo-process-show/technical/1_solo-process-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8754,12 +8754,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/17_solo-process-spawn",
-                "public": "domains/24_solo/17_solo-process-spawn/solo-process-spawn.md",
-                "technical": "domains/24_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/17_solo-process-spawn",
-                "repo_public": "apps/docs/content/domains/24_solo/17_solo-process-spawn/solo-process-spawn.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md"
+                "directory": "domains/23_solo/17_solo-process-spawn",
+                "public": "domains/23_solo/17_solo-process-spawn/solo-process-spawn.md",
+                "technical": "domains/23_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/17_solo-process-spawn",
+                "repo_public": "apps/docs/content/domains/23_solo/17_solo-process-spawn/solo-process-spawn.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8824,12 +8824,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/18_solo-process-start",
-                "public": "domains/24_solo/18_solo-process-start/solo-process-start.md",
-                "technical": "domains/24_solo/18_solo-process-start/technical/1_solo-process-start.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/18_solo-process-start",
-                "repo_public": "apps/docs/content/domains/24_solo/18_solo-process-start/solo-process-start.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/18_solo-process-start/technical/1_solo-process-start.md"
+                "directory": "domains/23_solo/18_solo-process-start",
+                "public": "domains/23_solo/18_solo-process-start/solo-process-start.md",
+                "technical": "domains/23_solo/18_solo-process-start/technical/1_solo-process-start.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/18_solo-process-start",
+                "repo_public": "apps/docs/content/domains/23_solo/18_solo-process-start/solo-process-start.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/18_solo-process-start/technical/1_solo-process-start.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8894,12 +8894,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/19_solo-process-stop",
-                "public": "domains/24_solo/19_solo-process-stop/solo-process-stop.md",
-                "technical": "domains/24_solo/19_solo-process-stop/technical/1_solo-process-stop.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/19_solo-process-stop",
-                "repo_public": "apps/docs/content/domains/24_solo/19_solo-process-stop/solo-process-stop.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/19_solo-process-stop/technical/1_solo-process-stop.md"
+                "directory": "domains/23_solo/19_solo-process-stop",
+                "public": "domains/23_solo/19_solo-process-stop/solo-process-stop.md",
+                "technical": "domains/23_solo/19_solo-process-stop/technical/1_solo-process-stop.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/19_solo-process-stop",
+                "repo_public": "apps/docs/content/domains/23_solo/19_solo-process-stop/solo-process-stop.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/19_solo-process-stop/technical/1_solo-process-stop.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -8963,12 +8963,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/9_solo-project-create",
-                "public": "domains/24_solo/9_solo-project-create/solo-project-create.md",
-                "technical": "domains/24_solo/9_solo-project-create/technical/1_solo-project-create.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/9_solo-project-create",
-                "repo_public": "apps/docs/content/domains/24_solo/9_solo-project-create/solo-project-create.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/9_solo-project-create/technical/1_solo-project-create.md"
+                "directory": "domains/23_solo/9_solo-project-create",
+                "public": "domains/23_solo/9_solo-project-create/solo-project-create.md",
+                "technical": "domains/23_solo/9_solo-project-create/technical/1_solo-project-create.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/9_solo-project-create",
+                "repo_public": "apps/docs/content/domains/23_solo/9_solo-project-create/solo-project-create.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/9_solo-project-create/technical/1_solo-project-create.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9033,12 +9033,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/12_solo-project-delete",
-                "public": "domains/24_solo/12_solo-project-delete/solo-project-delete.md",
-                "technical": "domains/24_solo/12_solo-project-delete/technical/1_solo-project-delete.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/12_solo-project-delete",
-                "repo_public": "apps/docs/content/domains/24_solo/12_solo-project-delete/solo-project-delete.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/12_solo-project-delete/technical/1_solo-project-delete.md"
+                "directory": "domains/23_solo/12_solo-project-delete",
+                "public": "domains/23_solo/12_solo-project-delete/solo-project-delete.md",
+                "technical": "domains/23_solo/12_solo-project-delete/technical/1_solo-project-delete.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/12_solo-project-delete",
+                "repo_public": "apps/docs/content/domains/23_solo/12_solo-project-delete/solo-project-delete.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/12_solo-project-delete/technical/1_solo-project-delete.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9100,12 +9100,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/5_solo-project-list",
-                "public": "domains/24_solo/5_solo-project-list/solo-project-list.md",
-                "technical": "domains/24_solo/5_solo-project-list/technical/1_solo-project-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/5_solo-project-list",
-                "repo_public": "apps/docs/content/domains/24_solo/5_solo-project-list/solo-project-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/5_solo-project-list/technical/1_solo-project-list.md"
+                "directory": "domains/23_solo/5_solo-project-list",
+                "public": "domains/23_solo/5_solo-project-list/solo-project-list.md",
+                "technical": "domains/23_solo/5_solo-project-list/technical/1_solo-project-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/5_solo-project-list",
+                "repo_public": "apps/docs/content/domains/23_solo/5_solo-project-list/solo-project-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/5_solo-project-list/technical/1_solo-project-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9170,12 +9170,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/10_solo-project-rename",
-                "public": "domains/24_solo/10_solo-project-rename/solo-project-rename.md",
-                "technical": "domains/24_solo/10_solo-project-rename/technical/1_solo-project-rename.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/10_solo-project-rename",
-                "repo_public": "apps/docs/content/domains/24_solo/10_solo-project-rename/solo-project-rename.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/10_solo-project-rename/technical/1_solo-project-rename.md"
+                "directory": "domains/23_solo/10_solo-project-rename",
+                "public": "domains/23_solo/10_solo-project-rename/solo-project-rename.md",
+                "technical": "domains/23_solo/10_solo-project-rename/technical/1_solo-project-rename.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/10_solo-project-rename",
+                "repo_public": "apps/docs/content/domains/23_solo/10_solo-project-rename/solo-project-rename.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/10_solo-project-rename/technical/1_solo-project-rename.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9239,12 +9239,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/11_solo-project-select",
-                "public": "domains/24_solo/11_solo-project-select/solo-project-select.md",
-                "technical": "domains/24_solo/11_solo-project-select/technical/1_solo-project-select.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/11_solo-project-select",
-                "repo_public": "apps/docs/content/domains/24_solo/11_solo-project-select/solo-project-select.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/11_solo-project-select/technical/1_solo-project-select.md"
+                "directory": "domains/23_solo/11_solo-project-select",
+                "public": "domains/23_solo/11_solo-project-select/solo-project-select.md",
+                "technical": "domains/23_solo/11_solo-project-select/technical/1_solo-project-select.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/11_solo-project-select",
+                "repo_public": "apps/docs/content/domains/23_solo/11_solo-project-select/solo-project-select.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/11_solo-project-select/technical/1_solo-project-select.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9308,12 +9308,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/6_solo-project-show",
-                "public": "domains/24_solo/6_solo-project-show/solo-project-show.md",
-                "technical": "domains/24_solo/6_solo-project-show/technical/1_solo-project-show.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/6_solo-project-show",
-                "repo_public": "apps/docs/content/domains/24_solo/6_solo-project-show/solo-project-show.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/6_solo-project-show/technical/1_solo-project-show.md"
+                "directory": "domains/23_solo/6_solo-project-show",
+                "public": "domains/23_solo/6_solo-project-show/solo-project-show.md",
+                "technical": "domains/23_solo/6_solo-project-show/technical/1_solo-project-show.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/6_solo-project-show",
+                "repo_public": "apps/docs/content/domains/23_solo/6_solo-project-show/solo-project-show.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/6_solo-project-show/technical/1_solo-project-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9377,12 +9377,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/8_solo-project-stats",
-                "public": "domains/24_solo/8_solo-project-stats/solo-project-stats.md",
-                "technical": "domains/24_solo/8_solo-project-stats/technical/1_solo-project-stats.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/8_solo-project-stats",
-                "repo_public": "apps/docs/content/domains/24_solo/8_solo-project-stats/solo-project-stats.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/8_solo-project-stats/technical/1_solo-project-stats.md"
+                "directory": "domains/23_solo/8_solo-project-stats",
+                "public": "domains/23_solo/8_solo-project-stats/solo-project-stats.md",
+                "technical": "domains/23_solo/8_solo-project-stats/technical/1_solo-project-stats.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/8_solo-project-stats",
+                "repo_public": "apps/docs/content/domains/23_solo/8_solo-project-stats/solo-project-stats.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/8_solo-project-stats/technical/1_solo-project-stats.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9446,12 +9446,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/7_solo-project-status",
-                "public": "domains/24_solo/7_solo-project-status/solo-project-status.md",
-                "technical": "domains/24_solo/7_solo-project-status/technical/1_solo-project-status.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/7_solo-project-status",
-                "repo_public": "apps/docs/content/domains/24_solo/7_solo-project-status/solo-project-status.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/7_solo-project-status/technical/1_solo-project-status.md"
+                "directory": "domains/23_solo/7_solo-project-status",
+                "public": "domains/23_solo/7_solo-project-status/solo-project-status.md",
+                "technical": "domains/23_solo/7_solo-project-status/technical/1_solo-project-status.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/7_solo-project-status",
+                "repo_public": "apps/docs/content/domains/23_solo/7_solo-project-status/solo-project-status.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/7_solo-project-status/technical/1_solo-project-status.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9522,12 +9522,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/30_solo-scratchpad-append",
-                "public": "domains/24_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
-                "technical": "domains/24_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append",
-                "repo_public": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md"
+                "directory": "domains/23_solo/30_solo-scratchpad-append",
+                "public": "domains/23_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
+                "technical": "domains/23_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/30_solo-scratchpad-append",
+                "repo_public": "apps/docs/content/domains/23_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9598,12 +9598,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/31_solo-scratchpad-append-section",
-                "public": "domains/24_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
-                "technical": "domains/24_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section",
-                "repo_public": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md"
+                "directory": "domains/23_solo/31_solo-scratchpad-append-section",
+                "public": "domains/23_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
+                "technical": "domains/23_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/31_solo-scratchpad-append-section",
+                "repo_public": "apps/docs/content/domains/23_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9674,12 +9674,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/34_solo-scratchpad-archive",
-                "public": "domains/24_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
-                "technical": "domains/24_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive",
-                "repo_public": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md"
+                "directory": "domains/23_solo/34_solo-scratchpad-archive",
+                "public": "domains/23_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
+                "technical": "domains/23_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/34_solo-scratchpad-archive",
+                "repo_public": "apps/docs/content/domains/23_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9750,12 +9750,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/35_solo-scratchpad-clear",
-                "public": "domains/24_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
-                "technical": "domains/24_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear",
-                "repo_public": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md"
+                "directory": "domains/23_solo/35_solo-scratchpad-clear",
+                "public": "domains/23_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
+                "technical": "domains/23_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/35_solo-scratchpad-clear",
+                "repo_public": "apps/docs/content/domains/23_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9820,12 +9820,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/28_solo-scratchpad-create",
-                "public": "domains/24_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
-                "technical": "domains/24_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create",
-                "repo_public": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md"
+                "directory": "domains/23_solo/28_solo-scratchpad-create",
+                "public": "domains/23_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
+                "technical": "domains/23_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/28_solo-scratchpad-create",
+                "repo_public": "apps/docs/content/domains/23_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9896,12 +9896,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/36_solo-scratchpad-delete",
-                "public": "domains/24_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
-                "technical": "domains/24_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete",
-                "repo_public": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md"
+                "directory": "domains/23_solo/36_solo-scratchpad-delete",
+                "public": "domains/23_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
+                "technical": "domains/23_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/36_solo-scratchpad-delete",
+                "repo_public": "apps/docs/content/domains/23_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -9972,12 +9972,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/32_solo-scratchpad-edit",
-                "public": "domains/24_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
-                "technical": "domains/24_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit",
-                "repo_public": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md"
+                "directory": "domains/23_solo/32_solo-scratchpad-edit",
+                "public": "domains/23_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
+                "technical": "domains/23_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/32_solo-scratchpad-edit",
+                "repo_public": "apps/docs/content/domains/23_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10041,12 +10041,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/27_solo-scratchpad-find",
-                "public": "domains/24_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
-                "technical": "domains/24_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find",
-                "repo_public": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md"
+                "directory": "domains/23_solo/27_solo-scratchpad-find",
+                "public": "domains/23_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
+                "technical": "domains/23_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/27_solo-scratchpad-find",
+                "repo_public": "apps/docs/content/domains/23_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10108,12 +10108,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/25_solo-scratchpad-list",
-                "public": "domains/24_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
-                "technical": "domains/24_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list",
-                "repo_public": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md"
+                "directory": "domains/23_solo/25_solo-scratchpad-list",
+                "public": "domains/23_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
+                "technical": "domains/23_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/25_solo-scratchpad-list",
+                "repo_public": "apps/docs/content/domains/23_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10184,12 +10184,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/33_solo-scratchpad-rename",
-                "public": "domains/24_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
-                "technical": "domains/24_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename",
-                "repo_public": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md"
+                "directory": "domains/23_solo/33_solo-scratchpad-rename",
+                "public": "domains/23_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
+                "technical": "domains/23_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/33_solo-scratchpad-rename",
+                "repo_public": "apps/docs/content/domains/23_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10253,12 +10253,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/26_solo-scratchpad-show",
-                "public": "domains/24_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
-                "technical": "domains/24_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show",
-                "repo_public": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md"
+                "directory": "domains/23_solo/26_solo-scratchpad-show",
+                "public": "domains/23_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
+                "technical": "domains/23_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/26_solo-scratchpad-show",
+                "repo_public": "apps/docs/content/domains/23_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10329,12 +10329,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/29_solo-scratchpad-write",
-                "public": "domains/24_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
-                "technical": "domains/24_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write",
-                "repo_public": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md"
+                "directory": "domains/23_solo/29_solo-scratchpad-write",
+                "public": "domains/23_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
+                "technical": "domains/23_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/29_solo-scratchpad-write",
+                "repo_public": "apps/docs/content/domains/23_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10396,12 +10396,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/49_solo-service-list",
-                "public": "domains/24_solo/49_solo-service-list/solo-service-list.md",
-                "technical": "domains/24_solo/49_solo-service-list/technical/1_solo-service-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/49_solo-service-list",
-                "repo_public": "apps/docs/content/domains/24_solo/49_solo-service-list/solo-service-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/49_solo-service-list/technical/1_solo-service-list.md"
+                "directory": "domains/23_solo/49_solo-service-list",
+                "public": "domains/23_solo/49_solo-service-list/solo-service-list.md",
+                "technical": "domains/23_solo/49_solo-service-list/technical/1_solo-service-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/49_solo-service-list",
+                "repo_public": "apps/docs/content/domains/23_solo/49_solo-service-list/solo-service-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/49_solo-service-list/technical/1_solo-service-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10465,12 +10465,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/52_solo-timer-cancel",
-                "public": "domains/24_solo/52_solo-timer-cancel/solo-timer-cancel.md",
-                "technical": "domains/24_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/52_solo-timer-cancel",
-                "repo_public": "apps/docs/content/domains/24_solo/52_solo-timer-cancel/solo-timer-cancel.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md"
+                "directory": "domains/23_solo/52_solo-timer-cancel",
+                "public": "domains/23_solo/52_solo-timer-cancel/solo-timer-cancel.md",
+                "technical": "domains/23_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/52_solo-timer-cancel",
+                "repo_public": "apps/docs/content/domains/23_solo/52_solo-timer-cancel/solo-timer-cancel.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10532,12 +10532,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/50_solo-timer-list",
-                "public": "domains/24_solo/50_solo-timer-list/solo-timer-list.md",
-                "technical": "domains/24_solo/50_solo-timer-list/technical/1_solo-timer-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/50_solo-timer-list",
-                "repo_public": "apps/docs/content/domains/24_solo/50_solo-timer-list/solo-timer-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/50_solo-timer-list/technical/1_solo-timer-list.md"
+                "directory": "domains/23_solo/50_solo-timer-list",
+                "public": "domains/23_solo/50_solo-timer-list/solo-timer-list.md",
+                "technical": "domains/23_solo/50_solo-timer-list/technical/1_solo-timer-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/50_solo-timer-list",
+                "repo_public": "apps/docs/content/domains/23_solo/50_solo-timer-list/solo-timer-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/50_solo-timer-list/technical/1_solo-timer-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10601,12 +10601,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/53_solo-timer-pause",
-                "public": "domains/24_solo/53_solo-timer-pause/solo-timer-pause.md",
-                "technical": "domains/24_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/53_solo-timer-pause",
-                "repo_public": "apps/docs/content/domains/24_solo/53_solo-timer-pause/solo-timer-pause.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md"
+                "directory": "domains/23_solo/53_solo-timer-pause",
+                "public": "domains/23_solo/53_solo-timer-pause/solo-timer-pause.md",
+                "technical": "domains/23_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/53_solo-timer-pause",
+                "repo_public": "apps/docs/content/domains/23_solo/53_solo-timer-pause/solo-timer-pause.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10670,12 +10670,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/54_solo-timer-resume",
-                "public": "domains/24_solo/54_solo-timer-resume/solo-timer-resume.md",
-                "technical": "domains/24_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/54_solo-timer-resume",
-                "repo_public": "apps/docs/content/domains/24_solo/54_solo-timer-resume/solo-timer-resume.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md"
+                "directory": "domains/23_solo/54_solo-timer-resume",
+                "public": "domains/23_solo/54_solo-timer-resume/solo-timer-resume.md",
+                "technical": "domains/23_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/54_solo-timer-resume",
+                "repo_public": "apps/docs/content/domains/23_solo/54_solo-timer-resume/solo-timer-resume.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10740,12 +10740,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/51_solo-timer-set",
-                "public": "domains/24_solo/51_solo-timer-set/solo-timer-set.md",
-                "technical": "domains/24_solo/51_solo-timer-set/technical/1_solo-timer-set.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/51_solo-timer-set",
-                "repo_public": "apps/docs/content/domains/24_solo/51_solo-timer-set/solo-timer-set.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/51_solo-timer-set/technical/1_solo-timer-set.md"
+                "directory": "domains/23_solo/51_solo-timer-set",
+                "public": "domains/23_solo/51_solo-timer-set/solo-timer-set.md",
+                "technical": "domains/23_solo/51_solo-timer-set/technical/1_solo-timer-set.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/51_solo-timer-set",
+                "repo_public": "apps/docs/content/domains/23_solo/51_solo-timer-set/solo-timer-set.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/51_solo-timer-set/technical/1_solo-timer-set.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10810,12 +10810,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/46_solo-todo-comment-add",
-                "public": "domains/24_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
-                "technical": "domains/24_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add",
-                "repo_public": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md"
+                "directory": "domains/23_solo/46_solo-todo-comment-add",
+                "public": "domains/23_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
+                "technical": "domains/23_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/46_solo-todo-comment-add",
+                "repo_public": "apps/docs/content/domains/23_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10880,12 +10880,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/48_solo-todo-comment-delete",
-                "public": "domains/24_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
-                "technical": "domains/24_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete",
-                "repo_public": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md"
+                "directory": "domains/23_solo/48_solo-todo-comment-delete",
+                "public": "domains/23_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
+                "technical": "domains/23_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/48_solo-todo-comment-delete",
+                "repo_public": "apps/docs/content/domains/23_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -10950,12 +10950,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/47_solo-todo-comment-update",
-                "public": "domains/24_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
-                "technical": "domains/24_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update",
-                "repo_public": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md"
+                "directory": "domains/23_solo/47_solo-todo-comment-update",
+                "public": "domains/23_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
+                "technical": "domains/23_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/47_solo-todo-comment-update",
+                "repo_public": "apps/docs/content/domains/23_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11023,12 +11023,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/41_solo-todo-complete",
-                "public": "domains/24_solo/41_solo-todo-complete/solo-todo-complete.md",
-                "technical": "domains/24_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/41_solo-todo-complete",
-                "repo_public": "apps/docs/content/domains/24_solo/41_solo-todo-complete/solo-todo-complete.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md"
+                "directory": "domains/23_solo/41_solo-todo-complete",
+                "public": "domains/23_solo/41_solo-todo-complete/solo-todo-complete.md",
+                "technical": "domains/23_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/41_solo-todo-complete",
+                "repo_public": "apps/docs/content/domains/23_solo/41_solo-todo-complete/solo-todo-complete.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11094,12 +11094,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/39_solo-todo-create",
-                "public": "domains/24_solo/39_solo-todo-create/solo-todo-create.md",
-                "technical": "domains/24_solo/39_solo-todo-create/technical/1_solo-todo-create.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/39_solo-todo-create",
-                "repo_public": "apps/docs/content/domains/24_solo/39_solo-todo-create/solo-todo-create.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/39_solo-todo-create/technical/1_solo-todo-create.md"
+                "directory": "domains/23_solo/39_solo-todo-create",
+                "public": "domains/23_solo/39_solo-todo-create/solo-todo-create.md",
+                "technical": "domains/23_solo/39_solo-todo-create/technical/1_solo-todo-create.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/39_solo-todo-create",
+                "repo_public": "apps/docs/content/domains/23_solo/39_solo-todo-create/solo-todo-create.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/39_solo-todo-create/technical/1_solo-todo-create.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11167,12 +11167,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/43_solo-todo-delete",
-                "public": "domains/24_solo/43_solo-todo-delete/solo-todo-delete.md",
-                "technical": "domains/24_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/43_solo-todo-delete",
-                "repo_public": "apps/docs/content/domains/24_solo/43_solo-todo-delete/solo-todo-delete.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md"
+                "directory": "domains/23_solo/43_solo-todo-delete",
+                "public": "domains/23_solo/43_solo-todo-delete/solo-todo-delete.md",
+                "technical": "domains/23_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/43_solo-todo-delete",
+                "repo_public": "apps/docs/content/domains/23_solo/43_solo-todo-delete/solo-todo-delete.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11235,12 +11235,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/37_solo-todo-list",
-                "public": "domains/24_solo/37_solo-todo-list/solo-todo-list.md",
-                "technical": "domains/24_solo/37_solo-todo-list/technical/1_solo-todo-list.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/37_solo-todo-list",
-                "repo_public": "apps/docs/content/domains/24_solo/37_solo-todo-list/solo-todo-list.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/37_solo-todo-list/technical/1_solo-todo-list.md"
+                "directory": "domains/23_solo/37_solo-todo-list",
+                "public": "domains/23_solo/37_solo-todo-list/solo-todo-list.md",
+                "technical": "domains/23_solo/37_solo-todo-list/technical/1_solo-todo-list.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/37_solo-todo-list",
+                "repo_public": "apps/docs/content/domains/23_solo/37_solo-todo-list/solo-todo-list.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/37_solo-todo-list/technical/1_solo-todo-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11308,12 +11308,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/44_solo-todo-lock",
-                "public": "domains/24_solo/44_solo-todo-lock/solo-todo-lock.md",
-                "technical": "domains/24_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/44_solo-todo-lock",
-                "repo_public": "apps/docs/content/domains/24_solo/44_solo-todo-lock/solo-todo-lock.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md"
+                "directory": "domains/23_solo/44_solo-todo-lock",
+                "public": "domains/23_solo/44_solo-todo-lock/solo-todo-lock.md",
+                "technical": "domains/23_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/44_solo-todo-lock",
+                "repo_public": "apps/docs/content/domains/23_solo/44_solo-todo-lock/solo-todo-lock.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11381,12 +11381,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/42_solo-todo-reopen",
-                "public": "domains/24_solo/42_solo-todo-reopen/solo-todo-reopen.md",
-                "technical": "domains/24_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/42_solo-todo-reopen",
-                "repo_public": "apps/docs/content/domains/24_solo/42_solo-todo-reopen/solo-todo-reopen.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md"
+                "directory": "domains/23_solo/42_solo-todo-reopen",
+                "public": "domains/23_solo/42_solo-todo-reopen/solo-todo-reopen.md",
+                "technical": "domains/23_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/42_solo-todo-reopen",
+                "repo_public": "apps/docs/content/domains/23_solo/42_solo-todo-reopen/solo-todo-reopen.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11451,12 +11451,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/38_solo-todo-show",
-                "public": "domains/24_solo/38_solo-todo-show/solo-todo-show.md",
-                "technical": "domains/24_solo/38_solo-todo-show/technical/1_solo-todo-show.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/38_solo-todo-show",
-                "repo_public": "apps/docs/content/domains/24_solo/38_solo-todo-show/solo-todo-show.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/38_solo-todo-show/technical/1_solo-todo-show.md"
+                "directory": "domains/23_solo/38_solo-todo-show",
+                "public": "domains/23_solo/38_solo-todo-show/solo-todo-show.md",
+                "technical": "domains/23_solo/38_solo-todo-show/technical/1_solo-todo-show.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/38_solo-todo-show",
+                "repo_public": "apps/docs/content/domains/23_solo/38_solo-todo-show/solo-todo-show.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/38_solo-todo-show/technical/1_solo-todo-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11524,12 +11524,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/45_solo-todo-unlock",
-                "public": "domains/24_solo/45_solo-todo-unlock/solo-todo-unlock.md",
-                "technical": "domains/24_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/45_solo-todo-unlock",
-                "repo_public": "apps/docs/content/domains/24_solo/45_solo-todo-unlock/solo-todo-unlock.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md"
+                "directory": "domains/23_solo/45_solo-todo-unlock",
+                "public": "domains/23_solo/45_solo-todo-unlock/solo-todo-unlock.md",
+                "technical": "domains/23_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/45_solo-todo-unlock",
+                "repo_public": "apps/docs/content/domains/23_solo/45_solo-todo-unlock/solo-todo-unlock.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11597,12 +11597,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/40_solo-todo-update",
-                "public": "domains/24_solo/40_solo-todo-update/solo-todo-update.md",
-                "technical": "domains/24_solo/40_solo-todo-update/technical/1_solo-todo-update.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/40_solo-todo-update",
-                "repo_public": "apps/docs/content/domains/24_solo/40_solo-todo-update/solo-todo-update.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/40_solo-todo-update/technical/1_solo-todo-update.md"
+                "directory": "domains/23_solo/40_solo-todo-update",
+                "public": "domains/23_solo/40_solo-todo-update/solo-todo-update.md",
+                "technical": "domains/23_solo/40_solo-todo-update/technical/1_solo-todo-update.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/40_solo-todo-update",
+                "repo_public": "apps/docs/content/domains/23_solo/40_solo-todo-update/solo-todo-update.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/40_solo-todo-update/technical/1_solo-todo-update.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -11664,12 +11664,12 @@
             },
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/24_solo/4_solo-tools",
-                "public": "domains/24_solo/4_solo-tools/solo-tools.md",
-                "technical": "domains/24_solo/4_solo-tools/technical/1_solo-tools.md",
-                "repo_directory": "apps/docs/content/domains/24_solo/4_solo-tools",
-                "repo_public": "apps/docs/content/domains/24_solo/4_solo-tools/solo-tools.md",
-                "repo_technical": "apps/docs/content/domains/24_solo/4_solo-tools/technical/1_solo-tools.md"
+                "directory": "domains/23_solo/4_solo-tools",
+                "public": "domains/23_solo/4_solo-tools/solo-tools.md",
+                "technical": "domains/23_solo/4_solo-tools/technical/1_solo-tools.md",
+                "repo_directory": "apps/docs/content/domains/23_solo/4_solo-tools",
+                "repo_public": "apps/docs/content/domains/23_solo/4_solo-tools/solo-tools.md",
+                "repo_technical": "apps/docs/content/domains/23_solo/4_solo-tools/technical/1_solo-tools.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -15905,7 +15905,7 @@
             },
             "database_connection": {
                 "singular": "database_connection",
-                "doctor_doc": "domains/18_database/database-doctor.md"
+                "doctor_doc": "domains/17_database/database-doctor.md"
             }
         }
     }

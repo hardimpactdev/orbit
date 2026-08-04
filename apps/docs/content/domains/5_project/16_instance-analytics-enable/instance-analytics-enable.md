@@ -76,5 +76,5 @@ orbit instance:analytics enable docs.production --json
 - [`instance:analytics disable`](../17_instance-analytics-disable/instance-analytics-disable.md)
 - [`instance:analytics show`](../18_instance-analytics-show/instance-analytics-show.md)
 - [`instance:analytics verify`](../21_instance-analytics-verify/instance-analytics-verify.md)
-- [`analytics:update`](../../21_analytics/1_analytics-update/analytics-update.md)
+- [`analytics:update`](../../20_analytics/1_analytics-update/analytics-update.md)
 - [Technical contract](technical/1_instance-analytics-enable.md)

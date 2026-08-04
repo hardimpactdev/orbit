@@ -106,7 +106,7 @@ These rules govern all instance family commands.
   runtime. V1 does not inject scripts, provision Plausible sites, or expose the
   Plausible dashboard publicly.
 - Projects may be registered in Codex App on an eligible operator node through the
-  optional [`codex:app`](../23_codex/1_codex-app/codex-app.md) extension
+  optional [`codex:app`](../22_codex/1_codex-app/codex-app.md) extension
   command. The command edits only Codex App's config file on the target node
   and applies Codex App's URL callback; it does not configure the project's agent
   IDE adapter.
@@ -367,7 +367,7 @@ Use these commands for analytics, instances, and env values.
 ### Instance Tooling and Setup
 
 Use these commands for setup steps. Codex App registration lives in the
-[`codex`](../23_codex/README.md) extension command domain.
+[`codex`](../22_codex/README.md) extension command domain.
 
 1. [`orbit instance:setup [instance]`](22_instance-setup/instance-setup.md)
 2. [`orbit instance-setup-step:add [instance]`](23_instance-setup-step-add/instance-setup-step-add.md)

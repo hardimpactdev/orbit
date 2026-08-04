@@ -11,6 +11,7 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
@@ -162,7 +163,7 @@ final readonly class LegacyPolyscopeRuntimeCleanup
 
         $process = $context
             ->ownerProcesses()
-            ->where(function ($query): void {
+            ->where(function (Builder $query): void {
                 $query->where('name', self::PROCESS_NAME)
                     ->orWhere('tool', self::TOOL);
             })

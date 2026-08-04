@@ -145,8 +145,7 @@ final class AppShowController implements Loggable
         $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
         $placements = $this->placementPayload->forApp($app, $instances, $includeWorkspaces);
 
-        foreach ($instances as $index => $instance) {
-        }
+        foreach ($instances as $index => $instance) {}
 
         $processModels = [];
 

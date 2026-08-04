@@ -36,7 +36,7 @@ These rules govern every command contract in this directory.
 - Commands must state which domain owns the behavior.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
-  `2_gateway` contains `gateway:*` commands, `16_dns` contains `dns:*`
+  `2_gateway` contains `gateway:*` commands, `15_dns` contains `dns:*`
   commands, and `5_project` contains `app:*` commands. `11_operation` is the
   exception for miscellaneous operational commands such as `doctor`, `update`,
   and `activity:*`.
@@ -701,7 +701,7 @@ Processes, proxy, and database support those foundation domains:
 
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
-9. [Database](18_database/README.md)
+9. [Database](17_database/README.md)
 
 ### Runtime workflow domains
 
@@ -722,24 +722,24 @@ owned by the analytics role.
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
 15. [PHP Runtime](14_php/README.md)
-17. [DNS](16_dns/README.md)
-18. [Activity](17_activity/README.md)
+17. [DNS](15_dns/README.md)
+18. [Activity](16_activity/README.md)
 
 Storage and observability integrations follow the network and activity
 surfaces:
 
-19. [S3](19_s3/README.md)
-20. [Metrics](20_metrics/README.md)
-21. [Analytics](21_analytics/README.md)
+19. [S3](18_s3/README.md)
+20. [Metrics](19_metrics/README.md)
+21. [Analytics](20_analytics/README.md)
 
 ### Optional extension and integration domains
 
 These domains describe optional command/API enablement and integrations that
 build on the core fleet authority model:
 
-22. [Extension](22_extension/README.md) — optional command and gateway API
+22. [Extension](21_extension/README.md) — optional command and gateway API
     surface enablement.
-23. [Codex](23_codex/README.md) — Codex App integration commands.
-24. [Solo](24_solo/README.md) — optional target-local Solo proxy command
+23. [Codex](22_codex/README.md) — Codex App integration commands.
+24. [Solo](23_solo/README.md) — optional target-local Solo proxy command
     catalog.
-25. [Skill](25_skill/README.md) — skill discovery and management commands.
+25. [Skill](24_skill/README.md) — skill discovery and management commands.

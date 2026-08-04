@@ -558,5 +558,4 @@ final readonly class WorkspaceSetupTargetResolver
     {
         return $candidate === $cwd || str_starts_with($cwd, "{$candidate}/");
     }
-
 }

@@ -34,13 +34,10 @@ it('fails nonzero when a simulated OpenCode process cannot be reaped', function 
     $result = opencode_cleanup_run_script($root, $script);
 
     expect($result['exit'])
-        ->not
-        ->toBe(0)
-        ->and($result['stderr'])
-        ->toContain('opencode process still running')
-        ->and(trim((string) file_get_contents($root.'/state/processes')))
-        ->not
-        ->toBe('');
+        ->not->toBe(0)->and($result['stderr'])->toContain(
+            'opencode process still running',
+        )->and(trim((string) file_get_contents($root.'/state/processes')))
+        ->not->toBe('');
 });
 
 it('fails nonzero when Orbit-managed OpenCode home cannot be removed', function (): void {

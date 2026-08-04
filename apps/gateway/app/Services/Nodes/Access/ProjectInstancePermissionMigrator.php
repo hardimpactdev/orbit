@@ -6,6 +6,9 @@ namespace App\Services\Nodes\Access;
 
 use InvalidArgumentException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final class ProjectInstancePermissionMigrator
 {
     /**
@@ -36,7 +39,7 @@ final class ProjectInstancePermissionMigrator
      *
      * @var list<string>
      */
-    private const array Removed = [
+    private const array RemovedPermissions = [
         'agent-ide:*',
         'agent-ide:message',
         'instance:agent',
@@ -52,6 +55,7 @@ final class ProjectInstancePermissionMigrator
      */
     public function migrate(array $permissions): array
     {
+        /** @var list<string> $migrated */
         $migrated = [];
 
         foreach ($permissions as $permission) {
@@ -59,20 +63,23 @@ final class ProjectInstancePermissionMigrator
                 throw new InvalidArgumentException('Permissions must be non-empty strings.');
             }
 
-            if (in_array($permission, self::Removed, true)) {
+            if ($this->isRemoved($permission)) {
                 continue;
             }
 
             $this->appendUnique($migrated, $permission);
 
             foreach (self::Replacements[$permission] ?? [] as $replacement) {
-                if (in_array($replacement, self::Removed, true)) {
+                if ($this->isRemoved($replacement)) {
                     continue;
                 }
 
                 $this->appendUnique($migrated, $replacement);
             }
         }
+
+        /** @var list<string> $migrated */
+        $migrated = array_values($migrated);
 
         return $migrated;
     }
@@ -87,16 +94,14 @@ final class ProjectInstancePermissionMigrator
     {
         $containsLegacyPermission = array_any(
             $permissions,
-            static fn (string $permission): bool => (
-                array_key_exists($permission, self::Replacements)
-                || in_array($permission, self::Removed, true)
+            fn (string $permission): bool => (
+                array_key_exists($permission, self::Replacements) || $this->isRemoved($permission)
             ),
         );
         $currentPermissions = array_values(array_filter(
             $this->migrate($permissions),
-            static fn (string $permission): bool => (
-                ! array_key_exists($permission, self::Replacements)
-                && ! in_array($permission, self::Removed, true)
+            fn (string $permission): bool => (
+                ! array_key_exists($permission, self::Replacements) && ! $this->isRemoved($permission)
             ),
         ));
 
@@ -119,6 +124,7 @@ final class ProjectInstancePermissionMigrator
         array $currentPermissions,
         NodePermissionRegistry $registry,
     ): array {
+        /** @var list<string> $storagePermissions */
         $storagePermissions = [];
 
         foreach ($storedPermissions as $permission) {
@@ -139,12 +145,17 @@ final class ProjectInstancePermissionMigrator
             $this->appendUnique($storagePermissions, $permission);
         }
 
+        /** @var list<string> $storagePermissions */
+        $storagePermissions = array_values($storagePermissions);
+
         return $storagePermissions;
     }
 
-    /**
-     * @param  list<string>  $permissions
-     */
+    private function isRemoved(string $permission): bool
+    {
+        return in_array($permission, self::RemovedPermissions, true);
+    }
+
     private function appendUnique(array &$permissions, string $permission): void
     {
         if (! in_array($permission, $permissions, true)) {

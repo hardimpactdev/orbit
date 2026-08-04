@@ -78,10 +78,6 @@ These terms describe how PHP version is resolved for workspaces.
   from its own override (`false`). Exposed in JSON as `php_inherited`.
   resolved per session through the chain `app override → owning node default →
   workspace-level override.
-- **Workspace agent IDE identifier:** Adapter-specific identifier the agent IDE
-  uses to reference a workspace, such as the OpenCode project id. Exposed in
-  JSON as `agent_ide.workspace_id`. `null` when no agent IDE is in effect or
-  the adapter does not expose a workspace identifier.
 
 ## Setup and teardown
 

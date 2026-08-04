@@ -60,8 +60,6 @@ function hermesStoredCredentials(string $value): array
     ];
 }
 
-
-
 it('refreshes stored credential fields from the credentials script after successful Hermes reconfigure', function (): void {
     $node = Node::factory()->create([
         'name' => 'agent-hermes-cred-refresh',

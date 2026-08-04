@@ -1830,7 +1830,6 @@ describe('ProcessStoreController', function (): void {
         expect(Process::query()->where('name', 'feedback-worker')->value('runtime'))->toBe(ProcessRuntime::Launchd);
     });
 
-
     it('rejects launchd runtime on linux nodes with launchd_runtime_requires_macos', function (): void {
         $caller = createProcessStoreCallerNode();
         $appNode = createTestAppHostNode(['platform' => 'ubuntu_24-04']);

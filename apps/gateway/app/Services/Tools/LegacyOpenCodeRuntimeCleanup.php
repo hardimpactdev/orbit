@@ -11,6 +11,7 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
@@ -173,7 +174,7 @@ final readonly class LegacyOpenCodeRuntimeCleanup
 
         $process = $context
             ->ownerProcesses()
-            ->where(function ($query): void {
+            ->where(function (Builder $query): void {
                 $query->where('name', self::PROCESS_NAME)
                     ->orWhereIn('tool', self::ToolAliases);
             })
@@ -239,12 +240,16 @@ final readonly class LegacyOpenCodeRuntimeCleanup
     {
         $removed = false;
 
-        $tools = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', self::ToolAliases)
-            ->get();
+        foreach (self::ToolAliases as $toolName) {
+            $tool = NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', $toolName)
+                ->first();
 
-        foreach ($tools as $tool) {
+            if (! $tool instanceof NodeTool) {
+                continue;
+            }
+
             $tool->credentials = null;
             $tool->save();
             $tool->delete();

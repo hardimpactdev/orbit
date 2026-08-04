@@ -343,7 +343,6 @@ describe('managed Agent intent', function (): void {
     });
 });
 
-
 describe('access grants', function (): void {
     it('passes when no grants exist', function (): void {
         $node = nodes_probe_node([

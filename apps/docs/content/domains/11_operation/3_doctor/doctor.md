@@ -201,7 +201,7 @@ own concrete issue codes and action maps:
 - [`doctor --family=process`](../../7_process/process-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [`doctor --family=schedule`](../../9_schedule/schedule-doctor.md)
-- [`doctor --family=database_connection`](../../18_database/database-doctor.md)
+- [`doctor --family=database_connection`](../../17_database/database-doctor.md)
 
 ## Related Commands
 

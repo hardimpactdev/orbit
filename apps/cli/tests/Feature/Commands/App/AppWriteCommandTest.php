@@ -1044,5 +1044,4 @@ describe('project and instance mutation command human renderers', function (): v
             ->and($output)
             ->not->toContain('"error"');
     });
-
 });

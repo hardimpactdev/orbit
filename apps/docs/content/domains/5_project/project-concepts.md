@@ -152,8 +152,6 @@ instance and its driver placement.
   unrelated instance bindings. Reading them requires the explicit
   `instance:credentials` permission on the instance's serving node; `instance:read` and
   `instance:write` do not imply credential access.
-  concrete instance. Its effective adapter resolves from the instance
-  override, then the serving-node default, then no adapter. It is set, cleared,
 - **Project dependency audit posture:** Gateway-owned compact summary of a read-only
   package-manager audit for a project's source path. The v1 storage and presentation
   slice stores per-manager status, severity counts, bounded advisory detail, and
@@ -190,7 +188,6 @@ The terms below describe project and instance lifecycle.
 - **Instance adoption flag:** Boolean instance field that records whether
   that concrete path was adopted (`true`) or created fresh (`false`). Exposed
   in the canonical instance JSON as `adopted`.
-  concrete `app-dev` instance. It removes only stale workspaces and adapter
   associations owned by that instance. It is not project deletion or doctor
   drift repair.
 - **Instance setup pipeline:** Ordered instance-owned commands recorded with

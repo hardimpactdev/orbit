@@ -216,7 +216,7 @@ it('maps analytics update internal version option onto the public signature', fu
     ]);
     writeLiveSurfaceCommandDirectory(
         $this->fixtureRoot,
-        'domains/21_analytics/1_analytics-update',
+        'domains/20_analytics/1_analytics-update',
         'analytics-update',
         'orbit analytics:update [--node=<node>] [--version=<version>] [--json]',
     );

@@ -310,7 +310,6 @@ describe('NodeShowController', function (): void {
             ]);
     });
 
-
     it('returns real grants data', function (): void {
         DB::table('nodes')->insert([
             apiShowNodeRow([

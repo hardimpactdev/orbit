@@ -106,7 +106,8 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->and($ws['php_inherited'])
             ->toBeTrue()
             ->and($ws)
-            ->not->toHaveKey('agent_ide')
+            ->not
+            ->toHaveKey('agent_ide')
             ->and($ws['adopted'])
             ->toBeFalse()
             ->and($ws['lifecycle_status'])
@@ -372,8 +373,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
 
         $response->assertOk();
 
-        expect($response->json('success.data.workspace'))
-            ->not->toHaveKey('agent_ide');
+        expect($response->json('success.data.workspace'))->not->toHaveKey('agent_ide');
     });
 });
 

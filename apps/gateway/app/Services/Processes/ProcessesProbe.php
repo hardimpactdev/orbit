@@ -1158,7 +1158,6 @@ final readonly class ProcessesProbe
         }
     }
 
-
     /**
      * @return list<DriftEntry>
      */
@@ -1838,7 +1837,6 @@ final readonly class ProcessesProbe
 
         return $lines;
     }
-
 
     private function runtimeFor(Process $process): ProcessRuntime
     {
