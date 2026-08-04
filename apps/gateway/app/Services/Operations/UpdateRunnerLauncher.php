@@ -93,7 +93,12 @@ final readonly class UpdateRunnerLauncher
                 ),
             '--mount '
                 .$this->escape(
-                    'type=bind,source='.self::HostHomeRoot.',target='.self::HostPathPrefix.self::HostHomeRoot.',readonly',
+                    'type=bind,source='
+                    .self::HostHomeRoot
+                    .',target='
+                    .self::HostPathPrefix
+                    .self::HostHomeRoot
+                    .',readonly',
                 ),
             '--env '.$this->escape('ORBIT_CONFIG_ROOT='.self::ContainerConfigRoot),
             '--env '.$this->escape('ORBIT_HOST_PATH_PREFIX='.self::HostPathPrefix),
