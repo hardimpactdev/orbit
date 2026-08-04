@@ -5637,7 +5637,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process lifecycle result with durable events when the backend action succeeds. */
+            /** @description Process restart result with durable stop/start events when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5654,10 +5654,10 @@ export interface operations {
                                     workspace?: string | null;
                                     runtime_unit: string;
                                     state: string;
-                                    event?: {
+                                    events: {
                                         id: number;
                                         type: string;
-                                    } | null;
+                                    }[];
                                 }[];
                             };
                             meta: {
@@ -5694,7 +5694,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process lifecycle result with durable events when the backend action succeeds. */
+            /** @description Process start/stop result with a singular durable event when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5751,7 +5751,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Process lifecycle result with durable events when the backend action succeeds. */
+            /** @description Process start/stop result with a singular durable event when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;

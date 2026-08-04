@@ -14,6 +14,22 @@ type ProcessRestartBody = NonNullable<
 type ProcessListSuccess = NonNullable<
     paths['/processes']['get']['responses'][200]['content']['application/json']
 >;
+type ProcessStartSuccess = NonNullable<
+    paths['/processes/start']['post']['responses'][200]['content']['application/json']
+>;
+type ProcessRestartSuccess = NonNullable<
+    paths['/processes/restart']['post']['responses'][200]['content']['application/json']
+>;
+type ProcessStartRuntime = ProcessStartSuccess extends {
+    success?: { data?: { runtimes?: Array<infer Item> } };
+}
+    ? Item
+    : never;
+type ProcessRestartRuntime = ProcessRestartSuccess extends {
+    success?: { data?: { runtimes?: Array<infer Item> } };
+}
+    ? Item
+    : never;
 
 // Same auth model as CLI: no bearer, no peer-IP identity header.
 // Gateway maps actual WireGuard peer source IP; optional X-Orbit-Client is non-identity.
@@ -117,6 +133,20 @@ void invalidRestartBody;
 // Required-field proof: app/node/instance/workspace/name are the only known keys.
 const knownRestartKeys: Array<keyof ProcessRestartBody> = ['app', 'node', 'instance', 'workspace', 'name'];
 void knownRestartKeys;
+
+// Restart runtimes expose plural events; start keeps singular event.
+type RestartEvents = ProcessRestartRuntime extends { events: infer E } ? E : never;
+type StartEvent = ProcessStartRuntime extends { event?: infer E } ? E : never;
+const restartEventsOk: RestartEvents = [];
+void restartEventsOk;
+const startEventOk: StartEvent = null;
+void startEventOk;
+type RestartHasEvent = ProcessRestartRuntime extends { event?: unknown } ? true : false;
+type StartHasEvents = ProcessStartRuntime extends { events?: unknown } ? true : false;
+const restartDoesNotUseEvent: RestartHasEvent = false;
+void restartDoesNotUseEvent;
+const startDoesNotUseEvents: StartHasEvents = false;
+void startDoesNotUseEvents;
 
 await client.GET('/tools', {
     params: {

@@ -189,7 +189,11 @@ final class GatewayOpenApi
                     self::schemaFrom(self::processLifecycleRequestBody()),
                 );
                 $operation->addRequestBodyObject($requestBody);
-                $operation->addResponse(self::processLifecycleSuccessResponse());
+                $operation->addResponse(
+                    $path->path === 'processes/restart'
+                        ? self::processRestartSuccessResponse()
+                        : self::processLifecycleSuccessResponse(),
+                );
             }
         }
     }
@@ -288,12 +292,48 @@ final class GatewayOpenApi
 
     private static function processLifecycleSuccessResponse(): Response
     {
+        $event = self::processEventObject();
+        $event->nullable(true);
+
+        $runtime = self::processLifecycleRuntimeObject();
+        $runtime->addProperty('event', $event);
+        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state']);
+
+        return self::processLifecycleEnvelopeResponse(
+            runtime: $runtime,
+            description: 'Process start/stop result with a singular durable event when the backend action succeeds.',
+        );
+    }
+
+    private static function processRestartSuccessResponse(): Response
+    {
+        $event = self::processEventObject();
+        $events = new ArrayType;
+        $events->setItems($event);
+
+        $runtime = self::processLifecycleRuntimeObject();
+        $runtime->addProperty('events', $events);
+        // Restart always includes events (empty list when the backend fails).
+        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state', 'events']);
+
+        return self::processLifecycleEnvelopeResponse(
+            runtime: $runtime,
+            description: 'Process restart result with durable stop/start events when the backend action succeeds.',
+        );
+    }
+
+    private static function processEventObject(): ObjectType
+    {
         $event = new ObjectType;
         $event->addProperty('id', new IntegerType);
         $event->addProperty('type', new StringType);
         $event->setRequired(['id', 'type']);
-        $event->nullable(true);
 
+        return $event;
+    }
+
+    private static function processLifecycleRuntimeObject(): ObjectType
+    {
         $runtime = new ObjectType;
         $runtime->addProperty('process', new StringType);
         $runtime->addProperty('node', new StringType);
@@ -302,9 +342,12 @@ final class GatewayOpenApi
         $runtime->addProperty('workspace', new StringType()->nullable(true));
         $runtime->addProperty('runtime_unit', new StringType);
         $runtime->addProperty('state', new StringType);
-        $runtime->addProperty('event', $event);
-        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state']);
 
+        return $runtime;
+    }
+
+    private static function processLifecycleEnvelopeResponse(ObjectType $runtime, string $description): Response
+    {
         $data = new ObjectType;
         $runtimes = new ArrayType;
         $runtimes->setItems($runtime);
@@ -325,9 +368,7 @@ final class GatewayOpenApi
 
         /** @var Response $response */
         $response = Response::make(200);
-        $response->setDescription(
-            'Process lifecycle result with durable events when the backend action succeeds.',
-        );
+        $response->setDescription($description);
         $response->setContent('application/json', self::schemaFrom($envelope));
 
         return $response;

@@ -10,6 +10,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Project;
+use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Authorization\ServingNodeResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -212,6 +213,76 @@ describe('ServingNodeResolver', function (): void {
         );
 
         expect($resolved)->toBeNull();
+    });
+
+    it('resolves app-owning nodes from a registered app hostname selector before process name', function (): void {
+        $targetNode = Node::factory()->create(['name' => 'target-node']);
+        $otherNode = Node::factory()->create(['name' => 'other-node']);
+        $targetApp = Project::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
+        $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+        AppInstance::factory()->create([
+            'app_id' => $targetApp->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+        ]);
+        OrbitProcess::factory()->forOwner($otherApp)->create(['name' => 'vite']);
+        OrbitProcess::factory()->forOwner($targetApp)->create(['name' => 'vite']);
+        ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'docs-dev.example',
+            'app_id' => $targetApp->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'app_instance' => [
+                    'name' => 'development',
+                    'selector' => 'docs.development',
+                ],
+            ],
+        ]);
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest([], [
+                'app' => 'docs-dev.example',
+                'name' => 'vite',
+            ]),
+            ServingNode::AppOwning,
+        );
+
+        expect($resolved?->is($targetNode))->toBeTrue();
+    });
+
+    it('resolves app-owning nodes from a registered workspace hostname selector', function (): void {
+        $targetNode = Node::factory()->create(['name' => 'workspace-node']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'feature-docs.example',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest([], [
+                'app' => 'feature-docs.example',
+                'name' => 'vite',
+            ]),
+            ServingNode::AppOwning,
+        );
+
+        expect($resolved?->is($targetNode))->toBeTrue();
     });
 
     it('resolves the caller node from the request user', function (): void {

@@ -10341,7 +10341,7 @@
         },
         "responses": {
           "200": {
-            "description": "Process lifecycle result with durable events when the backend action succeeds.",
+            "description": "Process restart result with durable stop/start events when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10388,30 +10388,31 @@
                                   "state": {
                                     "type": "string"
                                   },
-                                  "event": {
-                                    "type": [
-                                      "object",
-                                      "null"
-                                    ],
-                                    "properties": {
-                                      "id": {
-                                        "type": "integer"
+                                  "events": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "integer"
+                                        },
+                                        "type": {
+                                          "type": "string"
+                                        }
                                       },
-                                      "type": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "id",
-                                      "type"
-                                    ]
+                                      "required": [
+                                        "id",
+                                        "type"
+                                      ]
+                                    }
                                   }
                                 },
                                 "required": [
                                   "process",
                                   "node",
                                   "runtime_unit",
-                                  "state"
+                                  "state",
+                                  "events"
                                 ]
                               }
                             }
@@ -10481,7 +10482,7 @@
         },
         "responses": {
           "200": {
-            "description": "Process lifecycle result with durable events when the backend action succeeds.",
+            "description": "Process start/stop result with a singular durable event when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10621,7 +10622,7 @@
         },
         "responses": {
           "200": {
-            "description": "Process lifecycle result with durable events when the backend action succeeds.",
+            "description": "Process start/stop result with a singular durable event when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {

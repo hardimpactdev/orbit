@@ -16,11 +16,13 @@ use App\Models\Process as OrbitProcess;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
+use App\Services\Processes\ProcessAppHostnameResolver;
 use App\Services\Runtime\OrbitHostCwdContext;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class ServingNodeResolver
 {
@@ -61,6 +63,15 @@ final class ServingNodeResolver
 
     private function resolveAppOwning(Request $request): ?Node
     {
+        // Process list/lifecycle `app` is a proxy-route hostname selector. Resolve it
+        // before unscoped process-name lookup so duplicate process names on other
+        // nodes cannot win grant authorization for the wrong serving node.
+        $hostnameNode = $this->nodeFromAppHostnameSelector($this->requestValue($request, 'app'));
+
+        if ($hostnameNode instanceof Node) {
+            return $hostnameNode;
+        }
+
         foreach (['project', 'instance'] as $parameter) {
             $node = $this->appNodeFromValue($this->requestValue($request, $parameter));
 
@@ -95,6 +106,25 @@ final class ServingNodeResolver
         }
 
         return null;
+    }
+
+    /**
+     * Resolve an app/workspace proxy-route hostname to its concrete node.
+     *
+     * Invalid or non-hostname values (including legacy project aliases in
+     * `app`) return null so unrelated routes keep their existing fall-through.
+     */
+    private function nodeFromAppHostnameSelector(mixed $value): ?Node
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return app(ProcessAppHostnameResolver::class)->resolve(trim($value))->node;
+        } catch (GatewayApiException) {
+            return null;
+        }
     }
 
     private function resolveWorkspaceOwning(Request $request): ?Node

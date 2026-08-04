@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
+use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -68,9 +71,62 @@ describe('ProcessRestartController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_development_main_vite')
-            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'stopped');
+            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'stopped')
+            ->assertJsonPath('success.data.runtimes.0.events.1.type', 'started');
 
         expect(ProcessEvent::query()->where('event', 'started')->exists())->toBeTrue();
+    });
+
+    it('authorizes app-hostname restart against the selected node when process names collide', function (): void {
+        $caller = createProcessRestartCallerNode();
+        $grantedNode = createTestAppHostNode(['name' => 'granted-node']);
+        $otherNode = createTestAppHostNode(['name' => 'other-node']);
+        grantProcessRestartAccess($caller, $grantedNode);
+
+        $grantedApp = Project::factory()->create(['name' => 'docs', 'node_id' => $grantedNode->id]);
+        $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+        AppInstance::factory()->create([
+            'app_id' => $grantedApp->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $grantedNode->id),
+        ]);
+        Process::factory()->forOwner($otherApp, $otherNode)->create(['name' => 'vite']);
+        Process::factory()->forOwner($grantedApp, $grantedNode)->create(['name' => 'vite']);
+        ProxyRoute::factory()->create([
+            'node_id' => $grantedNode->id,
+            'domain' => 'docs-dev.example',
+            'app_id' => $grantedApp->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'app_instance' => [
+                    'name' => 'development',
+                    'selector' => 'docs.development',
+                ],
+            ],
+        ]);
+        app()->instance(RemoteShell::class, new ProcessRestartApiRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/processes/restart',
+            [
+                'app' => 'docs-dev.example',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_RESTART_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.runtimes.0.node', 'granted-node')
+            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'stopped')
+            ->assertJsonPath('success.data.runtimes.0.events.1.type', 'started')
+            ->assertJsonMissingPath('success.data.runtimes.0.event');
     });
 
     it('returns partial runtime failure data', function (): void {
