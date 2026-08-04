@@ -70,10 +70,11 @@ class GatewayServiceUpdater
                 'Gateway host CLI installed',
                 fn (): null => $this->installGatewayHostCli($operationRun, $plan, $targetImage),
             );
-            // Converge leaf TLS material while this process is still the live
-            // gateway task with ORBIT_HOST_PATH_PREFIX host mounts. Running
-            // after force service replacement can leave config-root leaves
-            // updated while host/Caddy serving paths stay incomplete.
+            // Converge leaf TLS material before force-replacing orbit-gateway.
+            // The fleet update runner is a one-shot container with host
+            // /etc/caddy and /etc/orbit bind-mounted under ORBIT_HOST_PATH_PREFIX
+            // (see UpdateRunnerLauncher); keep this step before self-replacement
+            // so serving paths are updated while the update process is stable.
             $this->runStep(
                 $operationRun,
                 'gateway.leaf',

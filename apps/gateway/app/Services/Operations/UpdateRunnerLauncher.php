@@ -19,6 +19,12 @@ final readonly class UpdateRunnerLauncher
 
     private const string ContainerSshRoot = '/root/.ssh';
 
+    private const string HostPathPrefix = '/mnt/orbit-host';
+
+    private const string HostCaddyRoot = '/etc/caddy';
+
+    private const string HostOrbitRoot = '/etc/orbit';
+
     public function __construct(
         private UpdateRunnerImageResolver $images,
     ) {}
@@ -71,12 +77,30 @@ final readonly class UpdateRunnerLauncher
             '--mount '.$this->escape("type=bind,source={$hostConfigRoot},target=".self::ContainerConfigRoot),
             '--mount '
                 .$this->escape('type=bind,source='.self::HostSshRoot.',target='.self::ContainerSshRoot.',readonly'),
+            // Host serving trees for gateway leaf/Caddy convergence during fleet update.
+            '--mount '
+                .$this->escape(
+                    'type=bind,source='.self::HostCaddyRoot.',target='.self::HostPathPrefix.self::HostCaddyRoot,
+                ),
+            '--mount '
+                .$this->escape(
+                    'type=bind,source='.self::HostOrbitRoot.',target='.self::HostPathPrefix.self::HostOrbitRoot,
+                ),
             '--env '.$this->escape('ORBIT_CONFIG_ROOT='.self::ContainerConfigRoot),
+            '--env '.$this->escape('ORBIT_HOST_PATH_PREFIX='.self::HostPathPrefix),
+            '--env '.$this->escape('ORBIT_GATEWAY_EXPOSURE_MODE='.$this->gatewayExposureMode()),
             $this->escape($image),
             $this->escape('artisan'),
             $this->escape('orbit:update-runner'),
             $this->escape("--operation-run-id={$operationRunId}"),
         ]);
+    }
+
+    private function gatewayExposureMode(): string
+    {
+        $value = config('orbit.gateway.exposure_mode', 'router-colocated');
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : 'router-colocated';
     }
 
     private function containerName(string $operationRunId): string
