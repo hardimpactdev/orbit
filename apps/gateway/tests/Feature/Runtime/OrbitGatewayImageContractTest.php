@@ -60,9 +60,17 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
 
 it('requires every host-context orbit-gateway Dockerfile COPY source path to exist on disk', function (): void {
     $dockerfile = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+    $sources = orbit_gateway_host_context_copy_sources($dockerfile);
     $missing = [];
 
-    foreach (orbit_gateway_host_context_copy_sources($dockerfile) as $source) {
+    // Non-vacuous: parser must see real host-context COPY sources, not an empty list.
+    expect($sources)
+        ->not
+        ->toBeEmpty()
+        ->toContain('apps/gateway/app')
+        ->toContain('VERSION');
+
+    foreach ($sources as $source) {
         $absolute = repo_path($source);
 
         if (is_file($absolute) || is_dir($absolute)) {
