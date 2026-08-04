@@ -13,6 +13,7 @@ long-running instance or workspace workers, and development servers.
 
 ```bash
 orbit process:add vite "npm run dev" --instance=docs.production --crash-notification=none
+orbit process:add vite "npm run dev" --instance=docs.production --label="Vite Dev Server"
 orbit process:add queue "php artisan queue:work" --instance=docs.production --restart-policy=always
 orbit process:add horizon "php artisan horizon" --instance=docs.development --workspace=feature-docs --runtime=systemd
 orbit process:add feedback "php artisan feedback:work" --instance=feedback.development --runtime=launchd
@@ -32,6 +33,8 @@ orbit process:add vite "npm run dev" --instance=docs.production --json
 Use this command to define a managed process for a node, instance, or workspace.
 
 - **Gateway Configuration**: Creates process configuration on the gateway for the resolved owner scope.
+- **Display Label**: Optional `--label` sets the durable human display label.
+  When omitted, the label defaults to the process identity key (`name`).
 - **Scope Resolution**: `--node` creates a node-owned process and cannot be combined with `--instance` or `--workspace`; `--workspace` creates a workspace-owned process for that workspace's instance; otherwise `--instance` creates a process owned by the selected instance. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
 - **Runtime Unit Rendering**: Node-owned and workspace-owned definitions normally render one runtime unit. Instance-owned definitions render one main-instance unit and one unit for each active workspace belonging to that same instance, all on the instance's serving node.
 - **Runtime Boundary**: Host-command processes default to `systemd` on Linux

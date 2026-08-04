@@ -69,9 +69,12 @@ await orbit.POST('/processes/restart', {
 });
 ```
 
-Process list items include a concrete `status` (`starting` | `running` |
-`stopping` | `stopped` | `restarting` | `crashed` | `unknown`) derived from
-durable gateway lifecycle events, plus compatible `last_event` when present.
+Process list items expose stable identity as `key`, durable display as `label`,
+and deprecated compatibility alias `name` (= `key`). New consumers must use
+`key` and `label`. Each item also includes concrete `status` (`starting` |
+`running` | `stopping` | `stopped` | `restarting` | `crashed` | `unknown`)
+derived from durable gateway lifecycle events, plus compatible `last_event`
+when present.
 
 ### Process lifecycle SSE (no polling)
 
@@ -91,9 +94,10 @@ const sub = subscribeProcessStream({
     app: window.location.hostname,
     onSnapshot: (snapshot) => {
         // snapshot.cursor.high_water_mark is the durable SSE id
+        // snapshot.processes[].key / .label (name is a deprecated alias)
     },
     onUpdate: (update) => {
-        // update.event / update.status are closed durable unions
+        // update.key / update.label; update.event / update.status are closed unions
     },
     onError: (error) => {
         // server frames, protocol parse failures, or transport Event
@@ -139,11 +143,16 @@ The wrapper is intentionally thin around `openapi-fetch`: macOS/Tauri, TanStack 
 ## Versioning and publication
 
 This package is **independently versioned** from Orbit monorepo root `VERSION`.
-The version in this `package.json` is authoritative (gateway-root `/api` base
-resolution patch prepares `0.2.1`; public SSE subscriber was `0.2.0`; initial
-public release was `0.1.0`). Canonical source remains `packages/sdk-typescript`
-in `hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install
+The version in this `package.json` is authoritative (process key/label stream
+payloads prepare `0.3.0`; gateway-root `/api` base resolution patch was
+`0.2.1`; public SSE subscriber was `0.2.0`; initial public release was
+`0.1.0`). Canonical source remains `packages/sdk-typescript` in
+`hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install
 from npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
+
+Process list/SSE snapshot items expose stable identity as `key` and durable
+display as `label`. `name` remains a deprecated compatibility alias equal to
+`key`. New consumers must use `key` and `label`.
 
 Publication path (package repository only; monorepo never holds npm secrets):
 

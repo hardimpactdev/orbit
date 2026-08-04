@@ -296,6 +296,9 @@ final readonly class ProcessOwnerContext
     public function processPayload(Process $process): array
     {
         return [
+            'key' => $process->name,
+            'label' => $process->label,
+            // Deprecated compatibility alias; new consumers use key + label.
             'name' => $process->name,
             ...$this->payloadContext(),
             'command' => $process->command,

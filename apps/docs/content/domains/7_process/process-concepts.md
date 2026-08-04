@@ -12,8 +12,15 @@ These terms define how process definitions are identified, scoped, and ordered.
   never only against a project. Instance and workspace processes run
   on that instance's serving node; node-level processes run directly against
   the owning node.
-- **Process identity slug:** Lowercase identity slug used as the process name.
-  Maximum 64 characters.
+- **Process identity slug (`key`):** Stable lowercase identity slug stored
+  internally as `Process.name` and exposed publicly as `key` (with deprecated
+  compatibility alias `name` equal to `key`). Maximum 64 characters. Used for
+  runtime unit identity, lifecycle targeting, and uniqueness within the owner
+  scope. Renaming the identity does not rewrite the display label.
+- **Process display label (`label`):** Durable non-null human-facing label
+  persisted on the process row. Defaults to the identity key when omitted at
+  create time. Updated only via explicit `label` input; max 255 characters after
+  trim; must be non-empty.
 - **Process scope:** Optional target that binds a process to a node, concrete
   instance, or workspace. The scope selects the serving node, working
   context, default environment, and lifecycle authorization boundary.

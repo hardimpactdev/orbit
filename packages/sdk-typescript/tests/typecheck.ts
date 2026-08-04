@@ -149,6 +149,8 @@ const snapshotOk: ProcessStreamSnapshot = {
             project: 'docs',
             instance: 'development',
             workspace: null,
+            key: 'vite',
+            label: 'Vite Dev Server',
             name: 'vite',
             command: null,
             restart_policy: 'never',
@@ -169,7 +171,9 @@ const updateOk: ProcessStreamUpdate = {
     id: 2,
     event: 'stopping',
     status: 'stopping',
+    key: 'vite',
     name: 'vite',
+    label: 'Vite Dev Server',
     node: 'app-1',
     project: 'docs',
     instance: 'development',
@@ -181,10 +185,20 @@ const updateOk: ProcessStreamUpdate = {
 };
 void updateOk;
 
+type UpdateKey = ProcessStreamUpdate['key'];
+type UpdateLabel = ProcessStreamUpdate['label'];
 type UpdateName = ProcessStreamUpdate['name'];
+type KeyIsString = UpdateKey extends string ? (string extends UpdateKey ? true : false) : false;
+type LabelIsString = UpdateLabel extends string ? (string extends UpdateLabel ? true : false) : false;
 type NameIsString = UpdateName extends string ? (string extends UpdateName ? true : false) : false;
+const keyIsString: KeyIsString = true;
+const labelIsString: LabelIsString = true;
 const nameIsString: NameIsString = true;
+void keyIsString;
+void labelIsString;
 void nameIsString;
+// @ts-expect-error streamed update key is required string, not null
+const updateKeyNull: UpdateKey = null;
 // @ts-expect-error streamed update name is required string, not null
 const updateNameNull: UpdateName = null;
 void updateNameNull;

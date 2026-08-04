@@ -27,6 +27,7 @@ use Override;
  * @property int $owner_id
  * @property int|null $app_instance_id
  * @property string $name
+ * @property string $label
  * @property string $command
  * @property ProcessRestartPolicy $restart_policy
  * @property ProcessCrashNotification $crash_notification
@@ -54,6 +55,12 @@ class Process extends Model
     protected static function booted(): void
     {
         static::saving(function (Process $process): void {
+            // Default display label to the identity key only when unset/empty.
+            // Identity renames must not rewrite an existing (defaulted or custom) label.
+            if ($process->label === null || $process->label === '') {
+                $process->label = $process->name;
+            }
+
             $nodeId = $process->nodeIdForOwner();
 
             if ($nodeId === null) {
@@ -77,6 +84,7 @@ class Process extends Model
         'owner_id',
         'app_instance_id',
         'name',
+        'label',
         'command',
         'restart_policy',
         'crash_notification',

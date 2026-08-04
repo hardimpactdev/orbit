@@ -12,6 +12,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
     protected $signature = 'process:update
         {name? : Existing process name}
         {--name= : New process name}
+        {--label= : Human display label}
         {--node= : Owning node name}
         {--instance= : Instance selector}
         {--workspace= : Workspace name}
@@ -28,12 +29,19 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
     public function handle(): int
     {
         $node = $this->nodeContext();
+        $label = $this->resolveProcessLabelOption();
+
+        if (is_int($label)) {
+            return $label;
+        }
+
         $input = ProcessUpdateInput::fromValues([
             'node' => $node,
             'instance' => $node === null ? $this->appContext() : $this->stringOption('instance'),
             'workspace' => $this->workspaceContext(),
             'name' => $this->stringArgument('name'),
             'new_name' => $this->stringOption('name'),
+            'label' => $label,
             'command' => $this->stringOption('command'),
             'restart_policy' => $this->stringOption('restart-policy'),
             'crash_notification' => $this->stringOption('crash-notification'),

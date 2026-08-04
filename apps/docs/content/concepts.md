@@ -282,7 +282,8 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 
 <!-- concept-index:domains/7_process/process-concepts.md -->
 - **Process definition**
-- **Process identity slug**
+- **Process identity slug (`key`)**
+- **Process display label (`label`)**
 - **Process scope**
 - **Instance selector**
 - **App hostname selector**

@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
+orbit process:add [name] [process_command] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--label=<label>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
+| `name` | `[name]` | Always. | Never. | None. | Process identity slug (`key`): lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
+| `label` | `--label` / body `label` | Optional. | Never. | The process identity key (`name`) when omitted. | Trimmed non-empty string; max 255 characters. |
 | `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
 | `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
@@ -65,7 +66,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    Linux nodes and `launchd` on macOS nodes. Managed services default to
    `docker` unless their catalog entry and node platform admit another service
    runtime.
-6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
+6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, policy fields, and durable display `label` (defaulting to the identity key when omitted).
 7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both project and instance slugs.
 8. Render the derived runtime units on the resolved node or instance serving node through the selected runtime backend.
 9. Start rendered runtime units by default unless `--no-start` is present.

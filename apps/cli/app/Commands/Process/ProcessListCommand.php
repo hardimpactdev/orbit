@@ -85,9 +85,10 @@ final class ProcessListCommand extends ProcessGatewayCommand
         }
 
         table(
-            headers: ['NAME', 'SERVICE', 'VERSION', 'ENDPOINT', 'COMMAND', 'RESTART', 'TOOL', 'STATUS'],
+            headers: ['KEY', 'LABEL', 'SERVICE', 'VERSION', 'ENDPOINT', 'COMMAND', 'RESTART', 'TOOL', 'STATUS'],
             rows: array_map(fn (array $process): array => [
-                $this->processString($process, 'name'),
+                $this->processKey($process),
+                $this->processLabel($process),
                 $this->serviceString($process, 'service'),
                 $this->serviceString($process, 'version'),
                 $this->serviceEndpoint($process),
@@ -177,6 +178,30 @@ final class ProcessListCommand extends ProcessGatewayCommand
     /**
      * @param  array<string, mixed>  $process
      */
+    /**
+     * @param  array<string, mixed>  $process
+     */
+    private function processKey(array $process): string
+    {
+        $key = $process['key'] ?? $process['name'] ?? null;
+
+        return is_string($key) && $key !== '' ? $key : '—';
+    }
+
+    /**
+     * @param  array<string, mixed>  $process
+     */
+    private function processLabel(array $process): string
+    {
+        $label = $process['label'] ?? null;
+
+        if (is_string($label) && $label !== '') {
+            return $label;
+        }
+
+        return $this->processKey($process);
+    }
+
     private function processString(array $process, string $key): string
     {
         $value = $process[$key] ?? null;
