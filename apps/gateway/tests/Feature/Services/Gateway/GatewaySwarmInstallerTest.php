@@ -414,7 +414,7 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
             return Process::result();
         }
 
-        if (str_contains((string) $process->command, 'tee /etc/caddy/orbit/orbit-gateway.caddy')) {
+        if (str_contains((string) $process->command, 'orbit-gateway.caddy')) {
             $gatewayRoute = (string) $process->input;
 
             return Process::result();
@@ -481,18 +481,22 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
             'flush_interval -1',
         );
 
-    Process::assertRan('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null');
+    Process::assertRan('sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null');
     Process::assertRan(
         'sudo install -m 0600 '
         .escapeshellarg("{$this->configRoot}/certs/gateway.key")
-        ." '/etc/orbit/certs/gateway.key'",
+        .' '.escapeshellarg('/etc/orbit/certs/gateway.key'),
     );
     Process::assertRan($certReadableCommand);
     Process::assertRan($keyReadableCommand);
     Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
 
     $stackDeploy = array_search('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'", $invocations, true);
-    $routeWrite = array_search('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null', $invocations, true);
+    $routeWrite = array_search(
+        'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null',
+        $invocations,
+        true,
+    );
     $certReadable = array_search($certReadableCommand, $invocations, true);
     $keyReadable = array_search($keyReadableCommand, $invocations, true);
     $caddyReload = array_search(CaddyTool::reloadCommand('orbit-caddy'), $invocations, true);
@@ -517,6 +521,68 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         )->toBeLessThan($routeWrite)->and($routeWrite)->toBeLessThan($certReadable)->and($certReadable)->toBeLessThan(
             $keyReadable,
         )->and($keyReadable)->toBeLessThan($caddyReload);
+});
+
+it('writes router gateway leaf artifacts through ORBIT_HOST_PATH_PREFIX during update-path convergence', function (): void {
+    $hostRoot = "{$this->configRoot}/host-root";
+    $hostCertDir = "{$hostRoot}/etc/orbit/certs";
+    $hostCaddyDir = "{$hostRoot}/etc/caddy/orbit";
+    $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+    $invocations = [];
+    $gatewayRoute = null;
+
+    File::ensureDirectoryExists($hostCertDir);
+    File::ensureDirectoryExists($hostCaddyDir);
+    putenv("ORBIT_HOST_PATH_PREFIX={$hostRoot}");
+
+    Process::fake(function ($process) use (&$invocations, &$gatewayRoute) {
+        $command = (string) $process->command;
+        $invocations[] = $command;
+
+        if (str_contains($command, 'orbit-gateway.caddy')) {
+            $gatewayRoute = (string) $process->input;
+        }
+
+        return Process::result();
+    });
+
+    try {
+        new GatewaySwarmInstaller(
+            caService: new GatewaySwarmInstallerFakeCa($this->configRoot),
+        )->convergeGatewayLeafServing(
+            wireguardAddress: '10.6.0.2',
+            exposureMode: GatewayExposureMode::RouterColocated,
+        );
+    } finally {
+        $previousHostPathPrefix === false
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$previousHostPathPrefix}");
+    }
+
+    expect($gatewayRoute)
+        ->toContain('10.6.0.2 gateway.orbit :443 {')
+        ->and($gatewayRoute)
+        ->toContain('tls /etc/orbit/certs/gateway.crt /etc/orbit/certs/gateway.key');
+
+    Process::assertRan('sudo install -d -m 0755 '.escapeshellarg($hostCertDir));
+    Process::assertRan(
+        'sudo install -m 0644 '
+        .escapeshellarg("{$this->configRoot}/certs/gateway.crt")
+        .' '.escapeshellarg("{$hostCertDir}/gateway.crt"),
+    );
+    Process::assertRan(
+        'sudo install -m 0600 '
+        .escapeshellarg("{$this->configRoot}/certs/gateway.key")
+        .' '.escapeshellarg("{$hostCertDir}/gateway.key"),
+    );
+    Process::assertRan('sudo install -d -m 0755 '.escapeshellarg($hostCaddyDir));
+    Process::assertRan('sudo tee '.escapeshellarg("{$hostCaddyDir}/orbit-gateway.caddy").' > /dev/null');
+    Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));
+
+    expect($invocations)
+        ->not->toContain('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null')
+        ->and($invocations)
+        ->not->toContain('sudo install -d -m 0755 /etc/orbit/certs');
 });
 
 readonly class GatewaySwarmInstallerFakeCa extends OrbitCaService

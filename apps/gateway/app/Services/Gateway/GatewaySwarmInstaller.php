@@ -163,11 +163,16 @@ class GatewaySwarmInstaller
             );
         }
 
+        $this->runRequired(
+            'sudo install -d -m 0755 '.escapeshellarg($this->hostFsPath('/etc/caddy/orbit')),
+            'prepare router-owned gateway Caddy include directory',
+        );
         $this->runRequiredWithInput(
-            'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
+            'sudo tee '.escapeshellarg($this->hostFsPath('/etc/caddy/orbit/orbit-gateway.caddy')).' > /dev/null',
             $this->gatewayRouteRenderer->render(
                 serverNames: [$wireguardAddress, $browserHostname, ':443'],
                 wireguardCidr: $wireguardCidr,
+                // Paths inside the orbit-caddy container, not the gateway host-path mount.
                 certPath: self::GatewayCertPath,
                 keyPath: self::GatewayKeyPath,
             ),
@@ -196,15 +201,55 @@ class GatewaySwarmInstaller
      */
     private function installCaddyReadableGatewayLeaf(array $leaf): void
     {
-        $this->runRequired('sudo install -d -m 0755 /etc/orbit/certs', 'prepare Orbit Caddy certificate directory');
+        $hostCertPath = $this->hostFsPath(self::GatewayCertPath);
+        $hostKeyPath = $this->hostFsPath(self::GatewayKeyPath);
+
         $this->runRequired(
-            sprintf('sudo install -m 0644 %s %s', escapeshellarg($leaf['cert']), escapeshellarg(self::GatewayCertPath)),
+            'sudo install -d -m 0755 '.escapeshellarg(dirname($hostCertPath)),
+            'prepare Orbit Caddy certificate directory',
+        );
+        $this->runRequired(
+            sprintf('sudo install -m 0644 %s %s', escapeshellarg($leaf['cert']), escapeshellarg($hostCertPath)),
             'install gateway certificate for router-owned orbit-caddy',
         );
         $this->runRequired(
-            sprintf('sudo install -m 0600 %s %s', escapeshellarg($leaf['key']), escapeshellarg(self::GatewayKeyPath)),
+            sprintf('sudo install -m 0600 %s %s', escapeshellarg($leaf['key']), escapeshellarg($hostKeyPath)),
             'install gateway certificate key for router-owned orbit-caddy',
         );
+    }
+
+    /**
+     * Resolve a host filesystem path when the gateway API runs in the Swarm
+     * container with ORBIT_HOST_PATH_PREFIX (bind mounts of /etc/caddy and
+     * /etc/orbit). Bare-metal installers leave the prefix unset.
+     */
+    private function hostFsPath(string $absolutePath): string
+    {
+        if (! str_starts_with($absolutePath, '/')) {
+            throw new RuntimeException("Host filesystem path must be absolute: {$absolutePath}");
+        }
+
+        $prefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+        if (! is_string($prefix) || trim($prefix) === '') {
+            return $absolutePath;
+        }
+
+        $prefix = rtrim(trim($prefix), '/');
+
+        if (
+            $prefix === ''
+            || ! str_starts_with($prefix, '/')
+            || str_contains($prefix, "\0")
+            || array_any(
+                explode('/', $prefix),
+                static fn (string $segment): bool => $segment === '.' || $segment === '..',
+            )
+        ) {
+            throw new RuntimeException('Gateway host path prefix is invalid.');
+        }
+
+        return $prefix.$absolutePath;
     }
 
     private function runRequired(string $command, string $step): void

@@ -188,7 +188,7 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->toBe("gateway\ngateway.orbit\n10.6.0.2\n");
 
     Process::assertRan(function ($process): bool {
-        if ((string) $process->command !== 'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null') {
+        if ((string) $process->command !== 'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null') {
             return false;
         }
 
@@ -219,7 +219,7 @@ it('reissues incomplete gateway leaf SANs and reloads router caddy during stack 
     Process::fake(function ($process) use (&$gatewayRoute, $plan, $previousImage) {
         $command = (string) $process->command;
 
-        if (str_contains($command, 'tee /etc/caddy/orbit/orbit-gateway.caddy')) {
+        if (str_contains($command, 'orbit-gateway.caddy')) {
             $gatewayRoute = (string) $process->input;
         }
 
@@ -833,10 +833,11 @@ function gateway_service_updater_leaf_converge_commands(string $configRoot): arr
     $configRoot = rtrim($configRoot, '/');
 
     return [
-        'sudo install -d -m 0755 /etc/orbit/certs',
-        'sudo install -m 0644 '.escapeshellarg("{$configRoot}/certs/gateway.crt")." '/etc/orbit/certs/gateway.crt'",
-        'sudo install -m 0600 '.escapeshellarg("{$configRoot}/certs/gateway.key")." '/etc/orbit/certs/gateway.key'",
-        'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
+        'sudo install -d -m 0755 '.escapeshellarg('/etc/orbit/certs'),
+        'sudo install -m 0644 '.escapeshellarg("{$configRoot}/certs/gateway.crt").' '.escapeshellarg('/etc/orbit/certs/gateway.crt'),
+        'sudo install -m 0600 '.escapeshellarg("{$configRoot}/certs/gateway.key").' '.escapeshellarg('/etc/orbit/certs/gateway.key'),
+        'sudo install -d -m 0755 '.escapeshellarg('/etc/caddy/orbit'),
+        'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null',
         "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",
         "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'",
         CaddyTool::reloadCommand('orbit-caddy'),
