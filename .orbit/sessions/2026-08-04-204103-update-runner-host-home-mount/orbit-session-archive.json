@@ -1,0 +1,30 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T18:41:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/update-runner-host-home-mount/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-204103-update-runner-host-home-mount",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T183759Z-1b6183fc1680.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "loop.md": "0381126fe3975f7ec915d10d44b88bf3e4cd4d3cbf6bd65c2de203b9e31f1da6",
+        "quality-gates/quality-check-2026-08-04T183759Z-1b6183fc1680.json": "9d793cf87ef31abda77aed670ac402c98af60f8c93cbd1f537a4831649762226"
+    },
+    "slug": "update-runner-host-home-mount",
+    "requested_slug": "update-runner-host-home-mount",
+    "compatible_slugs": [
+        "update-runner-host-home-mount"
+    ],
+    "branch": "update-runner-host-home-mount",
+    "candidate_commit": "9aa5d390c977f65dd4e015798f44699add6233c5",
+    "accepted_feature_tip": "9aa5d390c977f65dd4e015798f44699add6233c5",
+    "accepted_main_tip": "9c28655780bad7217981afc3cf3210f13b04f2a0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
