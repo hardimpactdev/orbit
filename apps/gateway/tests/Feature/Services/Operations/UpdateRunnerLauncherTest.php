@@ -60,6 +60,7 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
             ->toContain("--mount 'type=bind,source=/home/orbit/.ssh,target=/root/.ssh,readonly'")
             ->toContain("--mount 'type=bind,source=/etc/caddy,target=/mnt/orbit-host/etc/caddy'")
             ->toContain("--mount 'type=bind,source=/etc/orbit,target=/mnt/orbit-host/etc/orbit'")
+            ->toContain("--mount 'type=bind,source=/home,target=/mnt/orbit-host/home,readonly'")
             ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
             ->toContain("--env 'ORBIT_HOST_PATH_PREFIX=/mnt/orbit-host'")
             ->toContain("--env 'ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated'")

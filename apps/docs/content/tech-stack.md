@@ -138,9 +138,13 @@ path prefix is present, image-local or development roots may fall back to the
 image `orbit` user.
 
 Gateway maintenance in production is containerized: migrations and update work
-run through the gateway container entrypoint or durable one-shot runner. Source
-development can still use `bin/orbit-gateway-artisan` or direct
-`php apps/gateway/artisan` from a controlled checkout for local ergonomics.
+run through the gateway container entrypoint or durable one-shot runner. The
+durable update runner must mount the same host path-prefix trees as the Swarm
+gateway service (`/etc/caddy`, `/etc/orbit`, and host `/home` under
+`ORBIT_HOST_PATH_PREFIX`) so entrypoint ownership resolution and host leaf
+install share one layout. Source development can still use
+`bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
+controlled checkout for local ergonomics.
 The public `orbit` command never dispatches to gateway Artisan. Every public
 gateway-backed or remote command uses the typed gateway HTTPS API over
 WireGuard. Local-only, pre-grants-bootstrap, and identity-gated self-management
