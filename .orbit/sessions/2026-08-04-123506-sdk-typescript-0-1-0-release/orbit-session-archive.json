@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T10:35:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-sdk-typescript-0-1-0-release/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-123506-sdk-typescript-0-1-0-release",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T103329Z-fdd4ddea353a.json"
+    ],
+    "entry_digests": {
+        "loop.md": "c0200b13f1923aa3d9c7f6d870ac771cd91544c96611203113d4c58cc7682897",
+        "quality-gates/quality-check-2026-08-04T103329Z-fdd4ddea353a.json": "12a305f0234e99506d64ff58122869be6e592b35c1594ecedcd4c56dd138d35e"
+    },
+    "slug": "sdk-typescript-0-1-0-release",
+    "requested_slug": "sdk-typescript-0-1-0-release",
+    "compatible_slugs": [
+        "sdk-typescript-0-1-0-release"
+    ],
+    "branch": "codex/sdk-typescript-0-1-0-release",
+    "candidate_commit": "88708fa15fff5467dc51d4652ce2cde9fb528a1f",
+    "accepted_feature_tip": "88708fa15fff5467dc51d4652ce2cde9fb528a1f",
+    "accepted_main_tip": "b995ad3ee5354acafc508e13e78830c01eb7aea1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
