@@ -11,7 +11,7 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to reconfigure}
         {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
-        {--password= : Auth password (OpenCode Server)}
+        {--password= : Auth password when the tool requires one}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 

@@ -249,8 +249,6 @@ final class NodePermissionPresets
             'activity:list',
             'activity:show',
 
-            // Agent IDE
-
             // Project
             'project:read',
             'project:write',

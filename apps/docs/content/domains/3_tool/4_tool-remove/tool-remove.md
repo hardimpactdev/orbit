@@ -67,8 +67,9 @@ The gateway cleans up its tool row and tool-owned configuration locally.
 Target-node cleanup uses Agent push; `tool:remove` exposes no node transport
 selector and never falls back to SSH.
 
-Tools that currently declare a related process include `hermes` (`orbit-hermes-dashboard`), `opencode-cli`
-(`opencode-server`), and `polyscope-server` (`polyscope-server`).
+Tools that currently declare a related process include `hermes` (`orbit-hermes-dashboard`).
+Removed OpenCode and PolyScope tools are accepted only as removal-only migration
+cleanup (same pattern as OpenClaw), not as active related-process product tools.
 
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.
