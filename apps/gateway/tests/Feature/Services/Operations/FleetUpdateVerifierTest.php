@@ -16,9 +16,11 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
 use App\Services\RemoteShell\RemoteShellMetadata;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -725,6 +727,7 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service update --detach=true --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
+        ...array_fill_keys(fleet_verifier_gateway_leaf_converge_commands(), Process::result()),
         fleet_verifier_gateway_stack_deploy_command() => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
@@ -739,6 +742,30 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
             output: "{$gatewayImage}\n",
         ),
     ]);
+}
+
+/**
+ * @return list<string>
+ */
+function fleet_verifier_gateway_leaf_converge_commands(): array
+{
+    $configRoot = config(key: 'orbit.paths.config_root');
+
+    if (! is_string($configRoot) || trim($configRoot) === '') {
+        throw new RuntimeException('Test config root is not configured.');
+    }
+
+    $configRoot = rtrim($configRoot, characters: '/');
+
+    return [
+        'sudo install -d -m 0755 /etc/orbit/certs',
+        'sudo install -m 0644 '.escapeshellarg("{$configRoot}/certs/gateway.crt")." '/etc/orbit/certs/gateway.crt'",
+        'sudo install -m 0600 '.escapeshellarg("{$configRoot}/certs/gateway.key")." '/etc/orbit/certs/gateway.key'",
+        'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'",
+        CaddyTool::reloadCommand('orbit-caddy'),
+    ];
 }
 
 function fleet_verifier_root_ca_subject_command(): string
@@ -868,6 +895,31 @@ readonly class FleetVerifierFakeCa extends OrbitCaService
     public function rootCert(): string
     {
         return "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
+    }
+
+    /**
+     * @param  list<string>  $additionalSans
+     * @return array{cert: string, key: string}
+     */
+    #[Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $configRoot = config(key: 'orbit.paths.config_root');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            throw new RuntimeException('Test config root is not configured.');
+        }
+
+        $certsDir = rtrim($configRoot, characters: '/').'/certs';
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$certsDir}/{$host}.crt", "issued-cert\n");
+        File::put("{$certsDir}/{$host}.key", "issued-key\n");
+        File::put("{$certsDir}/{$host}.sans", implode("\n", [$host, ...$additionalSans])."\n");
+
+        return [
+            'cert' => "{$certsDir}/{$host}.crt",
+            'key' => "{$certsDir}/{$host}.key",
+        ];
     }
 }
 

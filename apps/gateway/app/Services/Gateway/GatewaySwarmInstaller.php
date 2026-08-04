@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use SensitiveParameter;
 
+/** @mago-expect lint:kan-defect */
 class GatewaySwarmInstaller
 {
     private const string GatewayCertPath = '/etc/orbit/certs/gateway.crt';

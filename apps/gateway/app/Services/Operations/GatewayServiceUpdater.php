@@ -281,7 +281,8 @@ class GatewayServiceUpdater
 
     private function gatewayWireguardCidr(Node $gatewayNode): string
     {
-        $settings = $gatewayNode->roleAssignments
+        $settings = $gatewayNode
+            ->roleAssignments
             ->first(fn ($assignment): bool => (string) $assignment->role === 'vpn')
             ?->settings;
 
