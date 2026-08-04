@@ -1,0 +1,44 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T12:20:02+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-remove-opencode-polyscope-ade/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-142002-codex-remove-opencode-polyscope-ade",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/ade-legacy-tool-remove-retained/06-tool-remove-opencode-cli.json",
+        "evidence/ade-legacy-tool-remove-retained/07-tool-remove-polyscope-server.json",
+        "evidence/ade-legacy-tool-remove-retained/08-post-absence-host.txt",
+        "evidence/ade-legacy-tool-remove-retained/09-post-remove-inventory.json",
+        "evidence/ade-legacy-tool-remove-retained/10-post-absence-gateway-registry.json",
+        "evidence/ade-legacy-tool-remove-retained/11-topology-stop.json",
+        "evidence/ade-legacy-tool-remove-retained/12-topology-stop-host-verify.txt",
+        "evidence/ade-legacy-tool-remove-retained/PROOF-MANIFEST.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T120234Z-583348d01512.json"
+    ],
+    "entry_digests": {
+        "evidence/ade-legacy-tool-remove-retained/06-tool-remove-opencode-cli.json": "51c9d3cfabaab1a1ca07868e420314c7327f295bdc0489f1cde099064453364a",
+        "evidence/ade-legacy-tool-remove-retained/07-tool-remove-polyscope-server.json": "5564d4c9f9d5bea08ff7053e0c833c6fd9d93dc558cb75ba6fa2c4a496808bac",
+        "evidence/ade-legacy-tool-remove-retained/08-post-absence-host.txt": "cc34a857b699d0c33dda96c38ab04920d420621f353254db3033ac245f5bbdbf",
+        "evidence/ade-legacy-tool-remove-retained/09-post-remove-inventory.json": "0e3dbe106d9a337ed922d50a9b6ad42d2eb06b3c66bb81cac1e4294a437022e5",
+        "evidence/ade-legacy-tool-remove-retained/10-post-absence-gateway-registry.json": "18146090e1a8208523f3846a750f21965cafa4df26a3e2d7f97e725c44ce61e6",
+        "evidence/ade-legacy-tool-remove-retained/11-topology-stop.json": "cdefc8121c668b727d099cfdb2d735262413ed9c3913e5a2444cf3e82f34306c",
+        "evidence/ade-legacy-tool-remove-retained/12-topology-stop-host-verify.txt": "a856644c844d2f1ccdc0dc915506a2c341860425f9183c12000f7d4296f49e25",
+        "evidence/ade-legacy-tool-remove-retained/PROOF-MANIFEST.md": "28af20675d1e6987bd497503040a2d127c4154a65c09c67be1784eb24f8ec658",
+        "loop.md": "ca4dd610c39017207755892f8e744d08b0df0b99b6e7603176b05abe06e4ed23",
+        "quality-gates/quality-check-2026-08-04T120234Z-583348d01512.json": "9d84e7271f985fb5bd5a446d08ffa404fc26010bfcbe3f5c422438fa35e364b4"
+    },
+    "slug": "codex-remove-opencode-polyscope-ade",
+    "requested_slug": "codex-remove-opencode-polyscope-ade",
+    "compatible_slugs": [
+        "codex-remove-opencode-polyscope-ade"
+    ],
+    "branch": "codex/remove-opencode-polyscope-ade",
+    "candidate_commit": "03811c9180f8023616ab0013f779b7afa9223de0",
+    "accepted_feature_tip": "03811c9180f8023616ab0013f779b7afa9223de0",
+    "accepted_main_tip": "3cf92ed365a899042acb21b001563da22574dd98",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

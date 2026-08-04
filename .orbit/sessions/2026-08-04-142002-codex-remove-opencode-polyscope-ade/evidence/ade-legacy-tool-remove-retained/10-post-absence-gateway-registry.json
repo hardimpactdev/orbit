@@ -1,0 +1,17 @@
+{
+    "remaining_legacy_processes": 0,
+    "remaining_legacy_tools": 0,
+    "remaining_process_names": [
+        "valkey"
+    ],
+    "remaining_tool_names": [
+        "caddy",
+        "composer",
+        "docker",
+        "gh",
+        "git",
+        "laravel-installer",
+        "php-cli"
+    ]
+}
+GATEWAY_REGISTRY_CLEAN

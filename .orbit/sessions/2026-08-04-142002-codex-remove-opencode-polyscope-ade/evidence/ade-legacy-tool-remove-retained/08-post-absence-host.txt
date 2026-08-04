@@ -1,0 +1,25 @@
+=== POST-ABSENCE HOST PROOF ===
+OK_OPENCODE_HOME_ABSENT
+OK_OPENCODE_UNIT_ABSENT
+OK_OPENCODE_PROCESS_ABSENT
+OK_POLYSCOPE_BIN_ABSENT
+OK_POLYSCOPE_UNIT_ABSENT
+OK_POLYSCOPE_PROCESS_ABSENT
+OK_SENTINEL_SURVIVED
+non-owned sentinel keep me 2026-08-04T12:08:03Z
+-rw-r--r-- 1 agent agent 48 Aug  4 12:08 /home/agent/orbit-ade-proof-nonowned-sentinel.txt
+OK_USER_MANAGED_BIN_SURVIVED
+-rwxr-xr-x 1 agent agent 28 Aug  4 12:08 /home/agent/.local/bin/user-managed-sentinel-bin
+total 12
+drwxr-xr-x 2 agent agent 4096 Aug  4 12:09 .
+drwxr-xr-x 3 root  root  4096 Aug  4 12:08 ..
+-rwxr-xr-x 1 agent agent   28 Aug  4 12:08 user-managed-sentinel-bin
+total 28
+drwxr-x--- 3 agent agent 4096 Aug  4 12:09 .
+drwxr-xr-x 6 root  root  4096 Aug  4 12:08 ..
+-rw-r--r-- 1 agent agent  220 Feb 13 12:16 .bash_logout
+-rw-r--r-- 1 agent agent 3771 Feb 13 12:16 .bashrc
+drwxr-xr-x 3 root  root  4096 Aug  4 12:08 .local
+-rw-r--r-- 1 agent agent  807 Feb 13 12:16 .profile
+-rw-r--r-- 1 agent agent   48 Aug  4 12:08 orbit-ade-proof-nonowned-sentinel.txt
+POST_ABSENCE_HOST_OK
