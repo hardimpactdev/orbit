@@ -21,6 +21,7 @@ use Dedoc\Scramble\Support\Generator\Types\StringType;
 use Dedoc\Scramble\Support\Generator\Types\Type;
 use UnexpectedValueException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 /** @mago-expect lint:too-many-methods */
 /** @mago-expect lint:kan-defect */
 final class GatewayOpenApi
