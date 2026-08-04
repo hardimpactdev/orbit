@@ -454,7 +454,8 @@
       "operation_id": "processesStream",
       "classification": "public_sdk",
       "group": "process_stream",
-      "reason": "Browser toolbar process lifecycle SSE is public SDK surface with app-only selector, durable DB cursor, and native EventSource subscription."
+      "reason": "Browser toolbar process lifecycle SSE is public SDK surface with app-only selector, durable DB cursor, and native EventSource subscription.",
+      "follow_up": "TypeScript SDK exposes subscribeProcessStream; a dedicated PHP SDK stream client remains optional."
     },
     {
       "operation": "GET /s3/credentials",

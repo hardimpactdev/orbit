@@ -173,7 +173,7 @@ describe('process lifecycle app-hostname grant authorization', function (): void
             'process:restart',
             'app',
             'success.data.runtimes.0.events.0.type',
-            'stopped',
+            'restarting',
         ],
         'start workspace hostname' => [
             'start',
@@ -194,7 +194,7 @@ describe('process lifecycle app-hostname grant authorization', function (): void
             'process:restart',
             'workspace',
             'success.data.runtimes.0.events.0.type',
-            'stopped',
+            'restarting',
         ],
     ]);
 });

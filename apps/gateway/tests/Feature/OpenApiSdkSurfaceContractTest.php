@@ -17,13 +17,13 @@ test('gateway openapi schema-only operations are classified for sdk generation',
 
     $schemaOperations = collect(schema_operations($schema));
 
-    Assert::assertSame(170, $schemaOperations->count());
+    Assert::assertSame(171, $schemaOperations->count());
 
     $schemaOnlyOperations = $schemaOperations
         ->reject(fn (array $operation): bool => sdk_covers_operation($sdkOperations, $operation['operation']))
         ->values();
 
-    Assert::assertSame(73, $schemaOnlyOperations->count());
+    Assert::assertSame(74, $schemaOnlyOperations->count());
 
     $classifiedOperations = collect($surfaceOperations)
         ->pluck('operation')
@@ -58,7 +58,7 @@ test('gateway openapi schema-only operations are classified for sdk generation',
     Assert::assertSame([
         'internal_only' => 14,
         'deferred_optional' => 37,
-        'public_sdk' => 22,
+        'public_sdk' => 23,
     ], $classifications);
 
     $publicFollowUps = collect($surfaceOperations)

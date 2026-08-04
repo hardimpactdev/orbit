@@ -513,20 +513,20 @@ describe('ProcessStreamController', function (): void {
         ]);
 
         $createdId = null;
-        app()->instance(ProcessStreamSleeper::class, new class(
-            $process,
-            $app,
-            $instance,
-            $workspace,
-            $appNode,
-            $createdId,
-        ) implements ProcessStreamSleeper {
+        $workspaceScope = [
+            'process_id' => $process->id,
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'workspace_id' => $workspace->id,
+            'node_id' => $appNode->id,
+        ];
+        app()->instance(ProcessStreamSleeper::class, new class($workspaceScope, $createdId) implements
+            ProcessStreamSleeper {
+            /**
+             * @param  array{process_id: int, app_id: int, app_instance_id: int, workspace_id: int, node_id: int}  $workspaceScope
+             */
             public function __construct(
-                private Process $process,
-                private Project $app,
-                private AppInstance $instance,
-                private Workspace $workspace,
-                private Node $appNode,
+                private array $workspaceScope,
                 private ?int &$createdId,
             ) {}
 
@@ -538,12 +538,12 @@ describe('ProcessStreamController', function (): void {
 
                 $event = ProcessEvent::factory()->create([
                     'event' => ProcessEventType::Stopping,
-                    'process_id' => $this->process->id,
+                    'process_id' => $this->workspaceScope['process_id'],
                     'process_name' => 'vite',
-                    'app_id' => $this->app->id,
-                    'app_instance_id' => $this->instance->id,
-                    'workspace_id' => $this->workspace->id,
-                    'node_id' => $this->appNode->id,
+                    'app_id' => $this->workspaceScope['app_id'],
+                    'app_instance_id' => $this->workspaceScope['app_instance_id'],
+                    'workspace_id' => $this->workspaceScope['workspace_id'],
+                    'node_id' => $this->workspaceScope['node_id'],
                     'unit_name' => 'orbit_docs_development_feature-docs_vite',
                 ]);
                 $this->createdId = $event->id;

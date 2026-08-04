@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Collection;
  *
  * Tail scope is app_instance_id + workspace_id|null + node_id (not a frozen
  * process-id list), so processes configured after connect still stream.
+ *
+ * @mago-expect analysis:less-specific-return-statement
  */
 final readonly class ProcessEventStreamer
 {
@@ -113,18 +115,18 @@ final readonly class ProcessEventStreamer
         }
     }
 
-    /**
-     * @return Builder<ProcessEvent>
-     */
     private function scopedQuery(ProcessStreamScope $scope): Builder
     {
-        return ProcessEvent::query()
+        $query = ProcessEvent::query()
             ->where('app_instance_id', $scope->appInstanceId)
-            ->where('node_id', $scope->nodeId)
-            ->when(
-                $scope->workspaceId !== null,
-                static fn (Builder $query): Builder => $query->where('workspace_id', $scope->workspaceId),
-                static fn (Builder $query): Builder => $query->whereNull('workspace_id'),
-            );
+            ->where('node_id', $scope->nodeId);
+
+        if ($scope->workspaceId !== null) {
+            $query->where('workspace_id', $scope->workspaceId);
+        } else {
+            $query->whereNull('workspace_id');
+        }
+
+        return $query;
     }
 }

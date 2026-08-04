@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Models\AppInstance;
-use App\Models\Node;
 use App\Models\Workspace;
 use InvalidArgumentException;
 
@@ -27,17 +26,10 @@ final readonly class ProcessStreamScope
     public static function fromOwnerContext(ProcessOwnerContext $context): self
     {
         $instance = $context->appInstance;
-        $node = $context->node;
 
         if (! $instance instanceof AppInstance) {
             throw new InvalidArgumentException(
                 'Process stream requires a resolved app instance scope.',
-            );
-        }
-
-        if (! $node instanceof Node) {
-            throw new InvalidArgumentException(
-                'Process stream requires a resolved serving node scope.',
             );
         }
 
@@ -46,7 +38,7 @@ final readonly class ProcessStreamScope
         return new self(
             appInstanceId: $instance->id,
             workspaceId: $workspace instanceof Workspace ? $workspace->id : null,
-            nodeId: $node->id,
+            nodeId: $context->node->id,
         );
     }
 }

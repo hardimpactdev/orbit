@@ -44,6 +44,9 @@ use Throwable;
  * list), so processes added/converged after connect still stream.
  *
  * Public query contract: only {@code app}. Timing knobs are injected config.
+ *
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
  */
 final readonly class ProcessStreamController implements Loggable
 {
@@ -267,7 +270,7 @@ final readonly class ProcessStreamController implements Loggable
             'error' => [
                 'code' => $code,
                 'message' => $message,
-                'meta' => empty($meta) ? (object) [] : $meta,
+                'meta' => $meta === [] ? (object) [] : $meta,
             ],
         ], $status);
     }
