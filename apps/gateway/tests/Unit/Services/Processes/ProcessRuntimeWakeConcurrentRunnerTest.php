@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use App\Services\Processes\ProcessRuntimeWakeConcurrentRunner;
+use Carbon\CarbonInterval;
+use Closure;
+use Illuminate\Contracts\Concurrency\Driver as ConcurrencyDriver;
+use Illuminate\Support\Defer\DeferredCallback;
 use Illuminate\Support\Facades\Concurrency;
 use Tests\Support\RuntimeWakeProcessConcurrencyProbe;
 use Tests\TestCase;
@@ -68,17 +72,27 @@ it('fails closed without re-running tasks when the process pool throws', functio
     file_put_contents($startedPath, '0');
 
     $runner = new ProcessRuntimeWakeConcurrentRunner(forceSequential: false);
+    $throwingDriver = new class implements ConcurrencyDriver {
+        public bool $runCalled = false;
+
+        public function run(Closure|array $tasks, CarbonInterval|int|null $timeout = null): array
+        {
+            $this->runCalled = true;
+
+            throw new RuntimeException('pool failure');
+        }
+
+        public function defer(Closure|array $tasks): DeferredCallback
+        {
+            throw new RuntimeException('defer is unused in wake process-pool failure coverage.');
+        }
+    };
 
     Concurrency::partialMock()
         ->shouldReceive('driver')
         ->once()
         ->with('process')
-        ->andReturn(new class {
-            public function run(mixed $tasks): array
-            {
-                throw new RuntimeException('pool failure');
-            }
-        });
+        ->andReturn($throwingDriver);
 
     $results = $runner->run([
         'a' => static function () use ($startedPath): bool {
@@ -93,7 +107,9 @@ it('fails closed without re-running tasks when the process pool throws', functio
         },
     ]);
 
-    expect($results)
+    expect($throwingDriver->runCalled)
+        ->toBeTrue()
+        ->and($results)
         ->toBe(['a' => false, 'b' => false])
         ->and(file_get_contents($startedPath))
         ->toBe('0');
