@@ -14,7 +14,16 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalDockerContainerAction
 {
-    private const array ACTIONS = ['apply', 'ensure-network', 'is-active', 'probe', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = [
+        'apply',
+        'ensure-network',
+        'is-active',
+        'probe',
+        'remove',
+        'restart',
+        'start',
+        'stop',
+    ];
 
     public function __construct(
         private LocalDockerCommandContext $docker,
