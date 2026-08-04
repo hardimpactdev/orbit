@@ -63,6 +63,38 @@ function processKeyLabelFixture(array $processAttributes = []): array
     return compact('caller', 'appNode', 'app', 'instance', 'process');
 }
 
+/**
+ * Parse SSE `event: update` frames into decoded JSON data payloads, in stream order.
+ *
+ * @return list<array<string, mixed>>
+ */
+function processStreamUpdateDataFrames(string $content): array
+{
+    $frames = [];
+    $blocks = preg_split("/\n\n+/", trim($content)) ?: [];
+
+    foreach ($blocks as $block) {
+        if (! str_contains($block, "event: update\n") && ! str_starts_with($block, "event: update\r\n")) {
+            continue;
+        }
+
+        if (! preg_match('/^data:\s*(.+)$/m', $block, $matches)) {
+            continue;
+        }
+
+        $decoded = json_decode($matches[1], associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (! is_array($decoded)) {
+            continue;
+        }
+
+        /** @var array<string, mixed> $decoded */
+        $frames[] = $decoded;
+    }
+
+    return $frames;
+}
+
 describe('process key and label contract', function (): void {
     it('defaults new process label to key/name when label is omitted', function (): void {
         $fixture = processKeyLabelFixture();
@@ -299,15 +331,34 @@ describe('process key and label contract', function (): void {
             ->toContain('"label":"Vite Dev Server"')
             ->toContain("event: update\n");
 
-        // Matching key carries current label.
-        expect($content)->toContain('"event":"stopping"');
-        expect($content)->toMatch('/"event":"stopping"[^\\n]*"key":"vite"/s');
+        $updateFrames = processStreamUpdateDataFrames($content);
 
-        // After rename, durable old key falls back to key for label (not Frontend After Rename).
-        expect($content)
-            ->toContain('"event":"stopped"')
-            ->toContain('"key":"vite"')
-            ->not->toContain('"label":"Frontend After Rename"');
+        expect($updateFrames)->toHaveCount(2);
+
+        $matchingUpdate = $updateFrames[0];
+        $staleKeyUpdate = $updateFrames[1];
+
+        // Matching key carries the current custom label for that process.
+        expect($matchingUpdate)
+            ->toMatchArray([
+                'event' => 'stopping',
+                'key' => 'vite',
+                'name' => 'vite',
+                'label' => 'Vite Dev Server',
+            ]);
+
+        // After rename, durable old key falls back to the key for label
+        // (never the renamed process's current label).
+        expect($staleKeyUpdate)
+            ->toMatchArray([
+                'event' => 'stopped',
+                'key' => 'vite',
+                'name' => 'vite',
+                'label' => 'vite',
+            ])
+            ->and($staleKeyUpdate['label'] ?? null)
+            ->not->toBe('Frontend After Rename')->and($staleKeyUpdate['label'] ?? null)
+            ->not->toBe('Vite Dev Server');
     });
 
     it('rejects empty and overlong labels on create and update', function (): void {
