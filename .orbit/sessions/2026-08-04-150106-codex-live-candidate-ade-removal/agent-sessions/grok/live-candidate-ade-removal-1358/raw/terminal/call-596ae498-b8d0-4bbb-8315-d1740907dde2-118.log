@@ -1,0 +1,25 @@
+state set to land
+PASS: .orbit/loop.md compact feature loop is ready for finalization
+LINT_EXIT=0
+FINALIZATION: BLOCKED git repository context overrides are not accepted at the landing boundary; run the wrapper from the target checkout so one linked local branch can be verified
+
+Orbit finalization gate blocked this merge/cleanup boundary.
+
+Subject: merge
+Reason: git repository context overrides are not accepted at the landing boundary; run the wrapper from the target checkout so one linked local branch can be verified
+
+Before landing, complete the compact `.orbit/loop.md` Proof and Status: exact
+diff-routed verification, one independent review PASS, accepted venue and
+actor, exact accepted feature HEAD, and the actual current main tip. Commit,
+ignore, or remove every nonignored worktree file so the accepted HEAD is the
+tested surface. Resolve any merge-preview conflict and repeat affected proof
+and acceptance.
+
+Before cleanup, run `bin/orbit-session-archive`. A compact archive requires
+`loop.md` plus its schema-v2 receipt; historical/full archives retain their
+manifest compatibility.
+
+Dry-run the packet shape first with:
+bin/orbit-feature-finalization-check --lint <worktree>/.orbit/loop.md
+
+Then rerun the same git command.

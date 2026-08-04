@@ -17,7 +17,6 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('COPY apps/gateway/app /srv/orbit/apps/gateway/app')
         ->toContain('COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css')
         ->toContain('COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js')
-        ->toContain('COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts')
         ->toContain('COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views')
         ->toContain('COPY bin/install-orbit /srv/orbit/bin/install-orbit')
         ->toContain('COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway')
@@ -48,6 +47,7 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('HEALTHCHECK')
         ->not->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
         ->not->toContain('COPY packages/core /srv/orbit/packages/core')
+        ->not->toContain('apps/gateway/resources/node-scripts')
         ->not->toContain('artifact-catalog.build.json')
         ->not->toContain('static-php-cli-')
         ->not->toContain('pcov-1.0.12-config-m4')
@@ -56,6 +56,31 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->not->toContain('COPY --from=composer')
         ->not->toContain('COPY --from=docker')
         ->not->toContain('VOLUME ["/opt/orbit"]');
+});
+
+it('requires every host-context orbit-gateway Dockerfile COPY source path to exist on disk', function (): void {
+    $dockerfile = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+    $sources = orbit_gateway_host_context_copy_sources($dockerfile);
+    $missing = [];
+
+    // Non-vacuous: parser must see real host-context COPY sources, not an empty list.
+    expect($sources)
+        ->not
+        ->toBeEmpty()
+        ->toContain('apps/gateway/app')
+        ->toContain('VERSION');
+
+    foreach ($sources as $source) {
+        $absolute = repo_path($source);
+
+        if (is_file($absolute) || is_dir($absolute)) {
+            continue;
+        }
+
+        $missing[] = $source;
+    }
+
+    expect($missing)->toBeEmpty();
 });
 
 it('keeps the orbit gateway image build context free of host secrets and generated state', function (): void {
@@ -85,8 +110,72 @@ it('keeps the orbit gateway image build context free of host secrets and generat
         )->toContain('**/builds')
         ->not->toContain('!apps/gateway/**')
         ->not->toContain('!apps/reverb/**')
-        ->not->toContain('!packages/core/**')->toContain('!docker/orbit-gateway/**');
+        ->not->toContain('!packages/core/**')->toContain('!docker/orbit-gateway/**')
+        ->not->toContain('node-scripts');
 });
+
+/**
+ * Host-context COPY sources (not COPY --from= stage copies) from a Dockerfile body.
+ *
+ * @return list<string>
+ */
+function orbit_gateway_host_context_copy_sources(string $dockerfile): array
+{
+    $sources = [];
+
+    $lines = preg_split('/\R/', $dockerfile);
+
+    if ($lines === false) {
+        return [];
+    }
+
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+
+        if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+            continue;
+        }
+
+        if (! preg_match('/^COPY\s+(.+)$/', $trimmed, $matches)) {
+            continue;
+        }
+
+        $remainder = $matches[1];
+
+        if (str_contains($remainder, '--from=')) {
+            continue;
+        }
+
+        $tokens = preg_split('/\s+/', $remainder);
+
+        if ($tokens === false) {
+            continue;
+        }
+
+        $pathTokens = [];
+
+        foreach ($tokens as $token) {
+            if (str_starts_with($token, '--')) {
+                continue;
+            }
+
+            $pathTokens[] = $token;
+        }
+
+        if (count($pathTokens) < 2) {
+            continue;
+        }
+
+        // Destination is the last token; every prior token is a build-context source.
+        array_pop($pathTokens);
+
+        foreach ($pathTokens as $source) {
+            $sources[] = $source;
+        }
+    }
+
+    return $sources;
+}
 
 it('packages the Reverb runtime as a self-contained image', function (): void {
     $dockerfile = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile'));

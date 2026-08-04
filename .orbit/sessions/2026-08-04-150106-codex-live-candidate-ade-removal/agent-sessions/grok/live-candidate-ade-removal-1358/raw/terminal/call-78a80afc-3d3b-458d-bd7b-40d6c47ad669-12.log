@@ -1,0 +1,20 @@
+total 16
+drwxr-xr-x@   6 nckrtl  staff   192 Aug  4 14:20 .
+drwx------@ 205 nckrtl  staff  6560 Aug  4 14:20 ..
+drwxr-xr-x@   3 nckrtl  staff    96 Aug  4 14:20 evidence
+-rw-r--r--@   1 nckrtl  staff  3722 Aug  4 14:20 loop.md
+-rw-r--r--@   1 nckrtl  staff  3126 Aug  4 14:20 orbit-session-archive.json
+drwxr-xr-x@   3 nckrtl  staff    96 Aug  4 14:20 quality-gates
+20260803T013010Z-dd45e0770
+20260803T023227Z-baa9bc25b
+20260803T030544Z-fb85e3ad5
+20260803T035521Z-ea31c0e6e
+20260803T042502Z-07896e875
+20260803T124509Z-62df57824
+20260803T204110Z-fc199f1df
+20260804T052051Z-106cb613f
+20260804T100145Z-b995ad3ee
+latest
+DOCKER_OK
+/usr/local/bin/orbctl
+Running

@@ -1,0 +1,323 @@
+[]
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:6:    $dockerfile = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-7-
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-8-    expect($dockerfile)
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:13:            'COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/',
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-14-        )
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:15:        ->toContain('COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-16-        ->toContain('composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:17:        ->toContain('COPY apps/gateway/app /srv/orbit/apps/gateway/app')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:18:        ->toContain('COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:19:        ->toContain('COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:20:        ->toContain('COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:21:        ->toContain('COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:22:        ->toContain('COPY bin/install-orbit /srv/orbit/bin/install-orbit')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:23:        ->toContain('COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-24-        ->toContain('chmod 755 /srv/orbit/bin/install-orbit')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:25:        ->toContain('COPY packages/core/src /srv/orbit/packages/core/src')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-26-        // Runtime php-cli catalog required by gateway tool install/update/doctor paths.
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-27-        ->toContain(
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:28:            'COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json',
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-29-        )
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-30-        ->toContain('rm -f bootstrap/cache/*.php')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:47:        ->toContain('COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-48-        ->toContain('HEALTHCHECK')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:49:        ->not->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:50:        ->not->toContain('COPY packages/core /srv/orbit/packages/core')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-51-        ->not->toContain('artifact-catalog.build.json')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-52-        ->not->toContain('static-php-cli-')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:54:        ->not->toContain('COPY apps/gateway /app')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:55:        ->not->toContain('COPY apps/reverb')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:56:        ->not->toContain('COPY --from=composer')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:57:        ->not->toContain('COPY --from=docker')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-58-        ->not->toContain('VOLUME ["/opt/orbit"]');
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-59-});
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:62:    $dockerignore = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-63-
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:64:    expect($dockerignore)
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-65-        ->toContain('**/.env')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-66-        ->toContain('**/.env.*')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:92:    $dockerfile = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:93:    $dockerignore = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile.dockerignore'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-94-
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-95-    expect($dockerfile)
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:96:        ->toContain('COPY apps/reverb /app')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-97-        ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-98-        ->toContain('LABEL orbit.websocket.self_contained="true"')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:100:        ->and($dockerignore)
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-101-        ->toContain('!apps/reverb/**')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-102-        ->toContain('**/vendor')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:107:    $dockerfile = file_get_contents(repo_path('docker/orbit-frankenphp/Dockerfile'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-108-
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-109-    expect($dockerfile)
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:119:        ->toContain('COPY --from=sqlite /opt/sqlite /usr/local')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-120-        ->toContain('ENV LD_LIBRARY_PATH=/usr/local/lib')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-121-        ->toContain('ldconfig')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:125:        ->toContain('COPY --from=node /usr/local/bin/node /usr/local/bin/node')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:126:        ->toContain('COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-127-        ->toContain('apt-get install -y --no-install-recommends chromium')
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-128-        ->toContain('ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium')
+--
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:143:    $caddyfile = file_get_contents(repo_path('docker/orbit-gateway/Caddyfile'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:144:    $entrypoint = file_get_contents(repo_path('docker/orbit-gateway/entrypoint.sh'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:145:    $healthcheck = file_get_contents(repo_path('docker/orbit-gateway/healthcheck.sh'));
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-146-
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php-147-    expect($caddyfile)
+--
+apps/gateway/tests/Feature/Release/GatewayImageWorkflowTest.php:6:    $workflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
+apps/gateway/tests/Feature/Release/GatewayImageWorkflowTest.php-7-
+apps/gateway/tests/Feature/Release/GatewayImageWorkflowTest.php-8-    expect($workflow)
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:92:        escapeshellarg(repo_path('bin/orbit-php-cli-catalog-handoff')),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-93-        escapeshellarg($manifestDir),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-94-    );
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:148:        (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-149-        true,
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-150-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:158:        escapeshellarg(repo_path('bin/orbit-php-cli-catalog-handoff')),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-159-        escapeshellarg($manifestDir),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-160-    );
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:262:        (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-263-        true,
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-264-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:282:        (string) file_get_contents(repo_path(PhpCliArtifactCatalog::DEFAULT_CATALOG_RELATIVE_PATH)),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-283-        true,
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-284-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:296:        escapeshellarg(repo_path('bin/orbit-php-cli-catalog-handoff')),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-297-        escapeshellarg($manifestDir),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-298-    );
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:319:        (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-320-        true,
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-321-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:338:        (string) file_get_contents(repo_path(PhpCliArtifactCatalog::DEFAULT_CATALOG_RELATIVE_PATH)),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-339-        true,
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-340-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php:360:        escapeshellarg(repo_path('bin/orbit-php-cli-catalog-handoff')),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-361-        escapeshellarg($manifestDir),
+apps/gateway/tests/Feature/Release/OrbitPhpCliCatalogHandoffTest.php-362-    );
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeWorkflowTest.php:6:    $workflowPath = repo_path('.github/workflows/orbit-php-cli-runtime.yml');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeWorkflowTest.php-7-    expect($workflowPath)->toBeFile();
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeWorkflowTest.php-8-
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:24:            repo_path('bin/orbit-release-manifest'),
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-25-            '--version=1.2.3',
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-26-            '--released-at=2026-06-17T13:08:41Z',
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:37:        ], repo_path());
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-38-        $process->run();
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-39-
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:101:            repo_path('bin/orbit-release-manifest'),
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-102-            '--version=1.2.3',
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-103-            '--source=topology-candidate',
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:115:        ], repo_path());
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-116-        $process->run();
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-117-
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:162:        repo_path('bin/orbit-release-manifest'),
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-163-        '--version=1.2.3',
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-164-        '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3',
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:167:    ], repo_path());
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-168-    $process->run();
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-169-
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:183:            repo_path('bin/orbit-release-manifest'),
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-184-            '--version=1.2.3',
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-185-            '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', times: 64),
+--
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php:189:        ], repo_path());
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-190-        $process->run();
+apps/gateway/tests/Feature/Release/ReleaseManifestGeneratorTest.php-191-
+--
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php:6:    $scriptPath = repo_path('bin/orbit-build-cli-binary');
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php-7-
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php-8-    expect($scriptPath)->toBeFile();
+--
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php:26:    $scriptPath = repo_path('bin/orbit-build-cli-binary');
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php-27-
+apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php-28-    expect($scriptPath)->toBeFile();
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:12:        repo_path('bin/orbit-prepare-release-package'),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-13-        "--package={$package}",
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-14-        "--version={$version}",
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:16:    ], repo_path());
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-17-    $process->run();
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-18-
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:23:    $workflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-24-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-25-    expect($workflow)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:88:    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-89-    /** @var array<string, mixed> $sourcePackage */
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-90-    $sourcePackage = json_decode(
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:91:        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-92-        true,
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-93-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:106:        repo_path('packages/sdk-typescript/.github/workflows/publish.yml'),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-107-    );
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-108-
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:141:        repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-142-    );
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-143-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:144:    expect(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'))
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-145-        ->toBeFile()
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:146:        ->and(is_executable(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh')))
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-147-        ->toBeTrue()
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-148-        ->and($registryGuard)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:159:    $rootWorkflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-160-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-161-    expect($rootWorkflow)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:169:    $script = repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh');
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-170-    $mockRoot = sys_get_temp_dir().'/orbit-npm-bootstrap-mock-'.bin2hex(random_bytes(6));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-171-    $mockBin = $mockRoot.'/bin';
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:263:    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-264-    /** @var array<string, mixed> $sourcePackage */
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-265-    $sourcePackage = json_decode(
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:266:        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-267-        true,
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-268-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:285:        ->and(is_dir($output.'/node_modules'))
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-286-        ->toBeFalse();
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-287-
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:316:    $sourcePackageJson = (string) file_get_contents(repo_path('packages/sdk-typescript/package.json'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:317:    $helper = (string) file_get_contents(repo_path('bin/orbit-prepare-release-package'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-318-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-319-    expect($sourcePackageJson)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:333:    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-334-    /** @var array<string, mixed> $sourcePackage */
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-335-    $sourcePackage = json_decode(
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:336:        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-337-        true,
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-338-        flags: JSON_THROW_ON_ERROR,
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:372:        repo_path('bin/orbit-prepare-release-package'),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-373-        '--package=sdk-typescript',
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-374-        '--version=9.9.9',
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:376:    ], repo_path());
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-377-    $process->run();
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-378-
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:385:    if (is_dir($output)) {
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-386-        File::deleteDirectory($output);
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-387-    }
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:391:    $binaryWorkflow = file_get_contents(repo_path('.github/workflows/orbit-cli-binary.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:392:    $releaseWorkflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-393-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-394-    expect($binaryWorkflow)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:416:    $version = trim((string) file_get_contents(repo_path('VERSION')));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:417:    $cliConfig = file_get_contents(repo_path('apps/cli/config/app.php'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:418:    $gatewayConfig = file_get_contents(repo_path('apps/gateway/config/app.php'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:419:    $gatewayWorkflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:420:    $binaryWorkflow = file_get_contents(repo_path('.github/workflows/orbit-cli-binary.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-421-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-422-    expect($version)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:426:        ->and(repo_path('bin/orbit-version'))
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-427-        ->toBeFile()
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-428-        ->and($cliConfig)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:440:    $composer = json_decode((string) file_get_contents(repo_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-441-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-442-    $binaryScript = implode("\n", $composer['scripts']['test:e2e:binary']);
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:467:        file_get_contents(repo_path('apps/docs/content/tech-stack.md')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:468:        file_get_contents(repo_path('apps/docs/content/domains/1_node/README.md')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:469:        file_get_contents(repo_path('apps/docs/content/domains/1_node/node-concepts.md')),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-470-    ];
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-471-
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:480:it('keeps gateway image build hygiene covered by dockerignore in the gateway image workflow', function (): void {
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:481:    $workflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:482:    $dockerignore = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-483-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-484-    expect($workflow)
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:486:        ->toContain('docker/orbit-gateway/Dockerfile.dockerignore');
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-487-
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:488:    expect($dockerignore)
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-489-        ->toContain('**/.env')
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-490-        ->toContain('**/vendor')
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:527:    $skippedDirectory = repo_path(
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-528-        'apps/gateway/storage/framework/testing/release-package-unreadable-'.bin2hex(random_bytes(6)),
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-529-    );
+--
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php:538:        if (is_dir($skippedDirectory)) {
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-539-            chmod($skippedDirectory, 0700);
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php-540-            File::deleteDirectory($skippedDirectory);
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:8:    $scriptPath = repo_path('bin/orbit-build-php-cli-runtime');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:9:    $patchPath = repo_path('packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-static.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:10:    $handoffPath = repo_path('bin/orbit-php-cli-catalog-handoff');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-11-    $buildCatalog = PhpCliArtifactCatalog::loadBuild();
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-12-    $runtimeCatalog = PhpCliArtifactCatalog::load();
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:24:    $sourcePathPatchPath = repo_path('packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-source-path.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:25:    $configM4PatchPath = repo_path('packages/core/resources/php-cli/pcov-1.0.12-config-m4-php-version.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-26-    expect($sourcePathPatchPath)->toBeFile()->and($configM4PatchPath)->toBeFile();
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-27-    $sourcePathPatch = file_get_contents($sourcePathPatchPath);
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:52:        )->toContain('extension_loaded("pcov")')->toContain('function_exists("pcov\\\\start")')->toContain(
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-53-            'ldd',
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-54-        )->toContain('statically linked')->toContain('pcov.so')->toContain(
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:171:        ->and(array_key_exists('path', $beforeSource['pcov']))
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-172-        ->toBeFalse();
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-173-
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:174:    $staticPatch = repo_path('packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-static.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:175:    $pathPatch = repo_path('packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-source-path.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-176-
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-177-    exec(
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:244:    $patchPath = repo_path('packages/core/resources/php-cli/pcov-1.0.12-config-m4-php-version.patch');
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-245-    $expectedPatchSha = 'c8aa7d1496e437549cbb13a5df734f83b26b59545eeb436184957e20db089951';
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-246-    $expectedUpstreamSha = '23255c8c9335a9636ccb743f5302436a97a582a0bbde9869485be911bbc15da8';
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:348:    $script = file_get_contents(repo_path('bin/orbit-build-php-cli-runtime'));
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-349-
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-350-    expect($script)
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:356:    $catalogPath = repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH);
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-357-    $buildCatalog = PhpCliArtifactCatalog::loadBuild();
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-358-
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:383:        escapeshellarg(repo_path('.')),
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-384-        escapeshellarg($catalogPath),
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-385-    );
+--
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php:407:    $script = file_get_contents(repo_path('bin/orbit-php-cli-catalog-handoff'));
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-408-
+apps/gateway/tests/Feature/Release/OrbitPhpCliRuntimeBuildScriptTest.php-409-    expect($script)

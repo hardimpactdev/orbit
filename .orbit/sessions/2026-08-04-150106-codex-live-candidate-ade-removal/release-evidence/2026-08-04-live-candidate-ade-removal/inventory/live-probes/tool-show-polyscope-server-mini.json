@@ -1,0 +1,1 @@
+{"error":{"code":"tool.unsupported_on_node","message":"Tool 'polyscope-server' does not support node 'mini' platform.","meta":{"tool":"polyscope-server","node":"mini","platform":"darwin","supported_operating_systems":["linux"]}}}

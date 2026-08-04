@@ -1,0 +1,1 @@
+{"error":{"code":"tool.unsupported_on_node","message":"Tool 'opencode-cli' does not support node 'NMBP' platform.","meta":{"tool":"opencode-cli","node":"NMBP","platform":"macos_26-5-1","supported_operating_systems":["linux"]}}}

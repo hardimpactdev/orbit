@@ -1,0 +1,1 @@
+{"error":{"code":"validation_failed","message":"Invalid value for --node: 'agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1'. Expected a visible tool node name.","meta":{"field":"node","value":"agent\nservices1\nbeast\nmini\nNMBP\nmain1\ndatabase1\ngateway\ningress1"}}}

@@ -1,0 +1,1 @@
+{"success":{"data":{"tools":[{"name":"docker","node":"services1","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"seaweedfs","node":"services1","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]}]},"meta":[]}}

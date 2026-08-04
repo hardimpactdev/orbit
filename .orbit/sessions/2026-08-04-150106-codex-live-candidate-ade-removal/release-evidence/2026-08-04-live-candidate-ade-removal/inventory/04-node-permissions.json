@@ -1,0 +1,1 @@
+{"error":{"code":"validation_failed","message":"Both consuming_node and serving_node are required.","meta":{"fields":["consuming_node","serving_node"]}}}

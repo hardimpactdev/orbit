@@ -1,0 +1,292 @@
+{
+  "healthy": false,
+  "summary": {
+    "issues": 13,
+    "fixed": 0,
+    "adopted": 0,
+    "skipped": 0,
+    "conflicts": 0,
+    "failed": 0,
+    "planned": 0
+  },
+  "issue_count": 13,
+  "issues": [
+    {
+      "node": "NMBP",
+      "family": "process",
+      "code": "process.remote_shell_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor process probe failed on node 'NMBP': Remote local executor transport failed: cURL error 52: Empty reply from server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'NMBP': Remote local executor transport failed: cURL error 7: Failed to connect to 10.6.0.3 port 9477 after 15 ms: Couldn't connect to server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process prometheus endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Docker runtime backend is unavailable for process prometheus on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process grafana endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Docker runtime backend is unavailable for process grafana on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.wireguard_self_route_unavailable",
+      "disposition": "runtime_incident",
+      "kind": "unverifiable",
+      "summary": "Process node-exporter endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "systemd runtime backend is unavailable for process node-exporter on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "process",
+      "code": "process.runtime_backend_unavailable",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Managed process runtime inventory could not be scanned on node gateway."
+    },
+    {
+      "node": "gateway",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'gateway': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+    },
+    {
+      "node": "gateway",
+      "family": "tool",
+      "code": "tool.capability_missing",
+      "disposition": "genuine_drift",
+      "kind": "missing",
+      "summary": "Tool docker is missing on the target node."
+    },
+    {
+      "node": "gateway",
+      "family": "tool",
+      "code": "tool.capability_missing",
+      "disposition": "genuine_drift",
+      "kind": "missing",
+      "summary": "Tool node-exporter is missing on the target node."
+    },
+    {
+      "node": "ingress1",
+      "family": "proxy",
+      "code": "proxy.node_probe_failed",
+      "disposition": "blocked_inspection",
+      "kind": "unverifiable",
+      "summary": "Doctor proxy probe failed on node 'ingress1': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+    }
+  ],
+  "nodes": [
+    {
+      "node": "NMBP",
+      "healthy": false,
+      "summary": {
+        "issues": 2,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 2,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "agent",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "beast",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "database1",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "gateway",
+      "healthy": false,
+      "summary": {
+        "issues": 10,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 2,
+          "blocked_inspection": 5,
+          "invalid_intent": 0,
+          "runtime_incident": 3
+        }
+      }
+    },
+    {
+      "node": "ingress1",
+      "healthy": false,
+      "summary": {
+        "issues": 1,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 1,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "main1",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "mini",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    },
+    {
+      "node": "services1",
+      "healthy": true,
+      "summary": {
+        "issues": 0,
+        "fixed": 0,
+        "adopted": 0,
+        "skipped": 0,
+        "conflicts": 0,
+        "failed": 0,
+        "planned": 0,
+        "dispositions": {
+          "genuine_drift": 0,
+          "blocked_inspection": 0,
+          "invalid_intent": 0,
+          "runtime_incident": 0
+        }
+      }
+    }
+  ]
+}

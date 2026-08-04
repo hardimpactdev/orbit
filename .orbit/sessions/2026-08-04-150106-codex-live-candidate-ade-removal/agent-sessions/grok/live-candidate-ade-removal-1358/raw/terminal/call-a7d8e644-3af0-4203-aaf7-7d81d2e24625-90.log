@@ -1,0 +1,54 @@
+## codex/live-candidate-ade-removal
+d749df13d939dcfafae664b030c2e3114811d580
+0.1.190
+apps/e2e/mago-analyzer-baseline.toml:682:file = "app/E2E/Support/E2EArtifactBuildFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:684:message = 'Invalid return type for function `App\E2E\Support\E2EArtifactBuildFingerprint::forPaths`: expected `non-empty-string`, but found `string`.'
+apps/e2e/mago-analyzer-baseline.toml:838:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:844:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:850:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:856:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:862:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:868:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/mago-analyzer-baseline.toml:874:file = "app/E2E/Support/E2EProvisionFingerprint.php"
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:8:use App\E2E\Support\E2EProvisionFingerprint;
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:22:        $before = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:34:        $after = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:54:        $before = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:78:        $after = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:98:        $before = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:111:        $after = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:131:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:135:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:149:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:156:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:170:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:174:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:188:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:192:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:210:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:214:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:230:        $before = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:236:        $baseChanged = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:241:        $dagChanged = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:262:        $before = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:267:        $after = E2EProvisionFingerprint::fromRoot(
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:289:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:300:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:315:        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php:319:        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php:8:use App\E2E\Support\E2EArtifactBuildFingerprint;
+apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php:315:            new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir, E2EArtifactBuildFingerprint::cliBinary());
+apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php:330:            $fingerprint = $timer->measure('gateway-artifacts.local.cli-fingerprint', fn (): string => E2EArtifactBuildFingerprint::cliBinary());
+apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php:388:                E2EArtifactBuildFingerprint::gatewayImage(),
+apps/e2e/app/Console/Commands/E2EPrepareTopologyCommand.php:394:                E2EArtifactBuildFingerprint::webSocketImage(),
+E2E
+Feature
+Helpers
+Pest.php
+TestCase.php
+bootstrap.php
+Binary
+Commands
+E2ESupport
+HarnessBootTest.php
+Topology

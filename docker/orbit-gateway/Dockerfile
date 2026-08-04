@@ -61,7 +61,6 @@ COPY apps/gateway/database /srv/orbit/apps/gateway/database
 COPY apps/gateway/public /srv/orbit/apps/gateway/public
 COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
 COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
-COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
 COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
 COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
 COPY bin/install-orbit /srv/orbit/bin/install-orbit

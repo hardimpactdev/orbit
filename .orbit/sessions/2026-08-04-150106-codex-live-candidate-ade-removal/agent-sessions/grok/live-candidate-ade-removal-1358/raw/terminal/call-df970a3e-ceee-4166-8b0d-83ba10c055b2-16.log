@@ -1,0 +1,20 @@
+WORKTREE=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+codex/live-candidate-ade-removal
+## codex/live-candidate-ade-removal
+0.1.190
+origin_ls_remote=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+WORKTREE_IDENTITY_OK
+EVIDENCE=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal
+2026-08-04T12:37:23Z
+worktree=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+branch=codex/live-candidate-ade-removal
+HEAD=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+VERSION=0.1.190
+origin/main=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+total 16
+drwxr-xr-x@ 4 nckrtl  staff  128 Aug  4 14:37 .
+drwxr-xr-x@ 3 nckrtl  staff   96 Aug  4 14:37 ..
+-rw-r--r--@ 1 nckrtl  staff   21 Aug  4 14:37 00-start-timestamp.txt
+-rw-r--r--@ 1 nckrtl  staff  228 Aug  4 14:37 01-source-identity.txt

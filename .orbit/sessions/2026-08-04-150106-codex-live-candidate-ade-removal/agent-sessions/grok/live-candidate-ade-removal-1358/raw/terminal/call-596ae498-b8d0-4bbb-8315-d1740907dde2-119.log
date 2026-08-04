@@ -1,0 +1,68 @@
+Usage:
+  bin/orbit-session-archive [--archive-dir=<path> | --slug=<slug>] [--full] [agent session options]
+
+Options:
+  --source-orbit-dir=<path>     Active .orbit directory to archive. Defaults to <cwd>/.orbit.
+  --archive-dir=<path>          Exact destination session archive directory. Its basename must
+                                match ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$.
+  --archive-root=<path>         Root directory for generated archives. Defaults to the primary checkout's .orbit/sessions.
+  --slug=<slug>                 Short feature slug when --archive-dir is omitted. Defaults to the
+                                current branch name sanitized to kebab-case.
+  --timestamp=<value>           Timestamp prefix when --archive-dir is omitted. Defaults to current local time as YYYY-MM-DD-HHMMSS.
+  --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
+  --full                       Preserve the complete active .orbit state and provider captures.
+                               The default archive is compact: loop.md, feedback.jsonl when present,
+                               evidence/quality-gate files cited as exact inline-code paths, and a
+                               versioned archive receipt.
+
+In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
+  --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
+  --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
+  --max-start-distance, --only-ok.
+
+The active <source-orbit-dir>/loop.md is required. When an existing compact
+schema-v2 archive already has matching content identity (byte-identical
+loop.md and/or matching receipt entry_digests for loop.md), that archive is
+refreshed in place instead of minting a near-duplicate directory — including
+when the caller's slug differs from the archive basename. The existing valid
+archive path is never renamed or removed until the replacement payload has
+fully validated and swapped. Cleanup discoverability for branch-derived
+slugs is preserved via receipt branch/compatible_slugs metadata, not by
+pre-success rename. Compact loop.md files stay byte-stable; the versioned
+receipt records the archive. Historical loop packets retain their Evidence
+Links write-back behavior.
+
+In --full mode, if no explicit provider process context is supplied, this command scans
+<source-orbit-dir>/loop.md for Solo process ids and passes them as a
+comma-separated --solo-process-id list. Without discovered process ids,
+agent session archiving safely writes an empty manifest and a WARNING is
+printed naming the missing context. Discovered process ids that cannot
+be resolved do not abort the archive: each one is reported with a
+WARNING and recorded in the agent-sessions manifest with status
+solo_process_not_found, and the archive completes normally.6:require_once __DIR__.'/orbit-session-archive-filesystem.php';
+48:    'full',
+55:          bin/orbit-session-archive [--archive-dir=<path> | --slug=<slug>] [--full] [agent session options]
+66:          --full                       Preserve the complete active .orbit state and provider captures.
+71:        In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
+82:        fully validated and swapped. Cleanup discoverability for branch-derived
+88:        In --full mode, if no explicit provider process context is supplied, this command scans
+190:$loopDiscoveryAttempted = $archiveMode === 'full' && shouldDiscoverLoopProcessIds($options);
+205:    $copiedEntries = $archiveMode === 'full'
+217:    if ($archiveMode === 'full') {
+267:        'agent_sessions_dir' => $archiveMode === 'full' ? "{$archiveDir}/agent-sessions" : null,
+281:    writeJsonFile("{$temporaryArchiveDir}/orbit-session-archive.json", $summary);
+339:        if ($entry->isDot() || $entry->getFilename() === 'orbit-session-archive.json') {
+468:            'Compact archive requires an accepted compact feature loop; use --full for historical state.',
+556:        if ($relative === 'orbit-session-archive.json') {
+678:    // Same-slug refresh: any archive with matching content (including full/legacy
+804: * the active loop. Compatible slug variants reuse one archive in place; full and
+864:    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+1091:    if (array_key_exists('full', $options)) {
+1092:        return 'full';
+1099:    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+1104:        if (is_array($receipt) && ($receipt['archive_mode'] ?? null) === 'full') {
+1105:            return 'full';
+1109:    return is_dir("{$archiveDir}/agent-sessions") ? 'full' : 'compact';
+1387:        __DIR__.'/orbit-agent-session-archive',
+1464:    $stderrPath = tempnam(sys_get_temp_dir(), 'orbit-session-archive-stderr-');
+1655:    foreach (['usage.json', 'messages.jsonl'] as $filename) {

@@ -1,0 +1,99 @@
+## codex/live-candidate-ade-removal
+HEAD=8ae06ade95405b5c08eccbc6056d74ee1f5b334a
+Quality gate final check
+Artifact directory: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates
+
+Analyzer report:
+Quality gate analyzer
+Artifact directory: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates
+
+recent run: gate=quality-check duration=63.0s exit=0 mode=check branch=codex/live-candidate-ade-removal commit=8ae06ade95405b5c08eccbc6056d74ee1f5b334a ended_at=2026-08-04T12:56:36Z
+subgate duration: agent_cargo_check=0.1s
+subgate duration: agent_cargo_clippy=0.2s
+subgate duration: agent_cargo_fmt=0.3s
+subgate duration: agent_cargo_test=1.8s
+subgate duration: cli_mago_analyze=1.9s
+subgate duration: cli_mago_format=0.2s
+subgate duration: cli_mago_lint=0.2s
+subgate duration: cli_pest=38.0s
+subgate duration: cli_rector=1.3s
+subgate duration: core_mago_analyze=0.7s
+subgate duration: core_mago_format=0.1s
+subgate duration: core_mago_lint=0.1s
+subgate duration: core_pest=1.0s
+subgate duration: core_rector=0.3s
+subgate duration: docs_lint=4.3s
+subgate duration: docs_mago_analyze=1.3s
+subgate duration: docs_mago_format=0.2s
+subgate duration: docs_mago_lint=0.1s
+subgate duration: docs_pest=12.1s
+subgate duration: docs_rector=0.4s
+subgate duration: docs_references=1.4s
+subgate duration: docs_testing=4.6s
+subgate duration: e2e_mago_analyze=1.4s
+subgate duration: e2e_mago_format=0.2s
+subgate duration: e2e_mago_lint=0.1s
+subgate duration: e2e_rector=2.6s
+subgate duration: gateway_mago_analyze=2.5s
+subgate duration: gateway_mago_format=0.6s
+subgate duration: gateway_mago_lint=0.3s
+subgate duration: gateway_pest=60.7s
+subgate duration: gateway_rector=8.5s
+subgate duration: macos_cargo_check=0.9s
+subgate duration: macos_cargo_clippy=1.0s
+subgate duration: macos_cargo_fmt=0.1s
+subgate duration: macos_cargo_test=1.8s
+subgate duration: reverb_mago_analyze=2.3s
+subgate duration: reverb_mago_format=0.1s
+subgate duration: reverb_mago_lint=0.1s
+subgate duration: sdk_mago_analyze=0.8s
+subgate duration: sdk_mago_format=0.1s
+subgate duration: sdk_mago_lint=0.1s
+subgate duration: sdk_pest=0.3s
+subgate duration: sdk_rector=0.4s
+subgate duration: sdk_typescript_build=0.5s
+subgate duration: sdk_typescript_typecheck=0.6s
+warning: gate [quality-check] duration 63.0s exceeds local baseline 26.0s (warning-only)
+warning: subgate [quality-check:cli_pest] duration 38.0s exceeds local baseline 23.1s (warning-only)
+warning: subgate [quality-check:docs_pest] duration 12.1s exceeds local baseline 6.4s (warning-only)
+warning: subgate [quality-check:gateway_pest] duration 60.7s exceeds local baseline 19.2s (warning-only)
+timing triage: .agents/skills/quality-gate-triage/SKILL.md
+
+Analyzer did not rerun quality-check or E2E lanes.
+
+Final-check warnings:
+- warning: gate [quality-check] duration 63.0s exceeds local baseline 26.0s (warning-only)
+- warning: subgate [quality-check:cli_pest] duration 38.0s exceeds local baseline 23.1s (warning-only)
+- warning: subgate [quality-check:docs_pest] duration 12.1s exceeds local baseline 6.4s (warning-only)
+- warning: subgate [quality-check:gateway_pest] duration 60.7s exceeds local baseline 19.2s (warning-only)
+
+Final check did not rerun quality-check or E2E lanes.
+FINAL_CHECK_EXIT=0
+status=READY_FOR_RE_REVIEW
+feature_head=8ae06ade95405b5c08eccbc6056d74ee1f5b334a
+parent_commit=d749df13d939dcfafae664b030c2e3114811d580
+branch=codex/live-candidate-ade-removal
+worktree=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+VERSION=0.1.190
+dirty=0
+no_merge=true
+no_push=true
+no_candidate_rebuild=true
+no_composer_test_e2e=true
+focused_gateway=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/13-review-fix-gateway-image-tests.txt
+focused_e2e_support=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/13-review-fix-e2e-support-tests.txt
+quality_check=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/14-quality-check-review-fix.txt
+final_check=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/15-quality-gate-final-check-review-fix.txt
+8ae06ade9 Drop stale node-scripts fingerprint paths and harden COPY test
+d749df13d Remove stale gateway Docker node-scripts packaging
+8ae06ade9 Drop stale node-scripts fingerprint paths and harden COPY test
+ apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php              |  1 -
+ apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php                  |  1 -
+ apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php |  9 +++++++++
+ apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php  | 10 +++++++++-
+ 4 files changed, 18 insertions(+), 3 deletions(-)
+./apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:50:        ->not->toContain('apps/gateway/resources/node-scripts')
+./apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:114:        ->not->toContain('node-scripts');
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:16:it('does not fingerprint the removed gateway node-scripts packaging path', function (): void {
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:21:        ->not->toContain('apps/gateway/resources/node-scripts')->and($provision)
+./apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php:22:        ->not->toContain('apps/gateway/resources/node-scripts');

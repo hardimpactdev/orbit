@@ -1,0 +1,11 @@
+{"success":{"data":{"action":"show","default_node":null},"meta":[]}}
+===== node=agent services1 beast mini NMBP main1 database1 gateway ingress1 =====
+tools=0 names=[]
+processes keys sample: ['error']
+=== tool:show opencode-cli --node=agent services1 beast mini NMBP main1 database1 gateway ingress1 --live ===
+{"error":{"code":"validation_failed","message":"Invalid value for --node: 'agent services1 beast mini NMBP main1 database1 gateway ingress1'. Expected a visible tool node name.","meta":{"field":"node","value":"agent services1 beast mini NMBP main1 database1 gateway ingress1"}}}
+
+=== tool:show polyscope-server --node=agent services1 beast mini NMBP main1 database1 gateway ingress1 --live ===
+{"error":{"code":"validation_failed","message":"Invalid value for --node: 'agent services1 beast mini NMBP main1 database1 gateway ingress1'. Expected a visible tool node name.","meta":{"field":"node","value":"agent services1 beast mini NMBP main1 database1 gateway ingress1"}}}
+
+PER_NODE_DONE

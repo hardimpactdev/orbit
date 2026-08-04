@@ -1,0 +1,114 @@
++ activity-list-command-audit-format              33595273a Fix proxy doctor route health checks
+  activity-list-hide-internal-remote-shell        90bc5a1b8 Hide internal remote shell activity
+  agent-beast-install                             f66db5bc7 Fix macOS workload update path
+  agent-binary-argv-transport                     7db7c6a7e Add agent binary argv transport
+  agent-command-transport-envelope                d395ef838 Add agent push transport proof
+  agent-default-node-transport                    f9af0e63e Fix fleet CLI verification on macOS
++ agent-macos-embedded-runtime                    f66db5bc7 Fix macOS workload update path
+  agent-transport-hardening                       81357874c Archive agent transport hardening session
+  app-runtime-config                              03ade7ab1 Merge branch 'main' into app-runtime-config
++ archive-integrity-hardening                     2fc46bc8a Merge branch 'session-index-replay-corrections'
+  audit/docs-drift                                b8adadc83 docs: add s3 router plan
+  codex-address-solo-todos                        11f8f3562 Fix streamed tool update transport header
+  codex-address-solo-todos-rc-clean               57c133024 [behind 669] Fix local executor environment option types
+  codex-agent-push-cwd-env                        2b753eba0 Fix agent-push runtime context
++ codex-live-drift-release                        62df57824 [behind 47] Archive codex-finish-live-drift session after land
+  codex-release-0-1-180-agent-macos-rc            f66db5bc7 Fix macOS workload update path
++ codex/activation-logo-animation-preview         6dbcbd2d0 Add activation page favicon
+  codex/agent-cli-tools                           1be95e1c4 Merge branch 'fix-session-archive-messages'
+  codex/agent-transport-push-only-perf            b682fb3dc Allow agent push version proof tokens
+  codex/agent-transport-streaming-cleanup         1f81fe201 [behind 718] Fix operation event SQLite lock retries
+/Users/nckrtl/orbit                                                        a9fb5932d [main]
+/Users/nckrtl/.codex/worktrees/a75b/orbit                                  4c7fef113 (detached HEAD)
+/Users/nckrtl/.codex/worktrees/d1cb/orbit                                  a3ee576ec (detached HEAD)
+/Users/nckrtl/auto-research/projects/orbit/worktrees/e2e-docker-speed      ff82fe78b [research/auto/e2e-docker-speed]
+/Users/nckrtl/Documents/Codex/2026-07-23/on/work/orbit-gateway-compat      1719bde61 (detached HEAD)
+/Users/nckrtl/orbit/.worktrees/activity-list-command-audit-format          33595273a [activity-list-command-audit-format]
+/Users/nckrtl/orbit/.worktrees/agent-macos-embedded-runtime                f66db5bc7 [agent-macos-embedded-runtime]
+/Users/nckrtl/orbit/.worktrees/archive-integrity-hardening                 2fc46bc8a [archive-integrity-hardening]
+/Users/nckrtl/orbit/.worktrees/codex-activation-logo-animation-preview     6dbcbd2d0 [codex/activation-logo-animation-preview]
+/Users/nckrtl/orbit/.worktrees/codex-analytics-live-candidate              410ad96f9 [codex/analytics-live-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-apple-leaf-live-candidate             8b950b843 [codex/apple-leaf-live-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-cli-install-owner-user                100a5261d [codex/cli-install-owner-user]
+/Users/nckrtl/orbit/.worktrees/codex-codex-thread-commands                 a40506455 [codex/codex-thread-commands]
+/Users/nckrtl/orbit/.worktrees/codex-deploy-run-progress-renderer          d731f99ff [codex/deploy-run-progress-renderer]
+/Users/nckrtl/orbit/.worktrees/codex-dns-resolve-diagnostics               051539b6e [codex/dns-resolve-diagnostics]
+/Users/nckrtl/orbit/.worktrees/codex-doctor-drift-hardening                65bd9e7e7 [codex/doctor-drift-hardening]
+/Users/nckrtl/orbit/.worktrees/codex-fix-app-instance-proxy-route          a65fbe327 [codex/fix-app-instance-proxy-route]
+/Users/nckrtl/orbit/.worktrees/codex-fix-codex-worktree-identity           bd354fae2 [codex/fix-codex-worktree-identity]
+/Users/nckrtl/orbit/.worktrees/codex-fix-ingress-custom-proxy              f0cf91ffd [codex/fix-ingress-custom-proxy]
+/Users/nckrtl/orbit/.worktrees/codex-fix-nmbp-proxy-runtime-restore        dc10c5351 [codex/fix-nmbp-proxy-runtime-restore]
+/Users/nckrtl/orbit/.worktrees/codex-fix-production-env-path               cbe646aed [codex/fix-production-env-path]
+/Users/nckrtl/orbit/.worktrees/codex-fix-production-proxy-enactment        ea02b043b [codex/fix-production-proxy-enactment]
+/Users/nckrtl/orbit/.worktrees/codex-fix-production-runtime-proxy          8da4d45c3 [codex/fix-production-runtime-proxy]
+/Users/nckrtl/orbit/.worktrees/codex-fix-quality-check                     c0aad25ee [codex/fix-quality-check]
+/Users/nckrtl/orbit/.worktrees/codex-gateway-deploy-migrations             d34bcd3a1 [codex/gateway-deploy-migrations]
+/Users/nckrtl/orbit/.worktrees/codex-hermes-credential-refresh             d2f3bdba4 [codex/hermes-credential-refresh]
+/Users/nckrtl/orbit/.worktrees/codex-hermes-managed-dashboard              4ef1aee14 [codex/hermes-managed-dashboard]
+/Users/nckrtl/orbit/.worktrees/codex-instance-runtime-mounts               8ec60518f [codex/instance-runtime-mounts]
+/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal            8ae06ade9 [codex/live-candidate-ade-removal]
+/Users/nckrtl/orbit/.worktrees/codex-live-candidate-runtime-proxy          ea28132f2 [codex/live-candidate-runtime-proxy]
+/Users/nckrtl/orbit/.worktrees/codex-live-drift-release                    62df57824 [codex-live-drift-release]
+/Users/nckrtl/orbit/.worktrees/codex-live-rc-main-651bb7f74                651bb7f74 [codex/live-rc-main-651bb7f74]
+/Users/nckrtl/orbit/.worktrees/codex-live-topology-intent                  496f895cd [codex/live-topology-intent]
+/Users/nckrtl/orbit/.worktrees/codex-mig04-removals-agent-push             1c1c58302 [codex/mig04-removals-agent-push]
+/Users/nckrtl/orbit/.worktrees/codex-mig04-runtime-agent-push              1c1c58302 [codex/mig04-runtime-agent-push]
+/Users/nckrtl/orbit/.worktrees/codex-mig04-schedule-agent-push             b891f6663 [codex/mig04-schedule-agent-push]
+/Users/nckrtl/orbit/.worktrees/codex-mig04-tools-agent-push                d428ad583 [codex/mig04-tools-agent-push]
+/Users/nckrtl/orbit/.worktrees/codex-openclaw-default-port                 3a40b2b24 [codex/openclaw-default-port]
+/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb   bb453ea4d [codex/operations-websocket-gateway-reverb]
+/Users/nckrtl/orbit/.worktrees/codex-php-free-agent-update                 692c73f65 [codex/php-free-agent-update]
+/Users/nckrtl/orbit/.worktrees/codex-process-managed-service-binds         d1fa6bed5 [codex/process-managed-service-binds]
+/Users/nckrtl/orbit/.worktrees/codex-process-sse-sdk                       a9fb5932d [codex/process-sse-sdk]
+/Users/nckrtl/orbit/.worktrees/codex-production-env-attachments            194994db3 [codex/production-env-attachments]
+/Users/nckrtl/orbit/.worktrees/codex-release-0-1-181-candidate             aad81d976 [codex/release-0-1-181-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-release-0-1-182-candidate             5428d9758 [codex/release-0-1-182-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-release-0-1-183-candidate             2840f45e6 [codex/release-0-1-185-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-release-0-1-189-build                 f8d23c641 [codex/release-0-1-189-build]
+/Users/nckrtl/orbit/.worktrees/codex-release-0-1-190-live-candidate        b0641b619 [codex/release-0-1-190-live-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-release-candidate-727d                727d2486b [codex/release-candidate-727d]
+/Users/nckrtl/orbit/.worktrees/codex-release-candidate-launchd-cold-start  9cb9d8187 [codex/release-candidate-launchd-cold-start]
+/Users/nckrtl/orbit/.worktrees/codex-release-candidate-live-20260716       678590166 [codex/release-candidate-live-20260716]
+/Users/nckrtl/orbit/.worktrees/codex-release-live-candidate-284b1192       284b11926 [codex/release-live-candidate-284b1192]
+/Users/nckrtl/orbit/.worktrees/codex-remove-agent-ide                      278aa889f [codex/remove-agent-ide]
+/Users/nckrtl/orbit/.worktrees/codex-runtime-activation-background-poll    ac766f4be [codex/runtime-activation-background-poll]
+/Users/nckrtl/orbit/.worktrees/codex-runtime-file-mounts                   0c0de11df [codex/runtime-file-mounts]
+/Users/nckrtl/orbit/.worktrees/codex-sdk-typescript-0-1-0-release          88708fa15 [codex/sdk-typescript-0-1-0-release]
+/Users/nckrtl/orbit/.worktrees/codex-services1-bootstrap-updater           ff39519d9 [codex/services1-bootstrap-updater]
+/Users/nckrtl/orbit/.worktrees/codex-toolbar-process-app-api               226b03d8c [codex/toolbar-process-app-api]
+/Users/nckrtl/orbit/.worktrees/codex-workspace-instance-live-candidate     a6c392554 [codex/workspace-instance-live-candidate]
+/Users/nckrtl/orbit/.worktrees/codex-workspace-setup-steps-app-instance    cffe6158a [codex/workspace-setup-steps-app-instance]
+/Users/nckrtl/orbit/.worktrees/docs-drift-remediation                      4136cac3f [docs-drift-remediation]
+/Users/nckrtl/orbit/.worktrees/fix-lifecycle-shell-exports                 db8dc5eaf [fix-lifecycle-shell-exports]
+/Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering           8a59d498e [fix-quality-check-macos-rendering]
+/Users/nckrtl/orbit/.worktrees/fix-version-release-metadata                7909781e4 [fix-version-release-metadata]
+/Users/nckrtl/orbit/.worktrees/gateway-pest-app-relative-paths             2fc46bc8a [gateway-pest-app-relative-paths]
+/Users/nckrtl/orbit/.worktrees/live-repaint-decoration-permission          2fc46bc8a [live-repaint-decoration-permission]
+/Users/nckrtl/orbit/.worktrees/php-tool-install-versions                   e89405d39 [php-tool-install-versions]
+/Users/nckrtl/orbit/.worktrees/release-deploy-no-e2e-guidance              e89405d39 [release-deploy-no-e2e-guidance]
+/Users/nckrtl/orbit/.worktrees/release-live-0-1-190                        b46b3c1de [release-live-0-1-190]
+/Users/nckrtl/orbit/.worktrees/release-live-0-1-190-agent-transport        5bf9906dd [release-live-0-1-190-agent-transport]
+/Users/nckrtl/orbit/.worktrees/vpn-dns-forwarding-reboot-repair            afd55769f [vpn-dns-forwarding-reboot-repair]
+/Users/nckrtl/orbit/.worktrees/workspace-external-adapter-path             e02366265 [workspace-external-adapter-path]
+FINALIZATION: BLOCKED git merge requires exactly one merge head naming a linked local branch; found 3
+
+Orbit finalization gate blocked this merge/cleanup boundary.
+
+Subject: merge
+Reason: git merge requires exactly one merge head naming a linked local branch; found 3
+
+Before landing, complete the compact `.orbit/loop.md` Proof and Status: exact
+diff-routed verification, one independent review PASS, accepted venue and
+actor, exact accepted feature HEAD, and the actual current main tip. Commit,
+ignore, or remove every nonignored worktree file so the accepted HEAD is the
+tested surface. Resolve any merge-preview conflict and repeat affected proof
+and acceptance.
+
+Before cleanup, run `bin/orbit-session-archive`. A compact archive requires
+`loop.md` plus its schema-v2 receipt; historical/full archives retain their
+manifest compatibility.
+
+Dry-run the packet shape first with:
+bin/orbit-feature-finalization-check --lint <worktree>/.orbit/loop.md
+
+Then rerun the same git command.

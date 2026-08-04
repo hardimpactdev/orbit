@@ -1,0 +1,1 @@
+{"success":{"data":{"node":{"name":"database1","tld":"db1","status":"active","platform":"ubuntu","roles":[{"role":"database","status":"active","settings":[],"last_error":null,"converged_at":"2026-06-15T07:09:05.000000Z"}],"addresses":{"wireguard":"10.6.0.4"},"agent_ide":{"adapter":null,"source":"default"},"grants":{"consuming_nodes":[],"serving_nodes":[]}}},"meta":[]}}

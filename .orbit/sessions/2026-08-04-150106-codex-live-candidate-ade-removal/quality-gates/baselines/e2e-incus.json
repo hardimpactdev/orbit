@@ -1,0 +1,8 @@
+{
+    "schema_version": 1,
+    "gate": "e2e-incus",
+    "duration_seconds": 355,
+    "warning_threshold_percent": 25,
+    "source_artifact": "e2e-incus-2026-06-24T100324Z-755a5f0b9611.json",
+    "updated_at": "2026-06-24T10:03:24Z"
+}
