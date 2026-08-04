@@ -1992,42 +1992,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                instance: {
-                                    [key: string]: unknown;
-                                };
-                                agent_ide: {
-                                    adapter: string | null;
-                                    source: string;
-                                    effective_adapter: string | null;
-                                };
-                                cleanup: {
-                                    workspaces_removed: string[];
-                                };
-                                action: string;
-                                previous_adapter: string | null;
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "instance.not_found";
-                            message: string;
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             422: components["responses"]["ValidationException"];
@@ -2328,6 +2293,17 @@ export interface operations {
                         error: {
                             /** @constant */
                             code: "validation_failed";
+                            /** @constant */
+                            message: "The instance selector must be a string.";
+                            meta: {
+                                /** @constant */
+                                field: "instance";
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
                             message: string;
                             meta: {
                                 field: string | "unknown";
@@ -2488,31 +2464,24 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                project: {
-                                    name: string;
-                                    node: string;
-                                    url: string;
-                                    path: string;
-                                    root: string;
-                                    repository: string | null;
-                                    runtime: string;
-                                    runtime_config: {
-                                        proxy_transport: string;
-                                    };
-                                    php_version: string;
-                                    adopted: boolean;
-                                };
+                                project: string;
+                                instances: string[];
                                 result: {
                                     /** @constant */
                                     action: "removed";
                                 };
                                 cleanup: {
-                                    proxy_routes_removed: number;
-                                    workspaces_removed: number;
-                                    schedules_removed: number;
-                                    processes_removed: number;
-                                    runtime_container_removed: string;
-                                    runtime_config_removed: string;
+                                    aggregate: {
+                                        instances_removed: number;
+                                        proxy_routes_removed: number;
+                                        workspaces_removed: number;
+                                        schedules_removed: number;
+                                        processes_removed: string;
+                                        runtime_containers_removed: number;
+                                        runtime_configs_removed: number;
+                                        paths_removed: number;
+                                    };
+                                    instances: string;
                                 };
                             };
                             meta: {
@@ -4810,15 +4779,11 @@ export interface operations {
                                     grants: {
                                         consuming_nodes: {
                                             name: string;
-                                            permissions: [
-                                                "*"
-                                            ] | unknown[];
+                                            permissions: unknown[];
                                         }[];
                                         serving_nodes: {
                                             name: string;
-                                            permissions: [
-                                                "*"
-                                            ] | unknown[];
+                                            permissions: unknown[];
                                         }[];
                                     };
                                 };
@@ -5459,6 +5424,8 @@ export interface operations {
     processList: {
         parameters: {
             query?: {
+                /** @description Strict app-instance or workspace hostname (no scheme/path/port) resolved via exact proxy_routes.domain. Mutually exclusive with node, instance, and workspace. */
+                app?: string;
                 /** @description Filter processes by node name. */
                 node?: string;
                 /** @description Filter processes by project.instance selector. */
@@ -5472,6 +5439,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Process definitions with concrete status for a node, instance, workspace, or app hostname context. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5482,15 +5450,39 @@ export interface operations {
                             data: {
                                 context: {
                                     node: string;
-                                    project: string;
-                                    instance: string;
-                                    workspace: string;
+                                    project?: string | null;
+                                    instance?: string | null;
+                                    workspace?: string | null;
                                 };
-                                processes: unknown[];
+                                processes: {
+                                    node: string;
+                                    project?: string | null;
+                                    instance?: string | null;
+                                    workspace?: string | null;
+                                    name: string;
+                                    command?: string | null;
+                                    restart_policy?: string;
+                                    crash_notification?: string;
+                                    runtime?: string;
+                                    tool?: string | null;
+                                    service?: Record<string, never> | null;
+                                    runtime_unit: string;
+                                    /**
+                                     * @description Concrete runtime status derived from durable process lifecycle events: running, stopped, crashed, or unknown.
+                                     * @enum {string}
+                                     */
+                                    status: "running" | "stopped" | "crashed" | "unknown";
+                                    last_event?: {
+                                        id: number;
+                                        type: string;
+                                    } | null;
+                                }[];
                             };
-                            meta: string;
+                            meta: {
+                                [key: string]: unknown;
+                            };
                         };
-                    } | string;
+                    };
                 };
             };
             403: {
@@ -5627,14 +5619,52 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Process lifecycle target selectors and optional process name. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace. */
+                    app?: string;
+                    /** @description Owning node name. */
+                    node?: string;
+                    /** @description Project.instance selector. */
+                    instance?: string;
+                    /** @description Workspace name. */
+                    workspace?: string;
+                    /** @description Optional process name. Omit to act on all processes in the context. */
+                    name?: string;
+                };
+            };
+        };
         responses: {
+            /** @description Process lifecycle result with durable events when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        success: {
+                            data: {
+                                runtimes: {
+                                    process: string;
+                                    node: string;
+                                    project?: string | null;
+                                    instance?: string | null;
+                                    workspace?: string | null;
+                                    runtime_unit: string;
+                                    state: string;
+                                    event?: {
+                                        id: number;
+                                        type: string;
+                                    } | null;
+                                }[];
+                            };
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
                 };
             };
         };
@@ -5646,14 +5676,52 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Process lifecycle target selectors and optional process name. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace. */
+                    app?: string;
+                    /** @description Owning node name. */
+                    node?: string;
+                    /** @description Project.instance selector. */
+                    instance?: string;
+                    /** @description Workspace name. */
+                    workspace?: string;
+                    /** @description Optional process name. Omit to act on all processes in the context. */
+                    name?: string;
+                };
+            };
+        };
         responses: {
+            /** @description Process lifecycle result with durable events when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        success: {
+                            data: {
+                                runtimes: {
+                                    process: string;
+                                    node: string;
+                                    project?: string | null;
+                                    instance?: string | null;
+                                    workspace?: string | null;
+                                    runtime_unit: string;
+                                    state: string;
+                                    event?: {
+                                        id: number;
+                                        type: string;
+                                    } | null;
+                                }[];
+                            };
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
                 };
             };
         };
@@ -5665,14 +5733,52 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Process lifecycle target selectors and optional process name. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace. */
+                    app?: string;
+                    /** @description Owning node name. */
+                    node?: string;
+                    /** @description Project.instance selector. */
+                    instance?: string;
+                    /** @description Workspace name. */
+                    workspace?: string;
+                    /** @description Optional process name. Omit to act on all processes in the context. */
+                    name?: string;
+                };
+            };
+        };
         responses: {
+            /** @description Process lifecycle result with durable events when the backend action succeeds. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        success: {
+                            data: {
+                                runtimes: {
+                                    process: string;
+                                    node: string;
+                                    project?: string | null;
+                                    instance?: string | null;
+                                    workspace?: string | null;
+                                    runtime_unit: string;
+                                    state: string;
+                                    event?: {
+                                        id: number;
+                                        type: string;
+                                    } | null;
+                                }[];
+                            };
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
                 };
             };
         };
@@ -5715,7 +5821,7 @@ export interface operations {
                                         trusted_by_gateway_ca: boolean;
                                     };
                                     /** @constant */
-                                    status: "removed_with_drift";
+                                    status: "removed";
                                     /** @constant */
                                     placement: "ingress";
                                     router: {
@@ -5731,17 +5837,10 @@ export interface operations {
                             meta: {
                                 backend_removed: boolean;
                                 tls_removed: boolean;
-                                warnings: [
-                                    {
-                                        /** @constant */
-                                        code: "proxy.cleanup_deferred";
-                                        /** @constant */
-                                        family: "proxy";
-                                        /** @constant */
-                                        message: "Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode.";
-                                        next_command: string;
-                                    }
-                                ];
+                                /** @enum {string} */
+                                removal_reason: "orphan_owner" | "custom";
+                                warnings: string[];
+                                owner_type: string;
                             };
                         };
                     } | string;

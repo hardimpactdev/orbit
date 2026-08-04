@@ -21,6 +21,24 @@ These terms define how process definitions are identified, scoped, and ordered.
   process commands. A bare project slug is shorthand only when the project has
   exactly one instance. If it has more than one, resolution fails with
   `validation_failed`, `field=instance`, and `reason=instance_required`.
+- **App hostname selector:** Hostname target accepted as the `app` query or body
+  key (CLI `--app`) for process list and lifecycle actions. The value is an
+  app-instance hostname or workspace hostname resolved against the gateway
+  proxy registry with exact registered proxy-route domain precedence so custom domains
+  work. An app-owned route resolves the concrete `AppInstance`; a
+  workspace-owned route resolves that workspace and its `AppInstance`. The
+  selector key is `app` only; `url` is never accepted. `app` is mutually
+  exclusive with `node`, `instance`, and `workspace` target modes (the existing
+  `instance`+`workspace` pairing remains valid only for those two keys).
+- **Browser process CORS admission:** For browser process list/lifecycle calls
+  that send `Origin`, the gateway admits only a registered app/workspace proxy
+  domain Origin that matches the requested `app` hostname and uses a default
+  scheme/port tuple (`http` with no port or `:80`, `https` with no port or
+  `:443`). Non-default ports are distinct browser origins and are rejected.
+  CORS never authenticates the caller. CLI, TypeScript SDK, and browser clients
+  share one auth model: actual WireGuard peer source IP, then grant, permission,
+  and target-node authorization. Clients send no bearer token and no peer-IP
+  identity header.
 - **Canonical project identity:** Instance and workspace process identities and
   JSON include both the logical `project` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
@@ -166,9 +184,18 @@ These terms define per-process behavioral rules that apply to every derived runt
 These terms define the durable lifecycle records that process commands produce and consume.
 
 - **Process event:** Durable lifecycle history record. `started` and `stopped`
-  events are recorded by successful gateway service lifecycle actions.
-  `crashed` events are recorded when the runtime hook on the node reports an
-  exit.
+  events are recorded by successful gateway service lifecycle actions,
+  including ordinary creation paths that start runtime units (for example
+  `process:add --start` / API create with start). `crashed` events are recorded
+  when the runtime hook on the node reports an exit. Gateway lifecycle event
+  history is the authoritative process runtime state for list and toolbar
+  consumers; list does not live-probe nodes.
+- **Process status:** Concrete normalized runtime status property on process
+  list items derived from the latest durable lifecycle event for that process
+  and runtime context. Allowed values are `running` (latest event `started`),
+  `stopped` (latest event `stopped`), `crashed` (latest event `crashed`), and
+  `unknown` when no durable event exists yet (rows without a recorded event).
+  Compatible `last_event` fields remain present when an event exists.
 - **Crash event:** A process event emitted by the runtime hooks that Orbit
   manages on nodes, for definitions whose crash-notification policy is
   enabled. Carries a stable event id, runtime unit name, exit code, exit status,
@@ -179,7 +206,7 @@ These terms define the durable lifecycle records that process commands produce a
 These terms define what the process family owns and what remains outside its scope.
 
 - **Process-family boundaries:** Process commands own process definitions,
-  optional node/instance/workspace scope, optional tool dependency, runtime backend,
+  optional node/instance/workspace/`app` hostname scope, optional tool dependency, runtime backend,
   runtime configuration, command or image configuration, environment, ports,
   volumes, restart policy, lifecycle commands, logs, crash notification policy,
   runtime unit derivation, runtime unit environment, and lifecycle event

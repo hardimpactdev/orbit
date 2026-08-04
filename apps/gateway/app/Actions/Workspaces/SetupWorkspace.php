@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
+use App\Actions\Processes\RecordProcessEvent;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\ProcessEventType;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
@@ -48,6 +50,7 @@ final readonly class SetupWorkspace
         private LaravelViteDevServerEnvironment $vite,
         private WorkspacePlacement $placement,
         private WorkspaceStepPolicyService $stepPolicy,
+        private RecordProcessEvent $recordProcessEvent,
         private WorkspaceEnvInitializer $envInitializer,
     ) {}
 
@@ -374,6 +377,15 @@ final readonly class SetupWorkspace
                     'names' => [],
                 ];
             }
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Started,
+                $context->eventApp(),
+                $runtimeWorkspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
 
             $names[] = $process->name;
         }

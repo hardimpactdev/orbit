@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Actions\Processes\RecordProcessEvent;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -398,6 +400,15 @@ class MetricsRoleBaseline implements RoleBaseline
         if (! $driver->start($node, $runtimeUnit)) {
             throw new RuntimeException("Metrics process runtime unit '{$runtimeUnit}' could not be started.");
         }
+
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Started,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
     }
 
     private function applyManagedFiles(Node $node, Process $process): bool

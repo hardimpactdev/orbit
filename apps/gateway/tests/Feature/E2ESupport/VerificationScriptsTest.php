@@ -716,7 +716,8 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         'apps/macos=4',
         'packages/core=5',
         'packages/sdk=5',
-        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,apps/macos,packages/core,packages/sdk',
+        'packages/sdk-typescript=2',
+        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,apps/macos,packages/core,packages/sdk,packages/sdk-typescript',
         'failed=apps/gateway',
     ]);
 });

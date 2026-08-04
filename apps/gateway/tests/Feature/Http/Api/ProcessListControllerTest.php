@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
+use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -142,6 +143,7 @@ describe('ProcessListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.context.instance', 'development')
+            ->assertJsonPath('success.data.processes.0.status', 'running')
             ->assertJsonPath('success.data.processes.0.last_event.id', $developmentEvent->id)
             ->assertJsonPath('success.data.processes.0.last_event.type', 'started');
     });
@@ -191,6 +193,7 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.processes.0.name', 'vite')
             ->assertJsonPath('success.data.processes.0.instance', 'development')
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_development_main_vite')
+            ->assertJsonPath('success.data.processes.0.status', 'unknown')
             ->assertJsonPath('success.data.processes.0.last_event', null)
             ->assertJsonPath('success.data.processes.1.name', 'queue');
     });
@@ -536,5 +539,412 @@ describe('ProcessListController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
+    });
+
+    it('lists processes for an app hostname resolved via exact proxy_routes.domain', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'app_instance' => [
+                    'name' => 'development',
+                    'selector' => 'docs.development',
+                ],
+            ],
+        ]);
+        Process::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=test.app.example',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.context.project', 'docs')
+            ->assertJsonPath('success.data.context.instance', 'development')
+            ->assertJsonPath('success.data.processes.0.name', 'vite')
+            ->assertJsonPath('success.data.processes.0.status', 'unknown');
+    });
+
+    it('lists processes for a workspace hostname via app selector', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'feature-docs.app.example',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        Process::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=feature-docs.app.example',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.context.workspace', 'feature-docs')
+            ->assertJsonPath('success.data.processes.0.name', 'vite');
+    });
+
+    it('rejects combining app with instance selectors', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+
+        $this
+            ->call(
+                'GET',
+                '/api/processes?app=test.app.example&instance=docs',
+                [],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+            )
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'context');
+    });
+
+    it('rejects app selectors that include a scheme, path, or port', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+
+        $this
+            ->call(
+                'GET',
+                '/api/processes?app=https://test.app.example',
+                [],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+            )
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'hostname_only');
+    });
+
+    it('admits browser CORS preflight for a registered Origin without peer-IP headers', function (): void {
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $response = $this->call(
+            'OPTIONS',
+            '/api/processes',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ORIGIN' => 'https://test.app.example',
+                'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+            ],
+        );
+
+        $response
+            ->assertNoContent()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://test.app.example')
+            ->assertHeader('Access-Control-Allow-Methods', 'GET, POST')
+            ->assertHeader('Access-Control-Allow-Headers', 'Accept, Content-Type, X-Orbit-Client, X-Correlation-Id')
+            ->assertHeader('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+
+        expect($response->headers->get('Access-Control-Allow-Headers') ?? '')
+            ->not->toContain('X-Orbit-WireGuard-Ip')
+            ->not->toContain('X-Orbit-E2E-WireGuard-Ip');
+    });
+
+    it('rejects browser CORS preflight that requests peer-IP identity headers', function (): void {
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $this
+            ->call(
+                'OPTIONS',
+                '/api/processes',
+                [],
+                [],
+                [],
+                [
+                    'HTTP_ORIGIN' => 'https://test.app.example',
+                    'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                    'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'X-Orbit-WireGuard-Ip',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'access-control-request-headers');
+    });
+
+    it('rejects browser CORS preflight for an unregistered origin', function (): void {
+        $this
+            ->call(
+                'OPTIONS',
+                '/api/processes',
+                [],
+                [],
+                [],
+                [
+                    'HTTP_ORIGIN' => 'https://evil.example',
+                    'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin');
+    });
+
+    it('rejects browser CORS preflight for a registered hostname with a non-default origin port', function (): void {
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $this
+            ->call(
+                'OPTIONS',
+                '/api/processes',
+                [],
+                [],
+                [],
+                [
+                    'HTTP_ORIGIN' => 'https://test.app.example:8443',
+                    'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin')
+            ->assertJsonPath('error.meta.value', 'https://test.app.example:8443');
+    });
+
+    it('rejects browser Origin with a non-default port even when the hostname matches app', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'app_instance' => [
+                    'name' => 'development',
+                    'selector' => 'docs.development',
+                ],
+            ],
+        ]);
+
+        $this
+            ->call(
+                'GET',
+                '/api/processes?app=test.app.example',
+                [],
+                [],
+                [],
+                [
+                    'REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP,
+                    'HTTP_ORIGIN' => 'https://test.app.example:8443',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin')
+            ->assertJsonPath('error.meta.value', 'https://test.app.example:8443');
+    });
+
+    it('authorizes browser process list from peer source IP while CORS only matches Origin to app', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'app_instance' => [
+                    'name' => 'development',
+                    'selector' => 'docs.development',
+                ],
+            ],
+        ]);
+        Process::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+
+        // Same auth model as CLI: peer source IP only. No bearer, no peer-IP header.
+        // Origin is CORS admission against app, not identity.
+        $server = [
+            'REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP,
+            'HTTP_ORIGIN' => 'https://test.app.example',
+            'HTTP_X_ORBIT_CLIENT' => 'laravel-toolbar',
+        ];
+
+        expect($server)
+            ->not->toHaveKey('HTTP_X_ORBIT_WIREGUARD_IP')
+            ->not->toHaveKey('HTTP_X_ORBIT_E2E_WIREGUARD_IP')
+            ->not->toHaveKey('HTTP_AUTHORIZATION');
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=test.app.example',
+            [],
+            [],
+            [],
+            $server,
+        );
+
+        $response
+            ->assertOk()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://test.app.example')
+            ->assertHeader('Vary', 'Origin')
+            ->assertJsonPath('success.data.processes.0.name', 'vite');
+    });
+
+    it('rejects browser CORS Origin that mismatches the requested app target', function (): void {
+        $caller = createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'other.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $this
+            ->call(
+                'GET',
+                '/api/processes?app=test.app.example',
+                [],
+                [],
+                [],
+                [
+                    'REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP,
+                    'HTTP_ORIGIN' => 'https://other.app.example',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin');
+    });
+
+    it('keeps CORS headers on grant failures after Origin admission without treating Origin as identity', function (): void {
+        createProcessListCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'test.app.example',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=test.app.example',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP,
+                'HTTP_ORIGIN' => 'https://test.app.example',
+            ],
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertHeader('Access-Control-Allow-Origin', 'https://test.app.example')
+            ->assertHeader('Vary', 'Origin')
+            ->assertJsonPath('error.code', 'authorization_failed');
     });
 });

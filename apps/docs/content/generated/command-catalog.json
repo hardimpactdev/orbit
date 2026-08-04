@@ -6395,6 +6395,7 @@
             "family": "process",
             "arguments": [],
             "options": [
+                "app",
                 "node",
                 "instance",
                 "workspace",
@@ -6611,6 +6612,7 @@
                 "name"
             ],
             "options": [
+                "app",
                 "node",
                 "instance",
                 "workspace",
@@ -6670,6 +6672,7 @@
                 "name"
             ],
             "options": [
+                "app",
                 "node",
                 "instance",
                 "workspace",
@@ -6729,6 +6732,7 @@
                 "name"
             ],
             "options": [
+                "app",
                 "node",
                 "instance",
                 "workspace",

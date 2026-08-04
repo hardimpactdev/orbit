@@ -4,16 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Process;
 
-use App\Commands\Concerns\ResolvesHostContext;
-use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
 use function Laravel\Prompts\table;
 
-final class ProcessListCommand extends GatewayCommand
+final class ProcessListCommand extends ProcessGatewayCommand
 {
-    use ResolvesHostContext;
-
     /**
      * Latest durable lifecycle event types map onto a process runtime status
      * label; absent events render the documented empty cell.
@@ -24,8 +20,11 @@ final class ProcessListCommand extends GatewayCommand
         'crashed' => 'crashed',
     ];
 
+    private const array KnownStatuses = ['running', 'stopped', 'crashed', 'unknown'];
+
     #[\Override]
     protected $signature = 'process:list
+        {--app= : App-instance or workspace hostname (proxy_routes.domain)}
         {--node= : Owning node name}
         {--instance= : Instance selector}
         {--workspace= : Workspace name}
@@ -36,27 +35,28 @@ final class ProcessListCommand extends GatewayCommand
 
     public function handle(): int
     {
+        $appHostname = $this->stringOption('app');
         $node = $this->stringOption('node');
-        $app = $node === null
-            ? $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()
-            : $this->stringOption('instance');
+        $app =
+            $node === null && $appHostname === null
+                ? $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()
+                : $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
-        if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->renderFailure(
-                'validation_failed',
-                'A node context cannot be combined with instance or workspace context.',
-                [
-                    'field' => 'context',
-                    'node' => $node,
-                    'instance' => $app,
-                    'workspace' => $workspace,
-                ],
-            );
+        $conflictFailure = $this->rejectConflictingProcessSelectors(
+            appHostname: $appHostname,
+            node: $node,
+            instance: $app,
+            workspace: $workspace,
+        );
+
+        if ($conflictFailure !== null) {
+            return $conflictFailure;
         }
 
         try {
             $response = $this->gatewayGet('/api/processes', $this->filledQuery([
+                'app' => $appHostname,
                 'node' => $node,
                 'instance' => $app,
                 'workspace' => $workspace,
@@ -158,6 +158,12 @@ final class ProcessListCommand extends GatewayCommand
      */
     private function statusLabel(array $process): string
     {
+        $status = $process['status'] ?? null;
+
+        if (is_string($status) && in_array($status, self::KnownStatuses, true)) {
+            return $status === 'unknown' ? '—' : $status;
+        }
+
         $event = $process['last_event'] ?? null;
         $type = is_array($event) ? $event['type'] ?? null : null;
 

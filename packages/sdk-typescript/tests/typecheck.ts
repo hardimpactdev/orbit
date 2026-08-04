@@ -1,11 +1,27 @@
 import { createOrbitGatewayClient, type OrbitGatewayClient } from '../src/index.js';
+import type { paths } from '../src/generated/schema.js';
 
+type ProcessListQuery = NonNullable<
+    paths['/processes']['get']['parameters'] extends { query?: infer Q } ? Q : never
+>;
+type ProcessRestartBody = NonNullable<
+    paths['/processes/restart']['post'] extends {
+        requestBody?: { content: { 'application/json': infer B } };
+    }
+        ? B
+        : never
+>;
+type ProcessListSuccess = NonNullable<
+    paths['/processes']['get']['responses'][200]['content']['application/json']
+>;
+
+// Same auth model as CLI: no bearer, no peer-IP identity header.
+// Gateway maps actual WireGuard peer source IP; optional X-Orbit-Client is non-identity.
 const client: OrbitGatewayClient = createOrbitGatewayClient({
     baseUrl: 'https://gateway.orbit.test',
-    headers: async () => ({
-        Authorization: 'Bearer test-token',
-        'X-Orbit-Client': 'macos-dashboard',
-    }),
+    headers: {
+        'X-Orbit-Client': 'laravel-toolbar',
+    },
     fetch: globalThis.fetch,
 });
 
@@ -21,6 +37,17 @@ await client.GET('/nodes', {
 
 await client.GET('/projects', {});
 
+// App hostname selector for toolbar process list.
+const appQuery = {
+    app: 'test.app.example',
+} satisfies ProcessListQuery;
+
+await client.GET('/processes', {
+    params: {
+        query: appQuery,
+    },
+});
+
 await client.GET('/processes', {
     params: {
         query: {
@@ -30,6 +57,66 @@ await client.GET('/processes', {
         },
     },
 });
+
+// Concrete mutation body with app selector.
+const restartBody = {
+    app: 'test.app.example',
+    name: 'vite',
+} satisfies ProcessRestartBody;
+
+await client.POST('/processes/restart', {
+    body: restartBody,
+});
+
+await client.POST('/processes/start', {
+    body: {
+        app: 'test.app.example',
+        name: 'vite',
+    },
+});
+
+await client.POST('/processes/stop', {
+    body: {
+        app: 'test.app.example',
+        name: 'vite',
+    },
+});
+
+// Prove list item status union is concrete when present in schema.
+type ProcessListItem = ProcessListSuccess extends {
+    success?: { data?: { processes?: Array<infer Item> } };
+}
+    ? Item
+    : never;
+
+type ProcessStatus = ProcessListItem extends { status?: infer S } ? S : never;
+
+const statusOk: ProcessStatus = 'running';
+void statusOk;
+
+// Invalid: status is a concrete enum, not free-form text.
+// @ts-expect-error process status must be running|stopped|crashed|unknown
+const invalidStatus: ProcessStatus = 'booting';
+void invalidStatus;
+
+// Invalid: url is never a process list query key.
+const invalidQuery = {
+    // @ts-expect-error url is not a valid process list query key
+    url: 'https://test.app.example',
+} satisfies ProcessListQuery;
+void invalidQuery;
+
+// Invalid: url is never a process mutation body key.
+const invalidRestartBody = {
+    // @ts-expect-error url is not a valid process mutation body key
+    url: 'https://test.app.example',
+    name: 'vite',
+} satisfies ProcessRestartBody;
+void invalidRestartBody;
+
+// Required-field proof: app/node/instance/workspace/name are the only known keys.
+const knownRestartKeys: Array<keyof ProcessRestartBody> = ['app', 'node', 'instance', 'workspace', 'name'];
+void knownRestartKeys;
 
 await client.GET('/tools', {
     params: {

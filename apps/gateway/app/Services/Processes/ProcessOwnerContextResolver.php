@@ -26,17 +26,20 @@ final readonly class ProcessOwnerContextResolver
         private NodeAccessAuthorizer $authorizer,
         private AppSelectorResolver $appSelectorResolver,
         private WorkspacePlacement $placement,
+        private ProcessAppHostnameResolver $appHostnameResolver,
     ) {}
 
     public function resolve(
         ?string $nodeName,
         ?string $appName,
         ?string $workspaceName,
+        ?string $appHostname = null,
     ): ProcessOwnerContext {
         return $this->resolveWithVisibility(
             nodeName: $nodeName,
             appName: $appName,
             workspaceName: $workspaceName,
+            appHostname: $appHostname,
             caller: null,
             permission: null,
             allowSingleVisibleAppDefault: false,
@@ -50,11 +53,13 @@ final readonly class ProcessOwnerContextResolver
         ?Node $caller,
         string $permission,
         bool $allowSingleVisibleAppDefault = false,
+        ?string $appHostname = null,
     ): ProcessOwnerContext {
         return $this->resolveWithVisibility(
             nodeName: $nodeName,
             appName: $appName,
             workspaceName: $workspaceName,
+            appHostname: $appHostname,
             caller: $caller,
             permission: $permission,
             allowSingleVisibleAppDefault: $allowSingleVisibleAppDefault,
@@ -65,10 +70,19 @@ final readonly class ProcessOwnerContextResolver
         ?string $nodeName,
         ?string $appName,
         ?string $workspaceName,
+        ?string $appHostname,
         ?Node $caller,
         ?string $permission,
         bool $allowSingleVisibleAppDefault,
     ): ProcessOwnerContext {
+        $selectors = ProcessTargetSelectors::normalize(
+            appHostname: $appHostname,
+            nodeName: $nodeName,
+            instanceName: $appName,
+            workspaceName: $workspaceName,
+        );
+        ProcessTargetSelectors::assertCompatible($selectors);
+
         $visibleNodeIds = $permission === null
             ? null
             : $this->visibleNodeIds($caller, $permission);
@@ -89,29 +103,23 @@ final readonly class ProcessOwnerContextResolver
             );
         }
 
-        if ($nodeName !== null) {
-            if ($appName !== null || $workspaceName !== null) {
-                throw new GatewayApiException(
-                    'A node context cannot be combined with instance or workspace context.',
-                    'validation_failed',
-                    [
-                        'field' => 'context',
-                        'node' => $nodeName,
-                        'instance' => $appName,
-                        'workspace' => $workspaceName,
-                    ],
-                );
-            }
-
-            return $this->resolveNode($nodeName, $visibleNodeIds);
+        if ($selectors['app'] !== null) {
+            return $this->resolveAppHostname(
+                $this->appHostnameResolver->assertStrictHostname($selectors['app']),
+                $visibleNodeIds,
+            );
         }
 
-        if ($workspaceName !== null) {
-            return $this->resolveWorkspace($workspaceName, $appName, $visibleNodeIds);
+        if ($selectors['node'] !== null) {
+            return $this->resolveNode($selectors['node'], $visibleNodeIds);
         }
 
-        if ($appName !== null) {
-            return $this->resolveApp($appName, $visibleNodeIds);
+        if ($selectors['workspace'] !== null) {
+            return $this->resolveWorkspace($selectors['workspace'], $selectors['instance'], $visibleNodeIds);
+        }
+
+        if ($selectors['instance'] !== null) {
+            return $this->resolveApp($selectors['instance'], $visibleNodeIds);
         }
 
         if ($allowSingleVisibleAppDefault) {
@@ -126,9 +134,34 @@ final readonly class ProcessOwnerContextResolver
             }
         }
 
-        throw new GatewayApiException('A node, instance, or workspace context is required.', 'validation_failed', [
-            'field' => 'instance',
-        ]);
+        throw new GatewayApiException(
+            'A node, instance, workspace, or app context is required.',
+            'validation_failed',
+            [
+                'field' => 'instance',
+            ],
+        );
+    }
+
+    /**
+     * @param  list<int>|null  $visibleNodeIds
+     */
+    private function resolveAppHostname(string $appHostname, ?array $visibleNodeIds): ProcessOwnerContext
+    {
+        $context = $this->appHostnameResolver->resolve($appHostname);
+
+        if ($visibleNodeIds !== null && ! in_array($context->node->id, $visibleNodeIds, true)) {
+            throw new GatewayApiException(
+                "App hostname '{$appHostname}' not found or not visible.",
+                'validation_failed',
+                [
+                    'field' => 'app',
+                    'value' => $appHostname,
+                ],
+            );
+        }
+
+        return $context;
     }
 
     /**

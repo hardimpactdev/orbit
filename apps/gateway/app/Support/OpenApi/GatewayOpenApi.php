@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace App\Support\OpenApi;
 
+use App\Enums\Processes\ProcessRuntimeStatus;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\Parameter;
+use Dedoc\Scramble\Support\Generator\RequestBodyObject;
+use Dedoc\Scramble\Support\Generator\Response;
 use Dedoc\Scramble\Support\Generator\Schema;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
+use Dedoc\Scramble\Support\Generator\Types\ArrayType;
+use Dedoc\Scramble\Support\Generator\Types\IntegerType;
 use Dedoc\Scramble\Support\Generator\Types\MixedType;
 use Dedoc\Scramble\Support\Generator\Types\ObjectType;
 use Dedoc\Scramble\Support\Generator\Types\StringType;
 use Dedoc\Scramble\Support\Generator\Types\Type;
 use UnexpectedValueException;
 
+/** @mago-expect lint:too-many-methods */
+/** @mago-expect lint:kan-defect */
 final class GatewayOpenApi
 {
     /**
@@ -38,7 +45,7 @@ final class GatewayOpenApi
             self::describeGateway($openApi);
             self::addSecuritySchemes($openApi);
             self::addEnvelopeSchemas($openApi);
-            self::documentRawRequestQueryParameters($openApi);
+            self::documentProcessContracts($openApi);
             self::stabilizeOperationIds($openApi);
         });
     }
@@ -59,7 +66,7 @@ final class GatewayOpenApi
 
         $securityScheme->as('orbitWireGuardIdentity');
         $securityScheme->setDescription(
-            'Gateway-trusted WireGuard peer identity header injected by the Orbit gateway proxy.',
+            'Not a client-supplied credential. CLI/SDK/browser callers authenticate via the actual WireGuard peer source IP and never send this header. When the private gateway proxy hop is trusted, the Orbit gateway proxy may inject this header from the observed peer address after stripping any client copy.',
         );
 
         $openApi->components->addSecurityScheme(
@@ -133,25 +140,197 @@ final class GatewayOpenApi
         }
     }
 
-    private static function documentRawRequestQueryParameters(OpenApi $openApi): void
+    private static function documentProcessContracts(OpenApi $openApi): void
     {
         foreach ($openApi->paths as $path) {
-            if ($path->path !== 'processes') {
+            if ($path->path === 'processes') {
+                foreach ($path->operations as $method => $operation) {
+                    if ($method === 'get') {
+                        $operation->parameters = [];
+                        $operation->addParameters([
+                            self::stringQueryParameter(
+                                'app',
+                                'Strict app-instance or workspace hostname (no scheme/path/port) resolved via exact proxy_routes.domain. Mutually exclusive with node, instance, and workspace.',
+                            ),
+                            self::stringQueryParameter('node', 'Filter processes by node name.'),
+                            self::stringQueryParameter('instance', 'Filter processes by project.instance selector.'),
+                            self::stringQueryParameter('workspace', 'Filter processes by workspace name.'),
+                        ]);
+                        $operation->addResponse(self::processListSuccessResponse());
+                    }
+
+                    if ($method === 'options') {
+                        unset($path->operations[$method]);
+                    }
+                }
+
+                continue;
+            }
+
+            if (! in_array($path->path, ['processes/start', 'processes/stop', 'processes/restart'], true)) {
                 continue;
             }
 
             foreach ($path->operations as $method => $operation) {
-                if ($method !== 'get') {
+                if ($method === 'options') {
+                    unset($path->operations[$method]);
+
                     continue;
                 }
 
-                $operation->addParameters([
-                    self::stringQueryParameter('node', 'Filter processes by node name.'),
-                    self::stringQueryParameter('instance', 'Filter processes by project.instance selector.'),
-                    self::stringQueryParameter('workspace', 'Filter processes by workspace name.'),
-                ]);
+                if ($method !== 'post') {
+                    continue;
+                }
+
+                $requestBody = new RequestBodyObject;
+                $requestBody->description('Process lifecycle target selectors and optional process name.');
+                $requestBody->setContent(
+                    'application/json',
+                    self::schemaFrom(self::processLifecycleRequestBody()),
+                );
+                $operation->addRequestBodyObject($requestBody);
+                $operation->addResponse(self::processLifecycleSuccessResponse());
             }
         }
+    }
+
+    private static function processLifecycleRequestBody(): ObjectType
+    {
+        $body = new ObjectType;
+        $app = new StringType;
+        $app->setDescription(
+            'Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace.',
+        );
+        $node = new StringType;
+        $node->setDescription('Owning node name.');
+        $instance = new StringType;
+        $instance->setDescription('Project.instance selector.');
+        $workspace = new StringType;
+        $workspace->setDescription('Workspace name.');
+        $name = new StringType;
+        $name->setDescription('Optional process name. Omit to act on all processes in the context.');
+
+        $body->addProperty('app', $app);
+        $body->addProperty('node', $node);
+        $body->addProperty('instance', $instance);
+        $body->addProperty('workspace', $workspace);
+        $body->addProperty('name', $name);
+
+        return $body;
+    }
+
+    private static function processListSuccessResponse(): Response
+    {
+        $status = new StringType;
+        $status->enum(ProcessRuntimeStatus::values());
+        $status->setDescription(
+            'Concrete runtime status derived from durable process lifecycle events: running, stopped, crashed, or unknown.',
+        );
+
+        $lastEvent = new ObjectType;
+        $lastEvent->addProperty('id', new IntegerType);
+        $lastEvent->addProperty('type', new StringType);
+        $lastEvent->setRequired(['id', 'type']);
+        $lastEvent->nullable(true);
+
+        $process = new ObjectType;
+        $process->addProperty('node', new StringType);
+        $process->addProperty('project', new StringType()->nullable(true));
+        $process->addProperty('instance', new StringType()->nullable(true));
+        $process->addProperty('workspace', new StringType()->nullable(true));
+        $process->addProperty('name', new StringType);
+        $process->addProperty('command', new StringType()->nullable(true));
+        $process->addProperty('restart_policy', new StringType);
+        $process->addProperty('crash_notification', new StringType);
+        $process->addProperty('runtime', new StringType);
+        $process->addProperty('tool', new StringType()->nullable(true));
+        $process->addProperty('service', new ObjectType()->nullable(true));
+        $process->addProperty('runtime_unit', new StringType);
+        $process->addProperty('status', $status);
+        $process->addProperty('last_event', $lastEvent);
+        $process->setRequired(['node', 'name', 'runtime_unit', 'status']);
+
+        $context = new ObjectType;
+        $context->addProperty('node', new StringType);
+        $context->addProperty('project', new StringType()->nullable(true));
+        $context->addProperty('instance', new StringType()->nullable(true));
+        $context->addProperty('workspace', new StringType()->nullable(true));
+        $context->setRequired(['node']);
+
+        $data = new ObjectType;
+        $data->addProperty('context', $context);
+        $processes = new ArrayType;
+        $processes->setItems($process);
+        $data->addProperty('processes', $processes);
+        $data->setRequired(['context', 'processes']);
+
+        $meta = new ObjectType;
+        $meta->additionalProperties(new MixedType);
+
+        $success = new ObjectType;
+        $success->addProperty('data', $data);
+        $success->addProperty('meta', $meta);
+        $success->setRequired(['data', 'meta']);
+
+        $envelope = new ObjectType;
+        $envelope->addProperty('success', $success);
+        $envelope->setRequired(['success']);
+
+        /** @var Response $response */
+        $response = Response::make(200);
+        $response->setDescription(
+            'Process definitions with concrete status for a node, instance, workspace, or app hostname context.',
+        );
+        $response->setContent('application/json', self::schemaFrom($envelope));
+
+        return $response;
+    }
+
+    private static function processLifecycleSuccessResponse(): Response
+    {
+        $event = new ObjectType;
+        $event->addProperty('id', new IntegerType);
+        $event->addProperty('type', new StringType);
+        $event->setRequired(['id', 'type']);
+        $event->nullable(true);
+
+        $runtime = new ObjectType;
+        $runtime->addProperty('process', new StringType);
+        $runtime->addProperty('node', new StringType);
+        $runtime->addProperty('project', new StringType()->nullable(true));
+        $runtime->addProperty('instance', new StringType()->nullable(true));
+        $runtime->addProperty('workspace', new StringType()->nullable(true));
+        $runtime->addProperty('runtime_unit', new StringType);
+        $runtime->addProperty('state', new StringType);
+        $runtime->addProperty('event', $event);
+        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state']);
+
+        $data = new ObjectType;
+        $runtimes = new ArrayType;
+        $runtimes->setItems($runtime);
+        $data->addProperty('runtimes', $runtimes);
+        $data->setRequired(['runtimes']);
+
+        $meta = new ObjectType;
+        $meta->additionalProperties(new MixedType);
+
+        $success = new ObjectType;
+        $success->addProperty('data', $data);
+        $success->addProperty('meta', $meta);
+        $success->setRequired(['data', 'meta']);
+
+        $envelope = new ObjectType;
+        $envelope->addProperty('success', $success);
+        $envelope->setRequired(['success']);
+
+        /** @var Response $response */
+        $response = Response::make(200);
+        $response->setDescription(
+            'Process lifecycle result with durable events when the backend action succeeds.',
+        );
+        $response->setContent('application/json', self::schemaFrom($envelope));
+
+        return $response;
     }
 
     private static function stringQueryParameter(string $name, string $description): Parameter

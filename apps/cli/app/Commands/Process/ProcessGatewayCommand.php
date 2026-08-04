@@ -10,6 +10,7 @@ use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use RuntimeException;
 
+/** @mago-expect lint:kan-defect */
 abstract class ProcessGatewayCommand extends GatewayCommand
 {
     use ResolvesHostContext;
@@ -42,6 +43,57 @@ abstract class ProcessGatewayCommand extends GatewayCommand
     protected function workspaceContext(): ?string
     {
         return $this->stringOption('workspace');
+    }
+
+    protected function appHostnameContext(): ?string
+    {
+        return $this->stringOption('app');
+    }
+
+    /**
+     * @return int|null Failure exit code when selectors conflict.
+     */
+    protected function rejectConflictingProcessSelectors(
+        ?string $appHostname,
+        ?string $node,
+        ?string $instance,
+        ?string $workspace,
+    ): ?int {
+        $failure = ProcessTargetSelectorValidation::conflict(
+            $appHostname,
+            $node,
+            $instance,
+            $workspace,
+        );
+
+        if ($failure === null) {
+            return null;
+        }
+
+        return $this->failValidation($failure['field'], $failure['message'], $failure['meta']);
+    }
+
+    /**
+     * @return int|null Failure exit code when no process target is present.
+     */
+    protected function requireProcessSelector(
+        ?string $appHostname,
+        ?string $node,
+        ?string $instance,
+        ?string $workspace,
+    ): ?int {
+        $failure = ProcessTargetSelectorValidation::missing(
+            $appHostname,
+            $node,
+            $instance,
+            $workspace,
+        );
+
+        if ($failure === null) {
+            return null;
+        }
+
+        return $this->failValidation($failure['field'], $failure['message'], $failure['meta']);
     }
 
     protected function validateProcessName(?string $name): ?int

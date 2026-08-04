@@ -289,6 +289,8 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process identity slug**
 - **Process scope**
 - **Instance selector**
+- **App hostname selector**
+- **Browser process CORS admission**
 - **Canonical project identity**
 - **Process tool dependency**
 - **External macOS runtime provider**
@@ -311,6 +313,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Crash notification policy**
 - **Process runtime selection**
 - **Process event**
+- **Process status**
 - **Crash event**
 - **Process-family boundaries**
 <!-- /concept-index -->

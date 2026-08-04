@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Processes\ProcessLifecycle;
 use App\Services\Processes\ProcessOwnerContextResolver;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,11 @@ final class ProcessRestartController implements Loggable
         private readonly ProcessOwnerContextResolver $contexts,
     ) {}
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'Restarted process runtime units with durable stop and start events when successful.',
+        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, project: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, event: array{id: int, type: string}|null}>}, meta: object}}',
+    )]
     public function __invoke(Request $request, ProcessLifecycle $processLifecycle): JsonResponse
     {
         /** @var mixed $caller */
@@ -41,6 +47,7 @@ final class ProcessRestartController implements Loggable
                 nodeName: $this->optionalString($request, 'node'),
                 appName: $this->optionalString($request, 'instance'),
                 workspaceName: $this->optionalString($request, 'workspace'),
+                appHostname: $this->optionalString($request, 'app'),
             );
         } catch (GatewayApiException $e) {
             return $this->error(
@@ -170,6 +177,7 @@ final class ProcessRestartController implements Loggable
     public function properties(): array
     {
         return [
+            'app' => $this->optionalString(request(), 'app'),
             'node' => $this->optionalString(request(), 'node'),
             'instance' => $this->optionalString(request(), 'instance'),
             'workspace' => $this->optionalString(request(), 'workspace'),

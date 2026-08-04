@@ -221,11 +221,18 @@ Its proxy and TLS artifact is repaired by `doctor --family=proxy --restore`,
 not by a backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity.
+CLI, TypeScript SDK, and browser toolbar callers send **no** bearer token and
+**no** peer-IP identity header. Caller identity is the authenticated WireGuard
+peer: the gateway maps the actual peer source IP (or, only on the private
+proxy hop when configured, a proxy-injected header derived from that observed
+peer address) to a node, then enforces the grant, the required permission for
+the API call, and existing target-node authorization.
+
 Router-owned `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, `Forwarded`,
-and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It then
-injects `X-Orbit-WireGuard-Ip` from the observed WireGuard peer address for the
-private `orbit-gateway` hop. Caller identity still comes from the Orbit network
-identity model, not from caller-supplied headers.
+and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It may then
+inject `X-Orbit-WireGuard-Ip` from the **observed** WireGuard peer address for
+the private `orbit-gateway` hop only. Clients never supply that header; browser
+CORS admission never establishes identity.
 
 Long-lived stream and log endpoints must not starve short command/API requests.
 The Swarm-managed API runtime owns this concurrency contract inside
@@ -241,14 +248,42 @@ surface, internal-only gateway/runtime surface, or deferred optional/admin
 surface. Public SDK operations are candidates for PHP SDK request classes and
 generated into the TypeScript gateway SDK package at `packages/sdk-typescript`
 from the filtered public OpenAPI input. The generated TypeScript package is a
-thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri
-and TanStack Query callers; it must consume the classified OpenAPI contract
-instead of hand-maintaining route definitions. Internal-only operations,
-including local executor token verification, process event ingest, Solo proxy
-routes, and update artifact plumbing, must not be emitted as public SDK methods.
-Deferred optional groups such as Cloudflare, S3, metrics credentials, extension
-administration, and sensitive app env routes require an explicit promotion slice
-before they enter a generated public SDK.
+thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri,
+TanStack Query, and browser toolbar callers; it must consume the classified
+OpenAPI contract instead of hand-maintaining route definitions. Browser toolbar
+callers use `createOrbitGatewayClient` against the existing process list and
+lifecycle routes with the same auth model as the CLI (WireGuard peer source IP
+plus grants/permissions; no bearer and no client peer-IP header), the `app`
+hostname selector, and CORS Origin admission that only matches a registered
+origin to the requested `app` and never authenticates the caller.
+Internal-only operations, including local executor token
+verification, process event ingest, Solo proxy routes, and update artifact
+plumbing, must not be emitted as public SDK methods. Deferred optional groups
+such as Cloudflare, S3, metrics credentials, extension administration, and
+sensitive app env routes require an explicit promotion slice before they enter
+a generated public SDK.
+
+The TypeScript package remains consumable outside the monorepo under the exact
+npm name `@hardimpactdev/orbit-sdk-typescript`. Canonical source lives at
+`packages/sdk-typescript` in `hardimpactdev/orbit`. Local release preparation
+uses `bin/orbit-prepare-release-package --package=sdk-typescript` and stamps the
+monorepo root `VERSION` into both prepared `package.json` and
+`package-lock.json` identity fields. The Orbit release workflow builds and
+verifies prepared bytes (`npm ci` / `npm test` / `npm run build` / deterministic
+`npm pack --dry-run --json`), pushes the generated split repository and tag to
+`hardimpactdev/orbit-sdk-typescript`, then publishes the same prepared tree to
+npm with public access and provenance. Split publish always precedes npm so
+provenance never lands before the generated repo/tag. Install trees
+(`node_modules`) are never committed. There is no independent TypeScript
+version stream. `composer quality-check` runs package `typecheck` and `build`.
+
+First npm publication may use a one-time `NPM_TOKEN` secret on
+`hardimpactdev/orbit`. After the package exists, configure npm Trusted
+Publisher for `hardimpactdev/orbit` / `.github/workflows/orbit-release.yml` and
+prefer OIDC (`id-token`) so the long-lived token can be removed. The workflow
+accepts either `NPM_TOKEN` or Trusted Publisher OIDC; it does not treat
+`NPM_TOKEN` as permanently required. Local agent work does not attempt
+registry publication.
 
 #### Remote command progress
 

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Actions\Processes\RecordProcessEvent;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
@@ -90,6 +92,15 @@ class RoleRuntimeConverger
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be started.",
             );
         }
+
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Started,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
     }
 
     private function applyManagedFiles(Node $node, Process $process): bool

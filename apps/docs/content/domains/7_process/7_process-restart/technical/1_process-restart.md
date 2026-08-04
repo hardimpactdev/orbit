@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:restart [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit process:restart [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--app=<hostname>] [--json]
 ```
 
 ## Input Contract
@@ -24,9 +24,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Optional. | Never. | None. | Existing process slug within the resolved runtime context when supplied. Omit to restart all process definitions in process order. |
-| `node` | `--node` | Required when restarting node-owned processes. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:restart`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:restart`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:restart`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `app` | `--app` | Optional alternate target mode for app-instance or workspace hostnames. | `node`, `instance`, or `workspace` is present. | None. | Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). The selector key is `app` only. |
+| `node` | `--node` | Required when restarting node-owned processes. | `app`, `instance`, or `workspace` is present. | None. | Must resolve to a node that grants `process:restart`. |
+| `instance` | `--instance` or instance context | Required unless `node` or `app` is supplied or `workspace` resolves the instance. | `node` or `app` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:restart`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` or `app` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:restart`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -42,7 +43,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Resolve the selected process set:
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
-3. Send the request to the gateway, which validates the authenticated peer's authorization.
+3. Send the request to the gateway. The gateway authenticates the caller from the actual WireGuard peer source IP (same model as CLI/TypeScript SDK; no bearer and no client peer-IP identity header), then checks the grant, `process:restart`, and target-node authorization. Browser callers that send `Origin` also pass CORS Origin admission against the requested `app` hostname; CORS never establishes identity.
 4. Derive and validate every runtime-unit identity for the selected context
    before runtime or hibernation side effects begin.
 5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire

@@ -54,7 +54,25 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         $processParameterNames[] = $processParameter['name'] ?? null;
     }
 
-    Assert::assertSame(['node', 'instance', 'workspace'], $processParameterNames);
+    Assert::assertSame(['app', 'node', 'instance', 'workspace'], $processParameterNames);
+    Assert::assertSame(
+        ['running', 'stopped', 'crashed', 'unknown'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.status.enum',
+        ),
+    );
+    Assert::assertSame(
+        ['app', 'node', 'instance', 'workspace', 'name'],
+        array_keys(data_get(
+            $schema,
+            'paths./processes/start.post.requestBody.content.application/json.schema.properties',
+        ) ?? []),
+    );
+    Assert::assertArrayNotHasKey(
+        'options',
+        data_get($schema, 'paths./processes', []) ?? [],
+    );
 
     /** @var array<string, mixed>|null $projectListItem */
     $projectListItem = data_get(

@@ -77,6 +77,59 @@ describe('process:list', function (): void {
             ->toBe('production');
     });
 
+    it('forwards the app hostname selector and rejects combining it with instance', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'context' => [
+                'project' => 'docs',
+                'instance' => 'development',
+                'workspace' => null,
+            ],
+            'processes' => [
+                [
+                    'name' => 'vite',
+                    'status' => 'running',
+                    'last_event' => ['id' => 1, 'type' => 'started'],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:list', [
+            '--app' => 'test.app.example',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            urldecode($request->url()),
+            'app=test.app.example',
+        ));
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['processes'][0]['status'])
+            ->toBe('running');
+
+        Http::fake();
+
+        [$rejectCode, $rejectOutput] = runCommand($this, 'process:list', [
+            '--app' => 'test.app.example',
+            '--instance' => 'docs',
+            '--json' => true,
+        ]);
+
+        $rejected = json_decode($rejectOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($rejectCode)
+            ->toBe(1)
+            ->and($rejected['error']['code'])
+            ->toBe('validation_failed')
+            ->and($rejected['error']['meta']['field'])
+            ->toBe('context');
+    });
+
     it('renders human output as a table with uppercase headers and derived status', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'context' => ['project' => 'docs', 'instance' => 'production', 'workspace' => null],

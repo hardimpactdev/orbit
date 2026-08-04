@@ -18,6 +18,7 @@ final class ListProcessesRequest extends GatewayRequest
         public readonly ?string $node = null,
         public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
+        public readonly ?string $app = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -32,6 +33,7 @@ final class ListProcessesRequest extends GatewayRequest
     {
         return array_filter(
             [
+                'app' => $this->app,
                 'node' => $this->node,
                 'instance' => $this->instance,
                 'workspace' => $this->workspace,

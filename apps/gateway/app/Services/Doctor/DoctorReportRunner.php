@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
+use App\Actions\Processes\RecordProcessEvent;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
@@ -19,6 +20,7 @@ use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Enums\ProcessEventType;
 use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\AppInstance;
@@ -212,6 +214,7 @@ final readonly class DoctorReportRunner
         private DnsmasqReconciler $dnsmasqReconciler,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private RecordProcessEvent $recordProcessEvent = new RecordProcessEvent,
     ) {}
 
     /**
@@ -3582,6 +3585,17 @@ final readonly class DoctorReportRunner
         $driver = $this->processRuntimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
         $started = $driver->start($node, $runtimeUnit);
+
+        if ($started) {
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Started,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+        }
 
         return [
             'family' => 'process',

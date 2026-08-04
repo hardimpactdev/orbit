@@ -7,10 +7,12 @@ namespace App\Actions\Processes;
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
@@ -19,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use LogicException;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class AddProcess
 {
     public function __construct(
@@ -26,6 +29,7 @@ final readonly class AddProcess
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private ProcessServiceCatalog $serviceCatalog,
+        private RecordProcessEvent $recordProcessEvent,
     ) {}
 
     /**
@@ -376,10 +380,51 @@ final readonly class AddProcess
                     'message' => "Process runtime unit '{$name}' was rendered but could not be started.",
                     'next_command' => 'doctor --family=process --restore',
                 ];
+
+                continue;
             }
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Started,
+                $context->eventApp(),
+                $this->workspaceForRuntimeUnit($context, $runtimeUnit),
+                $process,
+                $context->node,
+                $name,
+            );
         }
 
         return $warnings;
+    }
+
+    /**
+     * @param  array{name: string, context: string}  $runtimeUnit
+     */
+    private function workspaceForRuntimeUnit(ProcessOwnerContext $context, array $runtimeUnit): ?Workspace
+    {
+        if ($context->workspace instanceof Workspace) {
+            return $context->workspace;
+        }
+
+        $unitContext = $runtimeUnit['context'] ?? null;
+
+        if (! is_string($unitContext) || $unitContext === '' || $unitContext === 'main' || $unitContext === 'node') {
+            return null;
+        }
+
+        $app = $context->app;
+
+        if (! $app instanceof Project) {
+            return null;
+        }
+
+        $app->loadMissing('workspaces');
+
+        $workspace = $app->workspaces->first(
+            static fn (mixed $candidate): bool => $candidate instanceof Workspace && $candidate->name === $unitContext,
+        );
+
+        return $workspace instanceof Workspace ? $workspace : null;
     }
 
     /**

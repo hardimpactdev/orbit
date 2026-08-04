@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit process:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit process:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--app=<hostname>] [--json]
 ```
 
 ## Input Contract
@@ -22,9 +22,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node` | Required when listing node-owned processes. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:read`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:read`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `app` | `--app` | Optional alternate target mode for app-instance or workspace hostnames. | `node`, `instance`, or `workspace` is present. | None. | Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). App-owned routes resolve the concrete `AppInstance`; workspace-owned routes resolve that workspace and its instance. The selector key is `app` only. |
+| `node` | `--node` | Required when listing node-owned processes. | `app`, `instance`, or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
+| `instance` | `--instance` or instance context | Required unless `node` or `app` is supplied or `workspace` resolves the instance. | `node` or `app` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:read`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` or `app` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:read`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -36,12 +37,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Listing Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
-2. Send the request to the gateway, which validates the authenticated peer's authorization.
-3. Read process definitions from gateway configuration in process order. An instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace.
+1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context. Reject combining `app` with `node`, `instance`, or `workspace`. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance. Resolve `app` through exact registered proxy-route domain precedence.
+2. Send the request to the gateway (`GET /api/processes` with the selected query keys). The gateway authenticates the caller from the actual WireGuard peer source IP (same model as CLI/TypeScript SDK; no bearer and no client peer-IP identity header), then checks the grant, `process:read`, and target-node authorization. Browser callers that send `Origin` also pass CORS Origin admission: the Origin host must be a registered app/workspace proxy domain that matches the requested `app` target. CORS never establishes identity. Non-browser CLI calls without `Origin` are unchanged.
+3. Read process definitions from gateway configuration in process order. An instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace. An `app` hostname that resolves to an app route uses the concrete instance context; a workspace route uses that workspace context.
 4. Derive expected runtime-unit identities for the selected context.
 5. For service process definitions, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
-6. Read latest durable lifecycle events for the selected runtime context when events exist.
+6. Read latest durable lifecycle events for the selected runtime context when events exist and set each item's concrete `status` from that event (`running`, `stopped`, `crashed`, or `unknown` when no event exists).
 7. Render the selected output.
 
 `process:list` must not SSH to nodes, run live process manager probes, mutate gateway configuration, or change runtime state.
@@ -56,7 +57,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--app` is combined with `--node`, `--instance`, or `--workspace`; `--node` is combined with `--instance` or `--workspace`; or no node/instance/workspace/`app` context resolves. | Failure (`error.code=validation_failed`). |
+| App hostname not found | `--app` does not match an exact registered proxy-route domain. | Failure (`error.code=validation_failed`; `error.meta.field=app`). |
 | Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 
 Instance serving-node reachability is not part of the default list path and does not cause this command to fail.
@@ -83,7 +85,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessListControllerTest.php` | Gateway process listing for app, workspace, and node contexts, grant-scoped visibility, managed-service metadata, validation failures, authorization failures, and unauthenticated requests. |
-| `apps/cli/tests/Feature/Commands/Process/ProcessListCommandTest.php` | CLI `process:list` `--instance`, `--workspace`, `--node`, and `--json` forwarding, JSON envelope shape, human table output, empty state, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessListControllerTest.php` | Gateway process listing for app hostname, instance, workspace, and node contexts, concrete `status`, grant-scoped visibility, managed-service metadata, validation failures, peer-source-IP auth (no bearer/peer-IP header), CORS Origin admission that never establishes identity, authorization failures, and unauthenticated requests. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessListCommandTest.php` | CLI `process:list` `--app`, `--instance`, `--workspace`, `--node`, and `--json` forwarding, mutual-exclusion validation, JSON envelope shape, human table output, empty state, and gateway error passthrough. |
 
 Renderer and input-mode test mapping lives in the split companion files.

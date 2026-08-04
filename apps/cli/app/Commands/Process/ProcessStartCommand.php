@@ -9,6 +9,7 @@ final class ProcessStartCommand extends ProcessRuntimeActionCommand
     #[\Override]
     protected $signature = 'process:start
         {name? : Existing process name}
+        {--app= : App-instance or workspace hostname (proxy_routes.domain)}
         {--node= : Owning node name}
         {--instance= : Instance selector}
         {--workspace= : Workspace name}

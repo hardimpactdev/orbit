@@ -703,7 +703,40 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['runtimes'][0]['node'])->toBe('app-1');
     });
 
-    it('requires an instance, workspace, or node context before process runtime actions contact the gateway', function (string $command): void {
+    it('posts process runtime actions with an app hostname selector', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'runtimes' => [
+                [
+                    'process' => 'vite',
+                    'instance' => 'development',
+                    'status' => 'ok',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:restart', [
+            'name' => 'vite',
+            '--app' => 'test.app.example',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes/restart'
+                && $request->data() === [
+                    'app' => 'test.app.example',
+                    'name' => 'vite',
+                ]
+            ),
+        );
+
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['runtimes'][0]['process'])->toBe('vite');
+    });
+
+    it('requires an instance, workspace, node, or app context before process runtime actions contact the gateway', function (string $command): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, $command, [

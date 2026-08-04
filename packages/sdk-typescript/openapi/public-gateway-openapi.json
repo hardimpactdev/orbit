@@ -866,127 +866,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "object",
-                              "additionalProperties": {}
-                            },
-                            "agent_ide": {
-                              "type": "object",
-                              "properties": {
-                                "adapter": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                },
-                                "source": {
-                                  "type": "string"
-                                },
-                                "effective_adapter": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "adapter",
-                                "source",
-                                "effective_adapter"
-                              ]
-                            },
-                            "cleanup": {
-                              "type": "object",
-                              "properties": {
-                                "workspaces_removed": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                }
-                              },
-                              "required": [
-                                "workspaces_removed"
-                              ]
-                            },
-                            "action": {
-                              "type": "string"
-                            },
-                            "previous_adapter": {
-                              "type": [
-                                "string",
-                                "null"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "instance",
-                            "agent_ide",
-                            "cleanup",
-                            "action",
-                            "previous_adapter"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "instance.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -1656,6 +1536,44 @@
                               "const": "validation_failed"
                             },
                             "message": {
+                              "type": "string",
+                              "const": "The instance selector must be a string."
+                            },
+                            "meta": {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "type": "string",
+                                  "const": "instance"
+                                }
+                              },
+                              "required": [
+                                "field"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
                               "type": "string"
                             },
                             "meta": {
@@ -1846,62 +1764,13 @@
                           "type": "object",
                           "properties": {
                             "project": {
-                              "type": "object",
-                              "properties": {
-                                "name": {
-                                  "type": "string"
-                                },
-                                "node": {
-                                  "type": "string"
-                                },
-                                "url": {
-                                  "type": "string"
-                                },
-                                "path": {
-                                  "type": "string"
-                                },
-                                "root": {
-                                  "type": "string"
-                                },
-                                "repository": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                },
-                                "runtime": {
-                                  "type": "string"
-                                },
-                                "runtime_config": {
-                                  "type": "object",
-                                  "properties": {
-                                    "proxy_transport": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "proxy_transport"
-                                  ]
-                                },
-                                "php_version": {
-                                  "type": "string"
-                                },
-                                "adopted": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "node",
-                                "url",
-                                "path",
-                                "root",
-                                "repository",
-                                "runtime",
-                                "runtime_config",
-                                "php_version",
-                                "adopted"
-                              ]
+                              "type": "string"
+                            },
+                            "instances": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
                             },
                             "result": {
                               "type": "object",
@@ -1918,40 +1787,62 @@
                             "cleanup": {
                               "type": "object",
                               "properties": {
-                                "proxy_routes_removed": {
-                                  "type": "integer"
+                                "aggregate": {
+                                  "type": "object",
+                                  "properties": {
+                                    "instances_removed": {
+                                      "type": "integer"
+                                    },
+                                    "proxy_routes_removed": {
+                                      "type": "integer"
+                                    },
+                                    "workspaces_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "schedules_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "processes_removed": {
+                                      "type": "string"
+                                    },
+                                    "runtime_containers_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "runtime_configs_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "paths_removed": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "instances_removed",
+                                    "proxy_routes_removed",
+                                    "workspaces_removed",
+                                    "schedules_removed",
+                                    "processes_removed",
+                                    "runtime_containers_removed",
+                                    "runtime_configs_removed",
+                                    "paths_removed"
+                                  ]
                                 },
-                                "workspaces_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "schedules_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "processes_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "runtime_container_removed": {
-                                  "type": "string"
-                                },
-                                "runtime_config_removed": {
+                                "instances": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "proxy_routes_removed",
-                                "workspaces_removed",
-                                "schedules_removed",
-                                "processes_removed",
-                                "runtime_container_removed",
-                                "runtime_config_removed"
+                                "aggregate",
+                                "instances"
                               ]
                             }
                           },
                           "required": [
                             "project",
+                            "instances",
                             "result",
                             "cleanup"
                           ]
@@ -8193,24 +8084,8 @@
                                             "type": "string"
                                           },
                                           "permissions": {
-                                            "anyOf": [
-                                              {
-                                                "type": "array",
-                                                "prefixItems": [
-                                                  {
-                                                    "type": "string",
-                                                    "const": "*"
-                                                  }
-                                                ],
-                                                "minItems": 1,
-                                                "maxItems": 1,
-                                                "additionalItems": false
-                                              },
-                                              {
-                                                "type": "array",
-                                                "items": {}
-                                              }
-                                            ]
+                                            "type": "array",
+                                            "items": {}
                                           }
                                         },
                                         "required": [
@@ -8228,24 +8103,8 @@
                                             "type": "string"
                                           },
                                           "permissions": {
-                                            "anyOf": [
-                                              {
-                                                "type": "array",
-                                                "prefixItems": [
-                                                  {
-                                                    "type": "string",
-                                                    "const": "*"
-                                                  }
-                                                ],
-                                                "minItems": 1,
-                                                "maxItems": 1,
-                                                "additionalItems": false
-                                              },
-                                              {
-                                                "type": "array",
-                                                "items": {}
-                                              }
-                                            ]
+                                            "type": "array",
+                                            "items": {}
                                           }
                                         },
                                         "required": [
@@ -9960,6 +9819,14 @@
         ],
         "parameters": [
           {
+            "name": "app",
+            "in": "query",
+            "description": "Strict app-instance or workspace hostname (no scheme/path/port) resolved via exact proxy_routes.domain. Mutually exclusive with node, instance, and workspace.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "node",
             "in": "query",
             "description": "Filter processes by node name.",
@@ -9986,70 +9853,162 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process definitions with concrete status for a node, instance, workspace, or app hostname context.",
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
+                  "type": "object",
+                  "properties": {
+                    "success": {
                       "type": "object",
                       "properties": {
-                        "success": {
+                        "data": {
                           "type": "object",
                           "properties": {
-                            "data": {
+                            "context": {
                               "type": "object",
                               "properties": {
-                                "context": {
-                                  "type": "object",
-                                  "properties": {
-                                    "node": {
-                                      "type": "string"
-                                    },
-                                    "project": {
-                                      "type": "string"
-                                    },
-                                    "instance": {
-                                      "type": "string"
-                                    },
-                                    "workspace": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "node",
-                                    "project",
-                                    "instance",
-                                    "workspace"
+                                "node": {
+                                  "type": "string"
+                                },
+                                "project": {
+                                  "type": [
+                                    "string",
+                                    "null"
                                   ]
                                 },
-                                "processes": {
-                                  "type": "array",
-                                  "items": {}
+                                "instance": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "workspace": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 }
                               },
                               "required": [
-                                "context",
-                                "processes"
+                                "node"
                               ]
                             },
-                            "meta": {
-                              "type": "string"
+                            "processes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "project": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "command": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "restart_policy": {
+                                    "type": "string"
+                                  },
+                                  "crash_notification": {
+                                    "type": "string"
+                                  },
+                                  "runtime": {
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "service": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "description": "Concrete runtime status derived from durable process lifecycle events: running, stopped, crashed, or unknown.",
+                                    "enum": [
+                                      "running",
+                                      "stopped",
+                                      "crashed",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "last_event": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "node",
+                                  "name",
+                                  "runtime_unit",
+                                  "status"
+                                ]
+                              }
                             }
                           },
                           "required": [
-                            "data",
-                            "meta"
+                            "context",
+                            "processes"
                           ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
                         }
                       },
                       "required": [
-                        "success"
+                        "data",
+                        "meta"
                       ]
-                    },
-                    {
-                      "type": "string"
                     }
+                  },
+                  "required": [
+                    "success"
                   ]
                 }
               }
@@ -10348,13 +10307,133 @@
         "tags": [
           "ProcessRestart"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "Project.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process lifecycle result with durable events when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "project": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "runtime_unit",
+                                  "state"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -10368,13 +10447,133 @@
         "tags": [
           "ProcessStart"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "Project.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process lifecycle result with durable events when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "project": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "runtime_unit",
+                                  "state"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -10388,13 +10587,133 @@
         "tags": [
           "ProcessStop"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "Project.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process lifecycle result with durable events when the backend action succeeds.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "project": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "runtime_unit",
+                                  "state"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -10515,7 +10834,7 @@
                                     },
                                     "status": {
                                       "type": "string",
-                                      "const": "removed_with_drift"
+                                      "const": "removed"
                                     },
                                     "placement": {
                                       "type": "string",
@@ -10592,45 +10911,32 @@
                                 "tls_removed": {
                                   "type": "boolean"
                                 },
+                                "removal_reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "orphan_owner",
+                                    "custom"
+                                  ]
+                                },
                                 "warnings": {
                                   "type": "array",
-                                  "prefixItems": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "code": {
-                                          "type": "string",
-                                          "const": "proxy.cleanup_deferred"
-                                        },
-                                        "family": {
-                                          "type": "string",
-                                          "const": "proxy"
-                                        },
-                                        "message": {
-                                          "type": "string",
-                                          "const": "Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode."
-                                        },
-                                        "next_command": {
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "code",
-                                        "family",
-                                        "message",
-                                        "next_command"
-                                      ]
-                                    }
-                                  ],
-                                  "minItems": 1,
-                                  "maxItems": 1,
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 0,
                                   "additionalItems": false
+                                },
+                                "owner_type": {
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "backend_removed",
                                 "tls_removed",
-                                "warnings"
+                                "removal_reason",
+                                "warnings",
+                                "owner_type"
                               ]
                             }
                           },
@@ -18791,7 +19097,7 @@
     "securitySchemes": {
       "orbitWireGuardIdentity": {
         "type": "apiKey",
-        "description": "Gateway-trusted WireGuard peer identity header injected by the Orbit gateway proxy.",
+        "description": "Not a client-supplied credential. CLI/SDK/browser callers authenticate via the actual WireGuard peer source IP and never send this header. When the private gateway proxy hop is trusted, the Orbit gateway proxy may inject this header from the observed peer address after stripping any client copy.",
         "in": "header",
         "name": "X-Orbit-WireGuard-Ip"
       }
@@ -19262,6 +19568,6 @@
   "x-orbit-sdk-surface": {
     "source": "apps/gateway/openapi-sdk-surface.json",
     "public_schema_only_operations": 22,
-    "removed_internal_or_deferred_operations": 51
+    "removed_internal_or_deferred_operations": 52
   }
 }

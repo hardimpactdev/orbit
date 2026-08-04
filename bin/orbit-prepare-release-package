@@ -18,12 +18,13 @@ try {
     $sources = [
         'core' => 'packages/core',
         'sdk' => 'packages/sdk',
+        'sdk-typescript' => 'packages/sdk-typescript',
         'cli' => 'apps/cli',
         'gateway' => 'apps/gateway',
     ];
 
     if (! array_key_exists($package, $sources)) {
-        fail('Unsupported package ['.$package.']. Expected one of: core, sdk, cli, gateway.');
+        fail('Unsupported package ['.$package.']. Expected one of: core, sdk, sdk-typescript, cli, gateway.');
     }
 
     $source = $repoRoot.'/'.$sources[$package];
@@ -34,7 +35,13 @@ try {
 
     reset_directory($output);
     copy_directory($source, $output);
-    rewrite_composer_json($output.'/composer.json', $version, $package);
+
+    if ($package === 'sdk-typescript') {
+        rewrite_npm_package_json($output.'/package.json', $version);
+        rewrite_npm_package_lock($output.'/package-lock.json', $version);
+    } else {
+        rewrite_composer_json($output.'/composer.json', $version, $package);
+    }
 } catch (Throwable $exception) {
     fail($exception->getMessage());
 }
@@ -145,7 +152,7 @@ function should_skip(string $relative, SplFileInfo $item): bool
     $segments = explode(DIRECTORY_SEPARATOR, $relative);
     $first = $segments[0] ?? '';
 
-    if (in_array($first, ['.git', 'vendor', 'node_modules', 'build', 'builds'], true)) {
+    if (in_array($first, ['.git', 'vendor', 'node_modules', 'build', 'builds', 'coverage'], true)) {
         return true;
     }
 
@@ -207,6 +214,103 @@ function rewrite_composer_json(string $path, string $version, string $package): 
 
     if (! is_string($encoded)) {
         fail('Could not encode composer.json.');
+    }
+
+    file_put_contents($path, $encoded."\n");
+}
+
+function rewrite_npm_package_json(string $path, string $version): void
+{
+    if (! is_file($path)) {
+        fail('package.json not found in split package.');
+    }
+
+    $json = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($json)) {
+        fail('package.json did not decode to an object.');
+    }
+
+    // Exact public npm identity. Never preserve a legacy monorepo/local name.
+    $json['name'] = '@hardimpactdev/orbit-sdk-typescript';
+    $json['version'] = $version;
+    $json['private'] = false;
+    $json['license'] = is_string($json['license'] ?? null) ? $json['license'] : 'MIT';
+    $json['description'] = is_string($json['description'] ?? null) && trim($json['description']) !== ''
+        ? $json['description']
+        : 'Generated TypeScript client for the public Orbit gateway API surface.';
+    $json['repository'] = [
+        'type' => 'git',
+        'url' => 'https://github.com/hardimpactdev/orbit.git',
+        'directory' => 'packages/sdk-typescript',
+    ];
+    $json['homepage'] = 'https://github.com/hardimpactdev/orbit/tree/main/packages/sdk-typescript';
+    $json['bugs'] = [
+        'url' => 'https://github.com/hardimpactdev/orbit/issues',
+    ];
+    $json['publishConfig'] = [
+        'access' => 'public',
+        'registry' => 'https://registry.npmjs.org/',
+    ];
+
+    // Prepared release packages are consumable outside the monorepo: keep the
+    // published file set and drop monorepo-only generate scripts that require
+    // the gateway checkout.
+    $json['files'] = [
+        'dist',
+        'openapi/public-gateway-openapi.json',
+        'README.md',
+    ];
+    $json['scripts'] = [
+        'build' => 'tsc -p tsconfig.build.json',
+        'typecheck' => 'tsc --noEmit',
+        'test' => 'npm run typecheck',
+    ];
+
+    $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    if (! is_string($encoded)) {
+        fail('Could not encode package.json.');
+    }
+
+    file_put_contents($path, $encoded."\n");
+}
+
+function rewrite_npm_package_lock(string $path, string $version): void
+{
+    if (! is_file($path)) {
+        fail('package-lock.json not found in split package.');
+    }
+
+    $json = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($json)) {
+        fail('package-lock.json did not decode to an object.');
+    }
+
+    // Keep prepared lock identity aligned with package.json for the generated
+    // split/npm tree. Dependency graphs stay as-copied from the monorepo lock.
+    $json['name'] = '@hardimpactdev/orbit-sdk-typescript';
+    $json['version'] = $version;
+
+    if (! isset($json['packages']) || ! is_array($json['packages'])) {
+        fail('package-lock.json is missing a packages map.');
+    }
+
+    $root = $json['packages'][''] ?? null;
+
+    if (! is_array($root)) {
+        fail('package-lock.json is missing the root packages[""] entry.');
+    }
+
+    $root['name'] = '@hardimpactdev/orbit-sdk-typescript';
+    $root['version'] = $version;
+    $json['packages'][''] = $root;
+
+    $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+    if (! is_string($encoded)) {
+        fail('Could not encode package-lock.json.');
     }
 
     file_put_contents($path, $encoded."\n");
