@@ -641,7 +641,12 @@ it('rejects unresolved actionable feedback before merge', function (): void {
     }
 });
 
-it('keeps finalization quality-check subgates aligned with the pre-tool-use hook and typescript lanes', function (): void {
+it('keeps finalization quality-check subgates aligned with quality-check.sh CHECK_LABELS', function (): void {
+    // Canonical producer: same CHECK_LABELS parser contract as VerificationScriptsTest
+    // (helpers live there; parallel workers do not share cross-file test functions).
+    $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
+    $producerLabels = finalization_quality_check_script_labels($script, 'CHECK_LABELS');
+
     $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
     expect(preg_match(
         '/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s',
@@ -653,12 +658,15 @@ it('keeps finalization quality-check subgates aligned with the pre-tool-use hook
     $hookLabels = $labelMatches[1];
     $fixtureLabels = array_keys(finalization_quality_check_subgates());
 
+    sort($producerLabels);
     sort($hookLabels);
     sort($fixtureLabels);
 
-    expect($fixtureLabels)
-        ->toBe($hookLabels)
-        ->and($hookLabels)
+    expect($hookLabels)
+        ->toBe($producerLabels)
+        ->and($fixtureLabels)
+        ->toBe($producerLabels)
+        ->and($producerLabels)
         ->toContain('sdk_typescript_build')
         ->toContain('sdk_typescript_typecheck');
 });
@@ -3914,6 +3922,27 @@ function latest_finalization_artifact_path(string $worktree, string $gate): stri
     rsort($paths);
 
     return $paths[0] ?? throw new RuntimeException("Missing {$gate} fixture artifact");
+}
+
+/**
+ * Parse a bash array of quality-check labels from bin/quality-check.sh.
+ * Mirrors quality_check_script_labels() in VerificationScriptsTest.
+ *
+ * @return list<string>
+ */
+function finalization_quality_check_script_labels(string $script, string $arrayName): array
+{
+    $pattern = '/^'.preg_quote($arrayName, '/').'=\\(\\R(?P<body>.*?)^\\)/ms';
+    $matches = [];
+
+    if (preg_match($pattern, $script, $matches) !== 1) {
+        throw new RuntimeException("Expected quality-check script to define [{$arrayName}].");
+    }
+
+    $labelMatches = [];
+    preg_match_all('/^    (?P<label>[a-z0-9_]+)$/m', $matches['body'], $labelMatches);
+
+    return $labelMatches['label'];
 }
 
 /** @return array<string, int> */
