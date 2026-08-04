@@ -7,7 +7,6 @@ on:
 permissions:
   contents: write
   packages: read
-  id-token: write
 
 env:
   REGISTRY: ghcr.io
@@ -176,15 +175,6 @@ jobs:
 
           echo "Gateway image bakes version ${VERSION} at /srv/orbit/VERSION."
 
-      - name: Set up Node.js for TypeScript SDK release
-        uses: actions/setup-node@v6
-        with:
-          # npm trusted publishing requires Node >= 22.14 / npm >= 11.5.1.
-          # Pin current GitHub-hosted Node 24 with cache disabled for deterministic installs.
-          node-version: "24"
-          package-manager-cache: false
-          registry-url: "https://registry.npmjs.org"
-
       - name: Publish split package repositories
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -192,7 +182,6 @@ jobs:
           SPLIT_PUSH_TOKEN: ${{ secrets.ORBIT_RELEASE_TOKEN || github.token }}
           PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
           PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -223,144 +212,15 @@ jobs:
             git -C "$output" push --force origin "refs/tags/${TAG}"
           }
 
-          prepare_and_verify_sdk_typescript() {
-            output="$RUNNER_TEMP/orbit-splits/sdk-typescript"
-            rm -rf "$output"
-            bin/orbit-prepare-release-package --package=sdk-typescript --version="$VERSION" --output="$output"
-
-            test -f "$output/package.json"
-            test -f "$output/package-lock.json"
-            test ! -d "$output/node_modules"
-
-            name="$(node -p "require('${output}/package.json').name")"
-            private_flag="$(node -p "String(require('${output}/package.json').private)")"
-            prepared_version="$(node -p "require('${output}/package.json').version")"
-            lock_name="$(node -p "require('${output}/package-lock.json').name")"
-            lock_version="$(node -p "require('${output}/package-lock.json').version")"
-            lock_root_name="$(node -p "require('${output}/package-lock.json').packages[''].name")"
-            lock_root_version="$(node -p "require('${output}/package-lock.json').packages[''].version")"
-
-            if [ "$name" != "@hardimpactdev/orbit-sdk-typescript" ]; then
-              echo "Prepared sdk-typescript package name is [$name], expected @hardimpactdev/orbit-sdk-typescript." >&2
-              exit 1
-            fi
-
-            if [ "$private_flag" != "false" ]; then
-              echo "Prepared sdk-typescript package must set private=false for npm publication." >&2
-              exit 1
-            fi
-
-            if [ "$prepared_version" != "$VERSION" ]; then
-              echo "Prepared sdk-typescript version [$prepared_version] does not match release VERSION [$VERSION]." >&2
-              exit 1
-            fi
-
-            if [ "$lock_name" != "@hardimpactdev/orbit-sdk-typescript" ] || [ "$lock_root_name" != "@hardimpactdev/orbit-sdk-typescript" ]; then
-              echo "Prepared sdk-typescript package-lock name mismatch." >&2
-              exit 1
-            fi
-
-            if [ "$lock_version" != "$VERSION" ] || [ "$lock_root_version" != "$VERSION" ]; then
-              echo "Prepared sdk-typescript package-lock version [$lock_version/$lock_root_version] does not match release VERSION [$VERSION]." >&2
-              exit 1
-            fi
-
-            (
-              cd "$output"
-              npm ci
-              npm test
-              npm run build
-              test -f dist/index.js
-              test -f dist/index.d.ts
-              # Deterministic JSON listing (not human npm notices).
-              pack_json_file="$RUNNER_TEMP/sdk-typescript-pack.json"
-              npm pack --dry-run --json > "$pack_json_file"
-              PACK_JSON_FILE="$pack_json_file" node --input-type=module <<'NODE'
-                import { readFileSync } from 'node:fs';
-                import process from 'node:process';
-
-                const data = JSON.parse(readFileSync(process.env.PACK_JSON_FILE, 'utf8'));
-                const entry = Array.isArray(data) ? data[0] : data;
-                const files = (entry?.files ?? []).map((file) => file.path);
-                const required = [
-                  'dist/index.js',
-                  'dist/index.d.ts',
-                  'openapi/public-gateway-openapi.json',
-                  'package.json',
-                  'README.md',
-                ];
-
-                for (const path of required) {
-                  if (! files.includes(path)) {
-                    console.error(`Prepared sdk-typescript pack missing ${path}`);
-                    process.exit(1);
-                  }
-                }
-
-                if (files.some((path) => path === 'node_modules' || path.startsWith('node_modules/'))) {
-                  console.error('Prepared sdk-typescript pack listing must not include node_modules.');
-                  process.exit(1);
-                }
-              NODE
-            )
-          }
-
-          publish_sdk_typescript_split() {
-            output="$RUNNER_TEMP/orbit-splits/sdk-typescript"
-            repository="hardimpactdev/orbit-sdk-typescript"
-
-            # Ensure the generated distribution repo/tag exists before npm
-            # publication. Package repository/provenance metadata still points at
-            # canonical hardimpactdev/orbit + packages/sdk-typescript.
-            # Never commit install trees.
-            rm -rf "$output/node_modules" "$output/coverage"
-
-            git -C "$output" init
-            git -C "$output" config user.name "github-actions[bot]"
-            git -C "$output" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git -C "$output" add -A
-            if git -C "$output" ls-files --error-unmatch node_modules >/dev/null 2>&1; then
-              echo "Refusing to publish sdk-typescript split with node_modules tracked." >&2
-              exit 1
-            fi
-            git -C "$output" commit -m "Release $TAG"
-            git -C "$output" branch -M main
-            git -C "$output" tag -f "$TAG"
-            git -C "$output" remote add origin "https://x-access-token:${SPLIT_PUSH_TOKEN}@github.com/${repository}.git"
-            git -C "$output" push --force origin HEAD:main
-            git -C "$output" push --force origin "refs/tags/${TAG}"
-          }
-
-          publish_sdk_typescript_npm() {
-            output="$RUNNER_TEMP/orbit-splits/sdk-typescript"
-
-            # First publication may use NPM_TOKEN. After the package exists on npm,
-            # configure Trusted Publisher for hardimpactdev/orbit / orbit-release.yml
-            # and prefer OIDC (id-token) without a long-lived token.
-            if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-              echo "Publishing @hardimpactdev/orbit-sdk-typescript with NPM_TOKEN (first-publication credential boundary)."
-            else
-              echo "NPM_TOKEN unset; attempting OIDC Trusted Publisher publish for @hardimpactdev/orbit-sdk-typescript."
-              echo "If this is the package's first npm release, set NPM_TOKEN once, then migrate to Trusted Publisher and remove the long-lived token."
-            fi
-
-            (
-              cd "$output"
-              # Publish already-built prepared bytes (dist present; monorepo generate scripts stripped).
-              npm publish --access public --provenance
-            )
-          }
+          # TypeScript SDK (@hardimpactdev/orbit-sdk-typescript) is independently
+          # versioned and published from hardimpactdev/orbit-sdk-typescript via
+          # its own OIDC release workflow. Root orbit-release.yml must not
+          # prepare, split-tag, or npm-publish that package.
 
           publish_split core hardimpactdev/orbit-core
           publish_split sdk hardimpactdev/orbit-sdk-laravel
           publish_split cli hardimpactdev/orbit-cli
           publish_split gateway hardimpactdev/orbit-gateway
-
-          # TypeScript SDK order is intentional: prepare/verify -> push generated
-          # split repository/tag -> npm publish. Root VERSION/tag is the only stream.
-          prepare_and_verify_sdk_typescript
-          publish_sdk_typescript_split
-          publish_sdk_typescript_npm
 
           if [ -n "${PACKAGIST_USERNAME:-}" ] && [ -n "${PACKAGIST_TOKEN:-}" ]; then
             curl -fsS \

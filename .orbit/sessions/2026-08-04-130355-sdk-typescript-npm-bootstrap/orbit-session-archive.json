@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T11:03:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-sdk-typescript-npm-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-130355-sdk-typescript-npm-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T110228Z-638037a3ea1d.json"
+    ],
+    "entry_digests": {
+        "loop.md": "dabb8a0c997bbc25415506893c95ec46582d9dac1a4d482be2197ea87b319984",
+        "quality-gates/quality-check-2026-08-04T110228Z-638037a3ea1d.json": "88cf2ff200b430cbab3f00603c5b1e7c321d3a8672afead60c6ddd9dd5aa2141"
+    },
+    "slug": "sdk-typescript-npm-bootstrap",
+    "requested_slug": "sdk-typescript-npm-bootstrap",
+    "compatible_slugs": [
+        "sdk-typescript-npm-bootstrap"
+    ],
+    "branch": "codex/sdk-typescript-npm-bootstrap",
+    "candidate_commit": "616ceb6019565e99f19225d6f26f08828aaa8ffc",
+    "accepted_feature_tip": "616ceb6019565e99f19225d6f26f08828aaa8ffc",
+    "accepted_main_tip": "7440e627c25540506dd1ffa09eb24ac3c7ab4eef",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

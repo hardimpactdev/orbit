@@ -262,25 +262,38 @@ a generated public SDK.
 
 The TypeScript package remains consumable outside the monorepo under the exact
 npm name `@hardimpactdev/orbit-sdk-typescript`. Canonical source lives at
-`packages/sdk-typescript` in `hardimpactdev/orbit`. Local release preparation
-uses `bin/orbit-prepare-release-package --package=sdk-typescript` and stamps the
-monorepo root `VERSION` into both prepared `package.json` and
-`package-lock.json` identity fields. The Orbit release workflow builds and
-verifies prepared bytes (`npm ci` / `npm test` / `npm run build` / deterministic
-`npm pack --dry-run --json`), pushes the generated split repository and tag to
-`hardimpactdev/orbit-sdk-typescript`, then publishes the same prepared tree to
-npm with public access and provenance. Split publish always precedes npm so
-provenance never lands before the generated repo/tag. Install trees
-(`node_modules`) are never committed. There is no independent TypeScript
-version stream. `composer quality-check` runs package `typecheck` and `build`.
+`packages/sdk-typescript` in `hardimpactdev/orbit` and stays `private=true` in
+the monorepo to block accidental npm publish from the monorepo tree. Package
+versioning is **independent of monorepo root `VERSION`**: the package’s own
+`package.json` version is authoritative (initial public release `0.1.0`).
 
-First npm publication may use a one-time `NPM_TOKEN` secret on
-`hardimpactdev/orbit`. After the package exists, configure npm Trusted
-Publisher for `hardimpactdev/orbit` / `.github/workflows/orbit-release.yml` and
-prefer OIDC (`id-token`) so the long-lived token can be removed. The workflow
-accepts either `NPM_TOKEN` or Trusted Publisher OIDC; it does not treat
-`NPM_TOKEN` as permanently required. Local agent work does not attempt
-registry publication.
+Local release preparation uses
+`bin/orbit-prepare-release-package --package=sdk-typescript` and stamps the
+**package.json version** (not root `VERSION`) into prepared `package.json` and
+`package-lock.json` identity fields, sets `private=false`, rewrites repository
+metadata to the durable generated package repository
+`hardimpactdev/orbit-sdk-typescript`, and includes that repository’s
+`.github/workflows/publish.yml`. Install trees (`node_modules`) are never
+committed. `composer quality-check` still runs package `typecheck` and `build`.
+
+npm publication is **not** performed by monorepo `.github/workflows/orbit-release.yml`
+and the monorepo never holds a durable npm publish secret for this package.
+
+Operators push the prepared split tree to `hardimpactdev/orbit-sdk-typescript`.
+That repository’s `.github/workflows/publish.yml` has two paths:
+
+1. **One-time bootstrap** (`workflow_dispatch`, exact version input `0.1.0`):
+   fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+   `E404` absence for the package and `0.1.0`, a successful lookup refuses as
+   already existing, any non-E404 registry/DNS/TLS/rate/auth error stops, and
+   the input matches `package.json` `0.1.0`. May use a short-lived
+   least-privilege split-repo secret `NPM_BOOTSTRAP_TOKEN` only for that
+   create, then the secret/token is deleted/revoked.
+2. **Steady-state** (`release: published`): Craft-style OIDC Trusted Publisher
+   (Node 24, `id-token: write`, `npm publish --provenance --access public`)
+   with **no** token. Configure Trusted Publisher for
+   `hardimpactdev/orbit-sdk-typescript` / `publish.yml` after the first package
+   exists (npm cannot attach Trusted Publisher before the package name exists).
 
 #### Remote command progress
 

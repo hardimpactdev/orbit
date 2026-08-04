@@ -92,29 +92,63 @@ const { data, error } = await orbit.GET('/nodes', {
 
 The wrapper is intentionally thin around `openapi-fetch`: macOS/Tauri, TanStack Query, and browser toolbar code should compose request hooks around the typed `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods rather than forking gateway route definitions by hand.
 
-## Local package preparation
+## Versioning and publication
 
-From the monorepo root, prepare a durable outside-monorepo package tree without publishing:
+This package is **independently versioned** from Orbit monorepo root `VERSION`.
+The version in this `package.json` is authoritative (public stream starts at
+`0.1.0`). Canonical source remains `packages/sdk-typescript` in
+`hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install from
+npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
+
+Publication path (package repository only; monorepo never holds npm secrets):
+
+1. Prepare a durable split tree from the monorepo (does not publish):
+
+   ```bash
+   bin/orbit-prepare-release-package \
+     --package=sdk-typescript \
+     --version="$(node -p "require('./packages/sdk-typescript/package.json').version")" \
+     --output=/tmp/orbit-sdk-typescript
+   ```
+
+2. Push the prepared tree to `hardimpactdev/orbit-sdk-typescript` `main`.
+3. **First publish only (bootstrap):** npm cannot authorize Trusted Publisher
+   before the package exists. Operational order:
+
+   ```bash
+   # Create a short-lived least-privilege granular token with bypass-2FA for
+   # package create under @hardimpactdev (not a monorepo secret).
+   # Set it only on hardimpactdev/orbit-sdk-typescript as NPM_BOOTSTRAP_TOKEN.
+   gh secret set NPM_BOOTSTRAP_TOKEN --repo hardimpactdev/orbit-sdk-typescript
+
+   # Dispatch exact 0.1.0 bootstrap. Guard uses scripts/npm-bootstrap-registry-absent.sh:
+   # only confirmed npm E404 permits create; existing package or non-E404
+   # registry/DNS/TLS/rate/auth errors fail closed.
+   gh workflow run publish.yml \
+     --repo hardimpactdev/orbit-sdk-typescript \
+     -f version=0.1.0
+
+   # Verify, then attach Trusted Publisher and remove the bootstrap credential.
+   npm view @hardimpactdev/orbit-sdk-typescript@0.1.0
+   npm trust github @hardimpactdev/orbit-sdk-typescript \
+     --repo hardimpactdev/orbit-sdk-typescript \
+     --file publish.yml \
+     --allow-publish
+   gh secret delete NPM_BOOTSTRAP_TOKEN --repo hardimpactdev/orbit-sdk-typescript
+   # Revoke the granular token in the npm account UI.
+   ```
+
+4. **All later releases:** create and **publish** a GitHub Release tag
+   (`v0.1.1`, …) on the package repository. `release: published` runs the same
+   workflow’s OIDC path (Node 24, `id-token: write`, no token): `npm ci`,
+   `npm test`, `npm run build`, `npm version` from the tag, and
+   `npm publish --provenance --access public`. Bootstrap refuses once the
+   package exists (successful lookup) or when registry checks are non-E404.
+
+Monorepo `.github/workflows/orbit-release.yml` does **not** publish this package
+to npm and does not stamp root Orbit VERSION into it.
 
 ```bash
-bin/orbit-prepare-release-package \
-  --package=sdk-typescript \
-  --version="$(bin/orbit-version)" \
-  --output=/tmp/orbit-sdk-typescript
-
-# Optional dry-run archive of the prepared package:
-(cd packages/sdk-typescript && npm run build && npm pack --dry-run)
+# Optional dry-run from monorepo source package:
+(cd packages/sdk-typescript && npm ci && npm test && npm run build && npm pack --dry-run)
 ```
-
-The prepared package keeps the exact `@hardimpactdev/orbit-sdk-typescript`
-identity, stamps the monorepo root `VERSION` into both `package.json` and the
-root `package-lock.json` identity fields, sets `private=false`, and preserves
-public npm metadata (`publishConfig.access`, repository directory provenance for
-`packages/sdk-typescript`). The generated split repository is
-`hardimpactdev/orbit-sdk-typescript`; canonical source remains
-`hardimpactdev/orbit`.
-
-Release order: prepare/verify → push generated split repo/tag → `npm publish
---access public --provenance`. First npm publication may use `NPM_TOKEN`; after
-the package exists, prefer npm Trusted Publisher for
-`hardimpactdev/orbit` / `orbit-release.yml` and remove the long-lived token.
