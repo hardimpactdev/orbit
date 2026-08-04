@@ -46,7 +46,6 @@ it('keeps agent-facing command references on project and instance vocabulary', f
     $paths = [
         '.agents/skills/orbit/SKILL.md',
         '.agents/skills/orbit/references/activity.md',
-        '.agents/skills/orbit/references/agent-ide.md',
         '.agents/skills/orbit/references/app.md',
         '.agents/skills/orbit/references/concepts.md',
         '.agents/skills/orbit/references/database.md',

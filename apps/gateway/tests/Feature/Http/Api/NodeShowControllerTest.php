@@ -131,10 +131,6 @@ describe('NodeShowController', function (): void {
                             'addresses' => [
                                 'wireguard' => '10.6.0.7',
                             ],
-                            'agent_ide' => [
-                                'adapter' => null,
-                                'source' => 'default',
-                            ],
                             'grants' => [
                                 'consuming_nodes' => [],
                                 'serving_nodes' => [],
@@ -304,10 +300,6 @@ describe('NodeShowController', function (): void {
                             'addresses' => [
                                 'wireguard' => '10.6.0.2',
                             ],
-                            'agent_ide' => [
-                                'adapter' => null,
-                                'source' => 'default',
-                            ],
                             'grants' => [
                                 'consuming_nodes' => [],
                                 'serving_nodes' => [],
@@ -318,20 +310,6 @@ describe('NodeShowController', function (): void {
             ]);
     });
 
-    it('returns explicit node agent IDE defaults', function (): void {
-        DB::table('nodes')->insert([
-            apiShowNodeRow([
-                'agent_ide_config' => json_encode(['adapter' => 'polyscope'], JSON_THROW_ON_ERROR),
-            ]),
-        ]);
-
-        $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.node.agent_ide.adapter', 'polyscope')
-            ->assertJsonPath('success.data.node.agent_ide.source', 'node');
-    });
 
     it('returns real grants data', function (): void {
         DB::table('nodes')->insert([

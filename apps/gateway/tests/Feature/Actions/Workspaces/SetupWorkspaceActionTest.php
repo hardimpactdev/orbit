@@ -235,7 +235,7 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
             'name' => 'frankenphp-demo-feature-a',
             'command' => 'stale command',
             'restart_policy' => ProcessRestartPolicy::Never,
-            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'crash_notification' => ProcessCrashNotification::None,
             'runtime' => ProcessRuntime::Systemd,
             'runtime_config' => [
                 'container_name' => 'stale-container',

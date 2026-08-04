@@ -807,7 +807,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'crash_notification')
-            ->assertJsonPath('error.meta.reason', 'launchd_crash_notification_deferred');
+            ->assertJsonPath('error.meta.value', 'agent_ide');
 
         expect(Process::query()->where('name', 'feedback')->value('crash_notification')->value)
             ->toBe('none')

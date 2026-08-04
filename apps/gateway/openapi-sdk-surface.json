@@ -435,13 +435,6 @@
       "reason": "Frame publishing is target-agent to gateway protocol traffic, not operator or dashboard SDK surface."
     },
     {
-      "operation": "POST /events/process",
-      "operation_id": "processEventIngest",
-      "classification": "internal_only",
-      "group": "process_event_ingest",
-      "reason": "Process event ingestion is node/runtime-to-gateway telemetry, not public SDK surface."
-    },
-    {
       "operation": "GET /runtime-activations/{type}/{id}",
       "operation_id": "runtime-activations.show",
       "classification": "internal_only",

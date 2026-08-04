@@ -135,6 +135,114 @@ final class ProcessUpdateController implements Loggable
             );
         }
 
+        if (
+            $newName === null
+            && $command === null
+            && $restartPolicyInput === null
+            && $crashNotificationInput === null
+            && $runtimeInput === null
+        ) {
+            return $this->error(
+                'validation_failed',
+                'At least one editable field is required.',
+                ['field' => 'editable_fields'],
+                422,
+            );
+        }
+
+        $changes = [];
+
+        if ($newName !== null) {
+            if (! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $newName)) {
+                return $this->error(
+                    'validation_failed',
+                    'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+                    [
+                        'field' => 'name',
+                        'value' => $newName,
+                    ],
+                    422,
+                );
+            }
+
+            $changes['name'] = $newName;
+        }
+
+        if ($command !== null) {
+            $changes['command'] = $command;
+        }
+
+        if ($restartPolicyInput !== null) {
+            $restartPolicy = ProcessRestartPolicy::tryFrom($restartPolicyInput);
+
+            if (! $restartPolicy instanceof ProcessRestartPolicy) {
+                return $this->error(
+                    'validation_failed',
+                    'Invalid restart policy.',
+                    [
+                        'field' => 'restart_policy',
+                        'value' => $restartPolicyInput,
+                        'allowed' => array_column(ProcessRestartPolicy::cases(), 'value'),
+                    ],
+                    422,
+                );
+            }
+
+            $changes['restart_policy'] = $restartPolicy;
+        }
+
+        if ($crashNotificationInput !== null) {
+            $crashNotification = ProcessCrashNotification::tryFrom($crashNotificationInput);
+
+            if (! $crashNotification instanceof ProcessCrashNotification) {
+                return $this->error(
+                    'validation_failed',
+                    'Invalid crash notification policy.',
+                    [
+                        'field' => 'crash_notification',
+                        'value' => $crashNotificationInput,
+                        'allowed' => array_column(ProcessCrashNotification::cases(), 'value'),
+                    ],
+                    422,
+                );
+            }
+
+            $changes['crash_notification'] = $crashNotification;
+        }
+
+        if ($runtimeInput !== null) {
+            $runtime = ProcessRuntime::tryFrom($runtimeInput);
+
+            if (! $runtime instanceof ProcessRuntime) {
+                return $this->error(
+                    'validation_failed',
+                    'Invalid process runtime.',
+                    [
+                        'field' => 'runtime',
+                        'value' => $runtimeInput,
+                        'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                    ],
+                    422,
+                );
+            }
+
+            if ($node === null && $runtime->appWorkspaceCommandViolationReason() !== null) {
+                return $this->error(
+                    'validation_failed',
+                    $runtime->appWorkspaceCommandViolationMessage()
+                    ?? 'The selected runtime is not valid for this process owner.',
+                    [
+                        'field' => 'runtime',
+                        'value' => $runtimeInput,
+                        'reason' => $runtime->appWorkspaceCommandViolationReason(),
+                    ],
+                    422,
+                );
+            }
+
+            $changes['runtime'] = $runtime;
+        }
+
         return [
             'node' => $node,
             'instance' => $app,

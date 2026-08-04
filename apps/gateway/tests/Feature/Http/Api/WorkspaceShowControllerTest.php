@@ -57,7 +57,6 @@ describe('WorkspaceShowController', function (): void {
             'name' => 'app-1',
             'host' => '1.2.3.4',
             'tld' => 'test',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
@@ -71,8 +70,6 @@ describe('WorkspaceShowController', function (): void {
             'name' => 'feature-docs',
             'app_id' => $app->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
-            'agent_ide' => 'opencode',
-            'agent_ide_workspace_id' => null,
         ]);
 
         Process::factory()
@@ -104,8 +101,6 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('success.data.workspace.path', '/home/orbit/apps/docs/.worktrees/feature-docs')
             ->assertJsonPath('success.data.workspace.php_version', '8.5')
             ->assertJsonPath('success.data.workspace.php_inherited', true)
-            ->assertJsonPath('success.data.workspace.agent_ide.adapter', 'opencode')
-            ->assertJsonPath('success.data.workspace.agent_ide.workspace_id', null)
             ->assertJsonPath('success.data.workspace.adopted', false)
             ->assertJsonPath('success.data.workspace.lifecycle_status', 'expected')
             // show-only siblings
@@ -120,8 +115,8 @@ describe('WorkspaceShowController', function (): void {
             ->not->toHaveKey('branch')->and($ws)
             ->not->toHaveKey('runtime_expectations')->and($ws)
             ->not->toHaveKey('route')->and($ws)
-            ->not->toHaveKey('latest_setup_run')->and($ws['agent_ide'])
-            ->not->toHaveKey('inherited_from');
+            ->not->toHaveKey('latest_setup_run')->and($ws)
+            ->not->toHaveKey('agent_ide');
     });
 
     it('returns ambiguous name errors when app is omitted', function (): void {

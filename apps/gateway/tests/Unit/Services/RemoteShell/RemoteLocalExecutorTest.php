@@ -505,8 +505,8 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             transportOptions: [
                 'environment' => [
                     'ORBIT_REQUEST_MARKER' => 'must-not-bind',
@@ -644,9 +644,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
-            commandOptions: ['state-path' => "/home/orbit/.polyscope/state's.db"],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
+            commandOptions: [],
             transportOptions: [
                 'input' => '{"probe":true}',
                 'timeout' => 45,
@@ -711,8 +711,8 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             transportOptions: [
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000426',
@@ -1031,10 +1031,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             commandOptions: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
                 'enabled' => true,
                 'attempts' => 3,
             ],
@@ -1065,10 +1064,9 @@ describe(RemoteLocalExecutor::class, function (): void {
         $token = OperationToken::parse($compactToken);
         $auditLine = new LocalExecutorCommandBuilder()->buildAuditLine(
             targetNode: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             options: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
                 'enabled' => true,
                 'attempts' => 3,
             ],
@@ -1076,7 +1074,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         );
 
         expect($script)
-            ->toContain('internal:workspace-adapter:lookup lookup polyscope')
+            ->toContain('internal:workspace-source:create /srv/docs feature-docs main')
             ->and($script)
             ->not
             ->toContain('docker exec')
@@ -1089,7 +1087,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($token->node)
             ->toBe($node->name)
             ->and($token->command)
-            ->toBe('internal:workspace-adapter:lookup')
+            ->toBe('internal:workspace-source:create')
             ->and($token->issuedAt)
             ->toBe(1_798_105_200)
             ->and($token->expiresAt)
@@ -1098,15 +1096,14 @@ describe(RemoteLocalExecutor::class, function (): void {
                 secretsByKeyId: [$token->keyId => 'gateway-secret'],
                 token: $token,
                 expectedNode: $node->name,
-                expectedCommand: 'internal:workspace-adapter:lookup',
+                expectedCommand: 'internal:workspace-source:create',
                 expectedCommandContextHash: OperationTokenCommandContext::fromTrustedDispatch(
                     argv: new LocalExecutorCommandBuilder()->buildArgv(
                         targetNode: $node,
-                        commandName: 'internal:workspace-adapter:lookup',
-                        arguments: ['lookup', 'polyscope'],
+                        commandName: 'internal:workspace-source:create',
+                        arguments: ['/srv/docs', 'feature-docs', 'main'],
                         options: [
-                            'state-path' => "/home/orbit/.polyscope/state's.db",
-                            'enabled' => true,
+                'enabled' => true,
                             'attempts' => 3,
                         ],
                         operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
@@ -1143,10 +1140,9 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter:lookup',
-                'arguments' => ['lookup', 'polyscope'],
+                'command' => 'internal:workspace-source:create',
+                'arguments' => ['/srv/docs', 'feature-docs', 'main'],
                 'command_options' => [
-                    'state-path' => "/home/orbit/.polyscope/state's.db",
                     'enabled' => true,
                     'attempts' => 3,
                 ],
@@ -1165,7 +1161,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter:lookup',
+                'command' => 'internal:workspace-source:create',
                 'exit_code' => 0,
                 'stdout_summary' => "{\"ok\":true}\n",
                 'stderr_summary' => '',
@@ -1753,11 +1749,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
             $executor->runInternal(
                 node: remoteLocalExecutorNode(),
-                commandName: 'internal:workspace-adapter:lookup',
+                commandName: 'internal:workspace-source:create',
                 arguments: [],
                 commandOptions: [
-                    'adapter' => 'polyscope',
-                    'lookup' => 'config',
                     'app-path' => '/srv/docs',
                 ],
                 transportOptions: $transportOptions,
@@ -1869,11 +1863,9 @@ describe(RemoteLocalExecutor::class, function (): void {
         try {
             $executor->runInternal(
                 node: remoteLocalExecutorNode(),
-                commandName: 'internal:workspace-adapter:lookup',
+                commandName: 'internal:workspace-source:create',
                 arguments: [],
                 commandOptions: [
-                    'adapter' => 'polyscope',
-                    'lookup' => 'config',
                     'app-path' => '/srv/docs',
                 ],
                 transportOptions: ['redact_stdout' => true],
@@ -1902,7 +1894,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
+            commandName: 'internal:workspace-source:create',
             transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
         );
 
@@ -1914,7 +1906,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($row->status)
             ->toBe('succeeded')
             ->and($row->internal_command)
-            ->toBe('internal:workspace-adapter:lookup')
+            ->toBe('internal:workspace-source:create')
             ->and($row->lane)
             ->toBe('local')
             ->and((int) $row->target_node_id)
@@ -2362,7 +2354,7 @@ function remote_local_executor_default_agent_push_request_matches(Request $reque
         && remote_local_executor_request_body_contains_all($body, [
             '"command_id":"orbit.agent.binary"',
             '"binary":"orbit"',
-            '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
+            '"argv":["internal:workspace-source:create","\/srv\/docs","feature-docs","main","--operation-token=',
             '--json"',
             '"input":"{\\"probe\\":true}"',
             '"timeout_seconds":45',

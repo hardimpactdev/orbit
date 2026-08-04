@@ -302,7 +302,7 @@ describe('ProcessStoreController', function (): void {
                 'name' => 'vite',
                 'command' => 'npm run dev',
                 'restart_policy' => 'on_failure',
-                'crash_notification' => 'agent_ide',
+                'crash_notification' => 'none',
             ],
             [],
             [],
@@ -1830,31 +1830,6 @@ describe('ProcessStoreController', function (): void {
         expect(Process::query()->where('name', 'feedback-worker')->value('runtime'))->toBe(ProcessRuntime::Launchd);
     });
 
-    it('defers crash notification agent_ide for launchd with launchd_crash_notification_deferred', function (): void {
-        $caller = createProcessStoreCallerNode();
-        $appNode = createTestAppHostNode(['platform' => 'darwin']);
-        grantProcessStoreAccess($caller, $appNode);
-        Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-
-        $response = $this->call(
-            'POST',
-            '/api/processes',
-            [
-                'instance' => 'docs',
-                'name' => 'feedback-crash',
-                'command' => 'php artisan work',
-                'runtime' => 'launchd',
-                'crash_notification' => 'agent_ide',
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
-        );
-
-        $response->assertUnprocessable();
-        $json = $response->json();
-        expect($json['error']['meta']['reason'] ?? null)->toBe('launchd_crash_notification_deferred');
-    });
 
     it('rejects launchd runtime on linux nodes with launchd_runtime_requires_macos', function (): void {
         $caller = createProcessStoreCallerNode();

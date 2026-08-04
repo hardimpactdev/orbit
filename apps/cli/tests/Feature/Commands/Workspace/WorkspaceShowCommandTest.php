@@ -84,7 +84,6 @@ describe('workspace:show', function (): void {
                 'url' => 'https://feature-docs.docs.test',
                 'php_version' => '8.5',
                 'php_inherited' => true,
-                'agent_ide' => ['adapter' => 'opencode', 'workspace_id' => null],
                 'adopted' => false,
                 'lifecycle_status' => 'expected',
             ],
@@ -114,11 +113,6 @@ describe('workspace:show', function (): void {
             ->toContain('Path')
             ->and($output)
             ->toContain('/home/orbit/apps/docs/.worktrees/feature-docs')
-            // Agent IDE
-            ->and($output)
-            ->toContain('Agent IDE')
-            ->and($output)
-            ->toContain('opencode')
             // PHP
             ->and($output)
             ->toContain('PHP')

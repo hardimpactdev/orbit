@@ -19,7 +19,7 @@ describe('process write commands', function (): void {
             'process_command' => 'npm run dev',
             '--instance' => 'docs',
             '--restart-policy' => 'always',
-            '--crash-notification' => 'agent_ide',
+            '--crash-notification' => 'none',
             '--runtime' => 'systemd',
             '--json' => true,
         ]);
@@ -35,7 +35,7 @@ describe('process write commands', function (): void {
                     'name' => 'vite',
                     'command' => 'npm run dev',
                     'restart_policy' => 'always',
-                    'crash_notification' => 'agent_ide',
+                    'crash_notification' => 'none',
                     'start' => true,
                     'runtime' => 'systemd',
                 ]

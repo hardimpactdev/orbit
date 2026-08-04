@@ -38,10 +38,10 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
 
         $argv = localExecutorCommandBuilder()->buildArgv(
             targetNode: localExecutorTargetNode(['app-dev']),
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'two words', "quote'arg", 7, 1.5, true, false],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main', 7, 1.5, true, false],
             options: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
+                'base' => "/srv/docs/repo's/main",
                 'enabled' => true,
                 'locked' => false,
             ],
@@ -49,15 +49,15 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         );
 
         expect($argv)->toBe([
-            'internal:workspace-adapter:lookup',
-            'lookup',
-            'two words',
-            "quote'arg",
+            'internal:workspace-source:create',
+            '/srv/docs',
+            'feature-docs',
+            'main',
             '7',
             '1.5',
             '1',
             '0',
-            "--state-path=/home/orbit/.polyscope/state's.db",
+            "--base=/srv/docs/repo's/main",
             '--enabled=1',
             '--locked=0',
             "--operation-token={$operationToken}",
@@ -68,7 +68,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
     it('uses the same role allow list for argv building', function (): void {
         expect(fn (): array => localExecutorCommandBuilder()->buildArgv(
             targetNode: localExecutorTargetNode(['vpn']),
-            commandName: 'internal:workspace-adapter:lookup',
+            commandName: 'internal:workspace-source:create',
             arguments: [],
             options: [],
             operationToken: local_executor_test_operation_token(),
@@ -223,7 +223,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
 
         $command = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['app-dev']),
-            commandName: 'internal:workspace-adapter:lookup',
+            commandName: 'internal:workspace-source:create',
             arguments: ['two words', "quote'arg", 7, 1.5, true, false],
             options: [],
             operationToken: $operationToken,
@@ -231,7 +231,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
 
         expect($command)->toBe(implode(' ', [
             escapeshellarg('/home/orbit/.local/bin/orbit'),
-            'internal:workspace-adapter:lookup',
+            'internal:workspace-source:create',
             escapeshellarg('two words'),
             escapeshellarg("quote'arg"),
             escapeshellarg('7'),
@@ -292,16 +292,16 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
     it('builds an audit line with the operation token redacted', function (): void {
         $auditLine = localExecutorCommandBuilder()->buildAuditLine(
             targetNode: localExecutorTargetNode(['app-dev']),
-            commandName: 'internal:workspace-adapter:lookup',
+            commandName: 'internal:workspace-source:create',
             arguments: [],
-            options: ['state-path' => '/home/orbit/.polyscope/polyscope.db'],
+            options: ['base' => "/srv/docs/repo's/main"],
             operationToken: local_executor_test_operation_token(),
         );
 
         expect($auditLine)->toBe(implode(' ', [
             escapeshellarg('/home/orbit/.local/bin/orbit'),
-            'internal:workspace-adapter:lookup',
-            '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
+            'internal:workspace-source:create',
+            '--base='.escapeshellarg("/srv/docs/repo's/main"),
             '--operation-token=<redacted>',
             '--json',
         ]));
@@ -664,8 +664,6 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'metrics',
                 'analytics',
             ],
-            'internal:workspace-adapter:lookup' => ['app-dev'],
-            'internal:workspace-adapter:update' => ['app-dev'],
             'internal:app-setup-step' => ['app-dev', 'app-prod'],
             'internal:workspace-setup-step' => ['app-dev'],
             'internal:workspace-source:create' => ['app-dev'],
@@ -739,8 +737,6 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'wireguard endpoint rotate' => ['internal:wireguard-endpoint:rotate', ['app-dev'], ['gateway']],
         'wireguard interface public key read' => ['internal:wireguard-interface-public-key:read', ['app-dev'], []],
         'wireguard self route' => ['internal:wireguard-self-route', ['app-dev'], []],
-        'workspace adapter lookup' => ['internal:workspace-adapter:lookup', ['app-dev'], ['vpn']],
-        'workspace adapter update' => ['internal:workspace-adapter:update', ['app-dev'], ['gateway']],
         'app setup step' => ['internal:app-setup-step', ['app-dev'], ['database']],
         'workspace setup step' => ['internal:workspace-setup-step', ['app-dev'], ['database']],
         'workspace source create' => ['internal:workspace-source:create', ['app-dev'], ['database']],

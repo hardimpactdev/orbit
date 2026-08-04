@@ -215,8 +215,6 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
-| `process.event_notifier_missing` | Runtime lifecycle event notifier material is absent for a runtime unit that should emit crash events. |
-| `process.event_notifier_mismatch` | Runtime lifecycle event notifier material exists but points at the wrong gateway endpoint, app, workspace, process, or event intake identity. |
 
 ## Process Fix Map
 
@@ -234,8 +232,6 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
-| `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
-| `process.event_notifier_mismatch` | Rewrite lifecycle event notifier material to match gateway configuration and the current gateway event intake identity. |
 
 `doctor --restore` does not handle `process.record_incomplete`,
 `process.owner_app_invalid`, `process.owner_node_invalid`,
@@ -273,7 +269,6 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `process.runtime_unit_unloaded` | No adoption action. Loaded state is repaired through restore or lifecycle commands, not adopted as gateway configuration. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:update` when the observed policy should become configuration. |
 | `process.runtime_environment_mismatch` | No adoption action. Runtime environment is derived from app, workspace, and node configuration. |
-| `process.event_notifier_mismatch` | No adoption action. Event notifier material is derived from gateway-owned process configuration and gateway event intake identity. |
 
 Process doctor does not adopt runtime backend artifacts, logs, event history, app source, workspace source, scheduler artifacts, proxy backend artifacts, tool installs, or firewall rules as process configuration.
 

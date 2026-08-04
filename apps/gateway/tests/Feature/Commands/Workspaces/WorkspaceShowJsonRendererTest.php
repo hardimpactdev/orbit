@@ -76,8 +76,6 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             'app_id' => $app->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
             'php_version' => null,
-            'agent_ide' => 'opencode',
-            'agent_ide_workspace_id' => null,
         ]);
 
         $response = $this->call(
@@ -107,12 +105,8 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->toBe('8.5')
             ->and($ws['php_inherited'])
             ->toBeTrue()
-            ->and($ws['agent_ide'])
-            ->toBeArray()
-            ->and($ws['agent_ide']['adapter'])
-            ->toBe('opencode')
-            ->and($ws['agent_ide']['workspace_id'])
-            ->toBeNull()
+            ->and($ws)
+            ->not->toHaveKey('agent_ide')
             ->and($ws['adopted'])
             ->toBeFalse()
             ->and($ws['lifecycle_status'])
@@ -359,13 +353,13 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->not->toHaveKey('latest_setup_run');
     });
 
-    it('does not include agent_ide.inherited_from or agent_ide.workspace_discovery', function (): void {
+    it('does not include removed agent_ide workspace payload fields', function (): void {
         $caller = wsShowJsonCallerNode();
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
         $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'agent_ide' => 'opencode']);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
             'GET',
@@ -378,13 +372,8 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
 
         $response->assertOk();
 
-        $agentIde = $response->json('success.data.workspace.agent_ide');
-
-        expect($agentIde)
-            ->not->toHaveKey('inherited_from')->and($agentIde)
-            ->not->toHaveKey('workspace_discovery')->and($agentIde)->toHaveKey('adapter')->and($agentIde)->toHaveKey(
-                'workspace_id',
-            );
+        expect($response->json('success.data.workspace'))
+            ->not->toHaveKey('agent_ide');
     });
 });
 

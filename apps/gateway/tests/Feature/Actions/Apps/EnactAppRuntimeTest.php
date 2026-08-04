@@ -370,7 +370,7 @@ it('reconciles an existing FrankenPHP app runtime process row', function (): voi
             'name' => 'frankenphp-docs',
             'command' => 'stale command',
             'restart_policy' => ProcessRestartPolicy::Never,
-            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'crash_notification' => ProcessCrashNotification::None,
             'runtime' => ProcessRuntime::Systemd,
             'runtime_config' => [
                 'container_name' => 'stale-container',

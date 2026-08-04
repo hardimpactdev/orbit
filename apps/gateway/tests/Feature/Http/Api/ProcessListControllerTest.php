@@ -169,7 +169,7 @@ describe('ProcessListController', function (): void {
                 'name' => 'vite',
                 'command' => 'npm run dev',
                 'restart_policy' => ProcessRestartPolicy::Never,
-                'crash_notification' => ProcessCrashNotification::AgentIde,
+                'crash_notification' => ProcessCrashNotification::None,
                 'sort_order' => 10,
             ]);
 
