@@ -1,7 +1,7 @@
 {
     "$schema": "https://www.schemastore.org/package.json",
     "name": "@hardimpactdev/orbit-sdk-typescript",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "private": true,
     "type": "module",
     "description": "Generated TypeScript client for the public Orbit gateway API surface.",
@@ -44,7 +44,7 @@
         "generate:types": "openapi-typescript openapi/public-gateway-openapi.json -o src/generated/schema.ts",
         "pack:dry-run": "npm pack --dry-run",
         "test": "npm run typecheck && npm run test:runtime",
-        "test:runtime": "node --experimental-strip-types --test tests/process-stream.test.ts",
+        "test:runtime": "node --experimental-strip-types --test tests/process-stream.test.ts tests/client.test.ts",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
