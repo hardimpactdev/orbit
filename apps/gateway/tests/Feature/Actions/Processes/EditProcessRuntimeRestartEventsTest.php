@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
+use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -207,11 +208,121 @@ it('records ordered restart events when EditProcessRuntimeUnits::restart is invo
     $warnings = app(EditProcessRuntimeUnits::class)->restart(
         $fixture['context'],
         $fixture['process']->fresh(),
-        [['name' => 'orbit_docs_development_main_vite', 'context' => 'instance']],
+        [['name' => 'orbit_docs_development_main_vite', 'context' => 'main']],
     );
 
     expect($warnings)
         ->toBe([])
         ->and(editRestartEventTypes())
         ->toBe(['restarting', 'started']);
+});
+
+it('scopes multi-context process:update --restart events per runtime unit workspace', function (): void {
+    $node = createTestAppHostNode(['name' => 'app-1']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $instance = AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+    ]);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'name' => 'feature-a',
+    ]);
+    $process = Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'vite',
+        ]);
+    $context = new ProcessOwnerContext(
+        node: $node,
+        app: $app,
+        workspace: null,
+        owner: $app,
+        appInstance: $instance,
+    );
+
+    bindEditProcessRestartShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+
+    $mainUnit = 'orbit_docs_development_main_vite';
+    $workspaceUnit = 'orbit_docs_development_feature_a_vite';
+
+    $warnings = app(EditProcessRuntimeUnits::class)->restart(
+        $context,
+        $process->fresh(),
+        [
+            ['name' => $mainUnit, 'context' => 'main'],
+            ['name' => $workspaceUnit, 'context' => 'feature-a'],
+        ],
+    );
+
+    $events = ProcessEvent::query()
+        ->orderBy('id')
+        ->get(['event', 'unit_name', 'workspace_id', 'process_name']);
+
+    expect($warnings)
+        ->toBe([])
+        ->and(
+            $events
+                ->pluck('event')
+                ->map(static fn (ProcessEventType $type): string => $type->value)
+                ->all(),
+        )
+        ->toBe(['restarting', 'started', 'restarting', 'started'])
+        ->and($events->pluck('unit_name')->all())
+        ->toBe([$mainUnit, $mainUnit, $workspaceUnit, $workspaceUnit])
+        ->and($events->pluck('workspace_id')->all())
+        ->toBe([null, null, $workspace->id, $workspace->id])
+        ->and($events->pluck('process_name')->unique()->values()->all())
+        ->toBe(['vite']);
+
+    $mainScopeIds = ProcessEvent::query()
+        ->where('app_instance_id', $instance->id)
+        ->where('node_id', $node->id)
+        ->whereNull('workspace_id')
+        ->orderBy('id')
+        ->pluck('unit_name')
+        ->all();
+    $workspaceScopeIds = ProcessEvent::query()
+        ->where('app_instance_id', $instance->id)
+        ->where('node_id', $node->id)
+        ->where('workspace_id', $workspace->id)
+        ->orderBy('id')
+        ->pluck('unit_name')
+        ->all();
+
+    expect($mainScopeIds)
+        ->toBe([$mainUnit, $mainUnit])
+        ->and($workspaceScopeIds)
+        ->toBe([$workspaceUnit, $workspaceUnit]);
+
+    // List status for main (workspace null) must not derive from workspace unit terminals.
+    $mainLast = ProcessEvent::query()
+        ->where('process_id', $process->id)
+        ->where('app_instance_id', $instance->id)
+        ->whereNull('workspace_id')
+        ->latest('id')
+        ->first();
+    $workspaceLast = ProcessEvent::query()
+        ->where('process_id', $process->id)
+        ->where('app_instance_id', $instance->id)
+        ->where('workspace_id', $workspace->id)
+        ->latest('id')
+        ->first();
+
+    expect($mainLast?->unit_name)
+        ->toBe($mainUnit)
+        ->and($mainLast?->event)
+        ->toBe(ProcessEventType::Started)
+        ->and($workspaceLast?->unit_name)
+        ->toBe($workspaceUnit)
+        ->and($workspaceLast?->event)
+        ->toBe(ProcessEventType::Started)
+        ->and($mainLast?->id)
+        ->not->toBe($workspaceLast?->id);
 });

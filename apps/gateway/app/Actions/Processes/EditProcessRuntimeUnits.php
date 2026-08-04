@@ -109,9 +109,20 @@ final readonly class EditProcessRuntimeUnits
     {
         $warnings = [];
         $driver = $this->runtimeDrivers->forProcess($process);
+        // App-level process:update may restart main plus each workspace unit.
+        // Resolve workspace from each unit's context so events are not all
+        // written with workspace_id=null (which would starve workspace streams
+        // and contaminate main-scope status derivation).
+        $app = $context->runtimeApp();
+        $app->loadMissing(['workspaces']);
 
         foreach ($runtimeUnits as $runtimeUnit) {
-            $workspace = $context->runtimeWorkspaceFor($process);
+            $workspace = $this->resolver->runtimeWorkspaceForUnit(
+                $context,
+                $app,
+                $process,
+                $runtimeUnit,
+            );
 
             $this->recordProcessEvent->handle(
                 ProcessEventType::Restarting,
