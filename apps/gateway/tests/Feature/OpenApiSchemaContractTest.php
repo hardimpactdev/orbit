@@ -9,7 +9,7 @@ use PHPUnit\Framework\Assert;
 /**
  * @param  array<string, mixed>  $schema
  */
-function assertProcessOpenApiContracts(array $schema): void
+function assert_process_open_api_contracts(array $schema): void
 {
     $processParameters = data_get($schema, 'paths./processes.get.parameters');
 
@@ -25,10 +25,46 @@ function assertProcessOpenApiContracts(array $schema): void
 
     Assert::assertSame(['app', 'node', 'instance', 'workspace'], $processParameterNames);
     Assert::assertSame(
-        ['running', 'stopped', 'crashed', 'unknown'],
+        ['starting', 'running', 'stopping', 'stopped', 'restarting', 'crashed', 'unknown'],
         data_get(
             $schema,
             'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.status.enum',
+        ),
+    );
+    Assert::assertSame(
+        [
+            'node',
+            'project',
+            'instance',
+            'workspace',
+            'name',
+            'command',
+            'restart_policy',
+            'crash_notification',
+            'runtime',
+            'tool',
+            'service',
+            'runtime_unit',
+            'status',
+            'last_event',
+        ],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.required',
+        ),
+    );
+    Assert::assertSame(
+        ['node', 'project', 'instance', 'workspace'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.context.required',
+        ),
+    );
+    Assert::assertSame(
+        ['starting', 'started', 'stopping', 'stopped', 'restarting', 'crashed', 'failed'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.last_event.properties.type.enum',
         ),
     );
     Assert::assertSame(
@@ -49,15 +85,33 @@ function assertProcessOpenApiContracts(array $schema): void
     ) ?? [];
 
     Assert::assertArrayHasKey('event', $startRuntimeProperties);
-    Assert::assertArrayNotHasKey('events', $startRuntimeProperties);
+    Assert::assertArrayHasKey('events', $startRuntimeProperties);
     Assert::assertArrayHasKey('events', $restartRuntimeProperties);
     Assert::assertArrayNotHasKey('event', $restartRuntimeProperties);
+    Assert::assertSame(
+        ['process', 'node', 'project', 'instance', 'workspace', 'runtime_unit', 'state', 'event', 'events'],
+        data_get(
+            $schema,
+            'paths./processes/start.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.required',
+        ),
+    );
     Assert::assertContains(
         'events',
         data_get(
             $schema,
             'paths./processes/restart.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.required',
         ) ?? [],
+    );
+    Assert::assertTrue(
+        (bool) data_get($schema, 'paths./processes/stream.get.parameters.0.required'),
+    );
+    Assert::assertSame(
+        'app',
+        data_get($schema, 'paths./processes/stream.get.parameters.0.name'),
+    );
+    Assert::assertSame(
+        'processesStream',
+        data_get($schema, 'paths./processes/stream.get.operationId'),
     );
     Assert::assertArrayNotHasKey(
         'options',
@@ -101,7 +155,7 @@ test('gateway openapi export includes stable contract metadata', function (): vo
     Assert::assertSame('toolStart', data_get($schema, 'paths./tools/{tool}/start.post.operationId'));
     Assert::assertSame('toolStop', data_get($schema, 'paths./tools/{tool}/stop.post.operationId'));
     Assert::assertSame('toolRestart', data_get($schema, 'paths./tools/{tool}/restart.post.operationId'));
-    assertProcessOpenApiContracts($schema);
+    assert_process_open_api_contracts($schema);
 
     /** @var array<string, mixed>|null $projectListItem */
     $projectListItem = data_get(

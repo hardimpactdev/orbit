@@ -695,7 +695,10 @@ describe('ProcessListController', function (): void {
             ->assertNoContent()
             ->assertHeader('Access-Control-Allow-Origin', 'https://test.app.example')
             ->assertHeader('Access-Control-Allow-Methods', 'GET, POST')
-            ->assertHeader('Access-Control-Allow-Headers', 'Accept, Content-Type, Last-Event-ID, X-Orbit-Client, X-Correlation-Id')
+            ->assertHeader(
+                'Access-Control-Allow-Headers',
+                'Accept, Content-Type, Last-Event-ID, X-Orbit-Client, X-Correlation-Id',
+            )
             ->assertHeader('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
 
         expect($response->headers->get('Access-Control-Allow-Headers') ?? '')

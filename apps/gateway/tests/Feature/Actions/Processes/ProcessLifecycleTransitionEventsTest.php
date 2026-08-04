@@ -8,8 +8,8 @@ use App\Actions\Processes\StopProcesses;
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\ProcessEventType;
 use App\Enums\Processes\ProcessRuntimeStatus;
+use App\Enums\ProcessEventType;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
@@ -17,7 +17,6 @@ use App\Models\ProcessEvent;
 use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use RuntimeException;
 
 uses(RefreshDatabase::class);
 
@@ -53,13 +52,15 @@ function lifecycleTransitionFixture(): array
 }
 
 /**
- * @param  list<RemoteShellResult>|RuntimeException  $results
+ * @param  list<RemoteShellResult>|\RuntimeException  $results
  */
-function bindLifecycleRemoteShell(array|RuntimeException $results): void
+function bindLifecycleRemoteShell(array|\RuntimeException $results): void
 {
-    if ($results instanceof RuntimeException) {
+    if ($results instanceof \RuntimeException) {
         app()->instance(RemoteShell::class, new class($results) implements RemoteShell {
-            public function __construct(private RuntimeException $exception) {}
+            public function __construct(
+                private \RuntimeException $exception,
+            ) {}
 
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
@@ -72,21 +73,28 @@ function bindLifecycleRemoteShell(array|RuntimeException $results): void
 
     app()->instance(RemoteShell::class, new class($results) implements RemoteShell {
         /** @param  list<RemoteShellResult>  $results */
-        public function __construct(private array $results) {}
+        public function __construct(
+            private array $results,
+        ) {}
 
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
         {
-            return array_shift($this->results)
-                ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+            return (
+                array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
+            );
         }
     });
 }
 
 function eventTypeValues(): array
 {
-    return ProcessEvent::query()->orderBy('id')->pluck('event')->map(
-        static fn (ProcessEventType $type): string => $type->value,
-    )->all();
+    return ProcessEvent::query()
+        ->orderBy('id')
+        ->pluck('event')
+        ->map(
+            static fn (ProcessEventType $type): string => $type->value,
+        )
+        ->all();
 }
 
 it('records starting then started for a successful start', function (): void {
@@ -97,11 +105,16 @@ it('records starting then started for a successful start', function (): void {
 
     $result = app(StartProcesses::class)->handle($fixture['context'], 'vite');
 
-    expect($result['failed'])->toBeFalse()
-        ->and(eventTypeValues())->toBe(['starting', 'started'])
-        ->and($result['data']['runtimes'][0]['events'][0]['type'])->toBe('starting')
-        ->and($result['data']['runtimes'][0]['events'][1]['type'])->toBe('started')
-        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Started)->value)->toBe('running');
+    expect($result['failed'])
+        ->toBeFalse()
+        ->and(eventTypeValues())
+        ->toBe(['starting', 'started'])
+        ->and($result['data']['runtimes'][0]['events'][0]['type'])
+        ->toBe('starting')
+        ->and($result['data']['runtimes'][0]['events'][1]['type'])
+        ->toBe('started')
+        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Started)->value)
+        ->toBe('running');
 });
 
 it('records starting then failed when start returns false so status is unknown', function (): void {
@@ -112,23 +125,29 @@ it('records starting then failed when start returns false so status is unknown',
 
     $result = app(StartProcesses::class)->handle($fixture['context'], 'vite');
 
-    expect($result['failed'])->toBeTrue()
-        ->and(eventTypeValues())->toBe(['starting', 'failed'])
-        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Failed)->value)->toBe('unknown')
-        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Starting)->value)->toBe('starting');
+    expect($result['failed'])
+        ->toBeTrue()
+        ->and(eventTypeValues())
+        ->toBe(['starting', 'failed'])
+        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Failed)->value)
+        ->toBe('unknown')
+        ->and(ProcessRuntimeStatus::fromEventType(ProcessEventType::Starting)->value)
+        ->toBe('starting');
 });
 
 it('records failed and rethrows when the start driver throws', function (): void {
     $fixture = lifecycleTransitionFixture();
-    bindLifecycleRemoteShell(new RuntimeException('backend boom'));
+    bindLifecycleRemoteShell(new \RuntimeException('backend boom'));
 
     expect(fn () => app(StartProcesses::class)->handle($fixture['context'], 'vite'))
-        ->toThrow(RuntimeException::class, 'backend boom');
+        ->toThrow(\RuntimeException::class, 'backend boom');
 
-    expect(eventTypeValues())->toBe(['starting', 'failed'])
+    expect(eventTypeValues())
+        ->toBe(['starting', 'failed'])
         ->and(ProcessRuntimeStatus::fromEventType(
             ProcessEvent::query()->latest('id')->firstOrFail()->event,
-        )->value)->toBe('unknown');
+        )->value)
+        ->toBe('unknown');
 });
 
 it('records stopping then stopped for a successful stop', function (): void {
@@ -150,16 +169,15 @@ it('records stopping then failed when stop returns false', function (): void {
 
     $result = app(StopProcesses::class)->handle($fixture['context'], 'vite');
 
-    expect($result['failed'])->toBeTrue()
-        ->and(eventTypeValues())->toBe(['stopping', 'failed']);
+    expect($result['failed'])->toBeTrue()->and(eventTypeValues())->toBe(['stopping', 'failed']);
 });
 
 it('records failed and rethrows when the stop driver throws', function (): void {
     $fixture = lifecycleTransitionFixture();
-    bindLifecycleRemoteShell(new RuntimeException('stop boom'));
+    bindLifecycleRemoteShell(new \RuntimeException('stop boom'));
 
     expect(fn () => app(StopProcesses::class)->handle($fixture['context'], 'vite'))
-        ->toThrow(RuntimeException::class, 'stop boom');
+        ->toThrow(\RuntimeException::class, 'stop boom');
 
     expect(eventTypeValues())->toBe(['stopping', 'failed']);
 });
@@ -183,16 +201,15 @@ it('records restarting then failed when restart returns false', function (): voi
 
     $result = app(RestartProcesses::class)->handle($fixture['context'], 'vite');
 
-    expect($result['failed'])->toBeTrue()
-        ->and(eventTypeValues())->toBe(['restarting', 'failed']);
+    expect($result['failed'])->toBeTrue()->and(eventTypeValues())->toBe(['restarting', 'failed']);
 });
 
 it('records failed and rethrows when the restart driver throws', function (): void {
     $fixture = lifecycleTransitionFixture();
-    bindLifecycleRemoteShell(new RuntimeException('restart boom'));
+    bindLifecycleRemoteShell(new \RuntimeException('restart boom'));
 
     expect(fn () => app(RestartProcesses::class)->handle($fixture['context'], 'vite'))
-        ->toThrow(RuntimeException::class, 'restart boom');
+        ->toThrow(\RuntimeException::class, 'restart boom');
 
     expect(eventTypeValues())->toBe(['restarting', 'failed']);
 });
@@ -207,7 +224,10 @@ it('never leaves latest status stuck on a transitional event after false failure
 
     $latest = ProcessEvent::query()->latest('id')->firstOrFail();
 
-    expect($latest->event)->toBe(ProcessEventType::Failed)
-        ->and(ProcessRuntimeStatus::fromEventType($latest->event)->isTransitional())->toBeFalse()
-        ->and(ProcessRuntimeStatus::fromEventType($latest->event)->value)->toBe('unknown');
+    expect($latest->event)
+        ->toBe(ProcessEventType::Failed)
+        ->and(ProcessRuntimeStatus::fromEventType($latest->event)->isTransitional())
+        ->toBeFalse()
+        ->and(ProcessRuntimeStatus::fromEventType($latest->event)->value)
+        ->toBe('unknown');
 });

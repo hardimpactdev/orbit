@@ -10,11 +10,13 @@ use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Processes\ProcessStreamRuntimeConfig;
 use App\Services\Processes\ProcessStreamSleeper;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use RuntimeException;
 
 uses(RefreshDatabase::class);
 
@@ -266,6 +268,7 @@ describe('ProcessStreamController', function (): void {
         $event = ProcessEvent::factory()->create([
             'event' => ProcessEventType::Started,
             'process_id' => $fixture['process']->id,
+            'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
             'app_instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
@@ -288,6 +291,7 @@ describe('ProcessStreamController', function (): void {
         $old = ProcessEvent::factory()->create([
             'event' => ProcessEventType::Started,
             'process_id' => $fixture['process']->id,
+            'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
             'app_instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
@@ -298,6 +302,7 @@ describe('ProcessStreamController', function (): void {
         $latest = ProcessEvent::factory()->create([
             'event' => ProcessEventType::Stopped,
             'process_id' => $fixture['process']->id,
+            'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
             'app_instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
@@ -325,6 +330,7 @@ describe('ProcessStreamController', function (): void {
         $baseline = ProcessEvent::factory()->create([
             'event' => ProcessEventType::Started,
             'process_id' => $fixture['process']->id,
+            'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
             'app_instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
@@ -353,6 +359,7 @@ describe('ProcessStreamController', function (): void {
                     $event = ProcessEvent::factory()->create([
                         'event' => $type,
                         'process_id' => $this->fixture['process']->id,
+                        'process_name' => 'vite',
                         'app_id' => $this->fixture['app']->id,
                         'app_instance_id' => $this->fixture['instance']->id,
                         'workspace_id' => null,
@@ -388,9 +395,9 @@ describe('ProcessStreamController', function (): void {
         $stoppingPos = mb_strpos($content, '"event":"stopping"');
         $stoppedPos = mb_strpos($content, '"event":"stopped"');
 
-        expect($stoppingPos)->not->toBeFalse()
-            ->and($stoppedPos)->not->toBeFalse()
-            ->and($stoppingPos)->toBeLessThan((int) $stoppedPos);
+        expect($stoppingPos)
+            ->not->toBeFalse()->and($stoppedPos)
+            ->not->toBeFalse()->and($stoppingPos)->toBeLessThan((int) $stoppedPos);
     });
 
     it('streams events for a process configured after the browser connected', function (): void {
@@ -422,6 +429,7 @@ describe('ProcessStreamController', function (): void {
                 $event = ProcessEvent::factory()->create([
                     'event' => ProcessEventType::Starting,
                     'process_id' => $process->id,
+                    'process_name' => 'queue',
                     'app_id' => $this->fixture['app']->id,
                     'app_instance_id' => $this->fixture['instance']->id,
                     'workspace_id' => null,
@@ -443,7 +451,8 @@ describe('ProcessStreamController', function (): void {
         $content = processStreamRequest($fixture['hostname'])->streamedContent();
 
         expect($createdId)
-            ->not->toBeNull()
+            ->not
+            ->toBeNull()
             ->and($content)
             ->toContain("event: snapshot\n")
             ->toContain("event: update\n")
@@ -451,6 +460,152 @@ describe('ProcessStreamController', function (): void {
             ->toContain('"event":"starting"')
             ->toContain('"status":"starting"')
             ->toContain("id: {$createdId}\n");
+    });
+
+    it('streams workspace-hostname context with workspace-scoped snapshot and updates', function (): void {
+        $caller = createProcessStreamCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        grantProcessStreamAccess($caller, $appNode);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'feature-docs.app.example',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $process = Process::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+        ProcessEvent::factory()->create([
+            'event' => ProcessEventType::Started,
+            'process_id' => $process->id,
+            'process_name' => 'vite',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'workspace_id' => $workspace->id,
+            'node_id' => $appNode->id,
+            'unit_name' => 'orbit_docs_development_feature-docs_vite',
+        ]);
+        // Instance-level event must not appear in workspace stream scope.
+        ProcessEvent::factory()->create([
+            'event' => ProcessEventType::Stopped,
+            'process_id' => $process->id,
+            'process_name' => 'vite',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'workspace_id' => null,
+            'node_id' => $appNode->id,
+            'unit_name' => 'orbit_docs_development_main_vite',
+        ]);
+
+        $createdId = null;
+        app()->instance(ProcessStreamSleeper::class, new class(
+            $process,
+            $app,
+            $instance,
+            $workspace,
+            $appNode,
+            $createdId,
+        ) implements ProcessStreamSleeper {
+            public function __construct(
+                private Process $process,
+                private Project $app,
+                private AppInstance $instance,
+                private Workspace $workspace,
+                private Node $appNode,
+                private ?int &$createdId,
+            ) {}
+
+            public function sleep(int $microseconds): void
+            {
+                if ($this->createdId !== null) {
+                    return;
+                }
+
+                $event = ProcessEvent::factory()->create([
+                    'event' => ProcessEventType::Stopping,
+                    'process_id' => $this->process->id,
+                    'process_name' => 'vite',
+                    'app_id' => $this->app->id,
+                    'app_instance_id' => $this->instance->id,
+                    'workspace_id' => $this->workspace->id,
+                    'node_id' => $this->appNode->id,
+                    'unit_name' => 'orbit_docs_development_feature-docs_vite',
+                ]);
+                $this->createdId = $event->id;
+            }
+        });
+        app()->instance(
+            ProcessStreamRuntimeConfig::class,
+            new ProcessStreamRuntimeConfig(
+                pollMicroseconds: 0,
+                heartbeatMicroseconds: 1_000_000_000,
+                maxIdlePolls: 3,
+            ),
+        );
+
+        $content = processStreamRequest('feature-docs.app.example')->streamedContent();
+
+        expect($content)
+            ->toContain("event: snapshot\n")
+            ->toContain('"workspace":"feature-docs"')
+            ->toContain('"name":"vite"')
+            ->toContain('"status":"running"')
+            ->toContain("event: update\n")
+            ->toContain('"event":"stopping"')
+            ->toContain('"status":"stopping"')
+            ->toContain('"name":"vite"')
+            ->and($createdId)
+            ->not->toBeNull()->and($content)->toContain("id: {$createdId}\n")->and($content)
+            ->not->toContain('"event":"stopped"');
+    });
+
+    it('emits event:error when the follow loop fails and ends the stream', function (): void {
+        $fixture = processStreamAppFixture();
+
+        app()->instance(ProcessStreamSleeper::class, new class implements ProcessStreamSleeper {
+            public function sleep(int $microseconds): void
+            {
+                throw new RuntimeException('forced stream failure');
+            }
+        });
+        app()->instance(
+            ProcessStreamRuntimeConfig::class,
+            new ProcessStreamRuntimeConfig(
+                pollMicroseconds: 0,
+                heartbeatMicroseconds: 1_000_000_000,
+                maxIdlePolls: 3,
+            ),
+        );
+
+        $response = processStreamRequest($fixture['hostname']);
+        $content = $response->streamedContent();
+
+        $response->assertOk();
+
+        expect($content)
+            ->toContain("event: snapshot\n")
+            ->toContain("event: error\n")
+            ->toContain('"code":"process.event_stream_failed"')
+            ->toContain('forced stream failure')
+            // Stream completes after error (no hang): snapshot then terminal error.
+            ->and(mb_strpos($content, 'event: error'))
+            ->toBeGreaterThan((int) mb_strpos($content, 'event: snapshot'));
     });
 
     it('admits browser CORS preflight for the stream path including Last-Event-ID', function (): void {

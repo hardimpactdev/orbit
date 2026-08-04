@@ -52,9 +52,13 @@ it('records a started process event when AddProcess successfully starts runtime 
         runtime: ProcessRuntime::Systemd,
     );
 
-    $types = ProcessEvent::query()->orderBy('id')->pluck('event')->map(
-        static fn (ProcessEventType $type): string => $type->value,
-    )->all();
+    $types = ProcessEvent::query()
+        ->orderBy('id')
+        ->pluck('event')
+        ->map(
+            static fn (ProcessEventType $type): string => $type->value,
+        )
+        ->all();
 
     expect($types)
         ->toBe(['starting', 'started'])
@@ -99,9 +103,13 @@ it('records starting then failed when the runtime backend fails to start', funct
         runtime: ProcessRuntime::Systemd,
     );
 
-    $types = ProcessEvent::query()->orderBy('id')->pluck('event')->map(
-        static fn (ProcessEventType $type): string => $type->value,
-    )->all();
+    $types = ProcessEvent::query()
+        ->orderBy('id')
+        ->pluck('event')
+        ->map(
+            static fn (ProcessEventType $type): string => $type->value,
+        )
+        ->all();
 
     expect($types)
         ->toBe(['starting', 'failed'])

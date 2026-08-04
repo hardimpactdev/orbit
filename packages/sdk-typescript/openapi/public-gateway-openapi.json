@@ -9062,7 +9062,10 @@
                                 }
                               },
                               "required": [
-                                "node"
+                                "node",
+                                "project",
+                                "instance",
+                                "workspace"
                               ]
                             },
                             "processes": {
@@ -9147,7 +9150,17 @@
                                         "type": "integer"
                                       },
                                       "type": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -9158,9 +9171,19 @@
                                 },
                                 "required": [
                                   "node",
+                                  "project",
+                                  "instance",
+                                  "workspace",
                                   "name",
+                                  "command",
+                                  "restart_policy",
+                                  "crash_notification",
+                                  "runtime",
+                                  "tool",
+                                  "service",
                                   "runtime_unit",
-                                  "status"
+                                  "status",
+                                  "last_event"
                                 ]
                               }
                             }
@@ -9571,7 +9594,17 @@
                                           "type": "integer"
                                         },
                                         "type": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -9584,6 +9617,9 @@
                                 "required": [
                                   "process",
                                   "node",
+                                  "project",
+                                  "instance",
+                                  "workspace",
                                   "runtime_unit",
                                   "state",
                                   "events"
@@ -9704,16 +9740,23 @@
                                     "type": "string"
                                   },
                                   "event": {
-                                    "type": [
-                                      "object",
-                                      "null"
-                                    ],
+                                    "type": "object",
                                     "properties": {
                                       "id": {
                                         "type": "integer"
                                       },
                                       "type": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -9730,7 +9773,17 @@
                                           "type": "integer"
                                         },
                                         "type": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -9743,8 +9796,13 @@
                                 "required": [
                                   "process",
                                   "node",
+                                  "project",
+                                  "instance",
+                                  "workspace",
                                   "runtime_unit",
-                                  "state"
+                                  "state",
+                                  "event",
+                                  "events"
                                 ]
                               }
                             }
@@ -9862,16 +9920,23 @@
                                     "type": "string"
                                   },
                                   "event": {
-                                    "type": [
-                                      "object",
-                                      "null"
-                                    ],
+                                    "type": "object",
                                     "properties": {
                                       "id": {
                                         "type": "integer"
                                       },
                                       "type": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -9888,7 +9953,17 @@
                                           "type": "integer"
                                         },
                                         "type": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -9901,8 +9976,13 @@
                                 "required": [
                                   "process",
                                   "node",
+                                  "project",
+                                  "instance",
+                                  "workspace",
                                   "runtime_unit",
-                                  "state"
+                                  "state",
+                                  "event",
+                                  "events"
                                 ]
                               }
                             }
@@ -9943,6 +10023,7 @@
           {
             "name": "app",
             "in": "query",
+            "required": true,
             "description": "Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected.",
             "schema": {
               "type": "string"

@@ -23,6 +23,8 @@ final readonly class ProcessEventStreamer
     public function __construct(
         private ProcessStreamRuntimeConfig $config,
         private ProcessStreamSleeper $sleeper,
+        private ProcessStreamClock $clock,
+        private ProcessStreamConnection $connection,
     ) {}
 
     /**
@@ -30,7 +32,8 @@ final readonly class ProcessEventStreamer
      */
     public function eventsAfter(ProcessStreamScope $scope, int $afterId): Collection
     {
-        return $this->scopedQuery($scope)
+        return $this
+            ->scopedQuery($scope)
             ->with(['process', 'node', 'project', 'appInstance', 'workspace'])
             ->where('id', '>', $afterId)
             ->orderBy('id')
@@ -70,10 +73,10 @@ final readonly class ProcessEventStreamer
     ): Generator {
         $config ??= $this->config;
         $idlePolls = 0;
-        $lastHeartbeatAt = microtime(true);
+        $lastHeartbeatAt = $this->clock->now();
 
         while (true) {
-            if (connection_aborted() === 1) {
+            if ($this->connection->aborted()) {
                 return;
             }
 
@@ -82,7 +85,7 @@ final readonly class ProcessEventStreamer
             if ($events->isNotEmpty()) {
                 foreach ($events as $event) {
                     $afterId = $event->id;
-                    $lastHeartbeatAt = microtime(true);
+                    $lastHeartbeatAt = $this->clock->now();
 
                     yield $event;
                 }
@@ -96,7 +99,7 @@ final readonly class ProcessEventStreamer
                 return;
             }
 
-            $now = microtime(true);
+            $now = $this->clock->now();
             $elapsedMicros = (int) round(($now - $lastHeartbeatAt) * 1_000_000);
 
             if ($elapsedMicros >= $config->heartbeatMicroseconds) {

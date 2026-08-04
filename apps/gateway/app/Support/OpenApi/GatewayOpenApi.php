@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\OpenApi;
 
 use App\Enums\Processes\ProcessRuntimeStatus;
+use App\Enums\ProcessEventType;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\Parameter;
@@ -183,8 +184,9 @@ final class GatewayOpenApi
                     $operation->parameters = [];
                     $operation->addParameters([
                         self::stringQueryParameter(
-                            'app',
-                            'Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected.',
+                            name: 'app',
+                            description: 'Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected.',
+                            required: true,
                         ),
                     ]);
                     $operation->description(
@@ -262,7 +264,7 @@ final class GatewayOpenApi
 
         $lastEvent = new ObjectType;
         $lastEvent->addProperty('id', new IntegerType);
-        $lastEvent->addProperty('type', new StringType);
+        $lastEvent->addProperty('type', self::processEventTypeString());
         $lastEvent->setRequired(['id', 'type']);
         $lastEvent->nullable(true);
 
@@ -281,14 +283,29 @@ final class GatewayOpenApi
         $process->addProperty('runtime_unit', new StringType);
         $process->addProperty('status', $status);
         $process->addProperty('last_event', $lastEvent);
-        $process->setRequired(['node', 'name', 'runtime_unit', 'status']);
+        $process->setRequired([
+            'node',
+            'project',
+            'instance',
+            'workspace',
+            'name',
+            'command',
+            'restart_policy',
+            'crash_notification',
+            'runtime',
+            'tool',
+            'service',
+            'runtime_unit',
+            'status',
+            'last_event',
+        ]);
 
         $context = new ObjectType;
         $context->addProperty('node', new StringType);
         $context->addProperty('project', new StringType()->nullable(true));
         $context->addProperty('instance', new StringType()->nullable(true));
         $context->addProperty('workspace', new StringType()->nullable(true));
-        $context->setRequired(['node']);
+        $context->setRequired(['node', 'project', 'instance', 'workspace']);
 
         $data = new ObjectType;
         $data->addProperty('context', $context);
@@ -322,14 +339,23 @@ final class GatewayOpenApi
     private static function processLifecycleSuccessResponse(): Response
     {
         $event = self::processEventObject();
-        $event->nullable(true);
         $events = new ArrayType;
         $events->setItems(self::processEventObject());
 
         $runtime = self::processLifecycleRuntimeObject();
         $runtime->addProperty('event', $event);
         $runtime->addProperty('events', $events);
-        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state']);
+        $runtime->setRequired([
+            'process',
+            'node',
+            'project',
+            'instance',
+            'workspace',
+            'runtime_unit',
+            'state',
+            'event',
+            'events',
+        ]);
 
         return self::processLifecycleEnvelopeResponse(
             runtime: $runtime,
@@ -339,14 +365,22 @@ final class GatewayOpenApi
 
     private static function processRestartSuccessResponse(): Response
     {
-        $event = self::processEventObject();
         $events = new ArrayType;
-        $events->setItems($event);
+        $events->setItems(self::processEventObject());
 
         $runtime = self::processLifecycleRuntimeObject();
         $runtime->addProperty('events', $events);
-        // Restart always includes events (empty list when the backend fails).
-        $runtime->setRequired(['process', 'node', 'runtime_unit', 'state', 'events']);
+        // Restart always returns ordered durable events (restarting then started/failed).
+        $runtime->setRequired([
+            'process',
+            'node',
+            'project',
+            'instance',
+            'workspace',
+            'runtime_unit',
+            'state',
+            'events',
+        ]);
 
         return self::processLifecycleEnvelopeResponse(
             runtime: $runtime,
@@ -370,10 +404,21 @@ final class GatewayOpenApi
     {
         $event = new ObjectType;
         $event->addProperty('id', new IntegerType);
-        $event->addProperty('type', new StringType);
+        $event->addProperty('type', self::processEventTypeString());
         $event->setRequired(['id', 'type']);
 
         return $event;
+    }
+
+    private static function processEventTypeString(): StringType
+    {
+        $type = new StringType;
+        $type->enum(ProcessEventType::values());
+        $type->setDescription(
+            'Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.',
+        );
+
+        return $type;
     }
 
     private static function processLifecycleRuntimeObject(): ObjectType
@@ -418,13 +463,17 @@ final class GatewayOpenApi
         return $response;
     }
 
-    private static function stringQueryParameter(string $name, string $description): Parameter
-    {
+    private static function stringQueryParameter(
+        string $name,
+        string $description,
+        bool $required = false,
+    ): Parameter {
         /** @var Parameter $parameter */
         $parameter = Parameter::make($name, 'query');
 
         $parameter->setSchema(self::schemaFrom(new StringType));
         $parameter->description($description);
+        $parameter->required($required);
 
         return $parameter;
     }

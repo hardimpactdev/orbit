@@ -219,14 +219,17 @@ final readonly class ProcessStreamController implements Loggable
 
         $status = ProcessRuntimeStatus::fromEventType($type);
         $process = $event->process;
-        $occurredAt = $event->recorded_at?->toIso8601String()
-            ?? $event->created_at?->toIso8601String();
+        $occurredAt = $event->recorded_at?->toIso8601String() ?? $event->created_at?->toIso8601String();
+        // Durable process_name is authoritative; relation is legacy/backfill safety only.
+        $name = is_string($event->process_name) && $event->process_name !== ''
+            ? $event->process_name
+            : (is_string($process?->name) && $process->name !== '' ? $process->name : 'unknown');
 
         return [
             'id' => $event->id,
             'event' => $type?->value ?? (string) $event->getRawOriginal('event'),
             'status' => $status->value,
-            'name' => $process?->name,
+            'name' => $name,
             'node' => $event->node?->name,
             'project' => $event->project?->name ?? $event->app?->name,
             'instance' => $event->appInstance?->name,

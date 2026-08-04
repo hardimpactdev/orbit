@@ -32,7 +32,7 @@ final readonly class ProcessStreamRuntimeConfig
         return new self(
             pollMicroseconds: $pollMicroseconds ?? $this->pollMicroseconds,
             heartbeatMicroseconds: $heartbeatMicroseconds ?? $this->heartbeatMicroseconds,
-            maxIdlePolls: $clearMaxIdlePolls ? null : ($maxIdlePolls ?? $this->maxIdlePolls),
+            maxIdlePolls: $clearMaxIdlePolls ? null : $maxIdlePolls ?? $this->maxIdlePolls,
         );
     }
 }

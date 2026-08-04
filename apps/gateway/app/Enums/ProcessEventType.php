@@ -29,4 +29,15 @@ enum ProcessEventType: string
      * Maps to process status `unknown` (not fabricated crashed/running/stopped).
      */
     case Failed = 'failed';
+
+    /**
+     * @return list<string>
+     */
+    public static function values(): array
+    {
+        return array_map(
+            static fn (self $type): string => $type->value,
+            self::cases(),
+        );
+    }
 }

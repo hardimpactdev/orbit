@@ -25,6 +25,7 @@ class ProcessEventFactory extends Factory
             'event' => ProcessEventType::Started,
             'event_id' => (string) Str::uuid(),
             'process_id' => Process::factory(),
+            'process_name' => 'vite',
             'app_id' => Project::factory(),
             'workspace_id' => null,
             'node_id' => Node::factory(),
@@ -34,5 +35,24 @@ class ProcessEventFactory extends Factory
             'exited_at' => null,
             'recorded_at' => now(),
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterMaking(function (ProcessEvent $event): void {
+            if (is_string($event->process_name) && $event->process_name !== '') {
+                return;
+            }
+
+            $process = $event->process;
+
+            if ($process instanceof Process && is_string($process->name) && $process->name !== '') {
+                $event->process_name = $process->name;
+
+                return;
+            }
+
+            $event->process_name = 'unknown';
+        });
     }
 }

@@ -5064,31 +5064,35 @@ export interface operations {
                             data: {
                                 context: {
                                     node: string;
-                                    project?: string | null;
-                                    instance?: string | null;
-                                    workspace?: string | null;
+                                    project: string | null;
+                                    instance: string | null;
+                                    workspace: string | null;
                                 };
                                 processes: {
                                     node: string;
-                                    project?: string | null;
-                                    instance?: string | null;
-                                    workspace?: string | null;
+                                    project: string | null;
+                                    instance: string | null;
+                                    workspace: string | null;
                                     name: string;
-                                    command?: string | null;
-                                    restart_policy?: string;
-                                    crash_notification?: string;
-                                    runtime?: string;
-                                    tool?: string | null;
-                                    service?: Record<string, never> | null;
+                                    command: string | null;
+                                    restart_policy: string;
+                                    crash_notification: string;
+                                    runtime: string;
+                                    tool: string | null;
+                                    service: Record<string, never> | null;
                                     runtime_unit: string;
                                     /**
                                      * @description Runtime status from the latest durable process lifecycle event: transitional starting/stopping/restarting, terminal running/stopped/crashed, or unknown (including failed lifecycle actions and no event yet).
                                      * @enum {string}
                                      */
                                     status: "starting" | "running" | "stopping" | "stopped" | "restarting" | "crashed" | "unknown";
-                                    last_event?: {
+                                    last_event: {
                                         id: number;
-                                        type: string;
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
                                     } | null;
                                 }[];
                             };
@@ -5263,14 +5267,18 @@ export interface operations {
                                 runtimes: {
                                     process: string;
                                     node: string;
-                                    project?: string | null;
-                                    instance?: string | null;
-                                    workspace?: string | null;
+                                    project: string | null;
+                                    instance: string | null;
+                                    workspace: string | null;
                                     runtime_unit: string;
                                     state: string;
                                     events: {
                                         id: number;
-                                        type: string;
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
                                     }[];
                                 }[];
                             };
@@ -5320,18 +5328,26 @@ export interface operations {
                                 runtimes: {
                                     process: string;
                                     node: string;
-                                    project?: string | null;
-                                    instance?: string | null;
-                                    workspace?: string | null;
+                                    project: string | null;
+                                    instance: string | null;
+                                    workspace: string | null;
                                     runtime_unit: string;
                                     state: string;
-                                    event?: {
+                                    event: {
                                         id: number;
-                                        type: string;
-                                    } | null;
-                                    events?: {
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
+                                    };
+                                    events: {
                                         id: number;
-                                        type: string;
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
                                     }[];
                                 }[];
                             };
@@ -5381,18 +5397,26 @@ export interface operations {
                                 runtimes: {
                                     process: string;
                                     node: string;
-                                    project?: string | null;
-                                    instance?: string | null;
-                                    workspace?: string | null;
+                                    project: string | null;
+                                    instance: string | null;
+                                    workspace: string | null;
                                     runtime_unit: string;
                                     state: string;
-                                    event?: {
+                                    event: {
                                         id: number;
-                                        type: string;
-                                    } | null;
-                                    events?: {
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
+                                    };
+                                    events: {
                                         id: number;
-                                        type: string;
+                                        /**
+                                         * @description Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.
+                                         * @enum {string}
+                                         */
+                                        type: "starting" | "started" | "stopping" | "stopped" | "restarting" | "crashed" | "failed";
                                     }[];
                                 }[];
                             };
@@ -5407,9 +5431,9 @@ export interface operations {
     };
     processesStream: {
         parameters: {
-            query?: {
+            query: {
                 /** @description Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected. */
-                app?: string;
+                app: string;
             };
             header?: never;
             path?: never;

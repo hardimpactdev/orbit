@@ -181,8 +181,25 @@ const updateOk: ProcessStreamUpdate = {
 };
 void updateOk;
 
+type UpdateName = ProcessStreamUpdate['name'];
+type NameIsString = UpdateName extends string ? (string extends UpdateName ? true : false) : false;
+const nameIsString: NameIsString = true;
+void nameIsString;
+// @ts-expect-error streamed update name is required string, not null
+const updateNameNull: UpdateName = null;
+void updateNameNull;
+
 // subscribeProcessStream is the durable EventSource surface (commands stay on createOrbitGatewayClient).
 void subscribeProcessStream;
+
+// Generated stream path requires app query.
+await client.GET('/processes/stream', {
+    params: {
+        query: {
+            app: 'test.app.example',
+        },
+    },
+});
 
 // Invalid: url is never a process list query key.
 const invalidQuery = {
@@ -203,15 +220,15 @@ void invalidRestartBody;
 const knownRestartKeys: Array<keyof ProcessRestartBody> = ['app', 'node', 'instance', 'workspace', 'name'];
 void knownRestartKeys;
 
-// Restart and start both expose ordered durable events; start keeps singular terminal event.
+// Restart and start both expose ordered durable events; start keeps terminal event + events list.
 type RestartEvents = ProcessRestartRuntime extends { events: infer E } ? E : never;
-type StartEvent = ProcessStartRuntime extends { event?: infer E } ? E : never;
-type StartEvents = ProcessStartRuntime extends { events?: infer E } ? E : never;
-const restartEventsOk: RestartEvents = [];
+type StartEvent = ProcessStartRuntime extends { event: infer E } ? E : never;
+type StartEvents = ProcessStartRuntime extends { events: infer E } ? E : never;
+const restartEventsOk: RestartEvents = [{ id: 1, type: 'restarting' }, { id: 2, type: 'started' }];
 void restartEventsOk;
-const startEventOk: StartEvent = null;
+const startEventOk: StartEvent = { id: 1, type: 'started' };
 void startEventOk;
-const startEventsOk: StartEvents = [];
+const startEventsOk: StartEvents = [{ id: 1, type: 'starting' }, { id: 2, type: 'started' }];
 void startEventsOk;
 type RestartHasEvent = ProcessRestartRuntime extends { event?: unknown } ? true : false;
 const restartDoesNotUseEvent: RestartHasEvent = false;

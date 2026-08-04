@@ -16,6 +16,7 @@ use Override;
  * @property ProcessEventType $event
  * @property string $event_id
  * @property int|null $process_id
+ * @property string $process_name
  * @property int|null $app_id
  * @property int|null $app_instance_id
  * @property int|null $workspace_id
@@ -35,6 +36,7 @@ class ProcessEvent extends Model
         'event',
         'event_id',
         'process_id',
+        'process_name',
         'app_id',
         'app_instance_id',
         'workspace_id',

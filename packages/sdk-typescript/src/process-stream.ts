@@ -68,7 +68,8 @@ export interface ProcessStreamUpdate {
     id: number;
     event: ProcessLifecycleEventType;
     status: ProcessRuntimeStatus;
-    name: string | null;
+    /** Durable process_name snapshot; always present for new gateway events. */
+    name: string;
     node: string | null;
     project: string | null;
     instance: string | null;
@@ -430,11 +431,16 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         return null;
     }
 
-    if (typeof value.id !== 'number' || ! isLifecycleEvent(value.event) || ! isRuntimeStatus(value.status)) {
+    if (
+        typeof value.id !== 'number'
+        || ! isLifecycleEvent(value.event)
+        || ! isRuntimeStatus(value.status)
+        || typeof value.name !== 'string'
+        || value.name === ''
+    ) {
         return null;
     }
 
-    const name = asNullableString(value.name);
     const node = asNullableString(value.node);
     const project = asNullableString(value.project);
     const instance = asNullableString(value.instance);
@@ -445,8 +451,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
     const exitCode = asNullableNumber(value.exit_code);
 
     if (
-        name === false
-        || node === false
+        node === false
         || project === false
         || instance === false
         || workspace === false
@@ -462,7 +467,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         id: value.id,
         event: value.event,
         status: value.status,
-        name,
+        name: value.name,
         node,
         project,
         instance,
