@@ -44,23 +44,6 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('hardimpactdev/orbit-core')
         ->toContain('hardimpactdev/orbit-cli')
         ->toContain('hardimpactdev/orbit-gateway')
-        ->toContain('hardimpactdev/orbit-sdk-typescript')
-        ->toContain('prepare_and_verify_sdk_typescript')
-        ->toContain('publish_sdk_typescript_npm')
-        ->toContain('publish_sdk_typescript_split')
-        ->toContain('@hardimpactdev/orbit-sdk-typescript')
-        ->toContain('npm publish --access public --provenance')
-        ->toContain('NPM_TOKEN')
-        ->toContain('NODE_AUTH_TOKEN')
-        ->toContain('Trusted Publisher')
-        ->toContain('actions/setup-node@v6')
-        ->toContain('node-version: "24"')
-        ->toContain('package-manager-cache: false')
-        ->toContain('id-token: write')
-        ->toContain('npm ci')
-        ->toContain('npm run build')
-        ->toContain('npm test')
-        ->toContain('npm pack --dry-run --json')
         ->toContain('rm -rf "$output/node_modules"')
         ->toContain('ORBIT_RELEASE_TOKEN')
         ->toContain('PACKAGIST_USERNAME')
@@ -70,8 +53,17 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('orbit-release-manifest.json')
         ->toContain('orbit-linux-x64')
         ->toContain('orbit-macos-arm64')
-        ->not->toContain('@orbit/sdk-typescript')
+        // TypeScript SDK is independently versioned and published from its
+        // package repository OIDC workflow, not monorepo orbit-release.yml.
+        ->not->toContain('prepare_and_verify_sdk_typescript')
+        ->not->toContain('publish_sdk_typescript_npm')
+        ->not->toContain('publish_sdk_typescript_split')
+        ->not->toContain('npm publish --access public --provenance')
+        ->not->toContain('NPM_TOKEN')
+        ->not->toContain('NODE_AUTH_TOKEN')
+        ->not->toContain('actions/setup-node@v6')
         ->not->toContain('actions/setup-node@v4')
+        ->not->toContain('@orbit/sdk-typescript')
         ->not->toContain('docker buildx build')
         ->not->toContain('--push')
         ->not->toContain('--metadata-file')
@@ -90,20 +82,65 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->not->toContain('vendor/bin/phpacker build mac arm')
         ->not->toContain('vendor/bin/phpacker build linux x64')
         ->not->toContain('orbit'.'-runtime');
-
-    // Generated split repository/tag must be published before npm so provenance
-    // never lands ahead of its generated repo/tag.
-    expect($workflow)
-        ->toMatch(
-            '/prepare_and_verify_sdk_typescript\s*\n\s*publish_sdk_typescript_split\s*\n\s*publish_sdk_typescript_npm\b/',
-        );
 });
 
-it('prepares a local durable sdk-typescript package with release metadata', function (): void {
-    $version = trim((string) file_get_contents(repo_path('VERSION')));
+it('keeps the TypeScript SDK independently versioned with Craft-style package-repo OIDC publish', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
+
+    expect($packageVersion)
+        ->toBe('0.1.0')
+        ->and($packageVersion)
+        ->not->toBe($rootVersion)
+        ->and($sourcePackage['private'] ?? false)
+        ->toBeTrue();
+
+    $publishWorkflow = (string) file_get_contents(
+        repo_path('packages/sdk-typescript/.github/workflows/publish.yml'),
+    );
+
+    expect($publishWorkflow)
+        ->toContain('name: Publish package to npm')
+        ->toContain('types: [published]')
+        ->toContain('contents: read')
+        ->toContain('id-token: write')
+        ->toContain('actions/setup-node@v6')
+        ->toContain('node-version: "24"')
+        ->toContain('package-manager-cache: false')
+        ->toContain('registry-url: "https://registry.npmjs.org"')
+        ->toContain('npm ci')
+        ->toContain('npm test')
+        ->toContain('npm run build')
+        ->toContain('npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version')
+        ->toContain('npm publish --provenance --access public')
+        ->not->toContain('NPM_TOKEN')
+        ->not->toContain('NODE_AUTH_TOKEN');
+
+    $rootWorkflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($rootWorkflow)
+        ->not->toContain('publish_sdk_typescript_npm')
+        ->not->toContain('npm publish --access public --provenance');
+});
+
+it('prepares a local durable sdk-typescript package with independent package.json version', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
     $output = sys_get_temp_dir().'/orbit-sdk-typescript-prepare-'.uniqid('', true);
 
-    prepareReleaseWorkflowPackage('sdk-typescript', $version, $output);
+    prepareReleaseWorkflowPackage('sdk-typescript', $packageVersion, $output);
 
     expect($output.'/package.json')
         ->toBeFile()
@@ -112,6 +149,8 @@ it('prepares a local durable sdk-typescript package with release metadata', func
         ->and($output.'/openapi/public-gateway-openapi.json')
         ->toBeFile()
         ->and($output.'/package-lock.json')
+        ->toBeFile()
+        ->and($output.'/.github/workflows/publish.yml')
         ->toBeFile()
         ->and(is_dir($output.'/node_modules'))
         ->toBeFalse();
@@ -122,7 +161,9 @@ it('prepares a local durable sdk-typescript package with release metadata', func
     expect($packageJson['name'] ?? null)
         ->toBe('@hardimpactdev/orbit-sdk-typescript')
         ->and($packageJson['version'] ?? null)
-        ->toBe($version)
+        ->toBe($packageVersion)
+        ->and($packageJson['version'] ?? null)
+        ->not->toBe($rootVersion)
         ->and($packageJson['private'] ?? true)
         ->toBeFalse()
         ->and($packageJson['license'] ?? null)
@@ -133,9 +174,11 @@ it('prepares a local durable sdk-typescript package with release metadata', func
             'registry' => 'https://registry.npmjs.org/',
         ])
         ->and(data_get($packageJson, 'repository.url'))
-        ->toBe('https://github.com/hardimpactdev/orbit.git')
+        ->toBe('https://github.com/hardimpactdev/orbit-sdk-typescript.git')
         ->and(data_get($packageJson, 'repository.directory'))
-        ->toBe('packages/sdk-typescript')
+        ->toBeNull()
+        ->and($packageJson['homepage'] ?? null)
+        ->toBe('https://github.com/hardimpactdev/orbit-sdk-typescript')
         ->and($packageJson['files'] ?? null)
         ->toBe([
             'dist',
@@ -156,21 +199,29 @@ it('prepares a local durable sdk-typescript package with release metadata', func
 
     expect($sourcePackageJson)
         ->toContain('"name": "@hardimpactdev/orbit-sdk-typescript"')
+        ->toContain('"private": true')
         ->not->toContain('@orbit/sdk-typescript')->and($helper)->toContain(
             "'sdk-typescript' => 'packages/sdk-typescript'",
         )->toContain('@hardimpactdev/orbit-sdk-typescript')->toContain('rewrite_npm_package_json')->toContain(
             'rewrite_npm_package_lock',
-        )
+        )->toContain('read_npm_package_version')
         ->not->toContain('@orbit/sdk-typescript');
 
     File::deleteDirectory($output);
 });
 
-it('stamps prepared sdk-typescript package-lock identity to the release VERSION', function (): void {
-    $version = trim((string) file_get_contents(repo_path('VERSION')));
+it('stamps prepared sdk-typescript package-lock identity to the package version not root VERSION', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
     $output = sys_get_temp_dir().'/orbit-sdk-typescript-lock-'.uniqid('', true);
 
-    prepareReleaseWorkflowPackage('sdk-typescript', $version, $output);
+    prepareReleaseWorkflowPackage('sdk-typescript', $packageVersion, $output);
 
     /** @var array<string, mixed> $packageLock */
     $packageLock = json_decode(
@@ -183,26 +234,36 @@ it('stamps prepared sdk-typescript package-lock identity to the release VERSION'
     expect($packageLock['name'] ?? null)
         ->toBe('@hardimpactdev/orbit-sdk-typescript')
         ->and($packageLock['version'] ?? null)
-        ->toBe($version)
+        ->toBe($packageVersion)
+        ->and($packageLock['version'] ?? null)
+        ->not->toBe($rootVersion)
         ->and($lockRoot['name'] ?? null)
         ->toBe('@hardimpactdev/orbit-sdk-typescript')
         ->and($lockRoot['version'] ?? null)
-        ->toBe($version);
-
-    $sourceLock = json_decode(
-        (string) file_get_contents(repo_path('packages/sdk-typescript/package-lock.json')),
-        true,
-        flags: JSON_THROW_ON_ERROR,
-    );
-    $sourceLockVersion = is_array($sourceLock) ? $sourceLock['version'] ?? null : null;
-
-    if (is_string($sourceLockVersion) && $sourceLockVersion !== $version) {
-        expect($packageLock['version'] ?? null)
-            ->not->toBe($sourceLockVersion)->and($lockRoot['version'] ?? null)
-            ->not->toBe($sourceLockVersion);
-    }
+        ->toBe($packageVersion);
 
     File::deleteDirectory($output);
+});
+
+it('rejects preparing sdk-typescript with a version that is not package.json', function (): void {
+    $output = sys_get_temp_dir().'/orbit-sdk-typescript-bad-version-'.uniqid('', true);
+    $process = new Process([
+        PHP_BINARY,
+        repo_path('bin/orbit-prepare-release-package'),
+        '--package=sdk-typescript',
+        '--version=9.9.9',
+        "--output={$output}",
+    ], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())
+        ->not->toBe(0)
+        ->and($process->getErrorOutput())
+        ->toContain('must match packages/sdk-typescript/package.json version');
+
+    if (is_dir($output)) {
+        File::deleteDirectory($output);
+    }
 });
 
 it('builds cli binary workflows through the shared no-dev compressed phar helper', function (): void {

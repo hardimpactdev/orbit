@@ -11,7 +11,6 @@ $options = getopt('', [
 
 try {
     $package = required_string($options, 'package');
-    $version = normalize_version(required_string($options, 'version'));
     $output = required_string($options, 'output');
     $repoRoot = dirname(__DIR__);
 
@@ -31,6 +30,31 @@ try {
 
     if (! is_dir($source)) {
         fail('Package source directory not found: '.$source);
+    }
+
+    // TypeScript SDK is independently versioned from monorepo root VERSION.
+    // Prefer the source package.json version; --version must match when supplied.
+    if ($package === 'sdk-typescript') {
+        $packageVersion = read_npm_package_version($source.'/package.json');
+        $requested = $options['version'] ?? null;
+
+        if (is_array($requested)) {
+            $requested = end($requested);
+        }
+
+        if (is_string($requested) && trim($requested) !== '') {
+            $version = normalize_version($requested);
+
+            if ($version !== $packageVersion) {
+                fail(
+                    "sdk-typescript version [{$version}] must match packages/sdk-typescript/package.json version [{$packageVersion}].",
+                );
+            }
+        } else {
+            $version = $packageVersion;
+        }
+    } else {
+        $version = normalize_version(required_string($options, 'version'));
     }
 
     reset_directory($output);
@@ -219,6 +243,21 @@ function rewrite_composer_json(string $path, string $version, string $package): 
     file_put_contents($path, $encoded."\n");
 }
 
+function read_npm_package_version(string $path): string
+{
+    if (! is_file($path)) {
+        fail('package.json not found: '.$path);
+    }
+
+    $json = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($json) || ! is_string($json['version'] ?? null)) {
+        fail('package.json is missing a string version field: '.$path);
+    }
+
+    return normalize_version($json['version']);
+}
+
 function rewrite_npm_package_json(string $path, string $version): void
 {
     if (! is_file($path)) {
@@ -232,6 +271,7 @@ function rewrite_npm_package_json(string $path, string $version): void
     }
 
     // Exact public npm identity. Never preserve a legacy monorepo/local name.
+    // Source monorepo keeps private=true; the prepared split package is public.
     $json['name'] = '@hardimpactdev/orbit-sdk-typescript';
     $json['version'] = $version;
     $json['private'] = false;
@@ -239,12 +279,13 @@ function rewrite_npm_package_json(string $path, string $version): void
     $json['description'] = is_string($json['description'] ?? null) && trim($json['description']) !== ''
         ? $json['description']
         : 'Generated TypeScript client for the public Orbit gateway API surface.';
+    // Durable split consumption points at the generated package repository.
+    // Canonical source remains hardimpactdev/orbit packages/sdk-typescript.
     $json['repository'] = [
         'type' => 'git',
-        'url' => 'https://github.com/hardimpactdev/orbit.git',
-        'directory' => 'packages/sdk-typescript',
+        'url' => 'https://github.com/hardimpactdev/orbit-sdk-typescript.git',
     ];
-    $json['homepage'] = 'https://github.com/hardimpactdev/orbit/tree/main/packages/sdk-typescript';
+    $json['homepage'] = 'https://github.com/hardimpactdev/orbit-sdk-typescript';
     $json['bugs'] = [
         'url' => 'https://github.com/hardimpactdev/orbit/issues',
     ];

@@ -92,29 +92,36 @@ const { data, error } = await orbit.GET('/nodes', {
 
 The wrapper is intentionally thin around `openapi-fetch`: macOS/Tauri, TanStack Query, and browser toolbar code should compose request hooks around the typed `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods rather than forking gateway route definitions by hand.
 
-## Local package preparation
+## Versioning and publication
 
-From the monorepo root, prepare a durable outside-monorepo package tree without publishing:
+This package is **independently versioned** from Orbit monorepo root `VERSION`.
+The version in this `package.json` is authoritative (public stream starts at
+`0.1.0`). Canonical source remains `packages/sdk-typescript` in
+`hardimpactdev/orbit` (`private: true` in-tree). Durable consumers install from
+npm and/or the generated repository `hardimpactdev/orbit-sdk-typescript`.
+
+Publication path (Craft-style, package-repo OIDC only):
+
+1. Prepare a durable split tree from the monorepo (does not publish):
+
+   ```bash
+   bin/orbit-prepare-release-package \
+     --package=sdk-typescript \
+     --version="$(node -p "require('./packages/sdk-typescript/package.json').version")" \
+     --output=/tmp/orbit-sdk-typescript
+   ```
+
+2. Push the prepared tree to `hardimpactdev/orbit-sdk-typescript` `main`.
+3. Create and **publish** a GitHub Release tag `v0.1.0` (or later) on that
+   repository. The package’s `.github/workflows/publish.yml` runs on
+   `release: published` with Node 24, `id-token: write`, `npm ci`, `npm test`,
+   `npm run build`, `npm version` from the tag, and
+   `npm publish --provenance --access public`.
+
+Monorepo `.github/workflows/orbit-release.yml` does **not** publish this package
+to npm and does not stamp root Orbit VERSION into it.
 
 ```bash
-bin/orbit-prepare-release-package \
-  --package=sdk-typescript \
-  --version="$(bin/orbit-version)" \
-  --output=/tmp/orbit-sdk-typescript
-
-# Optional dry-run archive of the prepared package:
-(cd packages/sdk-typescript && npm run build && npm pack --dry-run)
+# Optional dry-run from monorepo source package:
+(cd packages/sdk-typescript && npm ci && npm test && npm run build && npm pack --dry-run)
 ```
-
-The prepared package keeps the exact `@hardimpactdev/orbit-sdk-typescript`
-identity, stamps the monorepo root `VERSION` into both `package.json` and the
-root `package-lock.json` identity fields, sets `private=false`, and preserves
-public npm metadata (`publishConfig.access`, repository directory provenance for
-`packages/sdk-typescript`). The generated split repository is
-`hardimpactdev/orbit-sdk-typescript`; canonical source remains
-`hardimpactdev/orbit`.
-
-Release order: prepare/verify → push generated split repo/tag → `npm publish
---access public --provenance`. First npm publication may use `NPM_TOKEN`; after
-the package exists, prefer npm Trusted Publisher for
-`hardimpactdev/orbit` / `orbit-release.yml` and remove the long-lived token.

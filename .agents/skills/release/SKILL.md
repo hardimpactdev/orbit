@@ -13,12 +13,23 @@ manifests.
 
 - The canonical version is the root `VERSION` file without a `v` prefix.
 - The monorepo release tag is `v<VERSION>` on `hardimpactdev/orbit`.
-- Do not publish releases from separate source repositories. The split repos
-  are generated outputs:
+- Do not publish releases from separate source repositories for PHP packages.
+  Those split repos are generated outputs of the monorepo release workflow:
   - `hardimpactdev/orbit-core` from `packages/core`
   - `hardimpactdev/orbit-sdk-laravel` from `packages/sdk`
   - `hardimpactdev/orbit-cli` from `apps/cli`
   - `hardimpactdev/orbit-gateway` from `apps/gateway`
+- `@hardimpactdev/orbit-sdk-typescript` is **independently versioned** from root
+  `VERSION` (package `package.json` is authoritative; initial public version
+  `0.1.0`). Canonical source is `packages/sdk-typescript` in this monorepo
+  (`private=true`). npm publish is **not** part of monorepo
+  `orbit-release.yml`. Prepare with
+  `bin/orbit-prepare-release-package --package=sdk-typescript` (version from
+  package.json), push the prepared tree to
+  `hardimpactdev/orbit-sdk-typescript`, and publish a GitHub Release there so
+  the package repository’s OIDC workflow (`publish.yml`) runs
+  `npm publish --provenance --access public`. Configure Trusted Publisher on
+  that package repository, not on monorepo `orbit-release.yml`.
 - Release artifacts are built once as release candidates and exposed through a
   topology-reachable `topology-candidate` manifest. Candidate CLI binaries,
   manifests, and private runtime image archives live in the central artifact
