@@ -89,8 +89,14 @@ function bindEditProcessRestartShell(array|\RuntimeException $results): void
                 str_contains($script, 'restart')
                 || str_contains($script, 'systemctl restart')
             ) {
-                return array_shift($this->results)
-                    ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+                return (
+                    array_shift($this->results) ?? new RemoteShellResult(
+                        exitCode: 0,
+                        stdout: '',
+                        stderr: '',
+                        durationMs: 1,
+                    )
+                );
             }
 
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
@@ -159,7 +165,8 @@ it('records failed then rethrows when process:update --restart throws', function
         name: 'vite',
         changes: ['command' => 'npm run dev -- --host'],
         restart: true,
-    ))->toThrow(RuntimeException::class, 'restart boom');
+    ))
+        ->toThrow(RuntimeException::class, 'restart boom');
 
     expect(editRestartEventTypes())->toBe(['restarting', 'failed']);
 });

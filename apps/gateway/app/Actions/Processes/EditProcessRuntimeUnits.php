@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Enums\ProcessEventType;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Models\Process;
 use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
