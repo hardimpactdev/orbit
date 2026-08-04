@@ -50,13 +50,7 @@ class GatewaySwarmInstaller
         File::ensureDirectoryExists("{$configRoot}/certs", 0700);
         $this->bootstrapConfigRoot($configRoot);
 
-        $browserHostname = GatewayLeafIdentity::browserHostname();
-        $gatewayLeaf = $this->caService->issueLeaf(
-            GatewayLeafIdentity::ShortHost,
-            GatewayLeafIdentity::additionalSansForShortHost($wireguardAddress),
-        );
-        File::chmod($gatewayLeaf['cert'], 0o644);
-        File::chmod($gatewayLeaf['key'], 0o600);
+        $gatewayLeaf = $this->issueAndStageGatewayLeaf($wireguardAddress);
         $this->imageAcquirer->ensure($image, $imageArchive);
 
         if ($exposureMode->isGatewayDirect()) {
@@ -79,11 +73,12 @@ class GatewaySwarmInstaller
 
         if ($exposureMode->isRouterColocated()) {
             $this->transitionGuard->assertPublicPortsReleased();
-            $this->convergeRouterOwnedOrbitCaddy(
+            $this->serveGatewayLeafViaRouterCaddy(
                 wireguardAddress: $wireguardAddress,
                 wireguardCidr: $wireguardCidr,
                 gatewayLeaf: $gatewayLeaf,
-                browserHostname: $browserHostname,
+                browserHostname: GatewayLeafIdentity::browserHostname(),
+                ensureCaddyContainer: true,
             );
         }
     }
@@ -94,22 +89,78 @@ class GatewaySwarmInstaller
     }
 
     /**
+     * Issue or reissue the gateway API leaf so required SANs are present, then
+     * install router-facing TLS artifacts when exposure is router-colocated.
+     *
+     * Used by fleet update convergence; install() shares the same leaf and
+     * serve helpers. Router container recreation is skipped here because the
+     * public orbit-caddy already owns host ports on a running gateway.
+     *
+     * @return array{cert: string, key: string}
+     */
+    public function convergeGatewayLeafServing(
+        string $wireguardAddress,
+        GatewayExposureMode $exposureMode,
+        ?string $configRoot = null,
+        string $wireguardCidr = '10.6.0.0/24',
+    ): array {
+        if (filter_var($wireguardAddress, FILTER_VALIDATE_IP) === false) {
+            throw new RuntimeException("Invalid WireGuard API address: {$wireguardAddress}");
+        }
+
+        $configRoot = $this->configRoot($configRoot);
+        File::ensureDirectoryExists("{$configRoot}/certs", 0700);
+
+        $gatewayLeaf = $this->issueAndStageGatewayLeaf($wireguardAddress);
+
+        if ($exposureMode->isRouterColocated()) {
+            $this->serveGatewayLeafViaRouterCaddy(
+                wireguardAddress: $wireguardAddress,
+                wireguardCidr: $wireguardCidr,
+                gatewayLeaf: $gatewayLeaf,
+                browserHostname: GatewayLeafIdentity::browserHostname(),
+                ensureCaddyContainer: false,
+            );
+        }
+
+        return $gatewayLeaf;
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    private function issueAndStageGatewayLeaf(string $wireguardAddress): array
+    {
+        $gatewayLeaf = $this->caService->issueLeaf(
+            GatewayLeafIdentity::ShortHost,
+            GatewayLeafIdentity::additionalSansForShortHost($wireguardAddress),
+        );
+        File::chmod($gatewayLeaf['cert'], 0o644);
+        File::chmod($gatewayLeaf['key'], 0o600);
+
+        return $gatewayLeaf;
+    }
+
+    /**
      * @param  array{cert: string, key: string}  $gatewayLeaf
      */
-    private function convergeRouterOwnedOrbitCaddy(
+    private function serveGatewayLeafViaRouterCaddy(
         string $wireguardAddress,
         string $wireguardCidr,
         array $gatewayLeaf,
         string $browserHostname,
+        bool $ensureCaddyContainer,
     ): void {
         $this->installCaddyReadableGatewayLeaf($gatewayLeaf);
 
-        $container = OrbitCaddyContainer::forPublicIngress($wireguardAddress);
+        if ($ensureCaddyContainer) {
+            $container = OrbitCaddyContainer::forPublicIngress($wireguardAddress);
 
-        $this->runShellScript(
-            $this->caddyTool->updateScript(['container' => $container->spec()]),
-            'converge router-owned orbit-caddy container',
-        );
+            $this->runShellScript(
+                $this->caddyTool->updateScript(['container' => $container->spec()]),
+                'converge router-owned orbit-caddy container',
+            );
+        }
 
         $this->runRequiredWithInput(
             'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',

@@ -235,6 +235,7 @@ class GatewayServiceUpdater
     private function convergeGatewayStack(GatewayImageReference $targetImage, OperationUpdatePlan $plan): null
     {
         $this->swarmInstaller()->bootstrapRuntimeConfig();
+        $this->convergeGatewayLeafServingArtifacts();
         $this->loadOperationsReverbImageArchive($plan);
 
         $stackPath = $this->swarm()->writeStackFile(
@@ -254,6 +255,45 @@ class GatewayServiceUpdater
         $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
 
         return null;
+    }
+
+    private function convergeGatewayLeafServingArtifacts(): void
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if (! $gatewayNode instanceof Node) {
+            return;
+        }
+
+        $wireguardAddress = trim((string) $gatewayNode->wireguard_address);
+
+        if ($wireguardAddress === '' || filter_var($wireguardAddress, FILTER_VALIDATE_IP) === false) {
+            throw new RuntimeException('Gateway node is missing a valid WireGuard API address for leaf convergence.');
+        }
+
+        $this->swarmInstaller()->convergeGatewayLeafServing(
+            wireguardAddress: $wireguardAddress,
+            exposureMode: $this->gatewayExposureMode(),
+            configRoot: $this->configRoot(),
+            wireguardCidr: $this->gatewayWireguardCidr($gatewayNode),
+        );
+    }
+
+    private function gatewayWireguardCidr(Node $gatewayNode): string
+    {
+        $settings = $gatewayNode->roleAssignments
+            ->first(fn ($assignment): bool => (string) $assignment->role === 'vpn')
+            ?->settings;
+
+        if (is_array($settings)) {
+            $cidr = $settings['wireguard_cidr'] ?? null;
+
+            if (is_string($cidr) && trim($cidr) !== '') {
+                return trim($cidr);
+            }
+        }
+
+        return '10.6.0.0/24';
     }
 
     private function loadOperationsReverbImageArchive(OperationUpdatePlan $plan): void

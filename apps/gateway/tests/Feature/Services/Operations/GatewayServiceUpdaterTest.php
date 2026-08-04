@@ -6,9 +6,12 @@ use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -22,6 +25,14 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
     $this->configRoot = sys_get_temp_dir().'/orbit-gateway-service-updater-'.Str::random(8);
     config()->set('orbit.paths.config_root', $this->configRoot);
+    config()->set('orbit.gateway.hostname', 'gateway.orbit');
+    config()->set('orbit.gateway.exposure_mode', 'router-colocated');
+
+    app()->bind(GatewaySwarmInstaller::class, function (): GatewaySwarmInstaller {
+        return new GatewaySwarmInstaller(
+            caService: new GatewayServiceUpdaterFakeCa($this->configRoot),
+        );
+    });
 });
 
 afterEach(function (): void {
@@ -79,6 +90,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
             "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'",
+            ...gateway_service_updater_leaf_converge_commands($this->configRoot),
             'bash -s',
             gateway_service_updater_stack_deploy_command(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
@@ -171,6 +183,74 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->not->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET');
 
     expect(File::exists("{$this->configRoot}/agent.toml"))->toBeFalse();
+
+    expect(File::get("{$this->configRoot}/certs/gateway.sans"))
+        ->toBe("gateway\ngateway.orbit\n10.6.0.2\n");
+
+    Process::assertRan(function ($process): bool {
+        if ((string) $process->command !== 'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null') {
+            return false;
+        }
+
+        $input = (string) $process->input;
+
+        return (
+            str_contains($input, '10.6.0.2 gateway.orbit :443 {')
+            && str_contains($input, 'tls /etc/orbit/certs/gateway.crt /etc/orbit/certs/gateway.key')
+        );
+    });
+});
+
+it('reissues incomplete gateway leaf SANs and reloads router caddy during stack convergence', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $gatewayRoute = null;
+
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Process::fake(function ($process) use (&$gatewayRoute, $plan, $previousImage) {
+        $command = (string) $process->command;
+
+        if (str_contains($command, 'tee /etc/caddy/orbit/orbit-gateway.caddy')) {
+            $gatewayRoute = (string) $process->input;
+        }
+
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        return match ($command) {
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    expect(File::get("{$this->configRoot}/certs/gateway.crt"))
+        ->toBe("issued-cert\n")
+        ->and(File::get("{$this->configRoot}/certs/gateway.key"))
+        ->toBe("issued-key\n")
+        ->and(File::get("{$this->configRoot}/certs/gateway.sans"))
+        ->toBe("gateway\ngateway.orbit\n10.6.0.2\n")
+        ->and($gatewayRoute)
+        ->toContain('10.6.0.2 gateway.orbit :443 {');
+
+    foreach (gateway_service_updater_leaf_converge_commands($this->configRoot) as $command) {
+        Process::assertRan($command);
+    }
 });
 
 it('runs gateway migrations through the target gateway image before replacing the gateway service', function (): void {
@@ -745,6 +825,24 @@ function gateway_service_updater_host_cli_command(OperationUpdatePlan $plan): st
     ]);
 }
 
+/**
+ * @return list<string>
+ */
+function gateway_service_updater_leaf_converge_commands(string $configRoot): array
+{
+    $configRoot = rtrim($configRoot, '/');
+
+    return [
+        'sudo install -d -m 0755 /etc/orbit/certs',
+        'sudo install -m 0644 '.escapeshellarg("{$configRoot}/certs/gateway.crt")." '/etc/orbit/certs/gateway.crt'",
+        'sudo install -m 0600 '.escapeshellarg("{$configRoot}/certs/gateway.key")." '/etc/orbit/certs/gateway.key'",
+        'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'",
+        CaddyTool::reloadCommand('orbit-caddy'),
+    ];
+}
+
 function gateway_service_updater_common_process_result(
     string $command,
     OperationUpdatePlan $plan,
@@ -756,6 +854,16 @@ function gateway_service_updater_common_process_result(
 
     if ($command === gateway_service_updater_host_cli_command($plan)) {
         return Process::result();
+    }
+
+    $configRoot = config('orbit.paths.config_root');
+
+    if (is_string($configRoot) && $configRoot !== '') {
+        foreach (gateway_service_updater_leaf_converge_commands($configRoot) as $leafCommand) {
+            if ($command === $leafCommand) {
+                return Process::result();
+            }
+        }
     }
 
     return match ($command) {
@@ -786,4 +894,30 @@ function gateway_service_updater_common_process_result(
         ),
         default => null,
     };
+}
+
+readonly class GatewayServiceUpdaterFakeCa extends OrbitCaService
+{
+    public function __construct(
+        private string $configRoot,
+    ) {}
+
+    /**
+     * @param  list<string>  $additionalSans
+     * @return array{cert: string, key: string}
+     */
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $certsDir = "{$this->configRoot}/certs";
+
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$certsDir}/{$host}.crt", "issued-cert\n");
+        File::put("{$certsDir}/{$host}.key", "issued-key\n");
+        File::put("{$certsDir}/{$host}.sans", implode("\n", [$host, ...$additionalSans])."\n");
+
+        return [
+            'cert' => "{$certsDir}/{$host}.crt",
+            'key' => "{$certsDir}/{$host}.key",
+        ];
+    }
 }
