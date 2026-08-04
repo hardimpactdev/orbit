@@ -136,9 +136,11 @@ final readonly class RuntimeHibernation
             $runtimeUnit = $target['runtime_unit'];
 
             // Scalars only: fresh process workers must not inherit models/services/PDO.
-            $tasks[$index] = static function () use ($nodeId, $processId, $runtimeUnit): bool {
-                return app(RuntimeWakeProcessStarter::class)->start($nodeId, $processId, $runtimeUnit);
-            };
+            $tasks[$index] = static fn (): bool => app(RuntimeWakeProcessStarter::class)->start(
+                $nodeId,
+                $processId,
+                $runtimeUnit,
+            );
         }
 
         $results = $this->wakeConcurrentRunner->run($tasks);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use Illuminate\Contracts\Concurrency\Driver as ConcurrencyDriver;
 use Illuminate\Support\Facades\Concurrency;
 use Throwable;
 
@@ -36,8 +37,14 @@ final readonly class ProcessRuntimeWakeConcurrentRunner implements RuntimeWakeCo
         }
 
         try {
+            $driver = Concurrency::driver('process');
+
+            if (! $driver instanceof ConcurrencyDriver) {
+                return $this->failedClosed($tasks);
+            }
+
             /** @var array<array-key, mixed> $results */
-            $results = Concurrency::driver('process')->run($tasks);
+            $results = $driver->run($tasks);
         } catch (Throwable) {
             return $this->failedClosed($tasks);
         }
