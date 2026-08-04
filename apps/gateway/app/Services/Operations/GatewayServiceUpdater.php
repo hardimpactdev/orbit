@@ -70,6 +70,21 @@ class GatewayServiceUpdater
                 'Gateway host CLI installed',
                 fn (): null => $this->installGatewayHostCli($operationRun, $plan, $targetImage),
             );
+            // Converge leaf TLS material while this process is still the live
+            // gateway task with ORBIT_HOST_PATH_PREFIX host mounts. Running
+            // after force service replacement can leave config-root leaves
+            // updated while host/Caddy serving paths stay incomplete.
+            $this->runStep(
+                $operationRun,
+                'gateway.leaf',
+                'Converging gateway leaf certificate SANs',
+                'Gateway leaf certificate SANs converged',
+                function (): null {
+                    $this->convergeGatewayLeafServingArtifacts();
+
+                    return null;
+                },
+            );
             $this->runStep(
                 $operationRun,
                 'gateway.service',
@@ -235,7 +250,6 @@ class GatewayServiceUpdater
     private function convergeGatewayStack(GatewayImageReference $targetImage, OperationUpdatePlan $plan): null
     {
         $this->swarmInstaller()->bootstrapRuntimeConfig();
-        $this->convergeGatewayLeafServingArtifacts();
         $this->loadOperationsReverbImageArchive($plan);
 
         $stackPath = $this->swarm()->writeStackFile(

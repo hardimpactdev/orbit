@@ -84,13 +84,13 @@ it('updates gateway and scheduler services to the plan image after target image 
             "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'",
             gateway_service_updater_migration_command($plan),
             gateway_service_updater_host_cli_command($plan),
+            ...gateway_service_updater_leaf_converge_commands($this->configRoot),
             "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
             "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'",
-            ...gateway_service_updater_leaf_converge_commands($this->configRoot),
             'bash -s',
             gateway_service_updater_stack_deploy_command(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
@@ -204,7 +204,7 @@ it('updates gateway and scheduler services to the plan image after target image 
     });
 });
 
-it('reissues incomplete gateway leaf SANs and reloads router caddy during stack convergence', function (): void {
+it('reissues incomplete gateway leaf SANs and reloads router caddy before gateway service replacement', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();

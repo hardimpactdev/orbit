@@ -603,6 +603,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['migrations',           'done'],
             ['gateway.host-cli',     'running'],
             ['gateway.host-cli',     'done'],
+            ['gateway.leaf',         'running'],
+            ['gateway.leaf',         'done'],
             ['gateway.service',      'running'],
             ['gateway.service',      'done'],
             ['scheduler.start',      'running'],
