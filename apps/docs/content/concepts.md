@@ -286,6 +286,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Instance selector**
 - **App hostname selector**
 - **Browser process CORS admission**
+- **Browser process SSE**
 - **Canonical project identity**
 - **Process tool dependency**
 - **External macOS runtime provider**

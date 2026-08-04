@@ -16,7 +16,6 @@ use App\Services\Processes\ProcessStreamSleeper;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
-use RuntimeException;
 
 uses(RefreshDatabase::class);
 
@@ -581,7 +580,7 @@ describe('ProcessStreamController', function (): void {
         app()->instance(ProcessStreamSleeper::class, new class implements ProcessStreamSleeper {
             public function sleep(int $microseconds): void
             {
-                throw new RuntimeException('forced stream failure');
+                throw new \RuntimeException('forced stream failure');
             }
         });
         app()->instance(

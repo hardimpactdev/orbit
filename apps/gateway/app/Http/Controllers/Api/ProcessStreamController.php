@@ -84,7 +84,9 @@ final readonly class ProcessStreamController implements Loggable
             );
         }
 
-        foreach (array_keys($request->query()) as $queryKey) {
+        $queryBag = $request->query->all();
+
+        foreach (array_keys($queryBag) as $queryKey) {
             if ($queryKey === 'app') {
                 continue;
             }
@@ -218,16 +220,24 @@ final readonly class ProcessStreamController implements Loggable
             : ProcessEventType::tryFrom((string) $event->event);
 
         $status = ProcessRuntimeStatus::fromEventType($type);
-        $process = $event->process;
         $occurredAt = $event->recorded_at?->toIso8601String() ?? $event->created_at?->toIso8601String();
         // Durable process_name is authoritative; relation is legacy/backfill safety only.
-        $name = is_string($event->process_name) && $event->process_name !== ''
-            ? $event->process_name
-            : (is_string($process?->name) && $process->name !== '' ? $process->name : 'unknown');
+        $snapshotName = $event->process_name;
+        $relatedName = $event->process?->name;
+        if ($snapshotName !== '') {
+            $name = $snapshotName;
+        } elseif (is_string($relatedName) && $relatedName !== '') {
+            $name = $relatedName;
+        } else {
+            $name = 'unknown';
+        }
+        $eventType = $type instanceof ProcessEventType
+            ? $type->value
+            : (string) $event->getRawOriginal('event');
 
         return [
             'id' => $event->id,
-            'event' => $type?->value ?? (string) $event->getRawOriginal('event'),
+            'event' => $eventType,
             'status' => $status->value,
             'name' => $name,
             'node' => $event->node?->name,

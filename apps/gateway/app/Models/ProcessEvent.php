@@ -26,6 +26,14 @@ use Override;
  * @property string|null $exit_status
  * @property Carbon|null $exited_at
  * @property Carbon|null $recorded_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Process|null $process
+ * @property-read Project|null $project
+ * @property-read Project|null $app
+ * @property-read AppInstance|null $appInstance
+ * @property-read Node|null $node
+ * @property-read Workspace|null $workspace
  */
 class ProcessEvent extends Model
 {
