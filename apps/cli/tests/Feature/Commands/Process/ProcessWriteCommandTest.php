@@ -347,12 +347,10 @@ describe('process write commands', function (): void {
         ]);
 
         Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/processes'
-                && $request->data()['name'] === 'queue'
-                && ! array_key_exists('label', $request->data())
-            ),
+            fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes'
+            && $request->data()['name'] === 'queue'
+            && ! array_key_exists('label', $request->data()),
         );
     });
 

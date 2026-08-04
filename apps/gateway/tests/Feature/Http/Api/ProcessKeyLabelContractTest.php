@@ -313,34 +313,36 @@ describe('process key and label contract', function (): void {
     it('rejects empty and overlong labels on create and update', function (): void {
         processKeyLabelFixture();
 
-        $this->call(
-            'POST',
-            '/api/processes',
-            [
-                'instance' => 'docs.development',
-                'name' => 'queue',
-                'label' => '   ',
-                'command' => 'php artisan queue:work',
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
-        )
+        $this
+            ->call(
+                'POST',
+                '/api/processes',
+                [
+                    'instance' => 'docs.development',
+                    'name' => 'queue',
+                    'label' => '   ',
+                    'command' => 'php artisan queue:work',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
+            )
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'label');
 
-        $this->call(
-            'PATCH',
-            '/api/processes/vite',
-            [
-                'instance' => 'docs.development',
-                'label' => str_repeat('a', 256),
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
-        )
+        $this
+            ->call(
+                'PATCH',
+                '/api/processes/vite',
+                [
+                    'instance' => 'docs.development',
+                    'label' => str_repeat('a', 256),
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
+            )
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'label');

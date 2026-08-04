@@ -31,9 +31,10 @@ function restorePreProcessLabelSchema(): void
 
 function processLabelMigration(): Migration
 {
-    $migration = require database_path(
-        'migrations/2026_08_04_220000_add_label_to_processes_table.php',
-    );
+    $migration = require
+        database_path(
+            'migrations/2026_08_04_220000_add_label_to_processes_table.php',
+        );
 
     if (! $migration instanceof Migration || ! method_exists($migration, 'up')) {
         throw new RuntimeException('Process label migration must expose up().');
@@ -59,10 +60,12 @@ function processLabelColumn(): ?array
 it('backfills existing process rows label=name and enforces a non-null label column', function (): void {
     $node = Node::factory()->create(['name' => 'app-label-backfill']);
     $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-    $process = Process::factory()->forOwner($app, $node)->create([
-        'name' => 'vite',
-        'label' => 'Custom Pre-Migration Label',
-    ]);
+    $process = Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'name' => 'vite',
+            'label' => 'Custom Pre-Migration Label',
+        ]);
 
     restorePreProcessLabelSchema();
 
@@ -71,8 +74,10 @@ it('backfills existing process rows label=name and enforces a non-null label col
     $preMigration = DB::table('processes')->where('id', $process->id)->first();
 
     expect($preMigration)
-        ->not->toBeNull()
-        ->and($preMigration->name)->toBe('vite')
+        ->not
+        ->toBeNull()
+        ->and($preMigration->name)
+        ->toBe('vite')
         ->and(property_exists($preMigration, 'label') || isset($preMigration->label))
         ->toBeFalse();
 
@@ -84,20 +89,27 @@ it('backfills existing process rows label=name and enforces a non-null label col
     $labelColumn = processLabelColumn();
 
     expect($postMigration)
-        ->not->toBeNull()
-        ->and($postMigration->name)->toBe('vite')
-        ->and($postMigration->label)->toBe('vite')
-        ->and($labelColumn)->toBeArray()
-        ->and($labelColumn['nullable'] ?? true)->toBeFalse();
+        ->not
+        ->toBeNull()
+        ->and($postMigration->name)
+        ->toBe('vite')
+        ->and($postMigration->label)
+        ->toBe('vite')
+        ->and($labelColumn)
+        ->toBeArray()
+        ->and($labelColumn['nullable'] ?? true)
+        ->toBeFalse();
 });
 
 it('defaults new process labels to the identity name when omitted after migration', function (): void {
     $node = Node::factory()->create(['name' => 'app-label-default']);
     $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-    $process = Process::factory()->forOwner($app, $node)->create([
-        'name' => 'queue',
-    ]);
+    $process = Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'name' => 'queue',
+        ]);
 
     expect($process->fresh()->label)->toBe('queue');
 });

@@ -95,7 +95,7 @@ it('keeps the TypeScript SDK independently versioned with Craft-style package-re
     $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
 
     expect($packageVersion)
-        ->toBe('0.2.1')
+        ->toBe('0.3.0')
         ->and($packageVersion)
         ->not
         ->toBe($rootVersion)

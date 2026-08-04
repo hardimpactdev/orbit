@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Process;
 
+/** @mago-expect lint:too-many-properties */
 final readonly class ProcessUpdateInput
 {
     public ?string $node;

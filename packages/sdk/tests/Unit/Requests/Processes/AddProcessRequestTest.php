@@ -70,11 +70,14 @@ it('serializes an optional label into the request body when supplied', function 
         label: 'Vite Dev Server',
     );
 
-    expect($request->body()->all())->toMatchArray([
-        'instance' => 'docs',
-        'name' => 'vite',
-        'label' => 'Vite Dev Server',
-    ])->and($request->body()->all())->not->toHaveKey('runtime');
+    expect($request->body()->all())
+        ->toMatchArray([
+            'instance' => 'docs',
+            'name' => 'vite',
+            'label' => 'Vite Dev Server',
+        ])
+        ->and($request->body()->all())
+        ->not->toHaveKey('runtime');
 });
 
 it('omits label from the request body when none was supplied', function (): void {

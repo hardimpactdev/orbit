@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Process;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class ProcessUpdateValidator
 {
     public const array RESTART_POLICIES = ['never', 'on_failure', 'always'];

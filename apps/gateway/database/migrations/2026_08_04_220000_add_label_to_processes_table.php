@@ -29,13 +29,13 @@ return new class extends Migration {
             );
         } else {
             DB::table('processes')
-                ->where(static function ($query): void {
+                ->where(static function (\Illuminate\Database\Query\Builder $query): void {
                     $query->whereNull('label')->orWhere('label', '');
                 })
                 ->orderBy('id')
-                ->chunkById(500, static function ($rows): void {
+                ->chunkById(500, static function (\Illuminate\Support\Collection $rows): void {
                     foreach ($rows as $row) {
-                        if (! is_string($row->name) || $row->name === '') {
+                        if (! is_object($row) || ! is_string($row->name ?? null) || $row->name === '') {
                             continue;
                         }
 

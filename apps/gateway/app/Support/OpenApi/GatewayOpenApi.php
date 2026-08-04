@@ -275,7 +275,9 @@ final class GatewayOpenApi
         $process->addProperty('instance', new StringType()->nullable(true));
         $process->addProperty('workspace', new StringType()->nullable(true));
         $key = new StringType;
-        $key->setDescription('Stable process identity slug (current Process.name). New consumers must use key + label.');
+        $key->setDescription(
+            'Stable process identity slug (current Process.name). New consumers must use key + label.',
+        );
         $process->addProperty('key', $key);
         $label = new StringType;
         $label->setDescription('Durable human display label for the process.');
