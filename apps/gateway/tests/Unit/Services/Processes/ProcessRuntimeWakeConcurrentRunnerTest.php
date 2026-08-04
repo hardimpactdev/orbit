@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Services\Processes\ProcessRuntimeWakeConcurrentRunner;
 use Carbon\CarbonInterval;
-use Closure;
 use Illuminate\Contracts\Concurrency\Driver as ConcurrencyDriver;
 use Illuminate\Support\Defer\DeferredCallback;
 use Illuminate\Support\Facades\Concurrency;
@@ -75,14 +74,14 @@ it('fails closed without re-running tasks when the process pool throws', functio
     $throwingDriver = new class implements ConcurrencyDriver {
         public bool $runCalled = false;
 
-        public function run(Closure|array $tasks, CarbonInterval|int|null $timeout = null): array
+        public function run(\Closure|array $tasks, CarbonInterval|int|null $timeout = null): array
         {
             $this->runCalled = true;
 
             throw new RuntimeException('pool failure');
         }
 
-        public function defer(Closure|array $tasks): DeferredCallback
+        public function defer(\Closure|array $tasks): DeferredCallback
         {
             throw new RuntimeException('defer is unused in wake process-pool failure coverage.');
         }
