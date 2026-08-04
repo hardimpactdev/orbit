@@ -1,0 +1,9 @@
+Updating a9fb5932d..8ae06ade9
+Fast-forward
+ apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php              |  1 -
+ apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php                  |  1 -
+ apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php |  9 +++++++
+ apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php  | 93 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ docker/orbit-gateway/Dockerfile                                       |  1 -
+ docker/orbit-gateway/Dockerfile.dockerignore                          |  2 --
+ 6 files changed, 100 insertions(+), 7 deletions(-)

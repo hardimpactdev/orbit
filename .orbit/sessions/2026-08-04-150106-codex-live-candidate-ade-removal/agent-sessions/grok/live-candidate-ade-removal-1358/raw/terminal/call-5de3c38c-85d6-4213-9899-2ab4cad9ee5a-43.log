@@ -1,0 +1,35 @@
+=== path existence ===
+total 0
+drwxr-xr-x@  5 nckrtl  staff  160 Aug  4 14:36 .
+drwxr-xr-x@ 28 nckrtl  staff  896 Aug  4 14:37 ..
+drwxr-xr-x@  3 nckrtl  staff   96 Aug  4 14:36 css
+drwxr-xr-x@  3 nckrtl  staff   96 Aug  4 14:36 js
+drwxr-xr-x@  4 nckrtl  staff  128 Aug  4 14:36 views
+ls: apps/gateway/resources/node-scripts: No such file or directory
+node-scripts MISSING
+./docker/orbit-gateway/Dockerfile:64:COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+./docker/orbit-gateway/Dockerfile.dockerignore:26:!apps/gateway/resources/node-scripts/
+./docker/orbit-gateway/Dockerfile.dockerignore:27:!apps/gateway/resources/node-scripts/**
+8fba1581a Remove OpenCode, PolyScope, and Agent IDE active product surface
+0ffe431b5 Remove process crash notification flow
+2a41de75c Move gateway app into apps/gateway
+8fba1581a Remove OpenCode, PolyScope, and Agent IDE active product surface
+6dbcbd2d0 Add activation page favicon
+3104ecc16 Unify runtime activation boot screen
+0d381cd66 Fix activation progress semantics
+251f96a2e Refine runtime activation progress
+not in HEAD tree
+ls: /Users/nckrtl/orbit/apps/gateway/resources/node-scripts: No such file or directory
+missing on primary too
+fatal: path 'apps/gateway/Dockerfile' does not exist in 'HEAD'
+commit 03811c9180f8023616ab0013f779b7afa9223de0
+Author: nckrtl <nick.retel@gmail.com>
+Date:   Tue Aug 4 14:01:28 2026 +0200
+
+    Split ADE absence regression checks to clear mago lint gate
+    
+    Reduce cyclomatic complexity in the residue inventory tests and format
+    gateway files so quality-check lint/format subgates pass.
+
+ apps/gateway/tests/Feature/Removal/AdeOpenCodePolyscopeRemovalTest.php | 131 +++++++++++++++++++++++++++++++++++++++++++++++------------------------
+ 1 file changed, 87 insertions(+), 44 deletions(-)

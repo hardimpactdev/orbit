@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 198,
+    "record_count": 199,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -5445,6 +5445,28 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "browser",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-04-150106-codex-live-candidate-ade-removal",
+            "slug": "codex-live-candidate-ade-removal",
+            "timestamp": "2026-08-04-150106",
+            "schema": "compact-v1",
+            "archive_mode": "full",
+            "state": "land",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

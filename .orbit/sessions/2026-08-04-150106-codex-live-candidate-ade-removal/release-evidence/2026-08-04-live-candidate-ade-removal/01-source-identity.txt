@@ -1,0 +1,5 @@
+worktree=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+branch=codex/live-candidate-ade-removal
+HEAD=a9fb5932d4b78e04577ce4142c486a90e3bbd764
+VERSION=0.1.190
+origin/main=a9fb5932d4b78e04577ce4142c486a90e3bbd764

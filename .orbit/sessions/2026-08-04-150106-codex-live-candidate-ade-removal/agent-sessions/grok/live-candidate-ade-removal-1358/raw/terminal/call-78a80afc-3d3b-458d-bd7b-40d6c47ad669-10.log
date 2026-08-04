@@ -1,0 +1,1206 @@
+WORKTREE_ASSIGNMENT path=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal branch=codex/live-candidate-ade-removal base_ref=main
+
+==> Creating worktree
++ git worktree add -b codex/live-candidate-ade-removal /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal main
+Preparing worktree (new branch 'codex/live-candidate-ade-removal')
+Updating files:  42% (3842/9027)Updating files:  43% (3882/9027)Updating files:  44% (3972/9027)Updating files:  45% (4063/9027)Updating files:  46% (4153/9027)Updating files:  47% (4243/9027)Updating files:  48% (4333/9027)Updating files:  49% (4424/9027)Updating files:  50% (4514/9027)Updating files:  51% (4604/9027)Updating files:  52% (4695/9027)Updating files:  53% (4785/9027)Updating files:  54% (4875/9027)Updating files:  55% (4965/9027)Updating files:  56% (5056/9027)Updating files:  57% (5146/9027)Updating files:  58% (5236/9027)Updating files:  59% (5326/9027)Updating files:  60% (5417/9027)Updating files:  61% (5507/9027)Updating files:  62% (5597/9027)Updating files:  63% (5688/9027)Updating files:  64% (5778/9027)Updating files:  65% (5868/9027)Updating files:  66% (5958/9027)Updating files:  67% (6049/9027)Updating files:  68% (6139/9027)Updating files:  69% (6229/9027)Updating files:  70% (6319/9027)Updating files:  71% (6410/9027)Updating files:  72% (6500/9027)Updating files:  73% (6590/9027)Updating files:  74% (6680/9027)Updating files:  75% (6771/9027)Updating files:  76% (6861/9027)Updating files:  77% (6951/9027)Updating files:  78% (7042/9027)Updating files:  79% (7132/9027)Updating files:  80% (7222/9027)Updating files:  81% (7312/9027)Updating files:  82% (7403/9027)Updating files:  83% (7493/9027)Updating files:  84% (7583/9027)Updating files:  85% (7673/9027)Updating files:  86% (7764/9027)Updating files:  87% (7854/9027)Updating files:  88% (7944/9027)Updating files:  89% (8035/9027)Updating files:  90% (8125/9027)Updating files:  91% (8215/9027)Updating files:  92% (8305/9027)Updating files:  92% (8314/9027)Updating files:  93% (8396/9027)Updating files:  94% (8486/9027)Updating files:  95% (8576/9027)Updating files:  96% (8666/9027)Updating files:  97% (8757/9027)Updating files:  98% (8847/9027)Updating files:  99% (8937/9027)Updating files: 100% (9027/9027)Updating files: 100% (9027/9027), done.
+HEAD is now at a9fb5932d Archive ADE/OpenCode/PolyScope removal compact loop
+
+==> Seeding loop packet
++ mkdir -p /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit
++ cp /Users/nckrtl/orbit/LOOP.md.example /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/loop.md
+
+==> Linking local environment
++ ln -s /Users/nckrtl/orbit/.env /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.env
++ ln -s /Users/nckrtl/orbit/.env.e2e /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.env.e2e
+
+==> Seeding quality gate baselines
++ /Users/nckrtl/orbit/bin/quality-gate-seed-baselines /Users/nckrtl/orbit /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal
+quality gate baselines: copied=3 preserved=0
+
+==> Installing Composer dependencies
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Nothing to install, update or remove
+Generating optimized autoload files
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/packages/core && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 83 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v5.0.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.41.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v13.17.0): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v13.17.0): Extracting archive
+  - Installing illuminate/conditionable (v13.17.0): Extracting archive
+  - Installing illuminate/collections (v13.17.0): Extracting archive
+  - Installing illuminate/reflection (v13.17.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing illuminate/support (v13.17.0): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (7.0.0): Extracting archive
+  - Installing sebastian/type (7.0.1): Extracting archive
+  - Installing sebastian/recursion-context (8.0.0): Extracting archive
+  - Installing sebastian/object-reflector (6.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (8.0.0): Extracting archive
+  - Installing sebastian/global-state (9.0.1): Extracting archive
+  - Installing sebastian/git-state (1.0.0): Extracting archive
+  - Installing sebastian/file-filter (1.0.0): Extracting archive
+  - Installing sebastian/exporter (8.1.1): Extracting archive
+  - Installing sebastian/environment (9.3.2): Extracting archive
+  - Installing sebastian/diff (9.0.0): Extracting archive
+  - Installing sebastian/comparator (8.3.0): Extracting archive
+  - Installing sebastian/cli-parser (5.0.0): Extracting archive
+  - Installing phpunit/php-timer (9.0.0): Extracting archive
+  - Installing phpunit/php-text-template (6.0.0): Extracting archive
+  - Installing phpunit/php-invoker (7.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (7.0.0): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.8.0): Extracting archive
+  - Installing sebastian/lines-of-code (5.0.2): Extracting archive
+  - Installing sebastian/complexity (6.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (14.2.3): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing phpunit/phpunit (13.2.4): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v5.0.0): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.3): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v5.0.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.41.0): Extracting archive
+  - Installing symfony/string (v8.1.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.1): Extracting archive
+  - Installing symfony/console (v8.1.2): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing nunomaduro/collision (v8.9.5): Extracting archive
+  - Installing brianium/paratest (v7.23.0): Extracting archive
+  - Installing pestphp/pest (v5.0.1): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+  0/82 [>---------------------------]   0%
+ 25/82 [========>-------------------]  30%
+ 50/82 [=================>----------]  60%
+ 58/82 [===================>--------]  70%
+ 72/82 [========================>---]  87%
+ 78/82 [==========================>-]  95%
+ 81/82 [===========================>]  98%
+ 82/82 [============================] 100%
+Generating autoload files
+59 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/packages/sdk && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 89 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v5.0.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.41.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v13.17.0): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v13.17.0): Extracting archive
+  - Installing illuminate/conditionable (v13.17.0): Extracting archive
+  - Installing illuminate/collections (v13.17.0): Extracting archive
+  - Installing illuminate/reflection (v13.17.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing illuminate/support (v13.17.0): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+  - Installing mockery/mockery (1.6.12): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (7.0.0): Extracting archive
+  - Installing sebastian/type (7.0.1): Extracting archive
+  - Installing sebastian/recursion-context (8.0.0): Extracting archive
+  - Installing sebastian/object-reflector (6.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (8.0.0): Extracting archive
+  - Installing sebastian/global-state (9.0.1): Extracting archive
+  - Installing sebastian/git-state (1.0.0): Extracting archive
+  - Installing sebastian/file-filter (1.0.0): Extracting archive
+  - Installing sebastian/exporter (8.1.1): Extracting archive
+  - Installing sebastian/environment (9.3.2): Extracting archive
+  - Installing sebastian/diff (9.0.0): Extracting archive
+  - Installing sebastian/comparator (8.3.0): Extracting archive
+  - Installing sebastian/cli-parser (5.0.0): Extracting archive
+  - Installing phpunit/php-timer (9.0.0): Extracting archive
+  - Installing phpunit/php-text-template (6.0.0): Extracting archive
+  - Installing phpunit/php-invoker (7.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (7.0.0): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.8.0): Extracting archive
+  - Installing sebastian/lines-of-code (5.0.2): Extracting archive
+  - Installing sebastian/complexity (6.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (14.2.3): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing phpunit/phpunit (13.2.4): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v5.0.0): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.3): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v5.0.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.41.0): Extracting archive
+  - Installing symfony/string (v8.1.2): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
+  - Installing symfony/service-contracts (v3.7.1): Extracting archive
+  - Installing symfony/console (v8.1.2): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing nunomaduro/collision (v8.9.5): Extracting archive
+  - Installing brianium/paratest (v7.23.0): Extracting archive
+  - Installing pestphp/pest (v5.0.1): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  0/88 [>---------------------------]   0%
+ 19/88 [======>---------------------]  21%
+ 34/88 [==========>-----------------]  38%
+ 45/88 [==============>-------------]  51%
+ 58/88 [==================>---------]  65%
+ 65/88 [====================>-------]  73%
+ 73/88 [=======================>----]  82%
+ 80/88 [=========================>--]  90%
+ 87/88 [===========================>]  98%
+ 88/88 [============================] 100%
+Generating autoload files
+62 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/cli && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 137 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v4.0.0): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing sebastian/environment (8.1.2): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (6.0.0): Extracting archive
+  - Installing sebastian/type (6.0.4): Extracting archive
+  - Installing sebastian/recursion-context (7.0.1): Extracting archive
+  - Installing sebastian/object-reflector (5.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (7.0.0): Extracting archive
+  - Installing sebastian/global-state (8.0.3): Extracting archive
+  - Installing sebastian/exporter (7.0.3): Extracting archive
+  - Installing sebastian/diff (7.0.0): Extracting archive
+  - Installing sebastian/comparator (7.1.8): Extracting archive
+  - Installing sebastian/cli-parser (4.2.1): Extracting archive
+  - Installing phpunit/php-timer (8.0.0): Extracting archive
+  - Installing phpunit/php-text-template (5.0.0): Extracting archive
+  - Installing phpunit/php-invoker (6.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (6.0.1): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.7.0): Extracting archive
+  - Installing sebastian/lines-of-code (4.0.1): Extracting archive
+  - Installing sebastian/complexity (5.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (12.5.7): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing phpunit/phpunit (12.5.30): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing brianium/paratest (v7.20.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing composer/pcre (3.4.0): Extracting archive
+  - Installing composer/xdebug-handler (3.0.5): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+  - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+  - Installing mockery/mockery (1.6.12): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.2): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v4.0.2): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v4.2.1): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v4.0.1): Extracting archive
+  - Installing pestphp/pest (v4.7.4): Extracting archive
+  - Installing pestphp/pest-plugin-laravel (v4.1.0): Extracting archive
+  - Installing symfony/filesystem (v7.4.11): Extracting archive
+  - Installing laravel/serializable-closure (v2.0.13): Extracting archive
+  - Installing phpacker/phpacker (0.6.4): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+   0/134 [>---------------------------]   0%
+  20/134 [====>-----------------------]  14%
+  31/134 [======>---------------------]  23%
+  46/134 [=========>------------------]  34%
+  58/134 [============>---------------]  43%
+  74/134 [===============>------------]  55%
+  85/134 [=================>----------]  63%
+  95/134 [===================>--------]  70%
+ 113/134 [=======================>----]  84%
+ 126/134 [==========================>-]  94%
+ 133/134 [===========================>]  99%
+ 134/134 [============================] 100%
+Generating optimized autoload files
+Class ThinCliCommandsTest located in ./tests/Feature/Architecture/ThinCliCommandsTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class UpdateAllCommandFakeFollower located in ./tests/Feature/Commands/Operation/UpdateAllCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class UpdateAllCommandFakeUpdater located in ./tests/Feature/Commands/Operation/UpdateAllCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class OperationStreamUpdateAllFakeUpdater located in ./tests/Feature/Commands/Operation/OperationStreamCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class UpdateCommandFakeUpdater located in ./tests/Feature/Commands/Operation/UpdateCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class ProfileCommandFakeProfiler located in ./tests/Feature/Commands/Operation/ProfileCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeAnalyticsReadinessVerifier located in ./tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class DeployRunFakeOperationStreamSubscriber located in ./tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestBootstrapGatewayCommand located in ./tests/Feature/Commands/BootstrapGatewayCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestRedactionCommand located in ./tests/Feature/Commands/Internal/InternalExecutorRedactionTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestInternalExecutorCommand located in ./tests/Feature/Commands/Internal/InternalExecutorCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestInternalExecutorStdinCommand located in ./tests/Feature/Commands/Internal/InternalExecutorCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestStreamingCommand located in ./tests/Feature/Commands/StreamsGatewayProgressTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestGatewayCommand located in ./tests/Feature/Commands/GatewayCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class DnsResolveFakeResolver located in ./tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class DnsListFakeResolver located in ./tests/Feature/Commands/Dns/DnsListCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TestLocalOnlyCommand located in ./tests/Feature/Commands/LocalOnlyCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TrustFakeTrustStoreInstaller located in ./tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class TrustFakeFetchGatewayRootCa located in ./tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeTrustStoreInstaller located in ./tests/Feature/Commands/Gateway/GatewayAddCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeFetchGatewayRootCa located in ./tests/Feature/Commands/Gateway/GatewayAddCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeVerifyGatewayIdentity located in ./tests/Feature/Commands/Gateway/GatewayAddCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeWireGuardGatewayAddressResolver located in ./tests/Feature/Commands/Gateway/GatewayAddCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class ProcessLogsFakeOperationStreamSubscriber located in ./tests/Feature/Commands/Process/ProcessLogsCommandTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeGatewayOperationEventStreamClient located in ./tests/Feature/Services/GatewayOperationFollowerTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class LocalUpdateWorkflowFakeUpdater located in ./tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class RunnerFakeUpdater located in ./tests/Feature/Services/Updates/LocalUpdateRunnerTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class CliGatewayStreamMockResponse located in ./tests/Feature/Services/GatewayStreamClientTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeOperationStreamWebSocketTransport located in ./tests/Feature/Services/GatewayOperationStreamSubscriberTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FailingOperationStreamWebSocketTransport located in ./tests/Feature/Services/GatewayOperationStreamSubscriberTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeOperationStreamBackfillClient located in ./tests/Feature/Services/GatewayOperationStreamSubscriberTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakePublicDnsResolver located in ./tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeHttpsProbe located in ./tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeGatewayStreamRequest located in ./tests/Pest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeGatewayStreamHttpClient located in ./tests/Pest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+Class FakeGatewayStreamMockResponse located in ./tests/Pest.php does not comply with psr-4 autoloading standard (rule: Tests\ => ./tests). Skipping.
+84 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 131 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v5.0.0): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing symfony/string (v8.1.2): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.41.0): Extracting archive
+  - Installing symfony/console (v8.1.2): Extracting archive
+  - Installing sebastian/environment (9.3.2): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (7.0.0): Extracting archive
+  - Installing sebastian/type (7.0.1): Extracting archive
+  - Installing sebastian/recursion-context (8.0.0): Extracting archive
+  - Installing sebastian/object-reflector (6.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (8.0.0): Extracting archive
+  - Installing sebastian/global-state (9.0.1): Extracting archive
+  - Installing sebastian/git-state (1.0.0): Extracting archive
+  - Installing sebastian/file-filter (1.0.0): Extracting archive
+  - Installing sebastian/exporter (8.1.1): Extracting archive
+  - Installing sebastian/diff (9.0.0): Extracting archive
+  - Installing sebastian/comparator (8.3.0): Extracting archive
+  - Installing sebastian/cli-parser (5.0.0): Extracting archive
+  - Installing phpunit/php-timer (9.0.0): Extracting archive
+  - Installing phpunit/php-text-template (6.0.0): Extracting archive
+  - Installing phpunit/php-invoker (7.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (7.0.0): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.8.0): Extracting archive
+  - Installing sebastian/lines-of-code (5.0.2): Extracting archive
+  - Installing sebastian/complexity (6.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (14.2.3): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing phpunit/phpunit (13.2.4): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing brianium/paratest (v7.23.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing doctrine/lexer (3.0.1): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing fakerphp/faker (v1.24.1): Extracting archive
+  - Installing symfony/http-foundation (v8.1.2): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.13.0): Extracting archive
+  - Installing guzzlehttp/promises (2.5.1): Extracting archive
+  - Installing guzzlehttp/guzzle (7.15.2): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.10): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.4): Extracting archive
+  - Installing symfony/css-selector (v8.1.0): Extracting archive
+  - Installing tijsverkoyen/css-to-inline-styles (v2.4.0): Extracting archive
+  - Installing symfony/var-dumper (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-uuid (v1.37.0): Extracting archive
+  - Installing symfony/uid (v8.1.0): Extracting archive
+  - Installing symfony/routing (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v8.1.2): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.1): Extracting archive
+  - Installing symfony/event-dispatcher (v8.1.2): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing egulias/email-validator (4.0.4): Extracting archive
+  - Installing symfony/mailer (v8.1.2): Extracting archive
+  - Installing symfony/error-handler (v8.1.2): Extracting archive
+  - Installing symfony/http-kernel (v8.1.2): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.1): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.1): Extracting archive
+  - Installing monolog/monolog (3.10.0): Extracting archive
+  - Installing league/uri-interfaces (7.8.1): Extracting archive
+  - Installing league/uri (7.8.1): Extracting archive
+  - Installing league/mime-type-detection (1.17.0): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing league/flysystem (3.35.2): Extracting archive
+  - Installing nette/utils (v4.1.5): Extracting archive
+  - Installing nette/schema (v1.3.5): Extracting archive
+  - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+  - Installing league/config (v1.2.0): Extracting archive
+  - Installing league/commonmark (2.8.3): Extracting archive
+  - Installing laravel/serializable-closure (v2.0.15): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing laravel/framework (v13.23.0): Extracting archive
+  - Installing spatie/laravel-package-tools (1.93.1): Extracting archive
+  - Installing hardimpactdev/librarian (0.0.2): Extracting archive
+  - Installing laravel/pail (v1.2.7): Extracting archive
+  - Installing laravel/agent-detector (v2.0.2): Extracting archive
+  - Installing laravel/pao (v1.1.2): Extracting archive
+  - Installing psy/psysh (v0.12.23): Extracting archive
+  - Installing laravel/tinker (v3.0.2): Extracting archive
+  - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+  - Installing mockery/mockery (1.6.12): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.5): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.3): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v5.0.0): Extracting archive
+  - Installing pestphp/pest (v5.0.1): Extracting archive
+  - Installing pestphp/pest-plugin-laravel (v5.0.0): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+   0/130 [>---------------------------]   0%
+  19/130 [====>-----------------------]  14%
+  29/130 [======>---------------------]  22%
+  41/130 [========>-------------------]  31%
+  54/130 [===========>----------------]  41%
+  70/130 [===============>------------]  53%
+  78/130 [================>-----------]  60%
+  96/130 [====================>-------]  73%
+ 107/130 [=======================>----]  82%
+ 121/130 [==========================>-]  93%
+ 129/130 [===========================>]  99%
+ 130/130 [============================] 100%
+Generating optimized autoload files
+> Illuminate\Foundation\ComposerScripts::postAutoloadDump
+> @php artisan package:discover --ansi
+
+  [37;44m INFO [39;49m Discovering packages.  
+
+  hardimpactdev/librarian [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/pail [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/pao [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/tinker [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nesbot/carbon [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/collision [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/termwind [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  pestphp/pest-plugin-laravel [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+
+92 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 127 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v5.0.0): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing symfony/string (v8.1.2): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.41.0): Extracting archive
+  - Installing symfony/console (v8.1.2): Extracting archive
+  - Installing sebastian/environment (9.3.2): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (7.0.0): Extracting archive
+  - Installing sebastian/type (7.0.1): Extracting archive
+  - Installing sebastian/recursion-context (8.0.0): Extracting archive
+  - Installing sebastian/object-reflector (6.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (8.0.0): Extracting archive
+  - Installing sebastian/global-state (9.0.1): Extracting archive
+  - Installing sebastian/git-state (1.0.0): Extracting archive
+  - Installing sebastian/file-filter (1.0.0): Extracting archive
+  - Installing sebastian/exporter (8.1.1): Extracting archive
+  - Installing sebastian/diff (9.0.0): Extracting archive
+  - Installing sebastian/comparator (8.3.0): Extracting archive
+  - Installing sebastian/cli-parser (5.0.0): Extracting archive
+  - Installing phpunit/php-timer (9.0.0): Extracting archive
+  - Installing phpunit/php-text-template (6.0.0): Extracting archive
+  - Installing phpunit/php-invoker (7.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (7.0.0): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.8.0): Extracting archive
+  - Installing sebastian/lines-of-code (5.0.2): Extracting archive
+  - Installing sebastian/complexity (6.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (14.2.3): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing phpunit/phpunit (13.2.4): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing brianium/paratest (v7.23.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing doctrine/lexer (3.0.1): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing fakerphp/faker (v1.24.1): Extracting archive
+  - Installing symfony/http-foundation (v8.1.2): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.13.0): Extracting archive
+  - Installing guzzlehttp/promises (2.5.1): Extracting archive
+  - Installing guzzlehttp/guzzle (7.15.2): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.10): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.4): Extracting archive
+  - Installing symfony/css-selector (v8.1.0): Extracting archive
+  - Installing tijsverkoyen/css-to-inline-styles (v2.4.0): Extracting archive
+  - Installing symfony/var-dumper (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-uuid (v1.37.0): Extracting archive
+  - Installing symfony/uid (v8.1.0): Extracting archive
+  - Installing symfony/routing (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v8.1.2): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.1): Extracting archive
+  - Installing symfony/event-dispatcher (v8.1.2): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing egulias/email-validator (4.0.4): Extracting archive
+  - Installing symfony/mailer (v8.1.2): Extracting archive
+  - Installing symfony/error-handler (v8.1.2): Extracting archive
+  - Installing symfony/http-kernel (v8.1.2): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.1): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.1): Extracting archive
+  - Installing monolog/monolog (3.10.0): Extracting archive
+  - Installing league/uri-interfaces (7.8.1): Extracting archive
+  - Installing league/uri (7.8.1): Extracting archive
+  - Installing league/mime-type-detection (1.17.0): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing league/flysystem (3.35.2): Extracting archive
+  - Installing nette/utils (v4.1.5): Extracting archive
+  - Installing nette/schema (v1.3.5): Extracting archive
+  - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+  - Installing league/config (v1.2.0): Extracting archive
+  - Installing league/commonmark (2.8.3): Extracting archive
+  - Installing laravel/serializable-closure (v2.0.15): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing laravel/framework (v13.23.0): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 3c08470): Symlinking from ../../packages/core
+  - Installing psy/psysh (v0.12.23): Extracting archive
+  - Installing laravel/tinker (v3.0.2): Extracting archive
+  - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+  - Installing mockery/mockery (1.6.12): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.5): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.3): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v5.0.0): Extracting archive
+  - Installing pestphp/pest (v5.0.1): Extracting archive
+  - Installing pestphp/pest-plugin-laravel (v5.0.0): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+   0/125 [>---------------------------]   0%
+  19/125 [====>-----------------------]  15%
+  29/125 [======>---------------------]  23%
+  39/125 [========>-------------------]  31%
+  55/125 [============>---------------]  44%
+  64/125 [==============>-------------]  51%
+  79/125 [=================>----------]  63%
+  94/125 [=====================>------]  75%
+ 100/125 [======================>-----]  80%
+ 118/125 [==========================>-]  94%
+ 125/125 [============================] 100%
+Generating optimized autoload files
+> Illuminate\Foundation\ComposerScripts::postAutoloadDump
+> @php artisan package:discover --ansi
+
+  [37;44m INFO [39;49m Discovering packages.  
+
+  hardimpactdev/orbit-core [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/tinker [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nesbot/carbon [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/collision [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/termwind [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  pestphp/pest-plugin-laravel [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+
+90 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 148 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing pestphp/pest-plugin (v5.0.0): Extracting archive
+  - Installing aws/aws-crt-php (v1.2.7): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing symfony/string (v8.1.2): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.1): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.41.0): Extracting archive
+  - Installing symfony/console (v8.1.2): Extracting archive
+  - Installing sebastian/environment (9.3.2): Extracting archive
+  - Installing staabm/side-effects-detector (1.0.5): Extracting archive
+  - Installing sebastian/version (7.0.0): Extracting archive
+  - Installing sebastian/type (7.0.1): Extracting archive
+  - Installing sebastian/recursion-context (8.0.0): Extracting archive
+  - Installing sebastian/object-reflector (6.0.0): Extracting archive
+  - Installing sebastian/object-enumerator (8.0.0): Extracting archive
+  - Installing sebastian/global-state (9.0.1): Extracting archive
+  - Installing sebastian/git-state (1.0.0): Extracting archive
+  - Installing sebastian/file-filter (1.0.0): Extracting archive
+  - Installing sebastian/exporter (8.1.1): Extracting archive
+  - Installing sebastian/diff (9.0.0): Extracting archive
+  - Installing sebastian/comparator (8.3.0): Extracting archive
+  - Installing sebastian/cli-parser (5.0.0): Extracting archive
+  - Installing phpunit/php-timer (9.0.0): Extracting archive
+  - Installing phpunit/php-text-template (6.0.0): Extracting archive
+  - Installing phpunit/php-invoker (7.0.0): Extracting archive
+  - Installing phpunit/php-file-iterator (7.0.0): Extracting archive
+  - Installing theseer/tokenizer (2.0.1): Extracting archive
+  - Installing nikic/php-parser (v5.8.0): Extracting archive
+  - Installing sebastian/lines-of-code (5.0.2): Extracting archive
+  - Installing sebastian/complexity (6.0.0): Extracting archive
+  - Installing phpunit/php-code-coverage (14.2.3): Extracting archive
+  - Installing phar-io/version (3.2.1): Extracting archive
+  - Installing phar-io/manifest (2.0.4): Extracting archive
+  - Installing myclabs/deep-copy (1.13.4): Extracting archive
+  - Installing phpunit/phpunit (13.2.4): Extracting archive
+  - Installing jean85/pretty-package-versions (2.1.1): Extracting archive
+  - Installing fidry/cpu-core-counter (1.3.0): Extracting archive
+  - Installing brianium/paratest (v7.23.0): Extracting archive
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.4): Extracting archive
+  - Installing symfony/css-selector (v8.1.0): Extracting archive
+  - Installing tijsverkoyen/css-to-inline-styles (v2.4.0): Extracting archive
+  - Installing symfony/var-dumper (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-uuid (v1.37.0): Extracting archive
+  - Installing symfony/uid (v8.1.0): Extracting archive
+  - Installing symfony/routing (v8.1.2): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.41.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v8.1.2): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.1): Extracting archive
+  - Installing symfony/event-dispatcher (v8.1.2): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing doctrine/lexer (3.0.1): Extracting archive
+  - Installing egulias/email-validator (4.0.4): Extracting archive
+  - Installing symfony/mailer (v8.1.2): Extracting archive
+  - Installing symfony/http-foundation (v8.1.2): Extracting archive
+  - Installing symfony/error-handler (v8.1.2): Extracting archive
+  - Installing symfony/http-kernel (v8.1.2): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.1): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.1): Extracting archive
+  - Installing monolog/monolog (3.10.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing league/uri-interfaces (7.8.1): Extracting archive
+  - Installing league/uri (7.8.1): Extracting archive
+  - Installing league/mime-type-detection (1.17.0): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing league/flysystem (3.35.2): Extracting archive
+  - Installing nette/utils (v4.1.5): Extracting archive
+  - Installing nette/schema (v1.3.5): Extracting archive
+  - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+  - Installing league/config (v1.2.0): Extracting archive
+  - Installing league/commonmark (2.8.3): Extracting archive
+  - Installing laravel/serializable-closure (v2.0.15): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.10): Extracting archive
+  - Installing guzzlehttp/promises (2.5.1): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing guzzlehttp/psr7 (2.13.0): Extracting archive
+  - Installing guzzlehttp/guzzle (7.15.2): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing laravel/framework (v13.23.0): Extracting archive
+  - Installing spatie/laravel-package-tools (1.93.1): Extracting archive
+  - Installing phpstan/phpdoc-parser (2.3.3): Extracting archive
+  - Installing dedoc/scramble (v0.13.31): Extracting archive
+  - Installing doctrine/deprecations (1.1.6): Extracting archive
+  - Installing fakerphp/faker (v1.24.1): Extracting archive
+  - Installing hardimpactdev/librarian (0.0.2): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 3c08470): Symlinking from ../../packages/core
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 2fc9906): Symlinking from ../../packages/sdk
+  - Installing symfony/yaml (v8.1.1): Extracting archive
+  - Installing laravel/roster (v0.5.1): Extracting archive
+  - Installing laravel/mcp (v0.8.2): Extracting archive
+  - Installing laravel/boost (v2.4.10): Extracting archive
+  - Installing laravel/pail (v1.2.7): Extracting archive
+  - Installing laravel/agent-detector (v2.0.2): Extracting archive
+  - Installing laravel/pao (v1.1.2): Extracting archive
+  - Installing psy/psysh (v0.12.23): Extracting archive
+  - Installing laravel/tinker (v3.0.2): Extracting archive
+  - Installing symfony/filesystem (v8.1.0): Extracting archive
+  - Installing mtdowling/jmespath.php (2.9.1): Extracting archive
+  - Installing aws/aws-sdk-php (3.386.1): Extracting archive
+  - Installing league/flysystem-aws-s3-v3 (3.35.1): Extracting archive
+  - Installing hamcrest/hamcrest-php (v2.1.1): Extracting archive
+  - Installing mockery/mockery (1.6.12): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.5): Extracting archive
+  - Installing webmozart/assert (2.4.1): Extracting archive
+  - Installing phpdocumentor/reflection-common (2.2.0): Extracting archive
+  - Installing phpdocumentor/type-resolver (2.0.0): Extracting archive
+  - Installing phpdocumentor/reflection-docblock (6.0.3): Extracting archive
+  - Installing ta-tikoma/phpunit-architecture-test (0.8.7): Extracting archive
+  - Installing pestphp/pest-plugin-arch (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-profanity (v5.0.0): Extracting archive
+  - Installing pestphp/pest-plugin-mutate (v5.0.0): Extracting archive
+  - Installing pestphp/pest (v5.0.1): Extracting archive
+  - Installing pestphp/pest-plugin-laravel (v5.0.0): Extracting archive
+  - Installing phpstan/phpstan (2.2.2): Extracting archive
+  - Installing rector/rector (2.5.2): Extracting archive
+  - Installing spatie/guidelines-skills (dev-main 0fb11f5): Extracting archive
+  - Installing spatie/laravel-activitylog (4.12.3): Extracting archive
+  - Installing spatie/php-structure-discoverer (2.4.4): Extracting archive
+  - Installing spatie/laravel-data (4.23.0): Extracting archive
+   0/145 [>---------------------------]   0%
+  23/145 [====>-----------------------]  15%
+  37/145 [=======>--------------------]  25%
+  46/145 [========>-------------------]  31%
+  58/145 [===========>----------------]  40%
+  81/145 [===============>------------]  55%
+  91/145 [=================>----------]  62%
+ 109/145 [=====================>------]  75%
+ 120/145 [=======================>----]  82%
+ 133/145 [=========================>--]  91%
+ 143/145 [===========================>]  98%
+ 145/145 [============================] 100%
+Generating optimized autoload files
+> Illuminate\Foundation\ComposerScripts::postAutoloadDump
+> @php artisan package:discover --ansi
+
+  [37;44m INFO [39;49m Discovering packages.  
+
+  dedoc/scramble [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  hardimpactdev/librarian [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  hardimpactdev/orbit-core [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  hardimpactdev/orbit-sdk-laravel [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/boost [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/mcp [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/pail [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/pao [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/roster [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  laravel/tinker [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nesbot/carbon [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/collision [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  nunomaduro/termwind [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  pestphp/pest-plugin-laravel [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  spatie/guidelines-skills [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  spatie/laravel-activitylog [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  spatie/laravel-data [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+  spatie/php-structure-discoverer [90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m[90m.[39m [32;1mDONE[39;22m
+
+99 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/reverb && composer install
+Installing dependencies from lock file (including require-dev)
+Verifying lock file contents can be installed on current platform.
+Package operations: 87 installs, 0 updates, 0 removals
+    0 [>---------------------------]    0 [->--------------------------]
+  - Installing carthage-software/mago (1.41.0): Extracting archive
+  - Installing clue/redis-protocol (v0.3.2): Extracting archive
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing doctrine/lexer (3.0.1): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/http-foundation (v8.1.1): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/console (v8.1.1): Extracting archive
+  - Installing react/event-loop (v1.6.0): Extracting archive
+  - Installing evenement/evenement (v3.0.2): Extracting archive
+  - Installing react/stream (v1.4.0): Extracting archive
+  - Installing react/promise (v3.3.0): Extracting archive
+  - Installing react/cache (v1.2.0): Extracting archive
+  - Installing react/dns (v1.14.0): Extracting archive
+  - Installing react/socket (v1.17.0): Extracting archive
+  - Installing react/promise-timer (v1.11.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing ratchet/rfc6455 (v0.4.1): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing pusher/pusher-php-server (7.2.8): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/css-selector (v8.1.0): Extracting archive
+  - Installing tijsverkoyen/css-to-inline-styles (v2.4.0): Extracting archive
+  - Installing symfony/var-dumper (v8.1.1): Extracting archive
+  - Installing symfony/polyfill-uuid (v1.37.0): Extracting archive
+  - Installing symfony/uid (v8.1.0): Extracting archive
+  - Installing symfony/routing (v8.1.0): Extracting archive
+  - Installing symfony/process (v8.1.0): Extracting archive
+  - Installing symfony/polyfill-php86 (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v8.1.0): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v8.1.1): Extracting archive
+  - Installing egulias/email-validator (4.0.4): Extracting archive
+  - Installing symfony/mailer (v8.1.1): Extracting archive
+  - Installing symfony/error-handler (v8.1.0): Extracting archive
+  - Installing symfony/http-kernel (v8.1.1): Extracting archive
+  - Installing symfony/finder (v8.1.1): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing monolog/monolog (3.10.0): Extracting archive
+  - Installing league/uri-interfaces (7.8.1): Extracting archive
+  - Installing league/uri (7.8.1): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing nette/utils (v4.1.4): Extracting archive
+  - Installing nette/schema (v1.3.5): Extracting archive
+  - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+  - Installing league/config (v1.2.0): Extracting archive
+  - Installing league/commonmark (2.8.2): Extracting archive
+  - Installing laravel/serializable-closure (v2.0.13): Extracting archive
+  - Installing laravel/framework (v13.17.0): Extracting archive
+  - Installing clue/redis-react (v2.8.0): Extracting archive
+  - Installing laravel/reverb (v1.10.2): Extracting archive
+  0/87 [>---------------------------]   0%
+ 18/87 [=====>----------------------]  20%
+ 33/87 [==========>-----------------]  37%
+ 45/87 [==============>-------------]  51%
+ 56/87 [==================>---------]  64%
+ 68/87 [=====================>------]  78%
+ 81/87 [==========================>-]  93%
+ 87/87 [============================] 100%
+Generating autoload files
+63 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+==> Preparing gateway app state
++ mkdir -p /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit
++ cp /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/.env.example /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit/.env
++ touch /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit/gateway.sqlite
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway && env ORBIT_CONFIG_ROOT=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit DB_CONNECTION=sqlite DB_DATABASE=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit/gateway.sqlite SESSION_DRIVER=file php artisan key:generate --no-interaction
+
+   INFO  Application key set successfully.  
+
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway && env ORBIT_CONFIG_ROOT=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit DB_CONNECTION=sqlite DB_DATABASE=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/storage/framework/testing/worktree-orbit/gateway.sqlite SESSION_DRIVER=file php artisan migrate --force --no-interaction
+
+   INFO  Preparing database.  
+
+  Creating migration table ............................................................................................................. 2.19ms DONE
+
+   INFO  Running migrations.  
+
+  0001_01_01_000000_create_sessions_table .............................................................................................. 1.45ms DONE
+  0001_01_01_000001_create_cache_table ................................................................................................. 0.48ms DONE
+  0001_01_01_000002_create_jobs_table .................................................................................................. 0.81ms DONE
+  2026_05_01_210611_create_nodes_table ................................................................................................. 0.30ms DONE
+  2026_05_01_232300_drop_laravel_user_tables ........................................................................................... 0.11ms DONE
+  2026_05_02_071437_add_node_contract_fields_to_nodes_table ............................................................................ 0.49ms DONE
+  2026_05_02_091138_add_user_to_nodes_table ............................................................................................ 0.27ms DONE
+  2026_05_02_131529_add_public_ip_fields_to_nodes_table ................................................................................ 0.20ms DONE
+  2026_05_02_173505_create_local_gateway_settings_table ................................................................................ 0.21ms DONE
+  2026_05_03_000000_create_node_access_table ........................................................................................... 0.35ms DONE
+  2026_05_05_020007_create_wireguard_peers_table ....................................................................................... 0.38ms DONE
+  2026_05_05_172404_create_apps_table .................................................................................................. 0.56ms DONE
+  2026_05_05_180000_create_activity_log_table .......................................................................................... 0.72ms DONE
+  2026_05_05_182956_add_agent_ide_config_to_nodes_table ................................................................................ 0.30ms DONE
+  2026_05_05_203524_create_proxy_routes_table .......................................................................................... 0.48ms DONE
+  2026_05_05_204143_create_processes_table ............................................................................................. 0.35ms DONE
+  2026_05_05_210000_add_agent_ide_config_to_apps_table ................................................................................. 0.22ms DONE
+  2026_05_05_211000_create_workspaces_table ............................................................................................ 0.74ms DONE
+  2026_05_05_211100_create_workspace_steps_table ....................................................................................... 0.34ms DONE
+  2026_05_05_211200_create_workspace_runs_table ........................................................................................ 0.37ms DONE
+  2026_05_05_211300_create_workspace_run_steps_table ................................................................................... 0.34ms DONE
+  2026_05_05_211400_add_workspace_id_to_proxy_routes_table ............................................................................. 1.95ms DONE
+  2026_05_06_000000_create_scheduler_local_state_tables ................................................................................ 1.08ms DONE
+  2026_05_06_000001_create_process_events_table ........................................................................................ 0.40ms DONE
+  2026_05_06_000050_create_schedules_table ............................................................................................. 1.23ms DONE
+  2026_05_06_000100_create_schedule_runs_table ......................................................................................... 0.54ms DONE
+  2026_05_06_014625_create_node_tools_table ............................................................................................ 0.60ms DONE
+  2026_05_06_032923_create_firewall_rules_table ........................................................................................ 0.45ms DONE
+  2026_05_07_120000_create_deploy_tables ............................................................................................... 1.78ms DONE
+  2026_05_12_195855_add_context_to_deployment_runs_table ............................................................................... 0.34ms DONE
+  2026_05_13_000000_rename_ssh_user_drop_is_local_on_nodes ............................................................................. 2.80ms DONE
+  2026_05_17_000000_create_node_roles_table ............................................................................................ 0.51ms DONE
+  2026_05_17_000001_backfill_node_roles_from_legacy_nodes .............................................................................. 0.33ms DONE
+  2026_05_19_000000_create_database_connections_table .................................................................................. 0.86ms DONE
+  2026_05_19_000001_create_database_connection_targets_table ........................................................................... 0.34ms DONE
+  2026_05_19_123903_add_permissions_to_node_access_table ............................................................................... 0.96ms DONE
+  2026_05_20_000000_backfill_gateway_coupled_vpn_roles ................................................................................. 0.44ms DONE
+  2026_05_20_190110_add_host_key_columns_to_nodes_table ................................................................................ 2.04ms DONE
+  2026_05_20_190110_add_security_scope_columns_to_firewall_rules_table ................................................................. 1.77ms DONE
+  2026_05_21_080645_add_custom_permissions_to_node_access_table ........................................................................ 0.55ms DONE
+  2026_05_21_130000_add_docker_first_runtime_fields .................................................................................... 5.72ms DONE
+  2026_05_22_164723_add_app_worker_mode_fields_to_apps_table ........................................................................... 1.25ms DONE
+  2026_05_22_170000_add_runtime_to_processes_table ..................................................................................... 0.50ms DONE
+  2026_05_23_062631_add_deploy_warmup_paths_to_apps .................................................................................... 0.36ms DONE
+  2026_05_28_000001_drop_legacy_role_columns_from_nodes ................................................................................ 2.03ms DONE
+  2026_05_28_120000_create_operation_runs_table ........................................................................................ 0.72ms DONE
+  2026_05_28_120001_add_operation_run_id_to_activity_log ............................................................................... 1.93ms DONE
+  2026_05_29_030147_create_app_websocket_bindings_table ................................................................................ 0.47ms DONE
+  2026_06_02_000001_create_operation_events_table ...................................................................................... 0.40ms DONE
+  2026_06_02_000002_create_update_leases_table ......................................................................................... 0.47ms DONE
+  2026_06_02_000003_create_operation_update_plans_table ................................................................................ 0.52ms DONE
+  2026_06_03_203358_add_owner_and_runtime_scope_to_processes_table ..................................................................... 0.69ms DONE
+  2026_06_10_000001_normalize_tool_expected_state_to_installed ......................................................................... 0.23ms DONE
+  2026_06_10_000002_normalize_proxy_route_service_owner_types .......................................................................... 0.23ms DONE
+  2026_06_13_000001_remove_supervisor_runtime_and_tool ................................................................................. 0.11ms DONE
+  2026_06_16_065630_create_app_runtime_mounts_table .................................................................................... 0.40ms DONE
+  2026_06_17_000000_create_app_analytics_bindings_table ................................................................................ 0.26ms DONE
+  2026_06_17_010000_normalize_metrics_route_upstream ................................................................................... 0.84ms DONE
+  2026_06_17_201539_create_app_instances_table ......................................................................................... 0.47ms DONE
+  2026_06_17_201540_create_app_instance_env_variables_table ............................................................................ 0.68ms DONE
+  2026_06_17_201541_create_app_instance_database_connection_targets_table .............................................................. 0.40ms DONE
+  2026_06_22_082622_add_installed_artifact_state_to_nodes_table ........................................................................ 0.85ms DONE
+  2026_06_22_101149_create_release_manifest_sources_table .............................................................................. 0.21ms DONE
+  2026_06_23_120000_add_app_runtime_and_runtime_config_to_apps_table ................................................................... 2.14ms DONE
+  2026_06_24_150000_create_app_setup_tables ............................................................................................ 1.67ms DONE
+  2026_06_25_120000_migrate_process_edit_permission_to_process_update .................................................................. 0.09ms DONE
+  2026_06_28_000000_create_gateway_extensions_table .................................................................................... 0.40ms DONE
+  2026_07_01_000001_rename_opencode_tool_slug_to_opencode_cli .......................................................................... 0.23ms DONE
+  2026_07_02_000001_create_app_dependency_audit_summaries_table ........................................................................ 0.43ms DONE
+  2026_07_02_000003_add_orbit_agent_capable_to_nodes_table ............................................................................. 0.46ms DONE
+  2026_07_07_000001_add_agent_artifact_state_to_update_plans_and_nodes ................................................................. 1.28ms DONE
+  2026_07_07_000002_drop_retired_orbit_agent_jobs_table ................................................................................ 0.15ms DONE
+  2026_07_08_000000_create_app_instance_runtime_mounts_table ........................................................................... 0.51ms DONE
+  2026_07_08_000001_add_operation_token_consumed_at_to_operation_runs_table ............................................................ 0.74ms DONE
+  2026_07_08_000010_create_operation_stream_subscriber_leases_table .................................................................... 0.67ms DONE
+  2026_07_08_110624_migrate_process_definition_runtime_config_to_service ............................................................... 0.12ms DONE
+  2026_07_08_120000_add_app_instance_id_to_workspaces_table ............................................................................ 3.63ms DONE
+  2026_07_09_000000_add_app_instance_id_to_workspace_steps_table ....................................................................... 2.80ms DONE
+  2026_07_12_084244_canonicalize_app_instance_ownership ............................................................................... 19.04ms DONE
+  2026_07_12_085630_canonicalize_node_identity_and_managed_agent_intent ................................................................ 3.86ms DONE
+  2026_07_12_090000_canonicalize_deployment_ownership ................................................................................. 17.73ms DONE
+  2026_07_15_000000_canonicalize_process_app_instance_ownership ........................................................................ 5.51ms DONE
+  2026_07_15_123146_create_node_bootstraps_table ....................................................................................... 0.43ms DONE
+  2026_07_15_160000_add_architecture_to_nodes_table .................................................................................... 0.57ms DONE
+  2026_07_15_180000_add_unique_wireguard_address_to_nodes_table ........................................................................ 0.19ms DONE
+  2026_07_16_191348_create_workspace_env_variables_table ............................................................................... 0.45ms DONE
+  2026_07_16_191349_remove_parent_env_workspace_steps .................................................................................. 0.18ms DONE
+  2026_07_16_220000_add_credentials_to_processes_table ................................................................................. 0.54ms DONE
+  2026_07_17_000000_canonicalize_websocket_valkey_settings ............................................................................. 0.13ms DONE
+  2026_07_17_111607_enforce_single_analytics_role_assignment ........................................................................... 0.10ms DONE
+  2026_07_17_235919_encrypt_wireguard_peer_private_material ............................................................................ 2.78ms DONE
+  2026_07_19_000000_restrict_workspaces_to_app_development_nodes ....................................................................... 0.32ms DONE
+  2026_07_19_010000_canonicalize_schedule_app_instance_ownership ....................................................................... 2.84ms DONE
+  2026_07_19_020000_canonicalize_app_runtime_instance_ownership ....................................................................... 18.38ms DONE
+  2026_07_19_030000_backfill_analytics_postgres_process_identity ....................................................................... 0.16ms DONE
+  2026_07_19_080101_reserve_private_dns_namespace_for_node_tlds ........................................................................ 0.34ms DONE
+  2026_07_20_000000_add_timeout_seconds_to_schedules_table ............................................................................. 0.51ms DONE
+  2026_07_20_080355_add_project_instance_permissions_to_node_access_grants ............................................................. 0.23ms DONE
+  2026_07_20_090000_add_agent_ide_config_to_app_instances_table ........................................................................ 0.58ms DONE
+  2026_07_20_100000_add_adopted_to_app_instances_table ................................................................................. 0.74ms DONE
+  2026_07_29_185506_backfill_php_cli_variant_on_role_owned_node_tools .................................................................. 0.28ms DONE
+  2026_08_04_120000_clear_legacy_ade_opencode_polyscope ................................................................................ 0.65ms DONE
+
+
+==> Preparing Laravel app: apps/docs
++ cp /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs/.env.example /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs/.env
++ touch /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs/database/database.sqlite
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs && php artisan key:generate --no-interaction
+
+   INFO  Application key set successfully.  
+
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/docs && php artisan migrate --force --no-interaction
+
+   INFO  Preparing database.  
+
+  Creating migration table ............................................................................................................. 3.44ms DONE
+
+   INFO  Running migrations.  
+
+  0001_01_01_000000_create_users_table ................................................................................................. 4.23ms DONE
+  0001_01_01_000001_create_cache_table ................................................................................................. 2.16ms DONE
+  0001_01_01_000002_create_jobs_table .................................................................................................. 3.74ms DONE
+
+
+==> Preparing Laravel app: apps/e2e
++ cp /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e/.env.example /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e/.env
++ touch /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e/database/database.sqlite
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e && php artisan key:generate --no-interaction
+
+   INFO  Application key set successfully.  
+
++ cd /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/e2e && php artisan migrate --force --no-interaction
+
+   INFO  Preparing database.  
+
+  Creating migration table ............................................................................................................. 2.44ms DONE
+
+   INFO  Running migrations.  
+
+  0001_01_01_000000_create_users_table ................................................................................................. 4.38ms DONE
+  0001_01_01_000001_create_cache_table ................................................................................................. 2.29ms DONE
+  0001_01_01_000002_create_jobs_table .................................................................................................. 3.99ms DONE
+
+skip composer test: --skip-tests
+
+WORKTREE_PREPARED path=/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal branch=codex/live-candidate-ade-removal base_ref=main

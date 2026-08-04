@@ -1,0 +1,20 @@
+Client:
+ Version:    29.4.0
+ Context:    orbstack
+ Debug Mode: false
+ Plugins:
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.33.0
+    Path:     /Users/nckrtl/.docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  5.1.4
+    Path:     /opt/homebrew/lib/docker/cli-plugins/docker-compose
+
+Server:
+ Containers: 19
+  Running: 5
+  Paused: 0
+  Stopped: 14
+ Images: 585
+ Server Version: 29.4.0
+ Storage Driver: overlayfs

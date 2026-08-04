@@ -1,0 +1,14 @@
+apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php:205:            'apps/gateway/resources/node-scripts',
+apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php:47:            'apps/gateway/resources/node-scripts',
+docker/orbit-gateway/Dockerfile:64:COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+docker/orbit-gateway/Dockerfile.dockerignore:26:!apps/gateway/resources/node-scripts/
+docker/orbit-gateway/Dockerfile.dockerignore:27:!apps/gateway/resources/node-scripts/**
+apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:20:        ->toContain('COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts')
+apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php:205:            'apps/gateway/resources/node-scripts',
+apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php:47:            'apps/gateway/resources/node-scripts',
+red_evidence=candidate_build_failed_missing_node_scripts
+log=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build.log
+blocked=.orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build-BLOCKED.txt
+failure_line=COPY apps/gateway/resources/node-scripts ... not found
+no_runtime_consumers_of_orbit-notify-exit=true
+directory_absent=apps/gateway/resources/node-scripts

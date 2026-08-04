@@ -1,0 +1,35 @@
+Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]
+Verification runtime must be passed for acceptance venue retained-incus; current: not applicable - packaging/fingerprint contract only; live candidate rebuild deferred until after independent review/merge
+91:    $venue = (string) ($options['venue'] ?? $minimum);
+93:    if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+94:        throw new RuntimeException("invalid acceptance venue: {$venue}");
+97:    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+98:        throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
+101:    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+103:    if ($runtimeProblem !== null) {
+104:        throw new RuntimeException($runtimeProblem);
+107:    $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
+115:    $actor = orbitLoopReviewRequiresHumanJudgment($review) ? 'user' : 'automated';
+116:    fwrite(STDOUT, "ACCEPTANCE READY venue={$venue} actor={$actor}\n");
+144:    if (! in_array($actor, ['user', 'automated'], true)) {
+145:        throw new RuntimeException('acceptance actor must be user or automated');
+156:    $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
+158:    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+159:        throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
+162:    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+164:    if ($runtimeProblem !== null) {
+165:        throw new RuntimeException($runtimeProblem);
+168:    if ($actor === 'automated' && ! orbitLoopReviewSaysNoHumanJudgment($review)) {
+170:            'automated acceptance requires reviewer-confirmed no human judgment; human judgment is required',
+175:        throw new RuntimeException('human acceptance is unnecessary; use actor=automated');
+178:    $acceptanceValue = 'accepted - automated - reviewer-confirmed no-human-judgment';
+192:        acceptanceAppendUserMessage(dirname($loopPath).'/feedback.jsonl', $raw, $sourceRef, $featureTip, $venue);
+268:                'venue' => orbitLoopLabel($loop, 'Proof', 'Acceptance venue'),
+346:    string $venue,
+357:        'surface' => 'acceptance.'.$venue,
+bin/orbit-feature-acceptance: a /usr/bin/env php script text executable, ASCII text
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+

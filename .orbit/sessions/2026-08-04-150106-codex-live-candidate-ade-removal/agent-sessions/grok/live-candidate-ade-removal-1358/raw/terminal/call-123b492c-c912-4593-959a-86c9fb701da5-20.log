@@ -1,0 +1,29 @@
+Client:
+ Version:    29.4.0
+ Context:    orbstack
+ Debug Mode: false
+ Plugins:
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.33.0
+    Path:     /Users/nckrtl/.docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  5.1.4
+    Path:     /opt/homebrew/lib/docker/cli-plugins/docker-compose
+
+Server:
+ Containers: 19
+  Running: 5
+  Paused: 0
+  Stopped: 14
+ Images: 585
+ Server Version: 29.4.0
+ Storage Driver: overlayfs
+---
+Running
+WARNING: This output is designed for human readability. For machine-readable output, please use --format.
+IMAGE                                                                                           ID             DISK USAGE   CONTENT SIZE   EXTRA
+127.0.0.1:15000/orbit-gateway:0.1.168-mailpit-43432ac1                                          5403d308547b        279MB          279MB        
+127.0.0.1:15000/orbit-gateway:0.1.168-mailpit-b20a233f                                          c389f030a08a        279MB          279MB        
+127.0.0.1:5000/orbit-gateway:0.1.156-candidate-20260622T051739Z-70dbe05c4d0e                    642fc100a87d        706MB          706MB        
+alpine:3.20                                                                                     d9e853e87e55       14.6MB         4.17MB        
+DOCKER_EARLY_OK

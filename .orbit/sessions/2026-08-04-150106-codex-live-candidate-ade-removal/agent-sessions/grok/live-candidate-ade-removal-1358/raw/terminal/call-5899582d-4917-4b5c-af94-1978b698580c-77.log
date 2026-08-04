@@ -1,0 +1,32 @@
+ INFO All files are already formatted.
+75 │     expect($missing)->toBe([]);
+   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^ This can be simplified to `toBeEmpty()`.
+   │
+   = Help: Replace with `toBeEmpty()`.
+
+help[function-name]: Function name `orbitGatewayHostContextCopySources` should be in snake case.
+    ┌─ tests/Feature/Runtime/OrbitGatewayImageContractTest.php:114:10
+    │  
+114 │ ╭ function orbitGatewayHostContextCopySources(string $dockerfile): array
+    │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Function `orbitGatewayHostContextCopySources` is declared here
+115 │ │ {
+116 │ │     $sources = [];
+117 │ │ 
+    · │
+169 │ │     return $sources;
+170 │ │ }
+    │ ╰─' Function `orbitGatewayHostContextCopySources` is defined here
+    │  
+    = The function name `orbitGatewayHostContextCopySources` does not follow snake naming convention.
+    = Help: Consider renaming it to `orbit_gateway_host_context_copy_sources` to adhere to the naming convention.
+
+warning: found 2 issues: 1 warning(s), 1 help message(s)
+ = 1 issues contain auto-fix suggestions
+
+ INFO Your baseline file contains 7310 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m6 passed[39;22m[90m (118 assertions)[39m
+  [90mDuration:[39m [39m0.17s[39m
+

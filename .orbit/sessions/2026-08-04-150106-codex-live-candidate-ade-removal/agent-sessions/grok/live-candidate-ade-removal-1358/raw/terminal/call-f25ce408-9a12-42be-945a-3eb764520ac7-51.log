@@ -1,0 +1,51 @@
+## codex/live-candidate-ade-removal
+a9fb5932d4b78e04577ce4142c486a90e3bbd764
+0.1.190
+-rw-r--r--@ 1 nckrtl  staff    698 Aug  4 14:45 .orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build-BLOCKED.txt
+-rw-r--r--@ 1 nckrtl  staff   3050 Aug  4 14:44 .orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build-failure-tail.txt
+-rw-r--r--@ 1 nckrtl  staff    115 Aug  4 14:43 .orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build-start.txt
+-rw-r--r--@ 1 nckrtl  staff  29528 Aug  4 14:44 .orbit/release-evidence/2026-08-04-live-candidate-ade-removal/06-candidate-build.log
+     104 docker/orbit-gateway/Dockerfile
+      82 docker/orbit-gateway/Dockerfile.dockerignore
+     186 total
+docker/orbit-gateway/Dockerfile.dockerignore:21:!apps/gateway/resources/
+docker/orbit-gateway/Dockerfile.dockerignore:22:!apps/gateway/resources/css/
+docker/orbit-gateway/Dockerfile.dockerignore:23:!apps/gateway/resources/css/**
+docker/orbit-gateway/Dockerfile.dockerignore:24:!apps/gateway/resources/js/
+docker/orbit-gateway/Dockerfile.dockerignore:25:!apps/gateway/resources/js/**
+docker/orbit-gateway/Dockerfile.dockerignore:26:!apps/gateway/resources/node-scripts/
+docker/orbit-gateway/Dockerfile.dockerignore:27:!apps/gateway/resources/node-scripts/**
+docker/orbit-gateway/Dockerfile.dockerignore:28:!apps/gateway/resources/views/
+docker/orbit-gateway/Dockerfile.dockerignore:29:!apps/gateway/resources/views/**
+docker/orbit-gateway/Dockerfile.dockerignore:41:!packages/core/resources/
+docker/orbit-gateway/Dockerfile.dockerignore:42:!packages/core/resources/php-cli/
+docker/orbit-gateway/Dockerfile.dockerignore:43:!packages/core/resources/php-cli/artifact-catalog.json
+docker/orbit-gateway/Dockerfile:44:COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
+docker/orbit-gateway/Dockerfile:45:COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
+docker/orbit-gateway/Dockerfile:46:COPY packages/sdk/composer.json packages/sdk/composer.lock /srv/orbit/packages/sdk/
+docker/orbit-gateway/Dockerfile:57:COPY apps/gateway/app /srv/orbit/apps/gateway/app
+docker/orbit-gateway/Dockerfile:58:COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+docker/orbit-gateway/Dockerfile:59:COPY apps/gateway/config /srv/orbit/apps/gateway/config
+docker/orbit-gateway/Dockerfile:60:COPY apps/gateway/database /srv/orbit/apps/gateway/database
+docker/orbit-gateway/Dockerfile:61:COPY apps/gateway/public /srv/orbit/apps/gateway/public
+docker/orbit-gateway/Dockerfile:62:COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+docker/orbit-gateway/Dockerfile:63:COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+docker/orbit-gateway/Dockerfile:64:COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+docker/orbit-gateway/Dockerfile:65:COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+docker/orbit-gateway/Dockerfile:66:COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+docker/orbit-gateway/Dockerfile:67:COPY bin/install-orbit /srv/orbit/bin/install-orbit
+docker/orbit-gateway/Dockerfile:68:COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
+docker/orbit-gateway/Dockerfile:69:COPY packages/core/src /srv/orbit/packages/core/src
+docker/orbit-gateway/Dockerfile:71:COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json
+docker/orbit-gateway/Dockerfile:72:COPY packages/sdk/src /srv/orbit/packages/sdk/src
+docker/orbit-gateway/Dockerfile:73:COPY VERSION /srv/orbit/VERSION
+docker/orbit-gateway/Dockerfile:88:COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit
+docker/orbit-gateway/Dockerfile:89:COPY docker/orbit-gateway/Caddyfile /etc/caddy/Caddyfile
+docker/orbit-gateway/Dockerfile:90:COPY docker/orbit-gateway/entrypoint.sh /usr/local/bin/orbit-gateway-entrypoint
+docker/orbit-gateway/Dockerfile:91:COPY docker/orbit-gateway/healthcheck.sh /usr/local/bin/orbit-gateway-healthcheck
+./docker/orbit-gateway/Dockerfile:64:COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+./docker/orbit-gateway/Dockerfile.dockerignore:26:!apps/gateway/resources/node-scripts/
+./docker/orbit-gateway/Dockerfile.dockerignore:27:!apps/gateway/resources/node-scripts/**
+./apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php:20:        ->toContain('COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts')
+./apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php:205:            'apps/gateway/resources/node-scripts',
+./apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php:47:            'apps/gateway/resources/node-scripts',

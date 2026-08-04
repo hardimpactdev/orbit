@@ -1,0 +1,98 @@
+[
+  {
+    "node": "NMBP",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-dev"
+    ]
+  },
+  {
+    "node": "agent",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "agent"
+    ]
+  },
+  {
+    "node": "beast",
+    "agent_ide": {
+      "adapter": "polyscope",
+      "source": "node"
+    },
+    "roles": [
+      "app-dev",
+      "database"
+    ]
+  },
+  {
+    "node": "database1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "database"
+    ]
+  },
+  {
+    "node": "gateway",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "gateway",
+      "metrics",
+      "router",
+      "vpn"
+    ]
+  },
+  {
+    "node": "ingress1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "ingress"
+    ]
+  },
+  {
+    "node": "main1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-prod"
+    ]
+  },
+  {
+    "node": "mini",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "app-dev"
+    ]
+  },
+  {
+    "node": "services1",
+    "agent_ide": {
+      "adapter": null,
+      "source": "default"
+    },
+    "roles": [
+      "analytics",
+      "s3",
+      "websocket"
+    ]
+  }
+]
