@@ -38,10 +38,7 @@ final readonly class LocalDockerSwarmServiceAction
         $result = $this->runProcess($this->command($action, $service));
 
         if ($action === 'is-active') {
-            $replicas = trim($result->output());
-            $running = $result->successful() && $replicas !== '' && $replicas !== '0';
-
-            if ($running) {
+            if ($this->isActivelyRunning($result)) {
                 return [
                     'action' => $action,
                     'service' => $service,
@@ -224,7 +221,7 @@ final readonly class LocalDockerSwarmServiceAction
                 'service',
                 'inspect',
                 '--format',
-                '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{else}}0{{end}}',
+                '{{if .ServiceStatus}}{{.ServiceStatus.RunningTasks}} {{.ServiceStatus.DesiredTasks}}{{else}}0 0{{end}}',
                 $service,
             ],
             default => throw new LocalDockerSwarmServiceFailure(
@@ -283,6 +280,19 @@ final readonly class LocalDockerSwarmServiceAction
             strtolower($result->errorOutput().' '.$result->output()),
             'no such service',
         );
+    }
+
+    private function isActivelyRunning(ProcessResult $result): bool
+    {
+        if (! $result->successful()) {
+            return false;
+        }
+
+        $parts = preg_split('/\s+/', trim($result->output())) ?: [];
+        $running = isset($parts[0]) && ctype_digit($parts[0]) ? (int) $parts[0] : 0;
+        $desired = isset($parts[1]) && ctype_digit($parts[1]) ? (int) $parts[1] : 0;
+
+        return $desired > 0 && $running >= $desired;
     }
 
     private function failure(string $action, string $service, ProcessResult $result): LocalDockerSwarmServiceFailure

@@ -261,7 +261,7 @@ final readonly class LocalLaunchdServiceAction
         if ($action === 'is-active') {
             $print = $this->runProcess(['launchctl', 'print', $target]);
 
-            if ($print->isSuccessful()) {
+            if ($print->isSuccessful() && $this->isLaunchdRunning($print->getOutput())) {
                 return ['action' => $action, 'label' => $label, 'changed' => false];
             }
 
@@ -310,6 +310,19 @@ final readonly class LocalLaunchdServiceAction
             'plist_path' => $plistPath,
             'changed' => true,
         ];
+    }
+
+    private function isLaunchdRunning(string $printOutput): bool
+    {
+        if (preg_match('/^\s*state\s*=\s*running\s*$/mi', $printOutput) !== 1) {
+            return false;
+        }
+
+        if (preg_match('/^\s*pid\s*=\s*(\d+)\s*$/mi', $printOutput, $matches) !== 1) {
+            return false;
+        }
+
+        return ((int) $matches[1]) > 0;
     }
 
     private function action(string $value): string

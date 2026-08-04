@@ -119,6 +119,33 @@ describe('internal process launchd service command', function (): void {
             ->toHaveKey('success');
     });
 
+    it('treats launchd is-active as running only when print reports state running and a pid', function (): void {
+        install_launchd_fake_bin_with_print_output("state = running\npid = 4242\n");
+
+        $result = app(LocalLaunchdServiceAction::class)->run(
+            action: 'is-active',
+            label: 'dev.hardimpact.orbit.test-unit',
+            plistPath: null,
+        );
+
+        expect($result)
+            ->toBe([
+                'action' => 'is-active',
+                'label' => 'dev.hardimpact.orbit.test-unit',
+                'changed' => false,
+            ]);
+    });
+
+    it('rejects launchd is-active when print only proves the job is loaded', function (): void {
+        install_launchd_fake_bin_with_print_output("state = not running\npid = 0\n");
+
+        expect(fn (): array => app(LocalLaunchdServiceAction::class)->run(
+            action: 'is-active',
+            label: 'dev.hardimpact.orbit.test-unit',
+            plistPath: null,
+        ))->toThrow(LocalLaunchdServiceFailure::class);
+    });
+
     it('rejects launchd actions on non macOS hosts before writing LaunchAgents', function (): void {
         $action = new LocalLaunchdServiceAction(osFamily: 'Linux');
 
@@ -326,8 +353,20 @@ function install_launchd_fake_bin_with_bootstrap_already_loaded(): string
     return install_launchd_fake_bin_with_exit_codes(enableExitCode: 0, bootstrapExitCode: 37);
 }
 
-function install_launchd_fake_bin_with_exit_codes(int $enableExitCode, int $bootstrapExitCode): string
+function install_launchd_fake_bin_with_print_output(string $printOutput): string
 {
+    return install_launchd_fake_bin_with_exit_codes(
+        enableExitCode: 0,
+        bootstrapExitCode: 0,
+        printOutput: $printOutput,
+    );
+}
+
+function install_launchd_fake_bin_with_exit_codes(
+    int $enableExitCode,
+    int $bootstrapExitCode,
+    string $printOutput = "launchctl print output\n",
+): string {
     $dir = sys_get_temp_dir().'/orbit-launchd-fake-bin-'.bin2hex(random_bytes(8));
     mkdir($dir, permissions: 0o755, recursive: true);
 
@@ -335,6 +374,7 @@ function install_launchd_fake_bin_with_exit_codes(int $enableExitCode, int $boot
 
     $enableExit = "exit({$enableExitCode});";
     $bootstrapExit = "exit({$bootstrapExitCode});";
+    $printLiteral = var_export($printOutput, true);
 
     file_put_contents("{$dir}/launchctl", <<<PHP
         #!/usr/bin/env php
@@ -346,7 +386,7 @@ function install_launchd_fake_bin_with_exit_codes(int $enableExitCode, int $boot
             exit(0);
         }
         if (\$cmd === 'print') {
-            echo "launchctl print output\n";
+            echo {$printLiteral};
             exit(0);
         }
         file_put_contents(__DIR__.'/calls.log', implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);

@@ -164,7 +164,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProcessStreamSleeper::class, UsleepProcessStreamSleeper::class);
         $this->app->bind(ProcessStreamClock::class, SystemProcessStreamClock::class);
         $this->app->bind(ProcessStreamConnection::class, PhpProcessStreamConnection::class);
-        $this->app->bind(RuntimeWakeConcurrentRunner::class, ForkRuntimeWakeConcurrentRunner::class);
+        $this->app->bind(
+            RuntimeWakeConcurrentRunner::class,
+            fn (Application $app): RuntimeWakeConcurrentRunner => new ForkRuntimeWakeConcurrentRunner(
+                forceSequential: $app->runningUnitTests(),
+            ),
+        );
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);

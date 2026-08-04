@@ -4,19 +4,32 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use Closure;
 use Throwable;
 
 /**
  * Concurrent wake-start runner using pcntl_fork when available.
  *
- * Falls back to sequential execution when fork is unavailable. Tasks must not
- * perform parent-side durable process-event writes.
+ * Falls back to sequential execution only for tasks that were never forked.
+ * Tasks must not perform parent-side durable process-event writes.
  *
  * @mago-expect lint:kan-defect
  * @mago-expect lint:cyclomatic-complexity
  */
 final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
 {
+    /**
+     * @param  (Closure(): int)|null  $fork  Returns child pid (>0), 0 in child, or -1 on failure.
+     * @param  (Closure(int): void)|null  $wait  Reaps a child pid in the parent.
+     * @param  (Closure(): never)|null  $exitChild  Terminates the forked child process.
+     */
+    public function __construct(
+        private readonly bool $forceSequential = false,
+        private readonly ?Closure $fork = null,
+        private readonly ?Closure $wait = null,
+        private readonly ?Closure $exitChild = null,
+    ) {}
+
     /**
      * @param  array<array-key, callable(): bool>  $tasks
      * @return array<array-key, bool>
@@ -28,35 +41,37 @@ final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunn
         }
 
         if (
-            count($tasks) === 1
-            || function_exists('app')
-            && app()->runningUnitTests()
-            || ! function_exists('pcntl_fork')
-            || ! function_exists('pcntl_waitpid')
-            || ! function_exists('posix_exit')
+            $this->forceSequential
+            || count($tasks) === 1
+            || ! $this->canFork()
         ) {
             return $this->runSequentially($tasks);
         }
 
-        $paths = [];
+        /** @var array<array-key, int> $pids */
         $pids = [];
+        /** @var array<array-key, string> $paths */
+        $paths = [];
 
         foreach ($tasks as $key => $task) {
             $path = tempnam(directory: sys_get_temp_dir(), prefix: 'orbit-wake-start-');
 
             if ($path === false) {
-                $this->reap($pids, $paths);
+                $forked = $this->collectForkedResults($pids, $paths);
 
-                return $this->runSequentially($tasks);
+                return $forked + $this->runSequentially($this->remainingTasks($tasks, $forked));
             }
 
-            $paths[$key] = $path;
-            $pid = pcntl_fork();
+            $pid = $this->fork();
 
             if ($pid === -1) {
-                $this->reap($pids, $paths);
+                if (is_file($path)) {
+                    unlink($path);
+                }
 
-                return $this->runSequentially($tasks);
+                $forked = $this->collectForkedResults($pids, $paths);
+
+                return $forked + $this->runSequentially($this->remainingTasks($tasks, $forked));
             }
 
             if ($pid === 0) {
@@ -69,27 +84,45 @@ final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunn
                 }
 
                 file_put_contents($path, $ok ? '1' : '0');
-                posix_exit(0);
+                ($this->exitChild ?? static function (): never {
+                    exit(0);
+                })();
             }
 
             $pids[$key] = $pid;
+            $paths[$key] = $path;
         }
 
-        foreach ($pids as $pid) {
-            pcntl_waitpid($pid, $status);
+        return $this->collectForkedResults($pids, $paths);
+    }
+
+    private function canFork(): bool
+    {
+        if ($this->fork instanceof Closure) {
+            return true;
         }
 
-        $results = [];
+        return function_exists('pcntl_fork') && function_exists('pcntl_waitpid');
+    }
 
-        foreach ($paths as $key => $path) {
-            $results[$key] = is_file($path) && file_get_contents($path) === '1';
-
-            if (is_file($path)) {
-                unlink($path);
-            }
+    private function fork(): int
+    {
+        if ($this->fork instanceof Closure) {
+            return ($this->fork)();
         }
 
-        return $results;
+        return pcntl_fork();
+    }
+
+    private function wait(int $pid): void
+    {
+        if ($this->wait instanceof Closure) {
+            ($this->wait)($pid);
+
+            return;
+        }
+
+        pcntl_waitpid($pid, $status);
     }
 
     /**
@@ -114,19 +147,44 @@ final class ForkRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunn
     /**
      * @param  array<array-key, int>  $pids
      * @param  array<array-key, string>  $paths
+     * @return array<array-key, bool>
      */
-    private function reap(array $pids, array $paths): void
+    private function collectForkedResults(array $pids, array $paths): array
     {
         foreach ($pids as $pid) {
-            pcntl_waitpid($pid, $status);
+            $this->wait($pid);
         }
 
-        foreach ($paths as $path) {
-            if (! is_file($path)) {
+        $results = [];
+
+        foreach ($paths as $key => $path) {
+            $results[$key] = is_file($path) && file_get_contents($path) === '1';
+
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param  array<array-key, callable(): bool>  $tasks
+     * @param  array<array-key, bool>  $completed
+     * @return array<array-key, callable(): bool>
+     */
+    private function remainingTasks(array $tasks, array $completed): array
+    {
+        $remaining = [];
+
+        foreach ($tasks as $key => $task) {
+            if (array_key_exists($key, $completed)) {
                 continue;
             }
 
-            unlink($path);
+            $remaining[$key] = $task;
         }
+
+        return $remaining;
     }
 }
