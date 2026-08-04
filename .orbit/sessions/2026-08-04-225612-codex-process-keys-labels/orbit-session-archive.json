@@ -1,0 +1,34 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T20:56:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-process-keys-labels/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-225612-codex-process-keys-labels",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/process-keys-labels-blast-radius.txt",
+        "evidence/process-keys-labels-review-fix-gateway-broader.txt",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T205106Z-b7d04291c5cc.json"
+    ],
+    "entry_digests": {
+        "evidence/process-keys-labels-blast-radius.txt": "54d9002a91e41f1ee360273cada13d4ddaaeeded6c9daf1e4d6ffe4e4be60548",
+        "evidence/process-keys-labels-review-fix-gateway-broader.txt": "bd0c23afad8d6059805539bec30d590d3f358334b2b81ece1e007852115be2fa",
+        "feedback.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "loop.md": "7db5a1cd05842a55ea9388da4d826201892c7d274dd8dafbb60a5bfffe5f3998",
+        "quality-gates/quality-check-2026-08-04T205106Z-b7d04291c5cc.json": "3f5a39971c8d3720e526290d5a7ae58944733ab15b786f52821d8b439e2b2a4a"
+    },
+    "slug": "codex-process-keys-labels",
+    "requested_slug": "codex-process-keys-labels",
+    "compatible_slugs": [
+        "codex-process-keys-labels"
+    ],
+    "branch": "codex/process-keys-labels",
+    "candidate_commit": "3e9935542a71756e3547f60bf61cdb6751f56430",
+    "accepted_feature_tip": "3e9935542a71756e3547f60bf61cdb6751f56430",
+    "accepted_main_tip": "8efbef92d68d0a207dcd119b5267bab2e0bb5f59",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
