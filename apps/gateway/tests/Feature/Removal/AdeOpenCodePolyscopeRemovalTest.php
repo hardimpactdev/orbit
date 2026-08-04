@@ -21,7 +21,6 @@ use App\Services\Tools\LegacyPolyscopeRuntimeCleanup;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Workspaces\WorktreeWorkspaceDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
@@ -330,36 +329,89 @@ it('does not target arbitrary personal OpenCode install paths outside Orbit owne
         ->not->toContain('rm -rf $HOME/.opencode');
 });
 
-it('closes skill, e2e source, sdk, and docs active ADE residue regressions', function (): void {
+it('closes orbit skill active ADE residue regressions', function (): void {
     $repo = rtrim((string) repo_path(), '/');
 
-    $skillFiles = [
-        $repo.'/.agents/skills/orbit/SKILL.md',
-        $repo.'/.agents/skills/orbit/references/process.md',
-        $repo.'/.agents/skills/orbit/references/app.md',
-    ];
-
-    foreach ($skillFiles as $path) {
-        $contents = (string) file_get_contents($path);
+    foreach ([
+        '/.agents/skills/orbit/SKILL.md',
+        '/.agents/skills/orbit/references/process.md',
+        '/.agents/skills/orbit/references/app.md',
+    ] as $relative) {
+        $contents = (string) file_get_contents($repo.$relative);
 
         expect($contents)
             ->not->toMatch('/agent_ide|agent-ide|Agent IDE|opencode|polyscope/i');
     }
+});
 
-    $e2eHits = [];
-    foreach (['apps/e2e/tests', 'apps/e2e/app'] as $relativeRoot) {
+it('closes e2e source active ADE residue regressions', function (): void {
+    $hits = ade_residue_php_paths([
+        'apps/e2e/tests',
+        'apps/e2e/app',
+    ]);
+
+    expect($hits)
+        ->toBeEmpty('Unexpected ADE residue in e2e source: '.implode(', ', $hits));
+});
+
+it('closes sdk process request active ADE residue regressions', function (): void {
+    $repo = rtrim((string) repo_path(), '/');
+
+    foreach ([
+        '/packages/sdk/tests/Unit/Requests/Processes/AddProcessRequestTest.php',
+        '/packages/sdk/tests/Unit/Requests/Processes/UpdateProcessRequestTest.php',
+    ] as $relative) {
+        $contents = (string) file_get_contents($repo.$relative);
+
+        expect($contents)
+            ->not
+            ->toContain('agent_ide')
+            ->and($contents)
+            ->toContain("'none'");
+    }
+});
+
+it('closes product docs active ADE residue regressions', function (): void {
+    $hits = ade_residue_docs_paths();
+
+    expect($hits)
+        ->toBeEmpty('Unexpected active ADE residue in product docs: '.implode(', ', $hits));
+});
+
+it('keeps ORBIT_POLYSCOPE_ secret-redaction prefix without restoring product support', function (): void {
+    $metadata = (string) file_get_contents(repo_path('apps/gateway/app/Services/RemoteShell/RemoteShellMetadata.php'));
+
+    expect($metadata)
+        ->toContain('ORBIT_POLYSCOPE_')
+        ->and(class_exists(\App\Tools\PolyscopeServerTool::class))
+        ->toBeFalse();
+});
+
+/**
+ * @param  list<string>  $relativeRoots
+ * @return list<string>
+ */
+function ade_residue_php_paths(array $relativeRoots): array
+{
+    $repo = rtrim((string) repo_path(), '/');
+    $hits = [];
+
+    foreach ($relativeRoots as $relativeRoot) {
         $root = $repo.'/'.$relativeRoot;
+
         if (! is_dir($root)) {
             continue;
         }
 
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root));
+
         foreach ($iterator as $file) {
             if (! $file->isFile() || ! str_ends_with($file->getPathname(), '.php')) {
                 continue;
             }
 
             $path = $file->getPathname();
+
             if (str_contains($path, '/vendor/')) {
                 continue;
             }
@@ -367,33 +419,30 @@ it('closes skill, e2e source, sdk, and docs active ADE residue regressions', fun
             $contents = (string) file_get_contents($path);
 
             if (preg_match('/opencode|polyscope|agent_ide|agent-ide|AgentIde/i', $contents) === 1) {
-                $e2eHits[] = str_replace($repo.'/', '', $path);
+                $hits[] = str_replace($repo.'/', '', $path);
             }
         }
     }
 
-    expect($e2eHits)->toBeEmpty('Unexpected ADE residue in e2e source: '.implode(', ', $e2eHits));
+    return $hits;
+}
 
-    foreach ([
-        $repo.'/packages/sdk/tests/Unit/Requests/Processes/AddProcessRequestTest.php',
-        $repo.'/packages/sdk/tests/Unit/Requests/Processes/UpdateProcessRequestTest.php',
-    ] as $path) {
-        $contents = (string) file_get_contents($path);
-
-        expect($contents)
-            ->not->toContain('agent_ide')
-            ->and($contents)
-            ->toContain("'none'");
-    }
-
-    $docsHits = [];
+/**
+ * @return list<string>
+ */
+function ade_residue_docs_paths(): array
+{
+    $repo = rtrim((string) repo_path(), '/');
+    $hits = [];
     $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($repo.'/apps/docs/content'));
+
     foreach ($iterator as $file) {
         if (! $file->isFile()) {
             continue;
         }
 
         $path = $file->getPathname();
+
         if (! str_ends_with($path, '.md') && ! str_ends_with($path, '.json')) {
             continue;
         }
@@ -405,26 +454,20 @@ it('closes skill, e2e source, sdk, and docs active ADE residue regressions', fun
             continue;
         }
 
-        $allowedRemovalOnly = str_contains($relative, 'domains/3_tool/4_tool-remove/tool-remove.md');
-        $allowedHistorical = str_contains($relative, 'domains/7_process/README.md')
-            && str_contains($contents, 'agent_ide')
-            && str_contains($contents, 'Release A');
-
-        if ($allowedRemovalOnly || $allowedHistorical) {
+        if (str_contains($relative, 'domains/3_tool/4_tool-remove/tool-remove.md')) {
             continue;
         }
 
-        $docsHits[] = $relative;
+        if (
+            str_contains($relative, 'domains/7_process/README.md')
+            && str_contains($contents, 'agent_ide')
+            && str_contains($contents, 'Release A')
+        ) {
+            continue;
+        }
+
+        $hits[] = $relative;
     }
 
-    expect($docsHits)->toBeEmpty('Unexpected active ADE residue in product docs: '.implode(', ', $docsHits));
-});
-
-it('keeps ORBIT_POLYSCOPE_ secret-redaction prefix without restoring product support', function (): void {
-    $metadata = (string) file_get_contents(repo_path('apps/gateway/app/Services/RemoteShell/RemoteShellMetadata.php'));
-
-    expect($metadata)
-        ->toContain('ORBIT_POLYSCOPE_')
-        ->and(class_exists(\App\Tools\PolyscopeServerTool::class))
-        ->toBeFalse();
-});
+    return $hits;
+}
