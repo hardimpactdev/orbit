@@ -82,6 +82,11 @@ final readonly class RemoteSystemdService
         return $this->run($node, 'restart', $service)->successful();
     }
 
+    public function isActive(Node $node, string $service): bool
+    {
+        return $this->run($node, 'is-active', $service)->successful();
+    }
+
     public function remove(Node $node, string $service, string $unitPath): bool
     {
         return $this->run($node, 'remove', $service, $unitPath)->successful();

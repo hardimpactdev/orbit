@@ -81,6 +81,11 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->manager->restart($node, $runtimeUnit);
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->manager->isRunning($node, $runtimeUnit);
+    }
+
     public function logScript(
         Project $app,
         Process $process,

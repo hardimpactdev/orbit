@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Process as ProcessFacade;
  */
 final readonly class LocalDockerSwarmServiceAction
 {
-    private const array ACTIONS = ['apply', 'ensure', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'ensure', 'is-active', 'remove', 'restart', 'start', 'stop'];
 
     /**
      * @param  array<string, mixed>  $payload
@@ -36,6 +36,21 @@ final readonly class LocalDockerSwarmServiceAction
         }
 
         $result = $this->runProcess($this->command($action, $service));
+
+        if ($action === 'is-active') {
+            $replicas = trim($result->output());
+            $running = $result->successful() && $replicas !== '' && $replicas !== '0';
+
+            if ($running) {
+                return [
+                    'action' => $action,
+                    'service' => $service,
+                    'changed' => false,
+                ];
+            }
+
+            throw $this->failure($action, $service, $result);
+        }
 
         if ($result->successful()) {
             return [
@@ -204,6 +219,14 @@ final readonly class LocalDockerSwarmServiceAction
             'restart' => ['docker', 'service', 'update', '--detach', '--force', $service],
             'start' => ['docker', 'service', 'update', '--detach', '--replicas', '1', $service],
             'stop' => ['docker', 'service', 'update', '--detach', '--replicas', '0', $service],
+            'is-active' => [
+                'docker',
+                'service',
+                'inspect',
+                '--format',
+                '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{else}}0{{end}}',
+                $service,
+            ],
             default => throw new LocalDockerSwarmServiceFailure(
                 errorCode: 'validation_failed',
                 message: 'Docker Swarm service action is invalid.',

@@ -91,6 +91,11 @@ final readonly class RemoteLaunchdService
         return $this->run($node, 'restart', $label)->successful();
     }
 
+    public function isActive(Node $node, string $label): bool
+    {
+        return $this->run($node, 'is-active', $label)->successful();
+    }
+
     private function run(
         Node $node,
         string $action,

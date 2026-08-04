@@ -508,11 +508,14 @@ continues. When soft or cold wake work is required, the pre-check starts or
 follows one detached activation operation and returns the minimal boot page
 immediately (one indeterminate animated Orbit mark only; no soft/cold UI
 distinction or progress bar). That page stays mounted and probes the original
-same-origin URI every five seconds with non-overlapping background fetches
+same-origin URI every one second with non-overlapping background fetches
 until an explicit Orbit activation-state header is absent (application handoff)
-or reports terminal failure; soft runners only fence process activation, while
-dependency inspection, restoration, readiness, and cold-marker clearing remain
-cold-only.
+or reports terminal failure; soft runners only fence process activation and
+start configured lifecycle processes concurrently, cold runners restore
+dependencies first then use the same concurrent start phase, and both require a
+bounded aggregate readiness observation of every expected runtime unit before
+the awake marker; dependency inspection, restoration, dependency readiness, and
+cold-marker clearing remain cold-only.
 A dedicated JSON access log in `/data/caddy/orbit/hibernation` supplies the
 scope's last HTTP activity time. Awake and hibernated markers live under Caddy's
 ephemeral `/dev/shm`, so a host or Caddy restart cannot preserve a stale awake

@@ -16,7 +16,7 @@ final readonly class RuntimeActivationPage
 
     public const string STATE_FAILED = 'failed';
 
-    public const int POLL_INTERVAL_SECONDS = 5;
+    public const int POLL_INTERVAL_SECONDS = 1;
 
     public function response(
         RuntimeHibernationScope $scope,

@@ -161,14 +161,14 @@ These terms define the ingress behavior applied to app and workspace routes.
   work is required, the pre-check starts or follows one serialized wake
   operation for that scope and returns a minimal no-store HTML response
   immediately, without starting processes or restoring dependencies inline.
-  That response stays mounted and, after five seconds, probes the original
+  That response stays mounted and, after one second, probes the original
   same-origin path and query with non-overlapping background fetches
   (credentials same-origin, cache no-store, redirect manual so application
   redirects including cross-origin login/OAuth do not trap fetch without an
   Orbit pending header). Pending and failed Orbit responses set
   `X-Orbit-Runtime-Activation-State` so application status codes alone
   (including application 503) are not treated as Orbit pending. Pending keeps
-  the page; network errors retry after five seconds; failed is terminal with
+  the page; network errors retry after one second; failed is terminal with
   the existing retry action; a response without the header (or an opaque
   redirect) means handoff to the application and triggers one browser
   navigation to the original URI. It
@@ -176,8 +176,11 @@ These terms define the ingress behavior applied to app and workspace routes.
   distinction, aggregate progress bar, step rows, diagnostics, commands,
   filesystem paths, environment values, or raw logs. Soft and cold share the
   same page and operation machinery; the plan records the mode. Soft runners
-  only fence process activation. Cold runners restore and verify dependencies,
-  fence process activation, and clear that scope's cold marker only after ready.
+  fence process activation and start every configured lifecycle process
+  concurrently, then mark awake only after a bounded aggregate readiness
+  observation of every expected runtime unit. Cold runners restore and verify
+  dependencies first, then use the same concurrent start phase and readiness
+  gate, and clear that scope's cold marker only after ready.
   After the pre-check succeeds, the reverse-proxy handoff retries failed
   upstream connections for up to 15 seconds so the original request can span
   container warm-up without requiring a custom Caddy module. Failed activation

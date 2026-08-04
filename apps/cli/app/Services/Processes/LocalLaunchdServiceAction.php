@@ -14,7 +14,7 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalLaunchdServiceAction
 {
-    private const array ACTIONS = ['apply', 'probe', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'is-active', 'probe', 'remove', 'restart', 'start', 'stop'];
 
     private const string LABEL_PATTERN = '#^dev\.hardimpact\.orbit\.[A-Za-z0-9_.-]+$#';
 
@@ -256,6 +256,16 @@ final readonly class LocalLaunchdServiceAction
             $this->lifecycle('stop', $label);
 
             return $this->lifecycle('start', $label);
+        }
+
+        if ($action === 'is-active') {
+            $print = $this->runProcess(['launchctl', 'print', $target]);
+
+            if ($print->isSuccessful()) {
+                return ['action' => $action, 'label' => $label, 'changed' => false];
+            }
+
+            throw $this->failure($action, $label, $print);
         }
 
         // fallback for other actions

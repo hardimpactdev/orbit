@@ -82,6 +82,11 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         return $this->services->restart($node, $this->assertServiceName($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->services->isActive($node, $this->assertServiceName($runtimeUnit));
+    }
+
     public function logScript(
         Project $app,
         Process $process,

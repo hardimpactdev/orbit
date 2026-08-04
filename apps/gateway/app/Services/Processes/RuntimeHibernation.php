@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Actions\Processes\StartProcesses;
+use App\Actions\Processes\RecordProcessEvent;
 use App\Actions\Processes\StopProcesses;
+use App\Enums\ProcessEventType;
 use App\Models\Node;
+use App\Models\Process;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:excessive-parameter-list
+ * @mago-expect lint:kan-defect
+ */
 final readonly class RuntimeHibernation
 {
     public const string ACTIVATED = 'activated';
@@ -22,8 +29,11 @@ final readonly class RuntimeHibernation
     public const string FAILED = 'failed';
 
     public function __construct(
-        private StartProcesses $startProcesses,
         private StopProcesses $stopProcesses,
+        private RecordProcessEvent $recordProcessEvent,
+        private ProcessRuntimeTargets $runtimeTargets,
+        private RuntimeWakeConcurrentRunner $wakeConcurrentRunner,
+        private ProcessStreamSleeper $sleeper,
         private RemoteRuntimeHibernation $remote,
         private RuntimeHibernationScopes $scopes,
     ) {}
@@ -78,9 +88,13 @@ final readonly class RuntimeHibernation
         }
 
         if ($scope->context->lifecycleProcesses(null)->isNotEmpty()) {
-            $result = $this->startProcesses->handle($scope->context, null);
+            if (! $this->startWakeProcesses($scope)) {
+                $this->stopAfterFailedStart($scope);
 
-            if ($result['failed']) {
+                return self::FAILED;
+            }
+
+            if (! $this->waitUntilRunning($scope)) {
                 $this->stopAfterFailedStart($scope);
 
                 return self::FAILED;
@@ -90,6 +104,101 @@ final readonly class RuntimeHibernation
         return $this->remote->markAwake($scope->node, $scope->key())->successful()
             ? self::ACTIVATED
             : self::FAILED;
+    }
+
+    private function startWakeProcesses(RuntimeHibernationScope $scope): bool
+    {
+        $targets = $this->runtimeTargets->for($scope->context, null);
+        $context = $scope->context;
+        $node = $scope->node;
+
+        /** @var list<array{process: Process, driver: ProcessRuntimeDrivers\ProcessRuntimeDriver, runtime_unit: string}> $targets */
+        foreach ($targets as $target) {
+            $process = $target['process'];
+            $workspace = $context->runtimeWorkspaceFor($process);
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Starting,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $target['runtime_unit'],
+            );
+        }
+
+        $tasks = [];
+
+        foreach ($targets as $index => $target) {
+            $driver = $target['driver'];
+            $runtimeUnit = $target['runtime_unit'];
+            $tasks[$index] = static fn (): bool => $driver->start($node, $runtimeUnit);
+        }
+
+        $results = $this->wakeConcurrentRunner->run($tasks);
+        $failed = false;
+
+        foreach ($targets as $index => $target) {
+            $ok = ($results[$index] ?? false) === true;
+            $process = $target['process'];
+            $workspace = $context->runtimeWorkspaceFor($process);
+
+            $this->recordProcessEvent->handle(
+                $ok ? ProcessEventType::Started : ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $target['runtime_unit'],
+            );
+
+            $failed = $failed || ! $ok;
+        }
+
+        return ! $failed;
+    }
+
+    private function waitUntilRunning(RuntimeHibernationScope $scope): bool
+    {
+        $targets = $this->runtimeTargets->for($scope->context, null);
+        $timeoutSeconds = (int) config(
+            'orbit.runtime_hibernation.activation_readiness_timeout_seconds',
+            default: 60,
+        );
+        $pollMilliseconds = (int) config(
+            'orbit.runtime_hibernation.activation_readiness_poll_milliseconds',
+            default: 200,
+        );
+        $deadline = microtime(true) + max(1, $timeoutSeconds);
+        $pollMicroseconds = max(1, $pollMilliseconds) * 1000;
+
+        do {
+            if ($this->allRunning($scope->node, $targets)) {
+                return true;
+            }
+
+            if (microtime(true) >= $deadline) {
+                return false;
+            }
+
+            $this->sleeper->sleep($pollMicroseconds);
+        } while (microtime(true) < $deadline);
+
+        return $this->allRunning($scope->node, $targets);
+    }
+
+    /**
+     * @param  array<int, array{process: Process, driver: ProcessRuntimeDrivers\ProcessRuntimeDriver, runtime_unit: string}>  $targets
+     */
+    private function allRunning(Node $node, array $targets): bool
+    {
+        foreach ($targets as $target) {
+            if (! $target['driver']->isRunning($node, $target['runtime_unit'])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function stopAfterFailedStart(RuntimeHibernationScope $scope): void

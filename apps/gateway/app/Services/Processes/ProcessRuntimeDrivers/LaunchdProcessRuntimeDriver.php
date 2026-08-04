@@ -87,6 +87,11 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->launchd->restart($node, $this->renderer->label($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->launchd->isActive($node, $this->renderer->label($runtimeUnit));
+    }
+
     public function stdoutLogPath(Node $node, string $runtimeUnit): string
     {
         return $this->renderer->stdoutLogPath($runtimeUnit, $node);

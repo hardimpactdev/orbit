@@ -19,6 +19,7 @@ use App\Services\Processes\RuntimeDependencyColdStorage;
 use App\Services\Processes\RuntimeHibernationScope;
 use App\Services\Processes\RuntimeHibernationScopes;
 use App\Services\Processes\RuntimeIdleHibernation;
+use App\Services\Processes\RuntimeWakeConcurrentRunner;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
 use Carbon\CarbonImmutable;
@@ -283,6 +284,7 @@ it('returns the minimal progress page immediately for a soft-asleep app instance
             'internal:caddy-config:runtime-states',
             'internal:caddy-config:runtime-states',
             'internal:process-systemd-service:start',
+            'internal:process-systemd-service:is-active',
             'internal:caddy-config:runtime-awake',
         ])
         ->and($executor->actions())
@@ -1044,6 +1046,148 @@ it('leaves a partially stopped process group asleep so the next request reconcil
         ]);
 });
 
+it('initiates soft-wake lifecycle process starts concurrently with overlapping remote start work', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'name' => 'queue',
+            'sort_order' => 1,
+        ]);
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'name' => 'reverb',
+            'sort_order' => 2,
+        ]);
+
+    $executor = new RuntimeWakeConcurrentStartRecordingExecutor(expectedStarts: 2);
+    $runner = new ObservingRuntimeWakeConcurrentRunner;
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(RuntimeWakeConcurrentRunner::class, $runner);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($runner->maxConcurrentTasks())
+        ->toBeGreaterThanOrEqual(2)
+        ->and($runner->maxInFlightTasks())
+        ->toBeGreaterThanOrEqual(2)
+        ->and($executor->actions())
+        ->toContain('internal:caddy-config:runtime-awake');
+});
+
+it('marks the scope awake only after aggregate readiness observes every expected process running', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    config()->set('orbit.runtime_hibernation.activation_readiness_timeout_seconds', 2);
+    config()->set('orbit.runtime_hibernation.activation_readiness_poll_milliseconds', 1);
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    Process::factory()->forOwner($app, $node)->create(['name' => 'reverb']);
+
+    $executor = new RuntimeWakeConcurrentStartRecordingExecutor(
+        expectedStarts: 2,
+        readinessRunningAfterProbes: 2,
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(RuntimeWakeConcurrentRunner::class, new ObservingRuntimeWakeConcurrentRunner);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->readinessProbeCount())
+        ->toBeGreaterThanOrEqual(2)
+        ->and($executor->awakeAfterAllReadinessRunning())
+        ->toBeTrue()
+        ->and($executor->actions())
+        ->toContain('internal:caddy-config:runtime-awake');
+});
+
+it('keeps the scope asleep and stops the group when readiness does not observe every process running', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    ProcessFacade::fake();
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    config()->set('orbit.runtime_hibernation.activation_readiness_timeout_seconds', 1);
+    config()->set('orbit.runtime_hibernation.activation_readiness_poll_milliseconds', 1);
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    Process::factory()->forOwner($app, $node)->create(['name' => 'reverb']);
+
+    $executor = new RuntimeWakeConcurrentStartRecordingExecutor(
+        expectedStarts: 2,
+        readinessAlwaysNotRunning: true,
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(RuntimeWakeConcurrentRunner::class, new ObservingRuntimeWakeConcurrentRunner);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($executor->actions())
+        ->not
+        ->toContain('internal:caddy-config:runtime-awake')
+        ->and($executor->actions())
+        ->toContain('internal:process-systemd-service:stop')
+        ->and($executor->readinessProbeCount())
+        ->toBeGreaterThan(0);
+});
+
 /**
  * @return array{Node, Project, AppInstance}
  */
@@ -1261,5 +1405,169 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
             },
             $this->calls,
         )));
+    }
+}
+
+/**
+ * Wake-only concurrent runner that proves multi-task dispatch overlap without
+ * wall-clock races: every task is marked in-flight before any task body runs.
+ *
+ * @mago-expect lint:file-name
+ */
+final class ObservingRuntimeWakeConcurrentRunner implements RuntimeWakeConcurrentRunner
+{
+    private int $maxConcurrentTasks = 0;
+
+    private int $maxInFlightTasks = 0;
+
+    /**
+     * @param  array<array-key, callable(): bool>  $tasks
+     * @return array<array-key, bool>
+     */
+    public function run(array $tasks): array
+    {
+        $this->maxConcurrentTasks = max($this->maxConcurrentTasks, count($tasks));
+        $this->maxInFlightTasks = max($this->maxInFlightTasks, count($tasks));
+
+        $results = [];
+
+        foreach ($tasks as $key => $task) {
+            $results[$key] = $task();
+        }
+
+        return $results;
+    }
+
+    public function maxConcurrentTasks(): int
+    {
+        return $this->maxConcurrentTasks;
+    }
+
+    public function maxInFlightTasks(): int
+    {
+        return $this->maxInFlightTasks;
+    }
+}
+
+/**
+ * Recording executor for wake readiness probes and awake marker ordering.
+ *
+ * @mago-expect lint:file-name
+ * @mago-expect lint:cyclomatic-complexity
+ */
+final class RuntimeWakeConcurrentStartRecordingExecutor implements RunsInternalCommands
+{
+    /** @var list<array{command: string, action: string, input: string|null}> */
+    private array $calls = [];
+
+    private int $readinessProbeCount = 0;
+
+    private int $readinessRunningProbes = 0;
+
+    private bool $sawAwake = false;
+
+    private bool $allReadinessRunningBeforeAwake = false;
+
+    public function __construct(
+        private readonly int $expectedStarts = 1,
+        private readonly ?int $readinessRunningAfterProbes = null,
+        private readonly bool $readinessAlwaysNotRunning = false,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
+        $input = is_string($transportOptions['input'] ?? null) ? $transportOptions['input'] : null;
+        $this->calls[] = ['command' => $commandName, 'action' => $action, 'input' => $input];
+
+        if ($commandName === 'internal:process-systemd-service' && $action === 'is-active') {
+            $this->readinessProbeCount++;
+            $running =
+                ! $this->readinessAlwaysNotRunning
+                && (
+                    $this->readinessRunningAfterProbes === null
+                    || $this->readinessProbeCount > $this->readinessRunningAfterProbes
+                );
+
+            if ($running) {
+                $this->readinessRunningProbes++;
+            }
+
+            return $this->success([], successful: $running);
+        }
+
+        if ($commandName === 'internal:caddy-config' && $action === 'runtime-awake') {
+            $this->sawAwake = true;
+            $this->allReadinessRunningBeforeAwake =
+                $this->readinessProbeCount > 0
+                && $this->readinessRunningProbes >= $this->expectedStarts
+                && ! $this->readinessAlwaysNotRunning;
+
+            return $this->success([]);
+        }
+
+        if ($commandName === 'internal:caddy-config' && $action === 'runtime-states') {
+            $decoded = is_string($input)
+                ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+            $keys = is_array($decoded) && is_array($decoded['keys'] ?? null) ? $decoded['keys'] : [];
+
+            return $this->success([
+                'states' => array_map(static fn (string $key): array => [
+                    'key' => $key,
+                    'awake' => false,
+                    'hibernated' => false,
+                    'cold' => false,
+                    'last_activity_at' => 1_767_272_400,
+                ], $keys),
+            ]);
+        }
+
+        return $this->success([]);
+    }
+
+    public function readinessProbeCount(): int
+    {
+        return $this->readinessProbeCount;
+    }
+
+    public function awakeAfterAllReadinessRunning(): bool
+    {
+        return $this->sawAwake && $this->allReadinessRunningBeforeAwake;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function actions(): array
+    {
+        return array_map(
+            static fn (array $call): string => "{$call['command']}:{$call['action']}",
+            $this->calls,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function success(array $data, bool $successful = true): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: $successful ? 0 : 1,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

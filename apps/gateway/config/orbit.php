@@ -124,5 +124,13 @@ return [
         ),
         'lock_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_SECONDS', default: 120),
         'lock_wait_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_WAIT_SECONDS', default: 90),
+        'activation_readiness_timeout_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_READINESS_TIMEOUT_SECONDS',
+            default: 60,
+        ),
+        'activation_readiness_poll_milliseconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_READINESS_POLL_MILLISECONDS',
+            default: 200,
+        ),
     ],
 ];

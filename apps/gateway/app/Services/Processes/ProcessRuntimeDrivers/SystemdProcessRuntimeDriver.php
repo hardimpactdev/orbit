@@ -79,6 +79,11 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->systemd->restart($node, $this->renderer->serviceName($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->systemd->isActive($node, $this->renderer->serviceName($runtimeUnit));
+    }
+
     public function logScript(
         Project $app,
         Process $process,

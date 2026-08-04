@@ -149,13 +149,18 @@ These terms define per-process behavioral rules that apply to every derived runt
   hibernation.
 - **Development hibernation policy:** App-instance and workspace process groups
   on `app-dev` nodes are installed without host-boot start intent. The first
-  HTTP request wakes the full owning group. One hour without route activity
-  makes it eligible for an automatic stop during the next ten-minute sweep.
-  The hibernator runs independently from the Orbit Scheduler. Routes for one
-  scope share its marker, activity state, and lock. Bulk lifecycle actions use
-  that lock and align the marker with the group state; named actions do not
-  change it. Node-owned and `app-prod` processes remain boot-persistent and are
-  outside this policy.
+  HTTP request wakes the full owning group through one serialized activation
+  operation. Internal wake starts every configured lifecycle process
+  concurrently, then marks the scope awake only after a bounded aggregate
+  readiness check observes every expected runtime unit running. Public bulk
+  `process:start` keeps process-order semantics and does not adopt a
+  process-dependency model. One hour without route activity makes a group
+  eligible for an automatic stop during the next ten-minute sweep. The
+  hibernator runs independently from the Orbit Scheduler. Routes for one scope
+  share its marker, activity state, and lock. Bulk lifecycle actions use that
+  lock and align the marker with the group state; named actions do not change
+  it. Node-owned and `app-prod` processes remain boot-persistent and are outside
+  this policy.
 - **Development cold-dependency policy:** An already-hibernated app-instance or
   workspace group becomes eligible for dependency pruning after seven days
   without HTTP, process-lifecycle, or source-tree activity. Shared source paths
@@ -164,13 +169,14 @@ These terms define per-process behavioral rules that apply to every derived runt
   deterministic lockfile; it retains lockfiles, build artifacts, and
   package-manager caches. Later sweeps skip a scope that is already cold. The
   next HTTP activation restores only the missing dependency families before
-  starting the group. The activation plan enumerates the scope's effective
-  configured processes dynamically rather than assuming fixed roles such as a
-  queue worker. Failed or uncertain pruning leaves the source cold, and Orbit
-  clears that state only after dependency restoration and process startup both
-  succeed. Dependencies are single-flight across scopes sharing a node and
-  source path, while process startup and warm markers remain scope-owned. Stale
-  takeover must acquire both fences.
+  the concurrent process-start phase and aggregate readiness gate. The
+  activation plan enumerates the scope's effective configured processes
+  dynamically rather than assuming fixed roles such as a queue worker. Failed
+  or uncertain pruning leaves the source cold, and Orbit clears that state only
+  after dependency restoration and process startup both succeed. Dependencies
+  are single-flight across scopes sharing a node and source path, while process
+  startup and warm markers remain scope-owned. Stale takeover must acquire both
+  fences.
 - **Crash notification policy:** Process-definition field for crash
   notification delivery. The only supported value is `none`. Orbit does not
   deliver crash notifications through an external notification adapter.

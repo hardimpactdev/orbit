@@ -30,6 +30,8 @@ interface ProcessRuntimeDriver
 
     public function restart(Node $node, string $runtimeUnit): bool;
 
+    public function isRunning(Node $node, string $runtimeUnit): bool;
+
     public function logScript(
         Project $app,
         Process $process,
