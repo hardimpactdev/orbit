@@ -5079,7 +5079,9 @@ export interface operations {
                                     crash_notification: string;
                                     runtime: string;
                                     tool: string | null;
-                                    service: Record<string, never> | null;
+                                    service: {
+                                        [key: string]: unknown;
+                                    } | null;
                                     runtime_unit: string;
                                     /**
                                      * @description Runtime status from the latest durable process lifecycle event: transitional starting/stopping/restarting, terminal running/stopped/crashed, or unknown (including failed lifecycle actions and no event yet).

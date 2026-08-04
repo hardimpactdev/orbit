@@ -279,7 +279,10 @@ final class GatewayOpenApi
         $process->addProperty('crash_notification', new StringType);
         $process->addProperty('runtime', new StringType);
         $process->addProperty('tool', new StringType()->nullable(true));
-        $process->addProperty('service', new ObjectType()->nullable(true));
+        $service = new ObjectType;
+        $service->additionalProperties(new MixedType);
+        $service->nullable(true);
+        $process->addProperty('service', $service);
         $process->addProperty('runtime_unit', new StringType);
         $process->addProperty('status', $status);
         $process->addProperty('last_event', $lastEvent);

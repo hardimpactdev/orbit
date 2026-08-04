@@ -9122,7 +9122,8 @@
                                     "type": [
                                       "object",
                                       "null"
-                                    ]
+                                    ],
+                                    "additionalProperties": {}
                                   },
                                   "runtime_unit": {
                                     "type": "string"

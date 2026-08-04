@@ -67,6 +67,14 @@ function assert_process_open_api_contracts(array $schema): void
             'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.last_event.properties.type.enum',
         ),
     );
+    // service is array<string, mixed>|null metadata, not a closed empty object.
+    // JSON `{}` for additionalProperties decodes as [] with associative json_decode.
+    $serviceSchema = data_get(
+        $schema,
+        'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.service',
+    );
+    Assert::assertIsArray($serviceSchema);
+    Assert::assertArrayHasKey('additionalProperties', $serviceSchema);
     Assert::assertSame(
         ['app', 'node', 'instance', 'workspace', 'name'],
         array_keys(data_get(
