@@ -117,7 +117,6 @@ orbit instance:worker [show|enable|disable] <project.instance> [--json]
 
 - `instance:root` changes the document root relative to the instance path.
 - `instance:worker` controls opt-in FrankenPHP worker mode.
-  Agent IDE adapter.
 
 Manage runtime mounts with:
 

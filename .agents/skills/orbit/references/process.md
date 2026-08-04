@@ -15,7 +15,7 @@ Add a process definition for an app, workspace, or node.
 orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
                   [--service=<mysql|valkey>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
-                  [--crash-notification=none|agent_ide]
+                  [--crash-notification=none]
                   [--runtime=docker|docker-swarm|systemd|launchd]
                   [--replace-container=<name>] [--force]
                   [--no-start] [--json]
@@ -33,7 +33,7 @@ orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
 | `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |
 | `--force` | off | Confirm destructive replacement-container cleanup. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
-| `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter; rejected for `launchd` until the macOS crash wrapper exists. |
+| `--crash-notification` | `none` | Only `none` is supported. Orbit does not deliver crash notifications through external adapters. |
 | `--runtime` | platform/service default | Host commands default to `systemd` on Linux and `launchd` on macOS. Managed services default to `docker`; `docker-swarm` is Linux-only and service-catalog gated. |
 | `--no-start` | off | Skip starting rendered runtime units after apply. |
 
@@ -41,7 +41,7 @@ Examples:
 
 ```bash
 orbit process:add queue 'php artisan queue:work --tries=3' --instance=myapp.development \
-  --restart-policy=always --crash-notification=agent_ide
+  --restart-policy=always --crash-notification=none
 
 orbit process:add reverb 'php artisan reverb:start' --instance=myapp.development \
   --restart-policy=on_failure

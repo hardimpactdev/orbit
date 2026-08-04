@@ -16,7 +16,7 @@ it('shows registered tools and tool errors from gateway intent', function (): vo
         $jsonResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show opencode-server --node=app-dev-1 --json',
+                'cd %s && orbit tool:show hermes --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -28,7 +28,7 @@ it('shows registered tools and tool errors from gateway intent', function (): vo
             ->toBeTrue()
             ->and($jsonPayload['success']['data']['tool'])
             ->toMatchArray([
-                'name' => 'opencode-server',
+                'name' => 'hermes',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
             ])
@@ -38,7 +38,7 @@ it('shows registered tools and tool errors from gateway intent', function (): vo
         $humanResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show opencode-server --node=app-dev-1',
+                'cd %s && orbit tool:show hermes --node=app-dev-1',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -48,7 +48,7 @@ it('shows registered tools and tool errors from gateway intent', function (): vo
         expect($humanResult->successful())
             ->toBeTrue()
             ->and($humanResult->output())
-            ->toContain('Tool: opencode-server')
+            ->toContain('Tool: hermes')
             ->and($humanResult->output())
             ->toContain('Node')
             ->and($humanResult->output())
@@ -92,12 +92,12 @@ it('shows registered tools and tool errors from gateway intent', function (): vo
             ->and($unsupportedPayload['error']['meta']['tool'])
             ->toBe('not-a-real-tool');
 
-        toolShowPrepareOpencodeBinary($topology);
+        toolShowPrepareHermesBinary($topology);
 
         $liveResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:show opencode-server --node=app-dev-1 --live --json',
+                'cd %s && orbit tool:show hermes --node=app-dev-1 --live --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -130,7 +130,7 @@ function toolShowSeedGatewayIntent(E2ETopologyHarness $topology): void
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
         \App\Models\NodeTool::query()->updateOrCreate(
-            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            ['node_id' => $node->id, 'name' => 'hermes'],
             [
                 'expected_state' => 'running',
                 'expected_version' => null,
@@ -150,19 +150,19 @@ function toolShowSeedGatewayIntent(E2ETopologyHarness $topology): void
     );
 }
 
-function toolShowPrepareOpencodeBinary(E2ETopologyHarness $topology): void
+function toolShowPrepareHermesBinary(E2ETopologyHarness $topology): void
 {
-    $opencode = <<<'BASH'
+    $hermesBinary = <<<'BASH'
         #!/usr/bin/env bash
         set -euo pipefail
-        echo "opencode 1.0.0"
+        echo "hermes 1.0.0"
         BASH;
 
     $topology->ssh(
         'dev',
         sprintf(
-            'printf %%s %s | sudo tee /usr/local/bin/opencode >/dev/null && sudo chmod 0755 /usr/local/bin/opencode',
-            escapeshellarg($opencode),
+            'printf %%s %s | sudo tee /usr/local/bin/hermes >/dev/null && sudo chmod 0755 /usr/local/bin/hermes',
+            escapeshellarg($hermesBinary),
         ),
         timeoutSeconds: 120,
     );

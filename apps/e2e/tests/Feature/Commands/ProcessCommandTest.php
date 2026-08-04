@@ -328,7 +328,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             'gateway',
             "cd {$checkout} && orbit process:add {$runtimeUnit} "
             .escapeshellarg('printf "systemd-e2e-ready\n"; sleep 300')
-            .' --node=app-dev-1 --runtime=systemd --tool=opencode --start --json',
+            .' --node=app-dev-1 --runtime=systemd --tool=php-cli --start --json',
             timeoutSeconds: 180,
             allowFailure: true,
         );
@@ -351,7 +351,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
                 'project' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'php-cli',
             ])
             ->and($addPayload['success']['data']['runtime_units'][0])
             ->toMatchArray([
@@ -386,7 +386,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
                 'project' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'php-cli',
                 'runtime_unit' => $runtimeUnit,
             ]);
 

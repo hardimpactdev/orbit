@@ -36,8 +36,6 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'name' => 'feature-docs',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         'php_version' => null,
-        'agent_ide' => 'opencode',
-        'agent_ide_workspace_id' => 'oc_123',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 

@@ -26,7 +26,7 @@ it('serializes process creation body', function (): void {
         name: 'vite',
         command: 'npm run dev -- --host=0.0.0.0',
         restartPolicy: 'always',
-        crashNotification: 'agent_ide',
+        crashNotification: 'none',
         start: true,
     );
 
@@ -35,7 +35,7 @@ it('serializes process creation body', function (): void {
         'name' => 'vite',
         'command' => 'npm run dev -- --host=0.0.0.0',
         'restart_policy' => 'always',
-        'crash_notification' => 'agent_ide',
+        'crash_notification' => 'none',
         'start' => true,
     ]);
 });

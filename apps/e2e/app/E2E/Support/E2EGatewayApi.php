@@ -1105,14 +1105,6 @@ final readonly class E2EGatewayApi
                     return run_orbit_command('orbit node:show '.escapeshellarg($name).' --json');
                 }
 
-                function run_node_agent_ide(string $name, array $input): array
-                {
-                    return run_orbit_command(
-                        'orbit node:agent-ide '
-                            .escapeshellarg($name).' '
-                            .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
-                    );
-                }
 
                 function run_node_update(string $name, array $input): array
                 {
@@ -1250,14 +1242,6 @@ final readonly class E2EGatewayApi
                     );
                 }
 
-                function run_app_agent_ide(string $name, array $input): array
-                {
-                    return run_orbit_command(
-                        'orbit instance:agent-ide '
-                            .escapeshellarg($name).' '
-                            .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
-                    );
-                }
 
                 function run_app_remove(string $name): array
                 {
@@ -1600,29 +1584,6 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^POST /api/nodes/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
-                        $input = json_decode(read_request_body($connection, $headers), true);
-
-                        if (! is_array($input)) {
-                            respond($connection, 422, json_encode([
-                                'error' => [
-                                    'code' => 'validation_failed',
-                                    'message' => 'Invalid JSON request.',
-                                    'meta' => [],
-                                ],
-                            ], JSON_THROW_ON_ERROR));
-                            fclose($connection);
-
-                            continue;
-                        }
-
-                        [$exitCode, $output] = run_node_agent_ide(urldecode($matches[1]), $input);
-                        respond($connection, $exitCode === 0 ? 200 : 422, $output);
-                        fclose($connection);
-
-                        continue;
-                    }
-
                     if (str_starts_with($requestLine, 'POST /api/nodes/grant ')) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
@@ -1930,29 +1891,6 @@ final readonly class E2EGatewayApi
                         }
 
                         [$exitCode, $output] = run_workspace_history(urldecode($matches[1]), $query);
-                        respond($connection, $exitCode === 0 ? 200 : 422, $output);
-                        fclose($connection);
-
-                        continue;
-                    }
-
-                    if (preg_match('#^POST /api/instances/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
-                        $input = json_decode(read_request_body($connection, $headers), true);
-
-                        if (! is_array($input)) {
-                            respond($connection, 422, json_encode([
-                                'error' => [
-                                    'code' => 'validation_failed',
-                                    'message' => 'Invalid JSON request.',
-                                    'meta' => [],
-                                ],
-                            ], JSON_THROW_ON_ERROR));
-                            fclose($connection);
-
-                            continue;
-                        }
-
-                        [$exitCode, $output] = run_app_agent_ide(urldecode($matches[1]), $input);
                         respond($connection, $exitCode === 0 ? 200 : 422, $output);
                         fclose($connection);
 

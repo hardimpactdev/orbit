@@ -244,8 +244,7 @@ function websocketIngressRouteSnapshot(
             'worker_enabled' => false,
             'worker_config' => null,
             'deploy_warmup_paths' => null,
-            'adopted' => false,
-            'agent_ide_config' => null,
+            'adopted' => false
         ]);
         $binding = app(\App\Services\WebSockets\WebSocketBindingService::class)
             ->enable($app, [$publicHost])

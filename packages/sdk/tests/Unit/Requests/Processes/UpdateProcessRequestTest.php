@@ -26,14 +26,14 @@ it('serializes only supplied editable fields', function (): void {
         instance: 'docs',
         name: 'vite',
         command: 'npm run dev -- --host=0.0.0.0',
-        crashNotification: 'agent_ide',
+        crashNotification: 'none',
         restart: true,
     );
 
     expect($request->body()->all())->toBe([
         'instance' => 'docs',
         'command' => 'npm run dev -- --host=0.0.0.0',
-        'crash_notification' => 'agent_ide',
+        'crash_notification' => 'none',
         'restart' => true,
     ]);
 });

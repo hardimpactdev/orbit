@@ -300,10 +300,6 @@ that tool definition.
 | `orbit activity:list` | List gateway activity history (filter by `--project` / `--node` / `--effect` / `--correlation`) |
 | `orbit activity:show [id]` | Show one activity entry |
 
-
-| Command | What it does |
-|---|---|
-
 ### VPN  -  [`references/vpn.md`](references/vpn.md)
 
 | Command | What it does |
@@ -382,11 +378,6 @@ orbit php:use 8.4 --instance=myapp.development # recreates its FrankenPHP runtim
 orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 ```
 
-**Switch a workspace's Agent IDE**
-
-```bash
-```
-
 **Opt a supported roleless node into managed Agent execution**
 
 ```bash
@@ -421,7 +412,7 @@ start, update, restart, or uninstall the macOS app.
 
 - Setting up a node, configuring grants, choosing a default -> [`node.md`](references/node.md), [`gateway.md`](references/gateway.md)
 - Understanding Orbit Agent capability or the native macOS app boundary -> [`concepts.md`](references/concepts.md), `.agents/skills/tauri-agent-development/SKILL.md`
-- Creating, removing, registering, or pruning apps -> [`app.md`](references/app.md)
+- Creating, removing, or registering apps -> [`app.md`](references/app.md)
 - Workspace lifecycle, setup/teardown step pipelines -> [`workspace.md`](references/workspace.md)
 - Long-running app processes (queues, websockets, vite) -> [`process.md`](references/process.md)
 - Recurring jobs and Laravel scheduler integration -> [`schedule.md`](references/schedule.md)

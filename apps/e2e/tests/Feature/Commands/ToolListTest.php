@@ -47,7 +47,7 @@ it('lists and filters registered tools from gateway intent', function (): void {
             ->and($humanResult->output())
             ->toContain('Node:')
             ->and($humanResult->output())
-            ->toContain('opencode-server');
+            ->toContain('hermes');
 
         $nodeFilterResult = $topology->ssh(
             'gateway',
@@ -93,7 +93,7 @@ it('lists and filters registered tools from gateway intent', function (): void {
             ->and($appFilterTools)
             ->toBeArray()
             ->and(array_column($appFilterTools, 'name'))
-            ->toContain('opencode-server');
+            ->toContain('hermes');
     } finally {
         $topology->cleanup();
     }
@@ -110,7 +110,7 @@ function toolListSeedGatewayIntent(E2ETopologyHarness $topology): void
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
         \App\Models\NodeTool::query()->updateOrCreate(
-            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            ['node_id' => $node->id, 'name' => 'hermes'],
             [
                 'expected_state' => 'running',
                 'expected_version' => null,
@@ -145,7 +145,7 @@ function toolListSeedGatewayIntentWithApp(E2ETopologyHarness $topology): void
         );
 
         \App\Models\NodeTool::query()->updateOrCreate(
-            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            ['node_id' => $node->id, 'name' => 'hermes'],
             [
                 'expected_state' => 'running',
                 'expected_version' => null,
