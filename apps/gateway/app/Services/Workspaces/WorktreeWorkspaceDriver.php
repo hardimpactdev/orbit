@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\WorkspaceSourceDriver;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
 use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 
-final readonly class WorktreeWorkspaceDriver implements WorkspaceSourceDriver
+final readonly class WorktreeWorkspaceDriver
 {
     public function __construct(
         private RunsInternalCommands $localExecutor,

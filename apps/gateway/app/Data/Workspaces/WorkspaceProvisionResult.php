@@ -9,7 +9,5 @@ final readonly class WorkspaceProvisionResult
     public function __construct(
         public string $name,
         public string $path,
-        public ?string $agentIde = null,
-        public ?string $agentIdeWorkspaceId = null,
     ) {}
 }

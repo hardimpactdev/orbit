@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
-use App\Http\Controllers\Api\AgentIdeAdapterChoicesController;
-use App\Http\Controllers\Api\AgentIdeMessageController;
 use App\Http\Controllers\Api\AnalyticsUpdateController;
-use App\Http\Controllers\Api\AppAgentIdeController;
 use App\Http\Controllers\Api\AppAnalyticsController;
 use App\Http\Controllers\Api\AppInstanceController;
 use App\Http\Controllers\Api\AppInstanceEnvController;
 use App\Http\Controllers\Api\AppListController;
-use App\Http\Controllers\Api\AppPruneController;
 use App\Http\Controllers\Api\AppRegisterController;
 use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
@@ -55,7 +51,6 @@ use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\MetricsCredentialsController;
 use App\Http\Controllers\Api\MetricsCredentialsResetController;
 use App\Http\Controllers\Api\MetricsStatusController;
-use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeBootstrapCompleteController;
 use App\Http\Controllers\Api\NodeBootstrapController;
 use App\Http\Controllers\Api\NodeBootstrapResumeController;
@@ -76,7 +71,6 @@ use App\Http\Controllers\Api\OperationStreamControlPlaneController;
 use App\Http\Controllers\Api\PhpRuntimeController;
 use App\Http\Controllers\Api\PhpUseController;
 use App\Http\Controllers\Api\ProcessDestroyController;
-use App\Http\Controllers\Api\ProcessEventIngestController;
 use App\Http\Controllers\Api\ProcessListController;
 use App\Http\Controllers\Api\ProcessLogController;
 use App\Http\Controllers\Api\ProcessLogStreamStartController;
@@ -183,8 +177,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     ])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
-        Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
-        Route::post('/agent-ide/message', AgentIdeMessageController::class);
         Route::post('/analytics/update', AnalyticsUpdateController::class);
         Route::get('/dashboard/runtime-inventory', DashboardRuntimeInventoryController::class);
         Route::middleware(RequireGatewayExtension::class.':cloudflare')->group(function (): void {
@@ -228,7 +220,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/metrics/status', MetricsStatusController::class);
         Route::get('/metrics/credentials', MetricsCredentialsController::class);
         Route::post('/metrics/credentials/reset', MetricsCredentialsResetController::class);
-        Route::post('/events/process', ProcessEventIngestController::class);
         Route::get('/firewall-rules', FirewallRuleListController::class);
         Route::post('/firewall-rules', FirewallRuleStoreController::class);
         Route::delete('/firewall-rules/{name}', FirewallRuleDestroyController::class);
@@ -275,7 +266,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/projects', AppListController::class);
         Route::post('/projects', AppStoreController::class);
         Route::post('/instances/register', AppRegisterController::class);
-        Route::post('/instances/prune', AppPruneController::class);
         Route::get('/instances', [AppInstanceController::class, 'all']);
         Route::middleware(RequireGatewayExtension::class.':codex')->group(function (): void {
             Route::get('/codex/apps', [CodexAppController::class, 'list']);
@@ -292,7 +282,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
                 [SoloProxyController::class, 'mutate'],
             )->where('operation', '.*');
         });
-        Route::post('/instances/{instance}/agent-ide', AppAgentIdeController::class);
         Route::post('/instances/{instance}/analytics/enable', [AppAnalyticsController::class, 'enable']);
         Route::post('/instances/{instance}/analytics/disable', [AppAnalyticsController::class, 'disable']);
         Route::get('/instances/{instance}/analytics/verify', [AppAnalyticsController::class, 'verify']);
@@ -353,7 +342,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/nodes/{name}/roles', NodeRoleListController::class);
         Route::post('/nodes/{name}/roles', NodeRoleAddController::class);
         Route::delete('/nodes/{name}/roles/{role}', NodeRoleRemoveController::class);
-        Route::post('/nodes/{name}/agent-ide', NodeAgentIdeController::class);
         Route::delete('/nodes/{name}', NodeRemoveController::class);
         Route::put('/nodes/{name}', NodeUpdateController::class);
         Route::get('/nodes/{name}', NodeShowController::class);

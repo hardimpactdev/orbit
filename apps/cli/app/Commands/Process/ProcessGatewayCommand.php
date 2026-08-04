@@ -18,7 +18,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     private const array RESTART_POLICIES = ['never', 'on_failure', 'always'];
 
-    private const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
+    private const array CRASH_NOTIFICATIONS = ['none'];
 
     private const array RUNTIMES = ['docker', 'docker-swarm', 'systemd', 'launchd'];
 

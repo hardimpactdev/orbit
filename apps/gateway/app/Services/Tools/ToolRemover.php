@@ -22,6 +22,8 @@ final readonly class ToolRemover
         private StaleToolIntentRemover $staleIntentRemover,
         private RelatedToolProcessRemover $relatedProcessRemover,
         private LegacyOpenClawRuntimeCleanup $legacyOpenClawCleanup,
+        private LegacyOpenCodeRuntimeCleanup $legacyOpenCodeCleanup,
+        private LegacyPolyscopeRuntimeCleanup $legacyPolyscopeCleanup,
     ) {}
 
     /**
@@ -34,6 +36,14 @@ final readonly class ToolRemover
         // migration path for this exact tool slug.
         if ($this->legacyOpenClawCleanup->applies($tool)) {
             return $this->legacyOpenClawCleanup->remove(node: $node, app: $app);
+        }
+
+        if ($this->legacyOpenCodeCleanup->applies($tool)) {
+            return $this->legacyOpenCodeCleanup->remove(node: $node, app: $app);
+        }
+
+        if ($this->legacyPolyscopeCleanup->applies($tool)) {
+            return $this->legacyPolyscopeCleanup->remove(node: $node, app: $app);
         }
 
         $stored = $this->registry->findStored(tool: $tool, node: $node, app: $app);

@@ -344,19 +344,6 @@ final class ProcessStoreController implements Loggable
                 );
             }
 
-            if ($runtime === ProcessRuntime::Launchd && $crashNotification === ProcessCrashNotification::AgentIde) {
-                return $this->error(
-                    'validation_failed',
-                    'Crash notification via agent_ide is deferred for launchd runtime.',
-                    [
-                        'field' => 'crash_notification',
-                        'value' => $crashNotificationInput,
-                        'reason' => 'launchd_crash_notification_deferred',
-                    ],
-                    422,
-                );
-            }
-
             if ($image !== null && $runtime === ProcessRuntime::Systemd) {
                 return $this->error(
                     'validation_failed',

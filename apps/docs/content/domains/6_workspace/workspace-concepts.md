@@ -76,9 +76,7 @@ These terms describe how PHP version is resolved for workspaces.
 - **Workspace PHP inheritance flag:** Boolean entity field that records whether
   a workspace's effective PHP version comes from the parent project (`true`) or
   from its own override (`false`). Exposed in JSON as `php_inherited`.
-- **Workspace agent IDE adapter:** Effective agent IDE adapter for a workspace,
   resolved per session through the chain `app override → owning node default →
-  none`. Exposed in JSON as `agent_ide.adapter`. Reserved for the future
   workspace-level override.
 - **Workspace agent IDE identifier:** Adapter-specific identifier the agent IDE
   uses to reference a workspace, such as the OpenCode project id. Exposed in

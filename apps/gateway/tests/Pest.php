@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\FirewallRule;
@@ -704,26 +703,4 @@ function assert_runtime_activation_boot_screen(Illuminate\Testing\TestResponse $
         ->toContain("base-uri 'none'")
         ->toContain("frame-ancestors 'none'")
         ->not->toContain('script-src');
-}
-
-final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
-{
-    public int $workspaceCalls = 0;
-
-    public function activeSession(array $target, string $adapter): ?array
-    {
-        return null;
-    }
-
-    public function deliver(array $target, string $adapter, array $session, string $message): array
-    {
-        return ['status' => 'failed'];
-    }
-
-    public function workspaces(array $target, string $adapter): array
-    {
-        $this->workspaceCalls++;
-
-        return ['active-ws'];
-    }
 }

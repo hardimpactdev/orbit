@@ -36,54 +36,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/agent-ide/adapters": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["agentIdeAdapterChoices"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/agent-ide/message": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["agentIdeMessage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/instances/{instance}/agent-ide": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["appAgentIde"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/instances": {
         parameters: {
             query?: never;
@@ -142,22 +94,6 @@ export interface paths {
         get: operations["appList"];
         put?: never;
         post: operations["appStore"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/instances/prune": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["appPrune"];
         delete?: never;
         options?: never;
         head?: never;
@@ -670,22 +606,6 @@ export interface paths {
         get: operations["me"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/nodes/{name}/agent-ide": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["nodeAgentIde"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1619,22 +1539,6 @@ export interface components {
             /** @enum {unknown} */
             force: "yes" | "on" | "1" | 1 | "true" | true;
         };
-        /** SendAgentIdeMessageApiRequest */
-        SendAgentIdeMessageApiRequest: {
-            message: string;
-            instance?: string;
-            workspace?: string;
-            path?: string;
-        };
-        /** SetAppAgentIdeApiRequest */
-        SetAppAgentIdeApiRequest: {
-            agent_ide: string;
-            force?: boolean;
-        };
-        /** SetNodeAgentIdeApiRequest */
-        SetNodeAgentIdeApiRequest: {
-            agent_ide: string;
-        };
         /** UpdateAllStartApiRequest */
         UpdateAllStartApiRequest: {
             target_version?: string | null;
@@ -1867,137 +1771,6 @@ export interface operations {
             };
         };
     };
-    agentIdeAdapterChoices: {
-        parameters: {
-            query?: {
-                scope?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                scope: unknown[] | null | string;
-                                reserved_tokens: [
-                                    "none"
-                                ] | [
-                                    "inherit",
-                                    "none"
-                                ] | string[];
-                                adapters: [
-                                    {
-                                        /** @constant */
-                                        name: "opencode";
-                                        /** @constant */
-                                        label: "opencode";
-                                        /** @constant */
-                                        source: "core";
-                                        capabilities: [
-                                            "message_delivery",
-                                            "workspace_path_resolution"
-                                        ];
-                                    },
-                                    {
-                                        /** @constant */
-                                        name: "polyscope";
-                                        /** @constant */
-                                        label: "polyscope";
-                                        /** @constant */
-                                        source: "core";
-                                        capabilities: [
-                                            "message_delivery",
-                                            "workspace_path_resolution"
-                                        ];
-                                    }
-                                ];
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "Agent IDE adapter scope is not supported.";
-                            meta: {
-                                scope: unknown[] | null | string;
-                                supported: [
-                                    "node",
-                                    "instance"
-                                ];
-                            };
-                        };
-                    };
-                };
-            };
-        };
-    };
-    agentIdeMessage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SendAgentIdeMessageApiRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            422: components["responses"]["ValidationException"];
-        };
-    };
-    appAgentIde: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                instance: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetAppAgentIdeApiRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            422: components["responses"]["ValidationException"];
-        };
-    };
     "appInstance.all": {
         parameters: {
             query?: never;
@@ -2212,108 +1985,6 @@ export interface operations {
             };
         };
     };
-    appPrune: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                project: string;
-                                instance: string;
-                                stale_workspaces: string;
-                                dry_run: string;
-                            };
-                            meta: {
-                                warnings: string;
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "instance.not_found";
-                            message: string;
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "instance.agent_ide_query_failed";
-                            message: string;
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "instance.no_agent_ide_adapter";
-                            /** @constant */
-                            message: "No agent IDE adapter configured for this instance.";
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "workspace.unsupported_for_production";
-                            message: string;
-                            meta: unknown[];
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The instance selector must be a string.";
-                            meta: {
-                                /** @constant */
-                                field: "instance";
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: {
-                                field: string | "unknown";
-                            };
-                        };
-                    };
-                };
-            };
-        };
-    };
     appRegister: {
         parameters: {
             query?: never;
@@ -2384,7 +2055,18 @@ export interface operations {
                                 };
                                 details: {
                                     dependency_audits: string;
-                                    instances: string;
+                                    instances: {
+                                        name: string;
+                                        driver: string;
+                                        environment: string;
+                                        node: string | null;
+                                        url: string | null;
+                                        path: null;
+                                        root: null;
+                                        domain: null;
+                                        adopted: boolean;
+                                        workspaces: unknown[];
+                                    }[];
                                     processes: {
                                         name: string;
                                         instance: string | null;
@@ -4274,82 +3956,6 @@ export interface operations {
             };
         };
     };
-    nodeAgentIde: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetNodeAgentIdeApiRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                name: string;
-                                agent_ide: {
-                                    adapter: string | null;
-                                    /** @constant */
-                                    source: "node";
-                                } | {
-                                    adapter: null;
-                                    /** @constant */
-                                    source: "default";
-                                };
-                                /** @enum {string} */
-                                action: "converged" | "set";
-                            };
-                        };
-                    };
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string;
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "node.not_found";
-                            message: string;
-                            meta: {
-                                name: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: components["responses"]["ValidationException"];
-        };
-    };
     nodeBootstrap: {
         parameters: {
             query?: never;
@@ -4766,15 +4372,6 @@ export interface operations {
                                     roles: string[];
                                     addresses: {
                                         wireguard: string | null;
-                                    };
-                                    agent_ide: {
-                                        adapter: string | null;
-                                        /** @constant */
-                                        source: "node";
-                                    } | {
-                                        adapter: null;
-                                        /** @constant */
-                                        source: "default";
                                     };
                                     grants: {
                                         consuming_nodes: {
@@ -7546,10 +7143,6 @@ export interface operations {
                                     url: string;
                                     php_version: string | null;
                                     php_inherited: boolean;
-                                    agent_ide: {
-                                        adapter: string | null;
-                                        workspace_id: string | null;
-                                    };
                                     adopted: boolean;
                                     lifecycle_status: string;
                                 };
@@ -7993,10 +7586,6 @@ export interface operations {
                                     url: string;
                                     php_version: string | null;
                                     php_inherited: boolean;
-                                    agent_ide: {
-                                        adapter: string | null;
-                                        workspace_id: string | null;
-                                    };
                                     adopted: boolean;
                                     lifecycle_status: string;
                                 };

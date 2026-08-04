@@ -106,8 +106,6 @@ The sections below walk through each layer of the stack in the same order as the
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
 
-Cloudflare is the current first-party DNS/CDN provider integration. Agent IDE adapters and workspace source adapters may be first-party or extension-provided, but the gateway always owns the stored configuration and command behavior.
-
 ## Frameworks
 
 Laravel is Orbit's application framework, while command behavior remains documented separately from framework mechanics.
@@ -427,7 +425,6 @@ V1 is scoped narrowly:
   deferred.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
-IDE adapters. The `agent` role runs autonomous agent tools such as Hermes as managed workloads; Agent IDE adapters support human-driven coding
 sessions. Orbit Agent is a node-local execution lane for Orbit operations.
 Gateway-pushed commands are limited to Agent-eligible nodes. The `agent` workload role
 supplies derived intent like every other workload role; it is not a duplicated

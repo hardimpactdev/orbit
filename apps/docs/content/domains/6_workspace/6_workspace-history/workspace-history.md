@@ -44,7 +44,6 @@ Developers use this to:
 
 History is retained for the lifetime of the workspace row on the gateway and is
 removed atomically when the workspace is removed (via `workspace:remove` or the
-`project:remove`/`instance:prune` cascades). There is no automatic time-based pruning. Each call
 returns at most 500 runs; the default limit is 50, and walking further back
 through the timeline is done by re-querying with
 `--until=<oldest started_at returned>`.

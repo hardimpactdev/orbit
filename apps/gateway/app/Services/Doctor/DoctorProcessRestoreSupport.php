@@ -19,8 +19,6 @@ final class DoctorProcessRestoreSupport
         return DoctorRestoreActionId::map([
             'process.runtime_unit_extra',
             'process.runtime_unit_unrenderable',
-            'process.event_notifier_missing',
-            'process.event_notifier_mismatch',
             'process.runtime_unit_missing',
             'process.runtime_unit_mismatch',
             'process.runtime_unit_down',

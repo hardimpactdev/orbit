@@ -19,18 +19,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\AgentIde\AgentIdeMessageCommand::successData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
 file = "app/Commands/Analytics/AnalyticsUpdateCommand.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Commands\Analytics\AnalyticsUpdateCommand::stringField`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
@@ -47,12 +35,6 @@ file = "app/Commands/Analytics/AnalyticsUpdateCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 3
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
 
 [[issues]]
 file = "app/Commands/App/AppAnalyticsVerifyCommand.php"
@@ -89,12 +71,6 @@ file = "app/Commands/App/AppListCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 2
-
-[[issues]]
-file = "app/Commands/App/AppPruneCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
 
 [[issues]]
 file = "app/Commands/App/AppRegisterCommand.php"
@@ -1225,24 +1201,6 @@ message = "Redundant null coalesce: left-hand side can never be `null` or undefi
 count = 1
 
 [[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>|int` for function `App\Commands\Internal\WorkspaceAdapterLookupCommand::readPolyscopeSettings`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Commands\Internal\WorkspaceAdapterLookupCommand::requiredRowString`: expected `array<string, mixed>`, but found `mixed`.'
-count = 4
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
-
-[[issues]]
 file = "app/Commands/Manifest/ManifestRemoveCommand.php"
 code = "less-specific-return-statement"
 message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Manifest\ManifestRemoveCommand::manifestPayload`.'
@@ -1310,18 +1268,6 @@ count = 1
 
 [[issues]]
 file = "app/Commands/Metrics/MetricsStatusCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Commands/Node/NodeAgentIdeCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Node\NodeAgentIdeCommand::successData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Node/NodeAgentIdeCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1

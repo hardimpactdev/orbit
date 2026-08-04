@@ -168,7 +168,7 @@ These terms define per-process behavioral rules that apply to every derived runt
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use
-  launchd reject `agent_ide` crash notification in this slice with
+  launchd reject `none` crash notification in this slice with
   `launchd_crash_notification_deferred` until Orbit owns a macOS crash wrapper
   that can emit gateway-authenticated `crashed` events.
 - **Process runtime selection:** Process-definition field that records which

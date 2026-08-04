@@ -117,7 +117,6 @@ register an existing path use
 `doctor --family=workspace --adopt` instead. The command performs:
 
 1. **Workspace Source Provisioning:** Resolve the parent project's effective
-   agent IDE adapter from instance -> selected node -> default, then create the
    source through the selected source driver.
    - With no effective adapter, create a generic Git worktree on the effective
      workspace node at `<selected app path>/.worktrees/<name>` by creating
@@ -132,15 +131,12 @@ register an existing path use
      app's PolyScope repository id, `branch=<name>`, and
      `base_branch=<base>`.
    - Any effective adapter without a dedicated workspace source driver fails
-     before side effects with `error.code=workspace.agent_ide_driver_missing`.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    the source-driver-returned `name` and physical `path`, `app_id`, a mandatory
    non-null `instance_id`, derived hostname, `php_version` (or `null` for
    inheritance), adapter metadata, and lifecycle fields. For
    OpenCode, store `agent_ide=opencode` and the
-   best-effort session id in `agent_ide_workspace_id` when OpenCode returns
    one. For PolyScope, store `agent_ide=polyscope` and the PolyScope workspace
-   id in `agent_ide_workspace_id`; generic worktrees store both values as
    `null`. Workspace identity uniqueness is enforced before any side effects
    and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
@@ -206,7 +202,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   source driver cannot create the physical source path or external IDE
   workspace before the gateway row is written
   (`error.code=workspace.source_create_failed` for generic worktrees or
-  `workspace.agent_ide_create_failed` for adapter failures). No workspace
   configuration row is retained.
 - **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through

@@ -304,10 +304,10 @@ describe('node permission presets', function (): void {
                 ->toContain('tool:reload');
         });
 
-        it('includes agent ide messaging', function (): void {
+        it('does not include removed agent ide messaging', function (): void {
             $permissions = new NodePermissionPresets()->permissions('developer');
 
-            expect($permissions)->toContain('agent-ide:message');
+            expect($permissions)->not->toContain('agent-ide:message');
         });
     });
 
@@ -391,10 +391,10 @@ describe('node permission presets', function (): void {
             expect($permissions)->toContain('node:read');
         });
 
-        it('includes agent ide messaging', function (): void {
+        it('does not include removed agent ide messaging', function (): void {
             $permissions = new NodePermissionPresets()->permissions('admin');
 
-            expect($permissions)->toContain('agent-ide:message');
+            expect($permissions)->not->toContain('agent-ide:message');
         });
 
         it('does not include wildcard', function (): void {

@@ -183,9 +183,7 @@ final class NodePermissionPresets
             'instance:read',
             'instance:write',
             'instance:register',
-            'instance:prune',
-            'instance:agent',
-            'instance:root',
+                                    'instance:root',
             'instance:update',
             'instance:worker',
             'instance:mount',
@@ -228,8 +226,7 @@ final class NodePermissionPresets
             'tool:restart',
             'tool:reload',
             'tool:reconfigure',
-            'agent-ide:message',
-            'node:read',
+                        'node:read',
             'doctor:verify',
             'dns:list',
             'dns:add',
@@ -253,7 +250,6 @@ final class NodePermissionPresets
             'activity:show',
 
             // Agent IDE
-            'agent-ide:message',
 
             // Project
             'project:read',
@@ -267,9 +263,7 @@ final class NodePermissionPresets
             'instance:write',
             'instance:register',
             'instance:remove',
-            'instance:prune',
-            'instance:agent',
-            'instance:root',
+                                    'instance:root',
             'instance:update',
             'instance:worker',
             'instance:mount',

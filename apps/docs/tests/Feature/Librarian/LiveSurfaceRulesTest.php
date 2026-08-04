@@ -253,7 +253,7 @@ it('maps process add internal service version option onto the public signature',
         $this->fixtureRoot,
         'domains/7_process/1_process-add',
         'process-add',
-        'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|valkey>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]',
+        'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|valkey>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]',
     );
 
     $payload = runLiveSurfaceLint();

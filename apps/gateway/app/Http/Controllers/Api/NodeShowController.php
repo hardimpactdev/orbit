@@ -9,7 +9,6 @@ use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
-use App\Services\Nodes\NodeAgentIdeDefaults;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -63,7 +62,6 @@ final class NodeShowController implements Loggable
                         'addresses' => [
                             'wireguard' => $node->wireguard_address,
                         ],
-                        'agent_ide' => NodeAgentIdeDefaults::payloadFor($node),
                         'grants' => [
                             'consuming_nodes' => $this->grantNodes($node->consumingNodes),
                             'serving_nodes' => $this->grantNodes($node->servingNodes),

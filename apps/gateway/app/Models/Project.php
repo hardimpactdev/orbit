@@ -30,7 +30,6 @@ use Override;
  * @property AppRuntimeKind $runtime
  * @property array<string, mixed>|null $runtime_config
  * @property bool $adopted
- * @property array<string, mixed>|null $agent_ide_config
  * @property-read Node|null $node
  * @property-read Collection<int, AppInstance> $instances
  * @property-read Collection<int, Process> $processes
@@ -61,7 +60,6 @@ class Project extends Model
         'runtime',
         'runtime_config',
         'adopted',
-        'agent_ide_config',
     ];
 
     #[Override]
@@ -74,7 +72,6 @@ class Project extends Model
     {
         return [
             'adopted' => 'boolean',
-            'agent_ide_config' => 'array',
             'runtime' => AppRuntimeKind::class,
             'runtime_config' => 'array',
         ];

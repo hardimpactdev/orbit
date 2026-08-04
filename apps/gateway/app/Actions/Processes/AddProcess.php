@@ -121,17 +121,6 @@ final readonly class AddProcess
             $credentials = [];
         }
 
-        if ($resolvedRuntime === ProcessRuntime::Launchd && $crashNotification === ProcessCrashNotification::AgentIde) {
-            throw new GatewayApiException(
-                'Crash notification via agent_ide is deferred for launchd runtime.',
-                'validation_failed',
-                [
-                    'field' => 'crash_notification',
-                    'reason' => 'launchd_crash_notification_deferred',
-                ],
-            );
-        }
-
         if ($command === null || trim($command) === '') {
             throw new GatewayApiException('The process command is required.', 'validation_failed', [
                 'field' => 'command',

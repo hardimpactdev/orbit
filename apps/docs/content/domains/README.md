@@ -722,7 +722,6 @@ owned by the analytics role.
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
 15. [PHP Runtime](14_php/README.md)
-16. [Agent IDE](15_agent-ide/README.md)
 17. [DNS](16_dns/README.md)
 18. [Activity](17_activity/README.md)
 

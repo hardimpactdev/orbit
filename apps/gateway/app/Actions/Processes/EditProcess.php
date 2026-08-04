@@ -121,23 +121,6 @@ final readonly class EditProcess
             $changed[] = 'runtime';
         }
 
-        $effectiveRuntime = $changes['runtime'] ?? $process->runtime;
-        $effectiveCrashNotification = $changes['crash_notification'] ?? $process->crash_notification;
-
-        if (
-            $effectiveRuntime === ProcessRuntime::Launchd
-            && $effectiveCrashNotification === ProcessCrashNotification::AgentIde
-        ) {
-            throw new GatewayApiException(
-                'Crash notification via agent_ide is deferred for launchd runtime.',
-                'validation_failed',
-                [
-                    'field' => 'crash_notification',
-                    'reason' => 'launchd_crash_notification_deferred',
-                ],
-            );
-        }
-
         if ($changed === []) {
             throw new GatewayApiException(
                 'At least one editable field is required.',

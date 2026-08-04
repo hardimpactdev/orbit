@@ -290,7 +290,7 @@ The crash hooks that Orbit manages on nodes post `crashed` events back to the ga
 
 When the runtime unit name resolves to active process configuration, the event is linked to the process, project, concrete instance, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
 
-Agent IDE crash notification is a consumer of the recorded crash event. For `agent_ide`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
+Agent IDE crash notification is a consumer of the recorded crash event. For `none`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
 
 ## Commands
 

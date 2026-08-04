@@ -23,9 +23,6 @@ final class NodePermissionRegistry
             'activity:show',
             'activity:read',
 
-            // Agent IDE
-            'agent-ide:*',
-            'agent-ide:message',
 
             // Project
             'project:*',
@@ -45,12 +42,12 @@ final class NodePermissionRegistry
             'instance:write',
             'instance:register',
             'instance:remove',
-            'instance:prune',
+
             'instance:setup',
             'instance-setup-step:add',
             'instance-setup-step:list',
             'instance-setup-step:remove',
-            'instance:agent',
+
             'instance:root',
             'instance:update',
             'instance:worker',
@@ -125,7 +122,7 @@ final class NodePermissionRegistry
 
             // Node
             'node:*',
-            'node:agent',
+
             'node:grant',
             'node:list',
             'node:migrate',

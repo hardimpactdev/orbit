@@ -38,10 +38,6 @@ class WorkspaceShowPayload
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'agent_ide' => [
-                'adapter' => $workspace->agent_ide === 'none' ? null : $workspace->agent_ide,
-                'workspace_id' => $workspace->agent_ide_workspace_id,
-            ],
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];

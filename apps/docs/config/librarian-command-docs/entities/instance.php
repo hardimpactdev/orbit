@@ -9,7 +9,6 @@ return [
     ],
     'optional' => [
         'adopted' => 'bool',
-        'agent_ide' => 'object',
         'node' => 'string|object',
         'path' => 'string',
         'root' => 'string',

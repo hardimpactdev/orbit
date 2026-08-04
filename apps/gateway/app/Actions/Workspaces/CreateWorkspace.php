@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Contracts\WorkspaceSourceDrivers;
+use App\Services\Workspaces\WorktreeWorkspaceDriver;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -26,7 +26,7 @@ final readonly class CreateWorkspace
 
     public function __construct(
         private SetupWorkspace $setupWorkspace,
-        private WorkspaceSourceDrivers $sourceDrivers,
+        private WorktreeWorkspaceDriver $worktreeDriver,
         private WorkspaceRoleGuard $roleGuard,
         private WorkspaceNodeReachability $nodeReachability,
         private WorkspacePlacement $placement,
@@ -140,8 +140,6 @@ final readonly class CreateWorkspace
             'name' => $provisionResult->name,
             'path' => $provisionResult->path,
             'php_version' => $phpVersion,
-            'agent_ide' => $provisionResult->agentIde,
-            'agent_ide_workspace_id' => $provisionResult->agentIdeWorkspaceId,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
@@ -149,11 +147,6 @@ final readonly class CreateWorkspace
         $workspace->setRelation('appInstance', $instance);
 
         return $workspace;
-    }
-
-    public function effectiveAgentIde(AppInstance $instance): ?string
-    {
-        return $this->sourceDrivers->effectiveAdapter($instance);
     }
 
     public function provisionWorkspaceSource(
@@ -172,9 +165,7 @@ final readonly class CreateWorkspace
                 $app->path = $instancePath;
             }
 
-            $driver = $this->sourceDrivers->resolve($app, $instance);
-
-            return $driver->create($app, $node, $name, $base);
+            return $this->worktreeDriver->create($app, $node, $name, $base);
         } finally {
             $app->path = $originalPath;
         }
@@ -185,7 +176,10 @@ final readonly class CreateWorkspace
      */
     public function sourceProgressLabels(AppInstance $instance, Node $node): array
     {
-        return $this->sourceDrivers->progressLabels($instance, $node);
+        return [
+            'label' => 'Creating git worktree',
+            'done_label' => 'Git worktree created',
+        ];
     }
 
     /**
@@ -235,10 +229,6 @@ final readonly class CreateWorkspace
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'agent_ide' => [
-                'adapter' => $workspace->agent_ide,
-                'workspace_id' => $workspace->agent_ide_workspace_id,
-            ],
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];

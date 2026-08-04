@@ -50,7 +50,6 @@ final readonly class NodesProbe
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
-        private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
         private ?NodeRoleActivator $nodeRoleActivator = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
@@ -85,7 +84,6 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkRoleAssignments($node));
         $drift = array_merge($drift, $this->checkAgentIntent($node));
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
-        $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
         $drift = array_merge($drift, $this->checkAccessGrants($node));
         $drift = array_merge($drift, $this->checkWireguardIdentity($node));
         $drift = array_merge($drift, $this->checkPlatformReality($node));
@@ -552,44 +550,6 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkAgentIdeDefault(Node $node): array
-    {
-        $config = $node->agent_ide_config ?? [];
-
-        if (! is_array($config) || $config === []) {
-            return [];
-        }
-
-        foreach ($config as $key => $value) {
-            if ($key === 'adapter') {
-                if (! in_array($value, $this->agentIdeDefaults()->supportedAdapters(), true)) {
-                    return [
-                        new DriftEntry(
-                            family: $this->key(),
-                            key: 'node.agent_ide_default_invalid',
-                            kind: DriftKind::Divergent,
-                            summary: "Node agent IDE adapter '{$value}' is not supported.",
-                        ),
-                    ];
-                }
-            } elseif (! in_array($key, $this->agentIdeDefaults()->supportedAdapters(), true)) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'node.agent_ide_default_invalid',
-                        kind: DriftKind::Divergent,
-                        summary: "Node agent IDE configuration key '{$key}' is not a supported adapter.",
-                    ),
-                ];
-            }
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
     private function checkAccessGrants(Node $node): array
     {
         $drift = [];
@@ -968,11 +928,6 @@ final readonly class NodesProbe
                     : app(NodeIdentityArtifactProbe::class)
             )
         );
-    }
-
-    private function agentIdeDefaults(): NodeAgentIdeDefaults
-    {
-        return $this->agentIdeDefaults ?? app(NodeAgentIdeDefaults::class);
     }
 
     /**

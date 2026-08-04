@@ -25,7 +25,6 @@ use Override;
  * @property AppInstanceDriverConfigData|null $driver_config
  * @property bool $adopted
  * @property AppInstanceRuntimeRequirementsData|null $runtime_requirements
- * @property array<string, mixed>|null $agent_ide_config
  * @property list<string>|null $deploy_warmup_paths
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
@@ -56,7 +55,6 @@ class AppInstance extends Model
         'driver_config',
         'adopted',
         'runtime_requirements',
-        'agent_ide_config',
         'deploy_warmup_paths',
         'worker_enabled',
         'worker_config',
@@ -78,7 +76,6 @@ class AppInstance extends Model
             'driver_config' => AppInstanceDriverConfigData::class,
             'adopted' => 'boolean',
             'runtime_requirements' => AppInstanceRuntimeRequirementsData::class,
-            'agent_ide_config' => 'array',
             'deploy_warmup_paths' => 'array',
             'worker_enabled' => 'boolean',
             'worker_config' => 'array',

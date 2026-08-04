@@ -43,7 +43,6 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
-use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -1626,90 +1625,6 @@ describe('DoctorReportRunner', function (): void {
                 'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
                 'php_ini_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-a.ini',
             ]);
-    });
-
-    it('restores divergent process event notifier material', function (): void {
-        $node = createDoctorRunnerAppHostNode([
-            'name' => 'app-1',
-            'tld' => 'test',
-            'platform' => 'ubuntu_24-04',
-        ]);
-        $app = Project::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'php_version' => '8.5',
-            'runtime' => AppRuntimeKind::Php,
-        ]);
-        OrbitProcess::factory()
-            ->forOwner($app)
-            ->create([
-                'name' => 'vite',
-                'command' => 'npm run dev -- --host=0.0.0.0',
-                'runtime' => ProcessRuntime::Systemd,
-                'crash_notification' => 'agent_ide',
-            ]);
-        LocalGatewaySettings::query()->create([
-            'gateway_url' => 'https://gateway.test',
-        ]);
-        $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "orbit_docs_development_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t0\t1\t1\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ], whenExhausted: fn (Node $node, string $script): ?RemoteShellResult => doctorRunnerProcessHealthyObservation(
-            $script,
-            ['orbit_docs_development_main_vite'],
-        ));
-        app()->instance(RemoteShell::class, $shell);
-
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
-
-        expect($report['healthy'])
-            ->toBeTrue()
-            ->and($report['actions'][0])
-            ->toMatchArray([
-                'family' => 'process',
-                'node' => 'app-1',
-                'key' => 'process.event_notifier_mismatch',
-                'mode' => 'restore',
-                'status' => 'completed',
-                'details' => [
-                    'script' => '/usr/local/bin/orbit-notify-exit',
-                    'gateway_endpoint' => '/etc/orbit/gateway-endpoint',
-                ],
-            ])
-            ->and(
-                collect(Http::recorded())
-                    ->map(static fn (array $exchange): Request => $exchange[0])
-                    ->filter(
-                        static fn (Request $request): bool => (
-                            doctorRunnerAgentPushCommandName($request) === 'internal:managed-file'
-                        ),
-                    )
-                    ->map(static fn (Request $request): array => doctorRunnerAgentPushInput($request))
-                    ->values()
-                    ->all(),
-            )
-            ->toBe([
-                [
-                    'path' => '/usr/local/bin/orbit-notify-exit',
-                    'content' => app(ProcessEventNotifierRenderer::class)->content(),
-                    'mode' => '0755',
-                    'directory_mode' => '0755',
-                ],
-                [
-                    'path' => '/etc/orbit/gateway-endpoint',
-                    'content' => "https://gateway.test\n",
-                    'mode' => '0644',
-                    'directory_mode' => '0755',
-                ],
-            ])
-            ->and(collect($shell->scripts)->contains('orbit-notify-exit'))
-            ->toBeFalse();
     });
 
     it('leaves concrete workspace runtime-unit drift to the process family', function (): void {

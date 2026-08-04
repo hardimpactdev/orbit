@@ -12,7 +12,6 @@ return [
     ],
     'optional' => [
         'adopted' => 'bool',
-        'agent_ide' => 'object',
         'base' => 'string',
         'branch' => 'string|null',
         'inherited_processes' => 'array',

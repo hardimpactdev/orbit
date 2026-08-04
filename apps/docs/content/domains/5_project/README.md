@@ -53,7 +53,6 @@ These rules govern all instance family commands.
   adopt a named instance, re-apply Orbit management for that instance, move
   only that instance, or retry its production-domain activation. A first
   adoption atomically creates the project and its first instance.
-- Instances may configure an agent IDE adapter through `instance:agent-ide`.
   Effective resolution is instance override, then that instance's serving-node
   default, then no adapter.
 - Development-server behavior for instance and workspace processes is owned by the
@@ -115,7 +114,6 @@ These rules govern all instance family commands.
   logs, and latest status belong to one concrete instance. `deploy:run`
   accepts the canonical dotted instance selector, while a bare project name is
   shorthand only when that project has exactly one instance.
-- `instance:prune` is source-of-truth cleanup for one concrete `app-dev` instance,
   not doctor drift repair. It checks that instance's effective agent IDE
   adapter, uses workspace removal semantics for stale workspaces owned by that
   instance, and can be scheduled through normal schedules.
@@ -141,7 +139,6 @@ These rules govern all instance family commands.
   authorization or side effects.
 
 The same concrete-instance rule applies to `instance:register`, `instance:root`,
-`instance:prune`, `instance:agent-ide`, WebSocket, analytics, and other placement-sensitive
 commands. `project:remove` is the deliberate exception: it accepts only a logical
 project slug and, with explicit destructive consent, removes that project plus every
 owned instance as one authorized cascade. Dotted selectors and instance
@@ -339,7 +336,6 @@ Use these commands to create, inspect, and remove project records.
 4. [`orbit project:show [project]`](4_project-show/project-show.md)
 5. [`orbit instance:root [project.instance] [root]`](5_instance-root/instance-root.md)
 6. [`orbit project:remove [project]`](6_project-remove/project-remove.md)
-7. [`orbit instance:prune [project.instance]`](7_instance-prune/instance-prune.md)
 8. Reserved for a future project metadata update command. No `project:update` command
    contract exists in the current converted surface.
 
@@ -347,7 +343,6 @@ Use these commands to create, inspect, and remove project records.
 
 Use these commands to configure runtime-facing instance capabilities.
 
-1. [`orbit instance:agent-ide [project.instance] [agent_ide]`](9_instance-agent-ide/instance-agent-ide.md)
 2. Reserved. Orbit has no command-`exec` surface.
 3. [`orbit instance:worker show|enable|disable [instance]`](11_instance-worker/instance-worker.md)
 4. [`orbit instance:websocket enable [project.instance]`](12_instance-websocket-enable/instance-websocket-enable.md)

@@ -15,7 +15,6 @@
 This command registers a gateway-owned teardown step for an instance's workspace
 lifecycle. It mirrors `workspace-setup-step:add` exactly except for the
 lifecycle phase (`teardown` vs `setup`) and the read sites
-(`workspace:remove` and `instance:prune` instead of `workspace:new` and
 `workspace:setup`).
 
 ## Signature
@@ -77,7 +76,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `workspace-teardown-step:add` writes a single teardown step record owned by
 the gateway for an instance's workspace lifecycle. The step is *not* executed during
-this command; it is applied by `workspace:remove` and `instance:prune` at the
 teardown phase, before destructive workspace cleanup.
 
 1. **Registry Write**: Creates one new record in the gateway workspace
@@ -106,7 +104,6 @@ teardown phase, before destructive workspace cleanup.
    creates two separate step records (each with its own `id`). There is no
    convergence by `command` text because steps are identified by `id`.
 6. **No Runtime Lock**: The command never blocks on, or aborts because of,
-   in-flight `workspace:remove` / `instance:prune` runs. The new step takes
    effect on the next teardown pipeline run that begins after the gateway
    commit. Steps already executing in an in-flight run use the policy
    snapshot the runner read at teardown-phase entry. Recovery from
@@ -114,11 +111,9 @@ teardown phase, before destructive workspace cleanup.
 7. **No Filesystem Side Effects**: The command writes only to gateway
    configuration. Nodes are not contacted.
 8. **Consumer Failure Semantics**: When a teardown step fails during
-   `workspace:remove` or `instance:prune`, the failure is reported as a
    structured non-fatal warning under `success.meta.warnings[]` of the
    consumer command (code `workspace.teardown_step_failed`). Subsequent
    teardown steps still run, and Phase B continues with runtime container and worktree
-   removal. This contract is owned by `workspace:remove` and `instance:prune`;
    `workspace-teardown-step:add` itself never observes the warning.
 9. **Lifecycle Ordering Guarantees**: Teardown steps run before runtime container removal
    and worktree removal during `workspace:remove` Phase B, so they observe

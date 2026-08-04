@@ -117,7 +117,6 @@ are not part of the initial contract.
 - History rows are removed atomically with the workspace via
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
   [`project:remove`](../../../5_project/6_project-remove/project-remove.md) or
-  the [`instance:prune`](../../../5_project/7_instance-prune/instance-prune.md) cascade when an
   instance-level command removes a workspace.
 
 ## Renderer Contracts

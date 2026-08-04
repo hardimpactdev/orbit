@@ -151,78 +151,6 @@
                 }
             }
         },
-        "agent-ide:message": {
-            "name": "agent-ide:message",
-            "slug": "agent-ide-message",
-            "family": "agent-ide",
-            "arguments": [
-                "message"
-            ],
-            "options": [
-                "instance",
-                "workspace",
-                "stdin",
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/15_agent-ide/1_agent-ide-message",
-                "public": "domains/15_agent-ide/1_agent-ide-message/agent-ide-message.md",
-                "technical": "domains/15_agent-ide/1_agent-ide-message/technical/1_agent-ide-message.md",
-                "repo_directory": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message",
-                "repo_public": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message/agent-ide-message.md",
-                "repo_technical": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message/technical/1_agent-ide-message.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AgentIdeMessageControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AgentIdeMessageControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AgentIdeMessageControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AgentIdeMessageControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\AgentIde\\SendAgentIdeMessageRequest",
-                    "path": "packages/sdk/src/Requests/AgentIde/SendAgentIdeMessageRequest.php"
-                },
-                "gateway_route": {
-                    "method": "POST",
-                    "uri": "/api/agent-ide/message"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AgentIdeMessageController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AgentIdeMessageController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\AgentIde\\AgentIdeMessageResponse",
-                    "path": "packages/sdk/src/Responses/AgentIde/AgentIdeMessageResponse.php"
-                }
-            }
-        },
         "analytics:update": {
             "name": "analytics:update",
             "slug": "analytics-update",
@@ -3516,64 +3444,6 @@
                 "response_dto": null
             }
         },
-        "instance:agent-ide": {
-            "name": "instance:agent-ide",
-            "slug": "instance-agent-ide",
-            "family": "instance",
-            "arguments": [
-                "instance",
-                "agent_ide"
-            ],
-            "options": [
-                "force",
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/9_instance-agent-ide",
-                "public": "domains/5_project/9_instance-agent-ide/instance-agent-ide.md",
-                "technical": "domains/5_project/9_instance-agent-ide/technical/1_instance-agent-ide.md",
-                "repo_directory": "apps/docs/content/domains/5_project/9_instance-agent-ide",
-                "repo_public": "apps/docs/content/domains/5_project/9_instance-agent-ide/instance-agent-ide.md",
-                "repo_technical": "apps/docs/content/domains/5_project/9_instance-agent-ide/technical/1_instance-agent-ide.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppAgentIdeControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppAgentIdeControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppAgentIdeControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppAgentIdeControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
-            }
-        },
         "instance:analytics disable": {
             "name": "instance:analytics disable",
             "slug": "instance-analytics-disable",
@@ -4061,87 +3931,6 @@
                 "gateway_controller": null,
                 "authorization_permission": null,
                 "response_dto": null
-            }
-        },
-        "instance:prune": {
-            "name": "instance:prune",
-            "slug": "instance-prune",
-            "family": "instance",
-            "arguments": [
-                "instance"
-            ],
-            "options": [
-                "dry-run",
-                "force",
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/7_instance-prune",
-                "public": "domains/5_project/7_instance-prune/instance-prune.md",
-                "technical": "domains/5_project/7_instance-prune/technical/1_instance-prune.md",
-                "repo_directory": "apps/docs/content/domains/5_project/7_instance-prune",
-                "repo_public": "apps/docs/content/domains/5_project/7_instance-prune/instance-prune.md",
-                "repo_technical": "apps/docs/content/domains/5_project/7_instance-prune/technical/1_instance-prune.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppPruneControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppPruneControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Instances\\PruneInstanceRequest",
-                    "path": "packages/sdk/src/Requests/Instances/PruneInstanceRequest.php"
-                },
-                "gateway_route": {
-                    "method": "POST",
-                    "uri": "/api/instances/prune"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AppPruneController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AppPruneController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [
-                    "instance:prune"
-                ],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Instances\\PruneInstanceResponse",
-                    "path": "packages/sdk/src/Responses/Instances/PruneInstanceResponse.php"
-                }
             }
         },
         "instance:register": {
@@ -5287,78 +5076,6 @@
                 "gateway_controller": null,
                 "authorization_permission": null,
                 "response_dto": null
-            }
-        },
-        "node:agent-ide": {
-            "name": "node:agent-ide",
-            "slug": "node-agent-ide",
-            "family": "node",
-            "arguments": [
-                "name",
-                "agent_ide"
-            ],
-            "options": [
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/1_node/10_node-agent-ide",
-                "public": "domains/1_node/10_node-agent-ide/node-agent-ide.md",
-                "technical": "domains/1_node/10_node-agent-ide/technical/1_node-agent-ide.md",
-                "repo_directory": "apps/docs/content/domains/1_node/10_node-agent-ide",
-                "repo_public": "apps/docs/content/domains/1_node/10_node-agent-ide/node-agent-ide.md",
-                "repo_technical": "apps/docs/content/domains/1_node/10_node-agent-ide/technical/1_node-agent-ide.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/NodeAgentIdeControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/Node/NodeWriteCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Node/NodeWriteCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/NodeAgentIdeControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/NodeAgentIdeControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/NodeAgentIdeControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\SetNodeAgentIdeRequest",
-                    "path": "packages/sdk/src/Requests/Nodes/SetNodeAgentIdeRequest.php"
-                },
-                "gateway_route": {
-                    "method": "POST",
-                    "uri": "/api/nodes/{name}/agent-ide"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\NodeAgentIdeController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/NodeAgentIdeController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [
-                    "node:agent"
-                ],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeAgentIdeResponse",
-                    "path": "packages/sdk/src/Responses/Nodes/NodeAgentIdeResponse.php"
-                }
             }
         },
         "node:default": {
@@ -14775,7 +14492,6 @@
                 },
                 "optional": {
                     "adopted": "bool",
-                    "agent_ide": "object",
                     "node": "string|object",
                     "path": "string",
                     "root": "string",
@@ -14794,7 +14510,6 @@
                 },
                 "optional": {
                     "addresses": "object",
-                    "agent_ide": "object",
                     "grants": "object",
                     "host": "string|null",
                     "roles": "array",
@@ -14841,7 +14556,6 @@
                 },
                 "optional": {
                     "adopted": "bool",
-                    "agent_ide": "object",
                     "base": "string",
                     "branch": "string|null",
                     "inherited_processes": "array",

@@ -23,8 +23,6 @@ use Override;
  * @property string $name
  * @property string $path
  * @property string|null $php_version
- * @property string|null $agent_ide
- * @property string|null $agent_ide_workspace_id
  * @property WorkspaceLifecycleStatus $lifecycle_status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -49,8 +47,6 @@ class Workspace extends Model
         'name',
         'path',
         'php_version',
-        'agent_ide',
-        'agent_ide_workspace_id',
         'lifecycle_status',
     ];
 

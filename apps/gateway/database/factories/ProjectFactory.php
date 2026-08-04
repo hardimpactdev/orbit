@@ -28,7 +28,6 @@ class ProjectFactory extends Factory
             'runtime' => AppRuntimeKind::Php,
             'runtime_config' => null,
             'adopted' => false,
-            'agent_ide_config' => null,
         ];
     }
 

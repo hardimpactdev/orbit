@@ -20,17 +20,30 @@ final class ProjectInstancePermissionMigrator
         'app:write' => ['project:write', 'instance:write'],
         'app:register' => ['instance:register'],
         'app:remove' => ['project:remove'],
-        'app:prune' => ['instance:prune'],
         'app:setup' => ['instance:setup'],
         'app-setup-step:add' => ['instance-setup-step:add'],
         'app-setup-step:list' => ['instance-setup-step:list'],
         'app-setup-step:remove' => ['instance-setup-step:remove'],
-        'app:agent' => ['instance:agent'],
         'app:root' => ['instance:root'],
         'app:update' => ['instance:update'],
         'app:new' => ['project:new'],
         'app:worker' => ['instance:worker'],
         'app:mount' => ['instance:mount'],
+    ];
+
+    /**
+     * Removed ADE/OpenCode permissions and predecessors. Never expand or retain.
+     *
+     * @var list<string>
+     */
+    private const array Removed = [
+        'agent-ide:*',
+        'agent-ide:message',
+        'instance:agent',
+        'node:agent',
+        'instance:prune',
+        'app:agent',
+        'app:prune',
     ];
 
     /**
@@ -46,9 +59,17 @@ final class ProjectInstancePermissionMigrator
                 throw new InvalidArgumentException('Permissions must be non-empty strings.');
             }
 
+            if (in_array($permission, self::Removed, true)) {
+                continue;
+            }
+
             $this->appendUnique($migrated, $permission);
 
             foreach (self::Replacements[$permission] ?? [] as $replacement) {
+                if (in_array($replacement, self::Removed, true)) {
+                    continue;
+                }
+
                 $this->appendUnique($migrated, $replacement);
             }
         }
@@ -66,11 +87,17 @@ final class ProjectInstancePermissionMigrator
     {
         $containsLegacyPermission = array_any(
             $permissions,
-            static fn (string $permission): bool => array_key_exists($permission, self::Replacements),
+            static fn (string $permission): bool => (
+                array_key_exists($permission, self::Replacements)
+                || in_array($permission, self::Removed, true)
+            ),
         );
         $currentPermissions = array_values(array_filter(
             $this->migrate($permissions),
-            static fn (string $permission): bool => ! array_key_exists($permission, self::Replacements),
+            static fn (string $permission): bool => (
+                ! array_key_exists($permission, self::Replacements)
+                && ! in_array($permission, self::Removed, true)
+            ),
         ));
 
         if ($containsLegacyPermission) {

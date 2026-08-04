@@ -2,7 +2,6 @@
 
 `codex:app` registers one concrete Orbit instance in Codex App on an
 eligible target node. It is for Codex App's project list, not for app runtime
-configuration and not for the app's Agent IDE adapter.
 
 ## Usage
 
@@ -52,6 +51,5 @@ codex://codex-app/apply-config
 ```
 
 The command does not register a workspace, register a Codex-managed worktree,
-change `instance:agent-ide`, or mutate app runtime configuration.
 
 See [`codex:app` technical contract](technical/1_codex-app.md).

@@ -25,7 +25,6 @@ class AppInstanceFactory extends Factory
             'driver_config' => new OrbitAppInstanceDriverConfigData,
             'adopted' => false,
             'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
-            'agent_ide_config' => null,
             'deploy_warmup_paths' => null,
             'worker_enabled' => false,
             'worker_config' => null,

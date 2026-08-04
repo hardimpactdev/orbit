@@ -45,7 +45,7 @@ describe('node permission registry', function (): void {
             ->and($registry->isKnown('instance:credentials'))
             ->toBeTrue()
             ->and($registry->isKnown('agent-ide:message'))
-            ->toBeTrue()
+            ->toBeFalse()
             ->and($registry->isKnown('database:read'))
             ->toBeTrue()
             ->and($registry->isKnown('database:query:write'))
@@ -221,13 +221,15 @@ describe('node permission registry', function (): void {
             ->not->toContain('node:*');
     });
 
-    it('returns namespace permissions for agent-ide wildcard', function (): void {
+    it('does not register removed agent-ide permissions', function (): void {
         $registry = new NodePermissionRegistry;
 
         expect($registry->isKnown('agent-ide:*'))
-            ->toBeTrue()
+            ->toBeFalse()
+            ->and($registry->isKnown('agent-ide:message'))
+            ->toBeFalse()
             ->and($registry->impliedBy('agent-ide:*'))
-            ->toBe(['agent-ide:message']);
+            ->toBe([]);
     });
 
     it('reports coverage correctly', function (): void {
@@ -261,7 +263,7 @@ describe('node permission registry', function (): void {
             ->and($namespaces->toArray())
             ->toContain('tool')
             ->and($namespaces->toArray())
-            ->toContain('agent-ide')
+            ->not->toContain('agent-ide')
             ->and($namespaces->toArray())
             ->toContain('project')
             ->and($namespaces->toArray())

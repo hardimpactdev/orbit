@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent project slug; cannot start/end with hyphen). |
 | `--instance` | `text` | No local context or default. | Local instance default. | Valid parent project slug or instance selector such as `happie.nmbp`. A bare project slug must resolve to exactly one concrete instance or fail with `error.meta.reason=instance_required`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
@@ -54,7 +53,6 @@ the parent project path, including external agent worktree directories.
      adapter.
    - **Explicit `--path` adapter lookup:** when `[name]` is missing and
      `--path` plus `--instance` are supplied, Orbit first asks the selected app's
-     effective Agent IDE adapter to resolve the absolute path. A successful
      match supplies the workspace name, absolute path, and adapter workspace
      id. An instance selector such as `happie.nmbp` selects the instance
      explicitly; a bare project selector must resolve to exactly one instance
@@ -117,7 +115,6 @@ the parent project path, including external agent worktree directories.
          failure.
        - An adapter errors during probe (transport, auth, unexpected
          response) → fail with
-         `error.code=workspace.agent_ide_path_resolution_failed`,
          `error.meta.adapter=<name>`, `error.meta.reason=<short>`. The
          probe does not silently fall through on adapter errors so the
          operator does not get a confusingly different identity from a
@@ -140,7 +137,6 @@ the parent project path, including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
    - Adoption is based on explicit command input, local Codex Git-worktree
-     metadata for an explicit `--path`, Agent IDE adapter path resolution when
      `[name]` is omitted, and gateway path policy only.
      `workspace:setup` does not inspect project files such as `composer.json`,
      `package.json`, or `.php-version` to infer workspace identity, app
@@ -221,8 +217,7 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
   about). The durable `workspace.adopted` boolean is set to `true` for this
   run; subsequent re-runs report
   `result.action=converged` with `workspace.adopted=true` preserved. When
-  the adapter resolved identity, the workspace row records `agent_ide` and
-  `agent_ide_workspace_id` from the adapter descriptor.
+  the adapter resolved identity, the workspace row records `none` and
 - `converged` — idempotent re-application of an already-managed workspace
   where no observable artifact change was needed.
 
@@ -255,7 +250,6 @@ registry, Agent-push, or runtime effects. This failure uses
 - **Agent IDE Path Resolution Failed**: An effective agent-IDE adapter
   errored while resolving the CWD to a managed workspace (transport, auth,
   or unexpected adapter response). Fails before side effects with
-  `error.code=workspace.agent_ide_path_resolution_failed`,
   `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
   does not silently fall through on adapter errors.
 - **Path Is Instance Root (Explicit `--path`)**: The supplied `--path` equals the

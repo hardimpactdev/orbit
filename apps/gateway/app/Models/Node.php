@@ -32,7 +32,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $gateway_endpoint
  * @property string|null $public_ipv4
  * @property string|null $public_ipv6
- * @property array<string, mixed>|null $agent_ide_config
  * @property InstalledCliArtifact|null $installed_cli
  * @property InstalledAgentArtifact|null $installed_agent
  * @property InstalledGatewayImage|null $installed_gateway_image
@@ -98,7 +97,6 @@ class Node extends Model
         'gateway_endpoint',
         'public_ipv4',
         'public_ipv6',
-        'agent_ide_config',
         'installed_cli',
         'installed_agent',
         'installed_gateway_image',
@@ -117,7 +115,6 @@ class Node extends Model
     protected function casts(): array
     {
         return [
-            'agent_ide_config' => 'array',
             'installed_cli' => InstalledCliArtifactCast::class,
             'installed_agent' => InstalledAgentArtifactCast::class,
             'installed_gateway_image' => InstalledGatewayImageCast::class,

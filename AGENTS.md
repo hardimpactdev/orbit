@@ -199,8 +199,8 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/boost (BOOST) - v2
 - laravel/mcp (MCP) - v0
 - laravel/pail (PAIL) - v1
-- pestphp/pest (PEST) - v5 (gateway/docs/e2e/core/sdk; apps/cli remains Pest 4 — see Orbit PHP And Laravel above)
-- phpunit/phpunit (PHPUNIT) - v13 (v12 on apps/cli with Pest 4)
+- pestphp/pest (PEST) - v5
+- phpunit/phpunit (PHPUNIT) - v13
 - rector/rector (RECTOR) - v2
 
 ## Skills Activation

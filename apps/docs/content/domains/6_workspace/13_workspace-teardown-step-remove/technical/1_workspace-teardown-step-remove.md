@@ -108,7 +108,6 @@ configuration. Nodes are not contacted.
 `workspace-teardown-step:remove` must not:
 
 - Block on, wait for, or fail because of an active `workspace:remove` or
-  `instance:prune` for the same app. The mutation is gateway-configuration only
   and takes effect for future runs. In-flight runs continue executing the ordered step
   list they snapshotted at `phase=teardown_steps` entry. The snapshot
   obligation is owned by [`workspace:remove`](../../5_workspace-remove/workspace-remove.md)

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\AgentIdeWorkspacePathResolver;
-use App\Data\AgentIde\WorkspacePathResolution;
 use App\Data\Apps\AppSelection;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -16,21 +14,16 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Workspace;
-use App\Services\Apps\AppAgentIdeDefaults;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\Eloquent\Collection;
-use Throwable;
 
 final readonly class WorkspaceSetupTargetResolver
 {
     public function __construct(
-        private AppAgentIdeDefaults $appAgentIdeDefaults,
         private AppSelectorResolver $appSelectorResolver,
         private WorkspacePlacement $placement,
         private WorkspaceRoleGuard $roleGuard,
-        private Container $container,
     ) {}
 
     /**
@@ -79,24 +72,6 @@ final readonly class WorkspaceSetupTargetResolver
             );
         }
 
-        $apps =
-            $outcome['type'] === 'inside_app' && $ownedApp instanceof Project
-                ? [$ownedApp]
-                : $this->appsForCaller($callerNode);
-
-        $resolved = $this->probeAdapters(
-            $cwd,
-            $apps,
-            $ownedInstance instanceof AppInstance ? $ownedInstance : null,
-        );
-
-        if ($resolved !== null) {
-            [$adapter, $resolution, $instance] = $resolved;
-            $this->assertAdapterMatchesExplicitInput($resolution, $name, $appName);
-
-            return $this->resolveAdapterWorkspace($adapter, $resolution, $instance);
-        }
-
         if ($name !== null) {
             return $this->resolveByName($name, $appName);
         }
@@ -135,17 +110,6 @@ final readonly class WorkspaceSetupTargetResolver
             ) ?? $this->callerNodeInstanceForPath($app, $callerNode, $path);
         $instance = $this->concreteInstance($app, $explicitInstance);
         $this->ensureInstanceSupportsWorkspaces($app, $instance);
-
-        if ($name === null) {
-            $resolved = $this->probeAdapters($path, [$app], $instance);
-
-            if ($resolved !== null) {
-                [$adapter, $resolution, $resolvedInstance] = $resolved;
-                $this->assertAdapterMatchesExplicitInput($resolution, null, $appName);
-
-                return $this->resolveAdapterWorkspace($adapter, $resolution, $resolvedInstance);
-            }
-        }
 
         $workspaceName = $name ?? basename($path);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
@@ -277,9 +241,7 @@ final readonly class WorkspaceSetupTargetResolver
                 continue;
             }
 
-            if ($this->adapterConfirmsRegisteredWorkspace($workspace, $cwd)) {
-                return ['type' => 'workspace', 'workspace' => $workspace];
-            }
+            return ['type' => 'workspace', 'workspace' => $workspace];
         }
 
         $instanceMatch = $this->appInstanceForPath($cwd);
@@ -311,194 +273,6 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         return ['type' => 'unregistered'];
-    }
-
-    private function adapterConfirmsRegisteredWorkspace(Workspace $workspace, string $cwd): bool
-    {
-        $this->ensureWorkspaceSupportsWorkspaces($workspace);
-
-        if ($workspace->agent_ide === null || $workspace->agent_ide === 'none') {
-            return true;
-        }
-
-        $app = $workspace->app;
-
-        if (! $app instanceof Project) {
-            return false;
-        }
-
-        try {
-            $resolution = $this->pathResolver()->resolve($workspace->agent_ide, $app, $cwd);
-        } catch (Throwable $exception) {
-            throw new WorkspaceSetupResolutionFailed(
-                'workspace.agent_ide_path_resolution_failed',
-                "The '{$workspace->agent_ide}' adapter could not resolve the current directory to a managed workspace.",
-                [
-                    'adapter' => $workspace->agent_ide,
-                    'path' => $cwd,
-                    'reason' => $exception->getMessage() !== '' ? $exception->getMessage() : 'adapter_unreachable',
-                ],
-            );
-        }
-
-        if (! $resolution instanceof WorkspacePathResolution) {
-            return false;
-        }
-
-        if ($resolution->appSlug !== $app->name || $resolution->workspaceName !== $workspace->name) {
-            return false;
-        }
-
-        if ($this->normalizePath($resolution->path) !== $this->normalizePath($workspace->path)) {
-            return false;
-        }
-
-        return (
-            $workspace->agent_ide_workspace_id === null
-            || $workspace->agent_ide_workspace_id === $resolution->adapterWorkspaceId
-        );
-    }
-
-    /**
-     * @param list<Project|mixed> $apps
-     * @return array{string, WorkspacePathResolution, AppInstance}|null
-     */
-    private function probeAdapters(string $cwd, array $apps, ?AppInstance $onlyInstance = null): ?array
-    {
-        $matches = [];
-
-        foreach ($apps as $app) {
-            if (! $app instanceof Project) {
-                continue;
-            }
-
-            $app->loadMissing('instances');
-
-            foreach ($app->instances as $instance) {
-                if (
-                    ! $instance instanceof AppInstance
-                    || $onlyInstance instanceof AppInstance
-                    && ! $instance->is($onlyInstance)
-                ) {
-                    continue;
-                }
-
-                $adapter = $this->appAgentIdeDefaults->payloadFor($instance)['effective_adapter'];
-
-                if (! is_string($adapter) || $adapter === '') {
-                    continue;
-                }
-
-                try {
-                    $match = $this->pathResolver()->resolve($adapter, $app, $cwd);
-                } catch (Throwable $exception) {
-                    throw new WorkspaceSetupResolutionFailed(
-                        'workspace.agent_ide_path_resolution_failed',
-                        "The '{$adapter}' adapter could not resolve the current directory to a managed workspace.",
-                        [
-                            'adapter' => $adapter,
-                            'path' => $cwd,
-                            'reason' => $exception->getMessage() !== ''
-                                ? $exception->getMessage()
-                                : 'adapter_unreachable',
-                        ],
-                    );
-                }
-
-                if ($match instanceof WorkspacePathResolution) {
-                    $matches[] = [$adapter, $match, $instance];
-                }
-            }
-        }
-
-        if (count($matches) > 1) {
-            $adapters = array_values(array_unique(array_map(
-                static fn (array $match): string => $match[0],
-                $matches,
-            )));
-            sort($adapters);
-
-            throw new WorkspaceSetupResolutionFailed(
-                'validation_failed',
-                'Multiple Agent IDE adapters resolved the current directory. Pass --instance=<project.instance> to disambiguate.',
-                ['field' => 'instance', 'reason' => 'adapter_ambiguous', 'adapters' => $adapters],
-            );
-        }
-
-        if ($matches === []) {
-            return null;
-        }
-
-        return $matches[0];
-    }
-
-    /**
-     * @return array{Workspace, Project, Node, bool}
-     */
-    private function resolveAdapterWorkspace(
-        string $adapter,
-        WorkspacePathResolution $resolution,
-        ?AppInstance $explicitInstance = null,
-    ): array {
-        $app = $this->resolveApp($resolution->appSlug);
-
-        if (! $app instanceof Project) {
-            throw new WorkspaceSetupResolutionFailed(
-                'validation_failed',
-                'Adapter resolved an unknown parent project.',
-                [
-                    'field' => 'instance',
-                ],
-            );
-        }
-
-        $instance = $this->concreteInstance(
-            $app,
-            $explicitInstance ?? $this->placement->matchingOrbitInstanceForPath($app, $resolution->path),
-        );
-        $this->ensureInstanceSupportsWorkspaces($app, $instance);
-        $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
-            ->where('app_id', $app->id)
-            ->where('name', $resolution->workspaceName)
-            ->first();
-
-        $isAdoption = ! $workspace instanceof Workspace;
-
-        if ($workspace instanceof Workspace) {
-            $workspace->update([
-                'app_instance_id' => $instance->id,
-                'path' => $resolution->path,
-                'agent_ide' => $adapter,
-                'agent_ide_workspace_id' => $resolution->adapterWorkspaceId,
-            ]);
-
-            $workspace = $workspace->fresh(['app.node', 'app.instances', 'appInstance']);
-
-            if (! $workspace instanceof Workspace) {
-                throw new WorkspaceSetupResolutionFailed(
-                    'workspace.not_found',
-                    'Workspace disappeared during setup resolution.',
-                    [
-                        'field' => 'workspace',
-                    ],
-                );
-            }
-
-            return $this->unwrap($workspace, false);
-        }
-
-        $workspace = Workspace::create([
-            'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
-            'name' => $resolution->workspaceName,
-            'path' => $resolution->path,
-            'agent_ide' => $adapter,
-            'agent_ide_workspace_id' => $resolution->adapterWorkspaceId,
-            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
-        ]);
-
-        return $this->unwrap($workspace->load(['app.node', 'app.instances', 'appInstance']), $isAdoption);
     }
 
     /**
@@ -563,42 +337,6 @@ final readonly class WorkspaceSetupTargetResolver
                 'validation_failed',
                 'The --path value does not match the workspace resolved from the current directory.',
                 ['field' => 'path'],
-            );
-        }
-    }
-
-    private function assertAdapterMatchesExplicitInput(
-        WorkspacePathResolution $resolution,
-        ?string $name,
-        ?string $appName,
-    ): void {
-        if ($name !== null && $name !== $resolution->workspaceName) {
-            throw new WorkspaceSetupResolutionFailed(
-                'validation_failed',
-                'The workspace name does not match the Agent IDE adapter resolution.',
-                ['field' => 'name', 'reason' => 'adapter_mismatch'],
-            );
-        }
-
-        if ($appName !== null) {
-            try {
-                $selection = $this->appSelectorResolver->resolveRequired($appName);
-            } catch (AppSelectionResolutionFailed $exception) {
-                throw new WorkspaceSetupResolutionFailed(
-                    $exception->errorCode,
-                    $exception->getMessage(),
-                    $exception->meta,
-                );
-            }
-
-            if ($selection->app->name === $resolution->appSlug) {
-                return;
-            }
-
-            throw new WorkspaceSetupResolutionFailed(
-                'validation_failed',
-                'The --instance value does not match the Agent IDE adapter resolution.',
-                ['field' => 'instance', 'reason' => 'adapter_mismatch'],
             );
         }
     }
@@ -821,8 +559,4 @@ final readonly class WorkspaceSetupTargetResolver
         return $candidate === $cwd || str_starts_with($cwd, "{$candidate}/");
     }
 
-    private function pathResolver(): AgentIdeWorkspacePathResolver
-    {
-        return $this->container->make(AgentIdeWorkspacePathResolver::class);
-    }
 }

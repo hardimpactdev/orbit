@@ -14,15 +14,12 @@ classes](../architecture.md#authorization-classes).
 | --- | --- | --- | --- | --- | --- |
 | `activity:list` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
-| `agent-ide:message` | `agent-ide:message` | selected instance's serving node, or resolved workspace's instance serving node | None | `authorization_failed` | Standard missing-permission meta plus resolved project/workspace and `instance` when available |
-| `instance:agent-ide` | `instance:agent` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `project` and `instance` |
 | `project:list` | `project:read` | at least one concrete Orbit instance serving node per returned project | Project and workspace placement filtering applies | `authorization_failed` | Standard missing-permission meta when the caller has no visible instance serving node |
 | `instance:list` | `instance:read` | at least one active app-role serving node; then each concrete Orbit instance serving node for row filtering | Authorized empty inventories succeed; external-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta only when the caller has no qualifying serving-node grant |
 | `instance:show` | `instance:read` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `instance` |
 | `instance:add` | `instance:write` | explicitly selected Orbit target node | External-driver creation is gateway-only; no project default node | `authorization_failed` | Standard missing-permission meta plus target node |
 | `instance:remove` | `instance:write` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `instance` |
 | `project:new` | `project:new` | target app-role node | None | `authorization_failed` | Standard missing-permission meta plus target node |
-| `instance:prune` | `instance:prune` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `project` and `instance` |
 | `instance:register` | `instance:register` | target app-role node | `app-dev` self-grants include same-node registration; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus target node |
 | `project:remove` | `project:remove` | every affected Orbit instance's serving node | Logical-wide destructive cascade preauthorizes all affected Orbit instances before effects; external-driver instances remain gateway-owned | `authorization_failed` | Standard missing-permission meta plus `project`, denied `instance`, and its serving node |
 | `instance:root` | `instance:root` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `project` and `instance` |
@@ -89,7 +86,6 @@ classes](../architecture.md#authorization-classes).
 | `metrics:disable` | `role:remove` | target node | Delegates to metrics role removal; `--force` required before side effects | `authorization_failed` | Standard missing-permission meta plus target node and role |
 | `metrics:enable` | `role:add` | target node | Delegates to metrics role assignment and role baseline convergence | `authorization_failed` | Standard missing-permission meta plus target node and role |
 | `metrics:status` | `process:read` | selected metrics node, or each visible metrics node | Row-level filtering applies when `--node` is absent | `authorization_failed` | Standard missing-permission meta plus selected node when requested |
-| `node:agent-ide` | `node:agent` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `node:default` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `node:grant` | `node:grant` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `node:list` | `node:read` | gateway, filtered by visible node grants | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta only for requested unavailable targets |

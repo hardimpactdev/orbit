@@ -17,7 +17,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         {--workspace= : Workspace name}
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
-        {--crash-notification= : Crash notification policy (none|agent_ide)}
+        {--crash-notification= : Crash notification policy (none)}
         {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd)}
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';

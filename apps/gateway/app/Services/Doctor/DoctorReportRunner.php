@@ -58,7 +58,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessesProbe;
-use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitName;
@@ -3469,9 +3468,6 @@ final readonly class DoctorReportRunner
             return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
         }
 
-        if (in_array($key, ['process.event_notifier_missing', 'process.event_notifier_mismatch'], true)) {
-            return $this->restoreProcessEventNotifierIssue($node, $key);
-        }
 
         if (! in_array(
             $key,
@@ -4008,121 +4004,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
-    private function restoreProcessEventNotifierIssue(Node $node, string $key): array
-    {
-        $renderer = app(ProcessEventNotifierRenderer::class);
-        $gatewayEndpoint = $renderer->expectedGatewayEndpoint();
 
-        if ($gatewayEndpoint === null) {
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'error' => 'Gateway endpoint is not configured.',
-                ],
-            ];
-        }
-
-        try {
-            $results = [
-                $renderer->installPath() => $this->writeProcessEventNotifierFile(
-                    node: $node,
-                    path: $renderer->installPath(),
-                    content: $renderer->content(),
-                    mode: '0755',
-                ),
-                $renderer->gatewayEndpointPath() => $this->writeProcessEventNotifierFile(
-                    node: $node,
-                    path: $renderer->gatewayEndpointPath(),
-                    content: "{$gatewayEndpoint}\n",
-                    mode: '0644',
-                ),
-            ];
-        } catch (Throwable $exception) {
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'script' => $renderer->installPath(),
-                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-                    'error' => $exception->getMessage(),
-                ],
-            ];
-        }
-
-        foreach ($results as $path => $result) {
-            if ($result->successful()) {
-                continue;
-            }
-
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'script' => $renderer->installPath(),
-                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-                    'failed_path' => $path,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'process',
-            'node' => $node->name,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => 'Restored process crash event notifier material.',
-            'details' => [
-                'script' => $renderer->installPath(),
-                'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-            ],
-        ];
-    }
-
-    private function writeProcessEventNotifierFile(
-        Node $node,
-        string $path,
-        string $content,
-        string $mode,
-    ): RemoteShellResult {
-        return app(RemoteLocalExecutor::class)->runInternal(
-            node: $node,
-            commandName: InternalCommand::ManagedFile->value,
-            arguments: ['write'],
-            transportOptions: [
-                'input' => json_encode([
-                    'path' => $path,
-                    'content' => $content,
-                    'mode' => $mode,
-                    'directory_mode' => '0755',
-                ], JSON_THROW_ON_ERROR),
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'process-event-notifier.restore',
-                ],
-                'timeout' => 30,
-                'throw' => false,
-            ],
-        );
-    }
 
     private function refreshManagedFrankenPhpProcessIntent(Process $process): void
     {

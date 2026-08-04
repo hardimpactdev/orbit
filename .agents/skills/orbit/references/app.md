@@ -112,15 +112,11 @@ The following commands all take a dotted instance selector:
 
 ```bash
 orbit instance:root <project.instance> <root> [--json]
-orbit instance:agent-ide <project.instance> [opencode|polyscope|inherit|none] [--force] [--json]
 orbit instance:worker [show|enable|disable] <project.instance> [--json]
-orbit instance:prune <project.instance> [--dry-run] [--force] [--json]
 ```
 
 - `instance:root` changes the document root relative to the instance path.
-- `instance:agent-ide` overrides or inherits the serving node's Agent IDE.
 - `instance:worker` controls opt-in FrankenPHP worker mode.
-- `instance:prune` removes workspaces that are stale according to the effective
   Agent IDE adapter.
 
 Manage runtime mounts with:

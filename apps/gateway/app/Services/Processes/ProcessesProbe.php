@@ -315,7 +315,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $backendOutput,
                 'runtime_units' => $runtimeUnits,
                 'runtime_unit_extras' => $runtimeUnitExtras,
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -422,7 +421,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $backendOutput,
                 'runtime_units' => $runtimeUnits,
                 'runtime_unit_extras' => $runtimeUnitExtras,
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -431,11 +429,6 @@ final readonly class ProcessesProbe
     {
         $probe = $this->runtimeBackendProbe()->check($node);
         $spec = $this->expectedSystemdUnitSpecs($process);
-        $notifier = [
-            'required' => $this->requiresEventNotifier($process),
-            'script_hash' => $this->processEventNotifierRenderer()->hash(),
-            'gateway_endpoint' => $this->processEventNotifierRenderer()->expectedGatewayEndpoint(),
-        ];
 
         $items = [
             $process->name => [
@@ -444,7 +437,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ];
 
@@ -452,7 +444,7 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot($items);
         }
 
-        $script = $this->systemdProbeScript($spec, $notifier);
+        $script = $this->systemdProbeScript($spec);
 
         $result = $this->scriptDispatcher()->run($node, 'orbit-process', 'probe', $script, throw: true);
 
@@ -463,24 +455,6 @@ final readonly class ProcessesProbe
 
             $parts = explode("\t", $line, 6);
             $name = $parts[0] ?? '';
-
-            if ($name === '__notifier') {
-                if (count($parts) !== 6) {
-                    continue;
-                }
-
-                [, $scriptExists, $scriptExecutable, $scriptMatches, $endpointExists, $endpointMatches] = $parts;
-
-                $items[$process->name]['event_notifier'] = [
-                    'script_exists' => $scriptExists === '1',
-                    'script_executable' => $scriptExecutable === '1',
-                    'script_matches' => $scriptMatches === '1',
-                    'gateway_endpoint_exists' => $endpointExists === '1',
-                    'gateway_endpoint_matches' => $endpointMatches === '1',
-                ];
-
-                continue;
-            }
 
             if ($name === '__extra') {
                 if (count($parts) !== 2) {
@@ -521,7 +495,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ];
 
@@ -562,9 +535,8 @@ final readonly class ProcessesProbe
 
     /**
      * @param  list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>  $units
-     * @param  array{required: bool, script_hash: string, gateway_endpoint: string|null}  $notifier
      */
-    private function systemdProbeScript(array $units, array $notifier): string
+    private function systemdProbeScript(array $units): string
     {
         $expectedNames = array_map(
             fn (array $unit): string => $unit['name'],
@@ -666,44 +638,6 @@ final readonly class ProcessesProbe
                     printf '%s\n' "$EXPECTED_NAMES" | grep -Fqx -- "$expected_name"
                 }
 
-                probe_notifier() {
-                    notifier_path='/usr/local/bin/orbit-notify-exit'
-                    endpoint_path='/etc/orbit/gateway-endpoint'
-                SH,
-            '    expected_script_hash='.$this->shellQuote($notifier['script_hash']),
-            '    expected_endpoint='.$this->shellQuote($notifier['gateway_endpoint'] ?? ''),
-            <<<'SH'
-                    notifier_exists=0
-                    notifier_executable=0
-                    notifier_matches=0
-                    endpoint_exists=0
-                    endpoint_matches=0
-
-                    if [ -f "$notifier_path" ]; then
-                        notifier_exists=1
-                        notifier_hash=$(hash_file "$notifier_path" || printf '')
-
-                        if [ -x "$notifier_path" ]; then
-                            notifier_executable=1
-                        fi
-
-                        if [ "$notifier_hash" = "$expected_script_hash" ]; then
-                            notifier_matches=1
-                        fi
-                    fi
-
-                    if [ -f "$endpoint_path" ]; then
-                        endpoint_exists=1
-                        endpoint_value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s:/*$::' "$endpoint_path" 2>/dev/null || printf '')
-
-                        if [ "$expected_endpoint" != "" ] && [ "$endpoint_value" = "$expected_endpoint" ]; then
-                            endpoint_matches=1
-                        fi
-                    fi
-
-                    printf '__notifier\t%s\t%s\t%s\t%s\t%s\n' "$notifier_exists" "$notifier_executable" "$notifier_matches" "$endpoint_exists" "$endpoint_matches"
-                }
-
                 probe_extras() {
                     for unit_path in /etc/systemd/system/orbit_*.service; do
                         [ -f "$unit_path" ] || continue
@@ -718,7 +652,6 @@ final readonly class ProcessesProbe
                 }
                 SH,
             implode(PHP_EOL, $unitCalls),
-            'probe_notifier',
             'probe_extras',
             '',
         ]);
@@ -789,7 +722,6 @@ final readonly class ProcessesProbe
         $drift = array_merge($drift, $this->checkRuntimeUnitLiveness($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
-        $drift = array_merge($drift, $this->checkEventNotifier($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnitExtras($process, $snapshot));
 
         return $drift;
@@ -1226,70 +1158,6 @@ final readonly class ProcessesProbe
         }
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkEventNotifier(Process $process, ProbeSnapshot $snapshot): array
-    {
-        if (! $this->requiresEventNotifier($process)) {
-            return [];
-        }
-
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ! is_array($observed['event_notifier'] ?? null)
-        ) {
-            return [];
-        }
-
-        $notifier = $observed['event_notifier'];
-
-        if (
-            ($notifier['script_exists'] ?? null) === false
-            || ($notifier['gateway_endpoint_exists'] ?? null) === false
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.event_notifier_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Process {$process->name} crash event notifier material is missing.",
-                    detail: [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'script' => $this->processEventNotifierRenderer()->installPath(),
-                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
-                    ],
-                ),
-            ];
-        }
-
-        if (
-            ($notifier['script_executable'] ?? null) === false
-            || ($notifier['script_matches'] ?? null) === false
-            || ($notifier['gateway_endpoint_matches'] ?? null) === false
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.event_notifier_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Process {$process->name} crash event notifier material differs from gateway intent.",
-                    detail: [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'script' => $this->processEventNotifierRenderer()->installPath(),
-                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
-                    ],
-                ),
-            ];
-        }
-
-        return [];
-    }
 
     /**
      * @return list<DriftEntry>
@@ -1971,13 +1839,6 @@ final readonly class ProcessesProbe
         return $lines;
     }
 
-    private function requiresEventNotifier(Process $process): bool
-    {
-        return (
-            ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification'))
-            === ProcessCrashNotification::AgentIde
-        );
-    }
 
     private function runtimeFor(Process $process): ProcessRuntime
     {
@@ -2061,7 +1922,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => '',
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -2287,11 +2147,6 @@ final readonly class ProcessesProbe
     private function scriptDispatcher(): ToolScriptDispatcher
     {
         return $this->scripts ?? new ToolScriptDispatcher($this->runtimeBackendProbe()->executor());
-    }
-
-    private function processEventNotifierRenderer(): ProcessEventNotifierRenderer
-    {
-        return app(ProcessEventNotifierRenderer::class);
     }
 
     private function dockerContainerRenderer(): ProcessDockerContainerRenderer

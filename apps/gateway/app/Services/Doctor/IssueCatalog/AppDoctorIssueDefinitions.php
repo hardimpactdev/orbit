@@ -62,7 +62,6 @@ final class AppDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::incident('app.root_missing', 'app'),
             self::incident('app.runtime_extension_missing', 'app'),
             self::incident('app.security.runtime_container_isolation', 'app'),
-            self::invalid('app.agent_ide_default_invalid', 'app'),
             self::invalid('app.deployment_pipeline_invalid', 'app'),
             self::invalid('app.owner_node_invalid', 'app'),
             self::invalid('app.record_incomplete', 'app'),

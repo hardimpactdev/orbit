@@ -152,10 +152,8 @@ instance and its driver placement.
   unrelated instance bindings. Reading them requires the explicit
   `instance:credentials` permission on the instance's serving node; `instance:read` and
   `instance:write` do not imply credential access.
-- **Instance agent IDE adapter:** Optional gateway-owned override for one
   concrete instance. Its effective adapter resolves from the instance
   override, then the serving-node default, then no adapter. It is set, cleared,
-  and shown through `instance:agent-ide`.
 - **Project dependency audit posture:** Gateway-owned compact summary of a read-only
   package-manager audit for a project's source path. The v1 storage and presentation
   slice stores per-manager status, severity counts, bounded advisory detail, and
@@ -192,7 +190,6 @@ The terms below describe project and instance lifecycle.
 - **Instance adoption flag:** Boolean instance field that records whether
   that concrete path was adopted (`true`) or created fresh (`false`). Exposed
   in the canonical instance JSON as `adopted`.
-- **Instance pruning:** Source-of-truth cleanup performed by `instance:prune` for one
   concrete `app-dev` instance. It removes only stale workspaces and adapter
   associations owned by that instance. It is not project deletion or doctor
   drift repair.

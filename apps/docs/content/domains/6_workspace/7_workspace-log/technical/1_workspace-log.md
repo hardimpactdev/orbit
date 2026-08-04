@@ -117,7 +117,6 @@ execute because an earlier step failed; it is not synthesised at read time.
 - Captured output is removed atomically with the workspace via
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
   [`project:remove`](../../../5_project/6_project-remove/project-remove.md) or
-  the [`instance:prune`](../../../5_project/7_instance-prune/instance-prune.md) cascade when an
   instance-level command removes a workspace.
 - A run record may exist with its captured output pruned only once a future
   retention rule applied per row lands; until then,

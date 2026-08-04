@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use App\Commands\Activity\ActivityListCommand;
 use App\Commands\Activity\ActivityShowCommand;
-use App\Commands\AgentIde\AgentIdeMessageCommand;
 use App\Commands\Analytics\AnalyticsUpdateCommand;
-use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppAnalyticsDisableCommand;
 use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
@@ -15,7 +13,6 @@ use App\Commands\App\AppEnvCommand;
 use App\Commands\App\AppListCommand;
 use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
-use App\Commands\App\AppPruneCommand;
 use App\Commands\App\AppRegisterCommand;
 use App\Commands\App\AppRemoveCommand;
 use App\Commands\App\AppRootCommand;
@@ -123,8 +120,6 @@ use App\Commands\Internal\WgEasyStateCommand;
 use App\Commands\Internal\WireGuardEndpointRotateCommand;
 use App\Commands\Internal\WireGuardInterfacePublicKeyReadCommand;
 use App\Commands\Internal\WireGuardSelfRouteCommand;
-use App\Commands\Internal\WorkspaceAdapterLookupCommand;
-use App\Commands\Internal\WorkspaceAdapterUpdateCommand;
 use App\Commands\Internal\WorkspaceSetupStepCommand;
 use App\Commands\Internal\WorkspaceSourceCreateCommand;
 use App\Commands\Manifest\ManifestRemoveCommand;
@@ -133,7 +128,6 @@ use App\Commands\Metrics\MetricsCredentialsCommand;
 use App\Commands\Metrics\MetricsDisableCommand;
 use App\Commands\Metrics\MetricsEnableCommand;
 use App\Commands\Metrics\MetricsStatusCommand;
-use App\Commands\Node\NodeAgentIdeCommand;
 use App\Commands\Node\NodeDefaultCommand;
 use App\Commands\Node\NodeGrantCommand;
 use App\Commands\Node\NodeListCommand;
@@ -233,8 +227,6 @@ return [
     'add' => [
         ActivityListCommand::class,
         ActivityShowCommand::class,
-        AgentIdeMessageCommand::class,
-        AppAgentIdeCommand::class,
         AppAnalyticsDisableCommand::class,
         AppAnalyticsEnableCommand::class,
         AppAnalyticsShowCommand::class,
@@ -247,7 +239,6 @@ return [
         AppListCommand::class,
         AppMountCommand::class,
         AppNewCommand::class,
-        AppPruneCommand::class,
         AppRegisterCommand::class,
         AppRemoveCommand::class,
         AppRootCommand::class,
@@ -308,7 +299,6 @@ return [
         MetricsDisableCommand::class,
         MetricsEnableCommand::class,
         MetricsStatusCommand::class,
-        NodeAgentIdeCommand::class,
         NodeDefaultCommand::class,
         NodeGrantCommand::class,
         NodeListCommand::class,
@@ -451,8 +441,6 @@ return [
         WireGuardEndpointRotateCommand::class,
         WireGuardInterfacePublicKeyReadCommand::class,
         WireGuardSelfRouteCommand::class,
-        WorkspaceAdapterLookupCommand::class,
-        WorkspaceAdapterUpdateCommand::class,
         AppSetupStepCommand::class,
         WorkspaceSetupStepCommand::class,
         WorkspaceSourceCreateCommand::class,

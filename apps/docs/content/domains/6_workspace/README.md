@@ -96,21 +96,16 @@ These rules govern all workspace family commands.
 ## Workspace Source Drivers
 
 Workspace source creation is driver-owned. `workspace:new` resolves the parent
-instance's effective agent IDE adapter from instance configuration, then node defaults,
 then no adapter. The selected source driver creates the source directory and
 returns the physical path that Orbit stores on the gateway workspace record.
 
 - **Generic worktree driver:** used when no effective adapter exists. It
   creates a Git worktree at `<app path>/.worktrees/<workspace>` using branch
   `<workspace>` from the requested `--base` ref. Generic worktree rows store
-  `agent_ide.adapter=null` and `agent_ide.workspace_id=null`.
-- **OpenCode driver:** used when the effective adapter is `opencode`. It
   resolves the parent OpenCode project, asks OpenCode to create a UI-visible
   workspace, then aligns the returned workspace worktree to branch
   `<workspace>` from the requested `--base` ref. Orbit stores
-  `agent_ide.adapter=opencode`, the returned workspace path, and the OpenCode
   session id when session creation succeeds (stored on a best-effort basis).
-- **PolyScope driver:** used when the effective adapter is `polyscope`. It
   creates the workspace through the PolyScope SDK using the node's
   PolyScope server identity and the parent project's PolyScope repository id.
   Orbit stores the PolyScope-returned path and workspace id. PolyScope paths
@@ -180,7 +175,6 @@ entity does not define.
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent project PHP version; `false` when the workspace row stores an explicit override. |
-| `agent_ide` | object | Adapter metadata captured for the workspace source. `agent_ide.adapter` is `null` for generic worktrees; `agent_ide.workspace_id` stores the adapter-side workspace id when one exists. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 

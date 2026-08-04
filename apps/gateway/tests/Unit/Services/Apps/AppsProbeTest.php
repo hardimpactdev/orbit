@@ -806,50 +806,6 @@ describe('owning node eligibility', function (): void {
     });
 });
 
-describe('instance agent IDE defaults', function (): void {
-    it('detects unsupported instance agent IDE adapters', function (): void {
-        $node = appNode();
-        $app = Project::factory()
-            ->for($node, 'node')
-            ->create();
-        $instance = AppInstance::factory()
-            ->for($app)
-            ->create(['agent_ide_config' => ['adapter' => 'unsupported']]);
-
-        $drift = $this->probe->diffInstance($app, $instance, new ProbeSnapshot([]));
-        $adapterIssues = array_values(array_filter(
-            $drift,
-            fn (DriftEntry $entry): bool => $entry->key === 'app.agent_ide_default_invalid',
-        ));
-
-        expect($adapterIssues)->toHaveCount(1);
-        expect($adapterIssues[0]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('accepts supported instance agent IDE adapters', function (?array $agentIdeConfig): void {
-        $node = appNode();
-        $app = Project::factory()
-            ->for($node, 'node')
-            ->create();
-        $instance = AppInstance::factory()
-            ->for($app)
-            ->create(['agent_ide_config' => $agentIdeConfig]);
-
-        $drift = $this->probe->diffInstance($app, $instance, new ProbeSnapshot([]));
-        $adapterIssues = array_filter(
-            $drift,
-            fn (DriftEntry $entry): bool => $entry->key === 'app.agent_ide_default_invalid',
-        );
-
-        expect($adapterIssues)->toHaveCount(0);
-    })->with([
-        'inherited default' => [null],
-        'disabled' => [['adapter' => 'none']],
-        'opencode' => [['adapter' => 'opencode']],
-        'polyscope' => [['adapter' => 'polyscope']],
-    ]);
-});
-
 function issue(array $drift, string $key): ?DriftEntry
 {
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);

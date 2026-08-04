@@ -95,8 +95,6 @@ metadata without executing a shell command. A synced
 workspace slug. Otherwise, a valid `codex-thread.json` identifies the worktree
 and the CLI uses `codex-<key>`. The result is deterministic, valid, and at most
 63 characters. Explicit `[name]` always wins, and paths without valid Codex
-metadata follow the existing local-context and Agent IDE adapter flow. Codex is
-not an Agent IDE adapter.
 
 ### Agent-IDE adapter probe
 
@@ -115,7 +113,6 @@ must resolve to exactly one instance. Adapter-provided identity never creates
 a parent-project-only workspace row.
 
 See
-[`agent-ide-concepts.md`](../../15_agent-ide/agent-ide-concepts.md#adapter-model)
 for the capability definition.
 
 Probe outcomes:
@@ -133,7 +130,6 @@ Probe outcomes:
 The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
-  Codex Git-worktree metadata for an explicit `--path`, Agent IDE adapter path
   resolution, or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.

@@ -4081,90 +4081,6 @@ message = "Literal argument `'activity-show'` should be passed as a named argume
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "function-name"
-message = "Function name `agentIdeMessageSeedGatewayIntent` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "function-name"
-message = "Function name `agentIdeMessageStartFakeOpenCode` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'/session/health/prompt_async'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'/tmp/orbit-fake-opencode.log'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'/tmp/orbit-fake-opencode.php'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'/tmp/orbit-fake-opencode.pid'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'agent-ide-message'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cat /tmp/orbit-agent-ide-message-request.json'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'gateway'` should be passed as a named argument for clarity."
-count = 5
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "literal-named-argument"
-message = "Literal argument `48999` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIdeMessageTest.php"
-code = "readable-literal"
-message = "Numeric literal could use underscore separators for readability."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/AppAgentIdeTest.php"
-code = "function-name"
-message = "Function name `appAgentIdeGrantAccess` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AppAgentIdeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-agent-ide'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AppAgentIdeTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
-
-[[issues]]
 file = "tests/Feature/Commands/AppListTest.php"
 code = "function-name"
 message = "Function name `appListSeed` should be in snake case."
@@ -4459,24 +4375,6 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 2
 
 [[issues]]
-file = "tests/Feature/Commands/Ephemeral/AppPruneTest.php"
-code = "function-name"
-message = "Function name `appPruneGrantAccess` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/AppPruneTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-prune'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/AppPruneTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-prune-force'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
 file = "tests/Feature/Commands/Ephemeral/AppServingTest.php"
 code = "function-name"
 message = "Function name `appServingAssertDoctorHealthy` should be in snake case."
@@ -4522,78 +4420,6 @@ count = 1
 file = "tests/Feature/Commands/Ephemeral/AppServingTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'tool'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixIssue` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixPrepareDevNode` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixRemoteHash` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixRemoteMode` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixRun` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "function-name"
-message = "Function name `toolsDoctorFixSeedGatewayIntent` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'tool.config_mismatch'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'tool.config_missing'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'tools-doctor-fix'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 4
-
-[[issues]]
-file = "tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php"
-code = "no-boolean-flag-parameter"
-message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
@@ -4957,12 +4783,6 @@ message = "Literal argument `'metrics-route-doctor'` should be passed as a named
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/NodeAgentIdeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'node-agent-ide'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
 file = "tests/Feature/Commands/NodeGrantTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'node-grant'` should be passed as a named argument for clarity."
@@ -5185,54 +5005,6 @@ message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "function-name"
-message = "Function name `opencodeWorkspaceGatewayState` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "function-name"
-message = "Function name `opencodeWorkspaceInstallFakeInstaller` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "function-name"
-message = "Function name `opencodeWorkspacePrepareLaravelApp` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "function-name"
-message = "Function name `opencodeWorkspaceWaitForHttpsRoute` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "function-name"
-message = "Function name `opencodeWorkspaceWaitForServer` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'opencode-workspace'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/OpencodeWorkspaceTopologyTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
 file = "tests/Feature/Commands/PhpRuntimeCommandsTest.php"
 code = "function-name"
 message = "Function name `phpRuntimeCommandsGatewayState` should be in snake case."
@@ -5387,42 +5159,6 @@ file = "tests/Feature/Commands/ProcessCommandTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "function-name"
-message = "Function name `processCrashEventCleanup` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "function-name"
-message = "Function name `processCrashEventPost` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "function-name"
-message = "Function name `processCrashEventSeedIntent` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "function-name"
-message = "Function name `processCrashEventState` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "literal-named-argument"
-message = '''Literal argument `"\\'"` should be passed as a named argument for clarity.'''
-count = 3
-
-[[issues]]
-file = "tests/Feature/Commands/ProcessCrashEventIngestTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 4
 
 [[issues]]
 file = "tests/Feature/Commands/ProcessListGatewayVisibilityIncusTest.php"
@@ -6196,18 +5932,6 @@ count = 1
 file = "tests/Feature/Commands/ToolListTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'tool-list'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ToolReconfigureTest.php"
-code = "function-name"
-message = "Function name `toolReconfigureSeedGatewayIntent` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/ToolReconfigureTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'tool-reconfigure'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]

@@ -109,7 +109,6 @@ This command follows the shared
 `codex:app` must not:
 
 - Write app runtime files.
-- Change `instance:agent-ide`.
 - Register workspaces or Codex-managed worktrees.
 - Create node roles, node grants, SSH keys, host keys, or WireGuard identity
   material.

@@ -229,7 +229,6 @@ These rules apply to all node commands and define the invariants the family enfo
   and no app or workspace context already determines the owning node.
 - `node:new` never sets the local default node automatically.
   The caller must run `node:default` explicitly.
-- Nodes may store a default agent IDE adapter for instances and workspaces on that
   node. Instance-level settings override the node default.
 - Node access grants decide which consuming nodes may operate on which serving
   nodes. Authorization runs two gates: the grant edge from consuming to
@@ -355,7 +354,6 @@ Node transport has different rules before and after bootstrap:
   Disconnected, node name, and gateway name/host, plus Restart and Quit actions.
   It does not show command history.
 - Orbit Agent is distinct from the existing `agent` workload role and from
-  Agent IDE adapters.
 
 The current steady-state paths are therefore:
 
@@ -596,7 +594,6 @@ Use these commands to update, remove, or configure node settings after initial p
 7. [`orbit node:update [name]`](7_node-update/node-update.md)
 8. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
 9. [`orbit node:default [name]`](9_node-default/node-default.md)
-10. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
 11. [`orbit node:manage`](16_node-manage/node-manage.md)
 
 ### Role assignments

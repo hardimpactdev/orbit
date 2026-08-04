@@ -17,7 +17,6 @@ final class InstanceDoctorIssueDefinitions implements DoctorIssueDefinitionProvi
     public function definitions(): array
     {
         return [
-            self::invalid('instance.agent_ide_default_invalid', 'instance'),
             self::invalid('instance.deployment_pipeline_invalid', 'instance'),
             self::incident('instance.deployment_run_stuck', 'instance'),
             self::incident('instance.latest_deployment_failed', 'instance'),

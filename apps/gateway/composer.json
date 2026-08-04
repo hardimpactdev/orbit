@@ -12,15 +12,14 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
-        "beyondcode/polyscope": "^1.0",
         "hardimpactdev/librarian": "^0.0.2",
-        "hardimpactdev/opencode-sdk-laravel": "^0.0.7",
         "hardimpactdev/orbit-core": "dev-main",
         "hardimpactdev/orbit-sdk-laravel": "dev-main",
         "laravel/framework": "^13.20",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.0",
-        "spatie/laravel-activitylog": "^4.0"
+        "spatie/laravel-activitylog": "^4.0",
+        "spatie/laravel-data": "^4.0"
     },
     "require-dev": {
         "carthage-software/mago": "^1.40.1",

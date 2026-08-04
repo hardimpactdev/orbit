@@ -22,7 +22,6 @@ final readonly class AppsProbe
         private ?AppRuntimeUser $appRuntimeUser = null,
         private ?AppRuntimeContainerRenderer $appRuntimeContainerRenderer = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
-        private ?AppAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
         private ?RemoteAppIntrospectProbe $introspectProbe = null,
         private ?RemoteAppRuntimeConfigsProbe $runtimeConfigsProbe = null,
@@ -278,7 +277,6 @@ final readonly class AppsProbe
         $drift = array_merge($drift, $this->checkDocumentRoot($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkPhpRuntime($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkRuntimeConfig($runtimeApp, $snapshot, $targetName, $app, $instance));
-        $drift = array_merge($drift, $this->checkAgentIdeDefault($app, $instance));
 
         return $drift;
     }
@@ -727,41 +725,6 @@ final readonly class AppsProbe
         return '/'.implode('/', $segments);
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkAgentIdeDefault(Project $app, AppInstance $instance): array
-    {
-        $config = $instance->agent_ide_config ?? [];
-
-        if (! is_array($config) || $config === []) {
-            return [];
-        }
-
-        $adapter = $config['adapter'] ?? null;
-
-        if ($adapter === null || $adapter === '') {
-            return [];
-        }
-
-        if (! is_string($adapter) || ! in_array($adapter, $this->agentIdeDefaults()->supportedAdapters(), true)) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'app.agent_ide_default_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Instance agent IDE adapter for {$app->name}.{$instance->name} is not supported.",
-                    detail: [
-                        'project' => $app->name,
-                        'instance' => $instance->name,
-                    ],
-                ),
-            ];
-        }
-
-        return [];
-    }
-
     private function appRuntimeUser(): AppRuntimeUser
     {
         return $this->appRuntimeUser ?? app(AppRuntimeUser::class);
@@ -775,11 +738,6 @@ final readonly class AppsProbe
     private function phpRuntimeCatalog(): PhpRuntimeCatalog
     {
         return $this->phpRuntimeCatalog ?? app(PhpRuntimeCatalog::class);
-    }
-
-    private function agentIdeDefaults(): AppAgentIdeDefaults
-    {
-        return $this->agentIdeDefaults ?? app(AppAgentIdeDefaults::class);
     }
 
     private function nodeRoleAssignments(): NodeRoleAssignments

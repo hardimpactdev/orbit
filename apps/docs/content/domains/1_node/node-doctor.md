@@ -219,7 +219,6 @@ is `removing`, or the baseline convergence path when the assignment is `error`.
 
 ## Node Issue Codes
 
-
 Every code below is registered in the Doctor issue catalog owned by this
 family, with an explicit public disposition (`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
@@ -274,7 +273,6 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-dev` node. |
-| `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
 
 `node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent.
 
@@ -313,7 +311,6 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.runtime_missing`, `node.security.runtime_user`,
 `node.security.posture_probe_failed`,
 `node.local_default_invalid`, or
-`node.agent_ide_default_invalid`.
 
 `node.runtime_missing` is report-only because the gateway never owns bootstrap
 SSH credentials or a client-to-target SSH session. Resume or rerun `node:new`
@@ -324,8 +321,6 @@ normal gateway-to-Agent path.
 `node.dns_mapping_mismatch` is not adoptable. DNS record projection is derived
 from gateway node intent; observed resolver content cannot become node state.
 
-`node.local_default_invalid` and `node.agent_ide_default_invalid` are
-reported only. `node:default` and `node:agent-ide` are explicit user actions;
 doctor must not silently clear or replace those preferences under
 `doctor --family=node --restore`.
 

@@ -188,7 +188,6 @@ Latest lifecycle events are history, not desired state. The processes probe may 
 
 ## Process Issue Codes
 
-
 Every code below is registered in the Doctor issue catalog owned by this
 family, with an explicit public disposition (`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift

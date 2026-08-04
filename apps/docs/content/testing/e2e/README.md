@@ -123,7 +123,7 @@ Use these examples when a feature could fit more than one lane.
 | Gateway API forwarding, CA trust, registry reads/writes, Saloon paths | Docker feature | Prepared topology is enough; fast and parallelizable. |
 | Docker-backed tool intent and compose command generation | Docker feature | The command contract is gateway intent plus generated Docker command. |
 | Runtime backend, process lifecycle, scheduler tick/heartbeat | Docker feature | Docker topologies run `orbit-gateway`, runtime containers, and `orbit-scheduler`. |
-| Systemd-backed process lifecycle, such as OpenCode or PolyScope servers | Incus VM-feature | Requires real `systemd`, `systemctl`, and journal semantics. |
+| Systemd-backed process lifecycle, such as node-level Linux services | Incus VM-feature | Requires real `systemd`, `systemctl`, and journal semantics. |
 | Host-init service control and journal behavior | Incus VM-feature | Requires real systemd and host init semantics. |
 | OS package installs, trust-store mutation, sudo, real SSH daemon behavior | Incus VM-feature | Depends on VM and OS behavior Docker does not model. |
 | Docker runtime image, support image, or prepared role image changes | Docker provision | Refreshes the Docker substrate consumed by Docker feature tests. |

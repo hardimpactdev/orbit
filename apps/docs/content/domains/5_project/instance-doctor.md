@@ -102,7 +102,6 @@ probe results as instance-family issue codes.
 
 ## Instance Issue Codes
 
-
 Every code below is registered in the Doctor issue catalog owned by this
 family, with an explicit public disposition (`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
@@ -138,7 +137,6 @@ Each code below corresponds to a specific layer in the instance probe.
 | `instance.deployment_pipeline_invalid` | A production instance's deployment pipeline is incomplete or references unsupported deployment behavior. |
 | `instance.latest_deployment_failed` | The latest deployment run for a production instance finished as `failed` or `cancelled` and no newer successful deployment exists. |
 | `instance.deployment_run_stuck` | The latest deployment run for a production instance is still `running` after the deployment staleness threshold. |
-| `instance.agent_ide_default_invalid` | The project-level agent IDE default points at a missing or unsupported adapter. |
 | `instance.unregistered_path` | An explicitly inspected path is not represented by a named instance; the finding is a handoff to `instance:register`, never an automatic adoption candidate. |
 
 ## Instance Fix Map
@@ -161,7 +159,6 @@ The table below shows what `doctor --restore` does for each fixable code.
 `instance.production_user_missing`, `instance.production_user_mismatch`,
 `instance.production_health_unhealthy`, `instance.deployment_pipeline_invalid`,
 `instance.latest_deployment_failed`, `instance.deployment_run_stuck`,
-`instance.agent_ide_default_invalid`, or `instance.unregistered_path`.
 Production user findings are `runtime_incident` until a safe AppsFixer restorer
 exists; operators repair them with explicit instance/user commands.
 

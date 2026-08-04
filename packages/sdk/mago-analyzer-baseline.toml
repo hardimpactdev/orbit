@@ -103,90 +103,6 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 4
 
 [[issues]]
-file = "src/Requests/AgentIde/ListAgentIdeAdaptersRequest.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "src/Requests/Apps/CreateAppRequest.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/CreateAppRequest.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/ListAppsRequest.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/ListAppsRequest.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/PruneAppRequest.php"
-code = "mixed-operand"
-message = "Casting `mixed` to `bool`."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/RegisterAppRequest.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/RegisterAppRequest.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/RemoveAppRequest.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/RemoveAppRequest.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/ShowAppRequest.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "src/Requests/Apps/UpdateAppRootRequest.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/UpdateAppRootRequest.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Requests/Apps/UpdateAppRootRequest.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
-count = 1
-
-[[issues]]
 file = "src/Requests/Database/ListDatabaseConnectionsRequest.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
@@ -338,12 +254,6 @@ count = 1
 
 [[issues]]
 file = "src/Requests/Nodes/RemoveNodeRequest.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "src/Requests/Nodes/SetNodeAgentIdeRequest.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 1
@@ -748,36 +658,6 @@ count = 4
 file = "src/Requests/Workspaces/ShowWorkspaceRequest.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$adapter` is already `array<string, mixed>`."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$token` is already `string`."
 count = 1
 
 [[issues]]

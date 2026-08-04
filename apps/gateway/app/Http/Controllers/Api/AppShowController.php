@@ -10,7 +10,6 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
-use App\Services\Apps\AppAgentIdeDefaults;
 use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppShowPlacementPayload;
@@ -147,7 +146,6 @@ final class AppShowController implements Loggable
         $placements = $this->placementPayload->forApp($app, $instances, $includeWorkspaces);
 
         foreach ($instances as $index => $instance) {
-            $placements['instances'][$index]['agent_ide'] = $this->agentIdePayload($instance);
         }
 
         $processModels = [];
@@ -236,26 +234,6 @@ final class AppShowController implements Loggable
         ksort($routes);
 
         return array_values($routes);
-    }
-
-    /**
-     * @return array{adapter: string|null, inherited_from: string, workspace_discovery: string|null}
-     */
-    private function agentIdePayload(AppInstance $instance): array
-    {
-        $agentIde = app(AppAgentIdeDefaults::class)->payloadFor($instance);
-        $effectiveAdapter = $agentIde['effective_adapter'];
-
-        return [
-            'adapter' => $effectiveAdapter,
-            'inherited_from' => $agentIde['source'],
-            'workspace_discovery' => $effectiveAdapter === null ? null : $this->workspaceDiscovery($effectiveAdapter),
-        ];
-    }
-
-    private function workspaceDiscovery(string $adapter): string
-    {
-        return in_array($adapter, ['opencode', 'polyscope'], true) ? 'available' : 'unsupported';
     }
 
     public function effect(): ActivityLogType

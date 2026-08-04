@@ -129,7 +129,6 @@ command catalog when command completeness matters.
 | `orbit node:revoke [c] [s]` | Revoke a node-to-node grant |
 | `orbit node:permissions` | Manage explicit node access permissions |
 | `orbit node role:add\|list\|remove` | Manage assignable workload roles on an existing node |
-| `orbit node:agent-ide [name] [adapter]` | Set the default Agent IDE adapter for a node |
 
 ### Gateway onboarding  -  [`references/gateway.md`](references/gateway.md)
 
@@ -152,8 +151,6 @@ command catalog when command completeness matters.
 | `orbit instance:root [project.instance] [root]` | Change one instance's document root |
 | `orbit instance:setup [project.instance]` | Run the selected instance's setup pipeline |
 | `orbit instance-setup-step:add\|list\|remove` | Manage one instance's finite setup pipeline |
-| `orbit instance:prune [project.instance]` | Remove stale workspaces (`--dry-run` to preview) |
-| `orbit instance:agent-ide [project.instance] [adapter]` | Set or inherit one instance's Agent IDE adapter |
 | `orbit instance:worker [project.instance]` | Inspect or change one instance's FrankenPHP worker mode |
 | `orbit instance:mount list\|add\|remove` | Manage one instance's FrankenPHP runtime mounts |
 | `orbit instance:analytics enable\|disable\|show\|verify` | Manage one instance's analytics binding |
@@ -303,12 +300,9 @@ that tool definition.
 | `orbit activity:list` | List gateway activity history (filter by `--project` / `--node` / `--effect` / `--correlation`) |
 | `orbit activity:show [id]` | Show one activity entry |
 
-### Agent IDE  -  [`references/agent-ide.md`](references/agent-ide.md)
 
 | Command | What it does |
 |---|---|
-| `orbit agent-ide:message [message]` | Send a message to an active Agent IDE session for an instance/workspace |
-| `orbit node:agent-ide` / `orbit instance:agent-ide` | Set the adapter (covered in node.md / app.md) |
 
 ### VPN  -  [`references/vpn.md`](references/vpn.md)
 
@@ -391,9 +385,6 @@ orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 **Switch a workspace's Agent IDE**
 
 ```bash
-orbit node:agent-ide beast opencode  # node default
-orbit instance:agent-ide myapp.development inherit   # use node default
-orbit instance:agent-ide myapp.development polyscope # per-instance override
 ```
 
 **Opt a supported roleless node into managed Agent execution**
@@ -444,7 +435,6 @@ start, update, restart, or uninstall the macOS app.
 - UFW intent, opening or closing ports -> [`firewall.md`](references/firewall.md)
 - Local TLD resolution on a caller machine -> [`dns.md`](references/dns.md)
 - Audit trail / who did what -> [`activity.md`](references/activity.md)
-- Sending messages into a workspace's coding agent -> [`agent-ide.md`](references/agent-ide.md)
 - Solo extension commands, projects, agents, scratchpads, todos, timers -> [`solo.md`](references/solo.md)
 - WireGuard client provisioning, web UI password -> [`vpn.md`](references/vpn.md)
 - Node roles, doctor model, slugs, JSON shape -> [`concepts.md`](references/concepts.md)

@@ -126,8 +126,6 @@ configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.
 
-9. [`polyscope-server`](polyscope-server.md)
-10. [`opencode-cli`](opencode-cli.md)
 11. [`hermes`](hermes.md)
 12. [`codex-app`](codex-app.md)
 

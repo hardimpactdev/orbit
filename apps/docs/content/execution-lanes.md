@@ -231,7 +231,6 @@ key shape alone.
 
 Required work:
 
-- Workspace adapter SQLite lookups for Polyscope and OpenCode when the adapter
   database lives in a node-local host path.
 - SQLite database query helpers for app, workspace, or database-role files
   resolved by the gateway but executed on the owning node's host path.
@@ -332,8 +331,6 @@ Current allowed hidden CLI commands:
 | `internal:database-query-local` | `app-dev`, `app-prod`, `database` |
 | `internal:process-logs` | `app-dev`, `app-prod`, `database`, `agent` |
 | `internal:schedule:run` | active managed node roles |
-| `internal:workspace-adapter:lookup` | `app-dev` |
-| `internal:workspace-adapter:update` | `app-dev` |
 
 Callers that need arguments or command options use:
 

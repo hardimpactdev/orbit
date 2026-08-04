@@ -97,7 +97,6 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-role-remove_output-render_human.md`](6.1_node-role-remove_output-render_human.md#test-mapping)
 - [`6.2_node-role-remove_output-render_json.md`](6.2_node-role-remove_output-render_json.md#test-mapping)
 
-
 Destructive consent coverage note: routine tests cover only the mapped `--force`, destructive consent, or confirmation paths above; prompt-only variants and operator forwarding stay as coverage gaps when no path is listed.
 ## Failure Semantics
 

@@ -28,7 +28,6 @@ final class NodeDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'node',
                 'restore_node_agent_expectation_stale',
             ),
-            self::invalid('node.agent_ide_default_invalid', 'node'),
             self::blocked('node.bootstrap_network_policy_mismatch', 'node'),
             self::genuine(
                 'node.dns_mapping_mismatch',

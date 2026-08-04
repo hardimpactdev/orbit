@@ -8,7 +8,7 @@ final readonly class ProcessUpdateValidator
 {
     public const array RESTART_POLICIES = ['never', 'on_failure', 'always'];
 
-    public const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
+    public const array CRASH_NOTIFICATIONS = ['none'];
 
     public const array RUNTIMES = ['docker', 'docker-swarm', 'systemd', 'launchd'];
 

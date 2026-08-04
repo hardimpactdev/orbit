@@ -17,16 +17,6 @@ final class ProcessDoctorIssueDefinitions implements DoctorIssueDefinitionProvid
     public function definitions(): array
     {
         return [
-            self::genuine(
-                'process.event_notifier_mismatch',
-                'process',
-                'restore_process_event_notifier_mismatch',
-            ),
-            self::genuine(
-                'process.event_notifier_missing',
-                'process',
-                'restore_process_event_notifier_missing',
-            ),
             self::invalid('process.owner_app_invalid', 'process'),
             self::invalid('process.owner_node_invalid', 'process'),
             self::invalid('process.record_incomplete', 'process'),

@@ -58,8 +58,6 @@ enum InternalCommand: string
     case WireguardEndpointRotate = 'internal:wireguard-endpoint:rotate';
     case WireguardInterfacePublicKeyRead = 'internal:wireguard-interface-public-key:read';
     case WireguardSelfRoute = 'internal:wireguard-self-route';
-    case WorkspaceAdapterLookup = 'internal:workspace-adapter:lookup';
-    case WorkspaceAdapterUpdate = 'internal:workspace-adapter:update';
     case WorkspaceSetupStep = 'internal:workspace-setup-step';
     case WorkspaceSourceCreate = 'internal:workspace-source:create';
 }

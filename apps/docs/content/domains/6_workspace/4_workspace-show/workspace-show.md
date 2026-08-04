@@ -9,7 +9,6 @@ configuration. It reports the parent project, required selected instance,
 effective owning node, branch, path, and canonical URL.
 
 It also returns runtime expectations (effective PHP version and inheritance
-source, runtime container, derived hostname), effective agent IDE resolution, inherited
 process definitions, the workspace-owned proxy route, and a summary of the most
 recent setup run.
 
@@ -43,8 +42,6 @@ Run `workspace:show` to inspect a workspace's gateway configuration without conn
 Reads workspace configuration and related gateway history from the gateway database.
 
 ### Display
-
-Shows the workspace identity (name, parent project, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
 
 ### Ambiguous Name
 

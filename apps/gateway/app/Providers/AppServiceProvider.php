@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Contracts\AgentIdeMessageAdapter;
-use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Contracts\ConvergesAppRuntimeContainers;
-use App\Contracts\OpenCodeClientFactory;
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
@@ -15,16 +12,12 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\ToolDefinition;
 use App\Contracts\UpdateAllGatewayStream;
-use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\LocalGatewaySettings;
 use App\Models\Project;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
-use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
-use App\Services\AgentIde\SdkOpenCodeClientFactory;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
@@ -67,10 +60,7 @@ use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Vpn\WgEasyVpnBackend;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
-use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
-use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
-use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\OpenApi\GatewayOpenApi;
 use App\Support\Streaming\NullProgressReporter;
@@ -90,11 +80,9 @@ use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
 use App\Tools\NodeExporterTool;
-use App\Tools\OpenCodeCliTool;
 use App\Tools\OrbStackTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
-use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Contracts\Foundation\Application;
@@ -164,11 +152,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
-        $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
-        $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
-        $this->app->bind(AgentIdeWorkspacePathResolver::class, fn (Application $app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
-            localExecutor: $app->make(RemoteLocalExecutor::class),
-        ));
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
@@ -215,14 +198,9 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
-        $this->app->bind(PolyscopeWorkspaceDriver::class, fn (Application $app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
-            branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),
-            localExecutor: $app->make(RemoteLocalExecutor::class),
-        ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(SoloUpstreamClient::class, HttpSoloUpstreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
-        $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(
             ToolDefinitionRegistry::class,
             static function (Application $app): ToolDefinitionRegistry {
@@ -241,8 +219,6 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(MailpitTool::class),
                     $app->make(SeaweedfsTool::class),
                     $app->make(NodeExporterTool::class),
-                    $app->make(PolyscopeServerTool::class),
-                    $app->make(OpenCodeCliTool::class),
                     $app->make(OrbStackTool::class),
                     $app->make(HermesTool::class),
                     $app->make(LaravelInstallerTool::class),

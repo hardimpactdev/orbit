@@ -91,7 +91,6 @@ results as workspace-family issue codes.
 
 ## Workspace Issue Codes
 
-
 Every code below is registered in the Doctor issue catalog owned by this
 family, with an explicit public disposition (`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
@@ -124,7 +123,6 @@ Each code below corresponds to a specific layer in the workspaces probe.
 ## Workspace Fix Map
 
 Workspace family restore actions are report-only in the current Docker-first runtime: `doctor --restore` does not auto-fix workspace codes (disposition is not `genuine_drift`).
-
 
 The table below shows what `doctor --restore` does for each fixable code.
 
