@@ -1,0 +1,32 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T09:57:02+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-toolbar-process-app-api/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-115701-toolbar-process-app-api",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-process-app-selector.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-08-04T09-52-11Z-226b03d8c2d1/gateway_pest.log",
+        "quality-gates/quality-check-2026-08-04T095313Z-3c4bb1426243.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-process-app-selector.txt": "4227701c0aea1629b8b0a779e8dfb553949e0872e819c9492d42a158ade8bc26",
+        "loop.md": "02f4e392c0ac012522aa23e5c0b638428118aad51131dd11e5d54e32f59e7887",
+        "quality-gates/profiles/2026-08-04T09-52-11Z-226b03d8c2d1/gateway_pest.log": "103d3361f1f60fb0849227644f092010b1a3b047560041127447ea1c6f833d1a",
+        "quality-gates/quality-check-2026-08-04T095313Z-3c4bb1426243.json": "8bcd4168e661379c5591e335ebc294fab9c669123d7147826581ebbffecaddee"
+    },
+    "slug": "toolbar-process-app-api",
+    "requested_slug": "toolbar-process-app-api",
+    "compatible_slugs": [
+        "toolbar-process-app-api"
+    ],
+    "branch": "codex/toolbar-process-app-api",
+    "candidate_commit": "226b03d8c2d16e7f472b632be78347ec33a295df",
+    "accepted_feature_tip": "226b03d8c2d16e7f472b632be78347ec33a295df",
+    "accepted_main_tip": "a3ee576ec304985bb4f6f6ae94e167f96b277c42",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
