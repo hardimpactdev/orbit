@@ -161,8 +161,18 @@ These terms define the ingress behavior applied to app and workspace routes.
   work is required, the pre-check starts or follows one serialized wake
   operation for that scope and returns a minimal no-store HTML response
   immediately, without starting processes or restoring dependencies inline.
-  That response auto-refreshes the original path and query until the pre-check
-  succeeds. It presents one indeterminate animated Orbit mark only: no soft/cold
+  That response stays mounted and, after five seconds, probes the original
+  same-origin path and query with non-overlapping background fetches
+  (credentials same-origin, cache no-store, redirect manual so application
+  redirects including cross-origin login/OAuth do not trap fetch without an
+  Orbit pending header). Pending and failed Orbit responses set
+  `X-Orbit-Runtime-Activation-State` so application status codes alone
+  (including application 503) are not treated as Orbit pending. Pending keeps
+  the page; network errors retry after five seconds; failed is terminal with
+  the existing retry action; a response without the header (or an opaque
+  redirect) means handoff to the application and triggers one browser
+  navigation to the original URI. It
+  presents one indeterminate animated Orbit mark only: no soft/cold
   distinction, aggregate progress bar, step rows, diagnostics, commands,
   filesystem paths, environment values, or raw logs. Soft and cold share the
   same page and operation machinery; the plan records the mode. Soft runners

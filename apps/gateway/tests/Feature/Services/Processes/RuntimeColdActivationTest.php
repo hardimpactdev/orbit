@@ -739,7 +739,7 @@ it('keeps the cold marker and failed progress page when a process cannot start',
         ->toContain('internal:process-systemd-service:start')
         ->not->toContain('internal:caddy-config:runtime-warm');
 
-    $this
+    $failedResponse = $this
         ->call(
             'GET',
             "/api/runtime-activations/app-instance/{$instance->id}",
@@ -747,12 +747,11 @@ it('keeps the cold marker and failed progress page when a process cannot start',
                 'REMOTE_ADDR' => $node->wireguard_address,
                 'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
             ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('orbit-spin', false)
-        ->assertDontSee('Wake-up paused')
-        ->assertDontSee('role="progressbar"', false)
-        ->assertSee('Try again');
+        );
+
+    assert_runtime_activation_failed_screen($failedResponse, '/?orbit-wake-retry=1');
+    $failedResponse
+        ->assertDontSee('Wake-up paused');
 });
 
 it('launches the activation runner as a detached one-shot gateway container', function (): void {
