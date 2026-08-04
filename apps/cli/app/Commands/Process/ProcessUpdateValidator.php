@@ -19,7 +19,9 @@ final readonly class ProcessUpdateValidator
                 $input,
             ) ?? $this->validateProcessName($input->name) ?? $this->validateEditableFields(
                 $input,
-            ) ?? $this->validateOptionalProcessName($input->newName) ?? new ProcessUpdateAllowedValueValidator()->validate(
+            ) ?? $this->validateOptionalProcessName($input->newName) ?? $this->validateOptionalLabel(
+                $input->label,
+            ) ?? new ProcessUpdateAllowedValueValidator()->validate(
                 $input,
             ) ?? new ProcessUpdateRuntimeScopeValidator()->validate($input)
         );
@@ -48,7 +50,12 @@ final readonly class ProcessUpdateValidator
             return null;
         }
 
-        if ($input->command !== null || $input->restartPolicy !== null || $input->crashNotification !== null) {
+        if (
+            $input->label !== null
+            || $input->command !== null
+            || $input->restartPolicy !== null
+            || $input->crashNotification !== null
+        ) {
             return null;
         }
 
@@ -64,6 +71,32 @@ final readonly class ProcessUpdateValidator
         }
 
         return $this->validateProcessName($name);
+    }
+
+    private function validateOptionalLabel(?string $label): ?ProcessUpdateValidationFailure
+    {
+        if ($label === null) {
+            return null;
+        }
+
+        $trimmed = trim($label);
+
+        if ($trimmed === '') {
+            return new ProcessUpdateValidationFailure(
+                'label',
+                'The process label must be a non-empty string.',
+            );
+        }
+
+        if (mb_strlen($trimmed) > 255) {
+            return new ProcessUpdateValidationFailure(
+                'label',
+                'The process label may not be greater than 255 characters.',
+                ['max' => 255],
+            );
+        }
+
+        return null;
     }
 }
 

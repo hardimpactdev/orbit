@@ -37,9 +37,13 @@ poll interval.
 
 | Frame | SSE | Required data | Meaning |
 | --- | --- | --- | --- |
-| `snapshot` | `event: snapshot`, `id: <high_water>` | `app`, `context`, `processes[]`, `cursor.high_water_mark` | Full canonical process list for the app scope at connect. `id` is the durable high-water (`0` when no events). |
-| `update` | `event: update`, `id: <process_events.id>` | `id`, `event`, `status`, `name`, scope fields | Ordered lifecycle row after the snapshot high-water. |
+| `snapshot` | `event: snapshot`, `id: <high_water>` | `app`, `context`, `processes[]` (`key`, `label`, deprecated `name`), `cursor.high_water_mark` | Full canonical process list for the app scope at connect. `id` is the durable high-water (`0` when no events). Snapshot is authoritative for current display labels. |
+| `update` | `event: update`, `id: <process_events.id>` | `id`, `event`, `status`, `key`, deprecated `name`, `label` (current process label when reliably available, otherwise the durable key), scope fields | Ordered lifecycle row after the snapshot high-water. |
 | `error` | `event: error` | `code`, `message`, `meta` | Terminal stream failure after open. |
+
+Process identity in public process payloads uses `key` (stable slug) and
+`label` (durable display). Deprecated `name` remains equal to `key` for
+compatibility. New consumers must use `key` and `label`.
 
 ### Status and event values
 

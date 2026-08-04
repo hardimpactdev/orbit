@@ -57,6 +57,26 @@ it('serializes a runtime change into the request body', function (): void {
     ]);
 });
 
+it('serializes an optional label into the request body when supplied', function (): void {
+    $request = new UpdateProcessRequest(
+        instance: 'docs',
+        name: 'vite',
+        label: 'Vite Dev Server',
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'instance' => 'docs',
+        'label' => 'Vite Dev Server',
+        'restart' => false,
+    ]);
+});
+
+it('omits label from the request body when none was supplied', function (): void {
+    $request = new UpdateProcessRequest(instance: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('label');
+});
+
 it('returns a ProcessUpdateResponse DTO with warnings', function (): void {
     $mock = new MockClient([
         UpdateProcessRequest::class => MockResponse::make([

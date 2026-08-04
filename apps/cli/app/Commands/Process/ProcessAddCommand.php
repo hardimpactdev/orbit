@@ -17,6 +17,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--node= : Owning node name}
         {--instance= : Instance selector}
         {--workspace= : Workspace name}
+        {--label= : Human display label (defaults to process name)}
         {--tool= : Tool capability this process uses}
         {--service= : Managed service identifier to materialize}
         {--service-version= : Managed service version selector}
@@ -41,6 +42,12 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $app = $node === null ? $this->appContext() : $this->stringOption('instance');
         $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
+        $label = $this->resolveProcessLabelOption();
+
+        if (is_int($label)) {
+            return $label;
+        }
+
         $command = $this->stringArgument('process_command');
         $restartPolicy = $this->stringOption('restart-policy') ?? 'never';
         $crashNotification = $this->stringOption('crash-notification') ?? 'none';
@@ -146,6 +153,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             'instance' => $app,
             'workspace' => $workspace,
             'name' => $name,
+            'label' => $label,
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,

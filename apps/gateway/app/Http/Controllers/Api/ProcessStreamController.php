@@ -238,11 +238,31 @@ final readonly class ProcessStreamController implements Loggable
             ? $type->value
             : (string) $event->getRawOriginal('event');
 
+        // Use the related process label only when that row's current identity
+        // still equals the durable event key. After a rename, process_id may
+        // still resolve to the renamed row (new key + its label); pairing that
+        // label with the old durable key would mislabel the update. Fall back
+        // to the durable key so snapshot remains authoritative for display.
+        $label = $name;
+        $relatedProcess = $event->process;
+        if (
+            $relatedProcess !== null
+            && $relatedProcess->name === $name
+        ) {
+            $relatedLabel = $relatedProcess->label;
+            if (is_string($relatedLabel) && trim($relatedLabel) !== '') {
+                $label = $relatedLabel;
+            }
+        }
+
         return [
             'id' => $event->id,
             'event' => $eventType,
             'status' => $status->value,
+            'key' => $name,
+            // Deprecated compatibility alias; new consumers use key (+ label).
             'name' => $name,
+            'label' => $label,
             'node' => $event->node?->name,
             'project' => $event->project?->name ?? $event->app?->name,
             'instance' => $event->appInstance?->name,

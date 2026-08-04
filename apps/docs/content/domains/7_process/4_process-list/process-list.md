@@ -24,6 +24,8 @@ orbit process:list --instance=docs.production --json
 Use this command to inspect process configuration and last known state without live node probing.
 
 - **Process Definitions**: Reads process definitions from gateway configuration.
+  Machine payloads expose stable identity as `key` (and deprecated alias
+  `name`) plus durable human `label`.
 - **Context Resolution**: Resolves a node, instance, workspace, or `app`
   hostname context. Prefer `<project.instance>` for instance mode; a bare
   project slug is accepted only when that project has exactly one instance. A

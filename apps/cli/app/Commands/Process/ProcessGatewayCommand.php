@@ -115,6 +115,53 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         return null;
     }
 
+    /**
+     * Resolve optional --label.
+     *
+     * Omitted → null (default on add / no-change on update).
+     * Explicit empty (`--label=` or whitespace) → validation_failed field=label.
+     * Valid non-empty → trimmed string.
+     *
+     * Do not use stringOption() here: it collapses empty strings to null and
+     * hides explicit empty labels.
+     *
+     * @return string|null|int Null when omitted, trimmed label when valid, int exit code when invalid.
+     */
+    protected function resolveProcessLabelOption(): string|int|null
+    {
+        $value = $this->option('label');
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            return $this->failValidation(
+                'label',
+                'The process label must be a non-empty string.',
+            );
+        }
+
+        $trimmed = trim($value);
+
+        if ($trimmed === '') {
+            return $this->failValidation(
+                'label',
+                'The process label must be a non-empty string.',
+            );
+        }
+
+        if (mb_strlen($trimmed) > 255) {
+            return $this->failValidation(
+                'label',
+                'The process label may not be greater than 255 characters.',
+                ['max' => 255],
+            );
+        }
+
+        return $trimmed;
+    }
+
     protected function validateRestartPolicy(?string $value): ?int
     {
         if ($value === null || in_array($value, self::RESTART_POLICIES, true)) {

@@ -26,6 +26,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
         public readonly ?string $crashNotification = null,
         public readonly bool $restart = false,
         public readonly ?string $runtime = null,
+        public readonly ?string $label = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -45,6 +46,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
                 'restart_policy' => $this->restartPolicy,
                 'crash_notification' => $this->crashNotification,
                 'runtime' => $this->runtime,
+                'label' => $this->label,
                 'restart' => $this->restart,
             ],
             static fn (mixed $value): bool => $value !== null,

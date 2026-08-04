@@ -9094,8 +9094,17 @@
                                       "null"
                                     ]
                                   },
+                                  "key": {
+                                    "type": "string",
+                                    "description": "Stable process identity slug (current Process.name). New consumers must use key + label."
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "description": "Durable human display label for the process."
+                                  },
                                   "name": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "Deprecated compatibility alias equal to key. New consumers must use key + label."
                                   },
                                   "command": {
                                     "type": [
@@ -9175,6 +9184,8 @@
                                   "project",
                                   "instance",
                                   "workspace",
+                                  "key",
+                                  "label",
                                   "name",
                                   "command",
                                   "restart_policy",
@@ -10016,7 +10027,7 @@
     "/processes/stream": {
       "get": {
         "operationId": "processesStream",
-        "description": "Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.",
+        "description": "Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Snapshot process items expose key, label, and deprecated name (= key). Update frames expose key/name aliases and include current label only when the related process key matches the durable event key; otherwise label falls back to that key (snapshot-authoritative labels). Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.",
         "tags": [
           "ProcessStream"
         ],

@@ -304,6 +304,81 @@ describe('process write commands', function (): void {
         'runtime' => [['--runtime' => 'podman'], 'runtime'],
     ]);
 
+    it('forwards process:add --label and omits label when not supplied', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'key' => 'vite', 'label' => 'Vite Dev Server'],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--instance' => 'docs',
+            '--label' => 'Vite Dev Server',
+            '--runtime' => 'systemd',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->data()['label'] === 'Vite Dev Server'
+                && $request->data()['name'] === 'vite'
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'queue', 'key' => 'queue', 'label' => 'queue'],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        runCommand($this, 'process:add', [
+            'name' => 'queue',
+            'process_command' => 'php artisan queue:work',
+            '--instance' => 'docs',
+            '--runtime' => 'systemd',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data()['name'] === 'queue'
+                && ! array_key_exists('label', $request->data())
+            ),
+        );
+    });
+
+    it('rejects explicit empty process:add --label= before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--instance' => 'docs',
+            '--label' => '',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('label');
+    });
+
     it('patches process:update payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'project' => 'docs', 'restart_policy' => 'on_failure'],
@@ -341,6 +416,57 @@ describe('process write commands', function (): void {
         );
 
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['restart_policy'])->toBe('on_failure');
+    });
+
+    it('forwards process:update --label and rejects explicit empty --label=', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'key' => 'vite', 'label' => 'Vite Dev Server'],
+            'changed' => ['label'],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode] = runCommand($this, 'process:update', [
+            'name' => 'vite',
+            '--instance' => 'docs',
+            '--label' => 'Vite Dev Server',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PATCH'
+                && $request->url() === 'https://gateway.test/api/processes/vite'
+                && $request->data() === [
+                    'instance' => 'docs',
+                    'label' => 'Vite Dev Server',
+                    'restart' => false,
+                ]
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+
+        Http::fake();
+
+        [$emptyCode, $emptyOutput] = runCommand($this, 'process:update', [
+            'name' => 'vite',
+            '--instance' => 'docs',
+            '--label' => '',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($emptyOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($emptyCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('label');
     });
 
     it('patches process:update rename payloads to the gateway', function (): void {

@@ -55,6 +55,9 @@ class ProcessListPayload
                         'project' => $context->app?->name,
                         'instance' => $context->appInstance?->name,
                         'workspace' => $workspace?->name,
+                        'key' => $process->name,
+                        'label' => $process->label,
+                        // Deprecated compatibility alias; new consumers use key + label.
                         'name' => $process->name,
                         'command' => $process->command,
                         'restart_policy' => $process->restart_policy->value,
