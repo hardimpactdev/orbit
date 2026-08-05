@@ -6,36 +6,12 @@ namespace App\Services\ApplicationLogs;
 
 /**
  * Matches a host cwd to exactly one visible owned path via strict ancestor rules.
- *
- * A candidate path matches when cwd equals the owned path or is a descendant
- * (`cwd === path` or `cwd` starts with `path/`). Zero or multiple matches fail.
  */
 final readonly class ApplicationLogPathAncestorMatcher
 {
-    public function normalize(string $path): string
-    {
-        $path = trim($path);
-
-        if ($path === '') {
-            return '';
-        }
-
-        $normalized = rtrim(str_replace('\\', '/', $path), '/');
-
-        return $normalized === '' ? '/' : $normalized;
-    }
-
-    public function isAncestor(string $ownedPath, string $cwd): bool
-    {
-        $owned = $this->normalize($ownedPath);
-        $current = $this->normalize($cwd);
-
-        if ($owned === '' || $current === '') {
-            return false;
-        }
-
-        return $owned === $current || str_starts_with($current, "{$owned}/");
-    }
+    public function __construct(
+        private ApplicationLogPathNormalization $paths = new ApplicationLogPathNormalization,
+    ) {}
 
     /**
      * @param  list<array{selector: string, path: string}>  $candidates
@@ -53,7 +29,7 @@ final readonly class ApplicationLogPathAncestorMatcher
                 continue;
             }
 
-            if (! $this->isAncestor($path, $cwd)) {
+            if (! $this->paths->isAncestor($path, $cwd)) {
                 continue;
             }
 
@@ -62,27 +38,27 @@ final readonly class ApplicationLogPathAncestorMatcher
 
         $count = count($matches);
 
-        if ($count === 1) {
-            $selector = array_first($matches);
-
-            if (! is_string($selector) || $selector === '') {
-                return [
-                    'ok' => false,
-                    'reason' => 'cwd_target_missing',
-                    'count' => 0,
-                ];
-            }
-
+        if ($count !== 1) {
             return [
-                'ok' => true,
-                'selector' => $selector,
+                'ok' => false,
+                'reason' => $count === 0 ? 'cwd_target_missing' : 'cwd_target_ambiguous',
+                'count' => $count,
+            ];
+        }
+
+        $selector = array_first($matches);
+
+        if (! is_string($selector) || $selector === '') {
+            return [
+                'ok' => false,
+                'reason' => 'cwd_target_missing',
+                'count' => 0,
             ];
         }
 
         return [
-            'ok' => false,
-            'reason' => $count === 0 ? 'cwd_target_missing' : 'cwd_target_ambiguous',
-            'count' => $count,
+            'ok' => true,
+            'selector' => $selector,
         ];
     }
 }
