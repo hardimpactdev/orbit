@@ -52,7 +52,10 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         ],
         'automated',
     ],
-    'php sdk package source' => [['packages/sdk/src/GatewayConnector.php'], 'automated'],
+    'php sdk package source stays retained-incus' => [
+        ['packages/sdk/src/GatewayConnector.php'],
+        'retained-incus',
+    ],
     'typescript sdk package source' => [['packages/sdk-typescript/src/client.ts'], 'automated'],
     'shared core runtime source' => [['packages/core/src/Http/JsonEnvelope.php'], 'retained-incus'],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
@@ -65,10 +68,10 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         ],
         'retained-incus',
     ],
-    'sdk package does not downgrade core runtime' => [
+    'php sdk does not stay automated when mixed with typescript sdk' => [
         [
             'packages/sdk/src/GatewayConnector.php',
-            'packages/core/src/Http/JsonEnvelope.php',
+            'packages/sdk-typescript/src/client.ts',
         ],
         'retained-incus',
     ],
@@ -86,8 +89,8 @@ it('derives the minimum acceptance venue from changed files', function (array $f
 
 it('routes proof venue from the exact candidate diff without a loop packet', function (): void {
     $fixture = acceptance_test_workspace(
-        'route-sdk-package',
-        'packages/sdk/src/GatewayConnector.php',
+        'route-typescript-sdk-package',
+        'packages/sdk-typescript/src/client.ts',
     );
 
     try {
@@ -121,7 +124,7 @@ it('routes proof venue from the exact candidate diff without a loop packet', fun
                 'venue' => 'automated',
             ])
             ->and($payload['changed_files'])
-            ->toBe(['packages/sdk/src/GatewayConnector.php'])
+            ->toBe(['packages/sdk-typescript/src/client.ts'])
             ->and(array_keys($payload))
             ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue']);
 

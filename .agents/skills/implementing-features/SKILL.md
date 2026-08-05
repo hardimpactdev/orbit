@@ -159,10 +159,11 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 The conservative venues are:
 
 - `automated` for docs, tests, declarative workflow files, repository tooling
-  under `bin/`, and repository-only SDK packages under `packages/sdk/**` and
+  under `bin/`, and repository-only TypeScript SDK packaging under
   `packages/sdk-typescript/**`; those surfaces still require diff-routed
   `composer quality-check`;
-- `retained-incus` for shared core (`packages/core/src/**`), CLI, and
+- `retained-incus` for shared core (`packages/core/src/**`), PHP SDK
+  (`packages/sdk/**`; production require of CLI/gateway), CLI, and
   node/runtime behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
