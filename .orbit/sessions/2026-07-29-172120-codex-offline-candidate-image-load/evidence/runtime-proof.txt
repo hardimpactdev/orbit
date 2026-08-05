@@ -1,0 +1,53 @@
+Retained topology proof
+Date: 2026-07-29
+Feature tip: caf52767baf5d7c903cc2e2482cab3e68ce93d48
+Topology: dev-5bca7e
+Kind: operator_gateway_app-dev
+Provider: Incus
+Inspected roles: dev, gateway
+Runtime checkout: /home/orbit/orbit-run
+Solo terminal: offline-candidate-proof (process 1156)
+
+Secret scan:
+  command: bin/orbit-secret-scan
+  result: SECRET_SCAN: PASS
+
+Real offline image installation:
+  node: orbit-e2e-dev-5bca7e-dev
+  registry preparation: docker logout ghcr.io
+  registry result: credentials removed
+  pull command: docker pull ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260729T142540Z-df9a471ac@sha256:78887d4f6e438e0dfbb7a6a1ec07a4d4cdcabdf38fd15ac0e3563088d69e9e40
+  pull result: unauthorized
+  archive URL: https://s3.hardimpact.dev/orbit/candidates/20260729T142540Z-df9a471ac/orbit-frankenphp-linux-amd64.tar
+  expected SHA-256: 3603037e157779c1d2d3fefcffde073c79c62b8c19d5bdd70069a2b239ebe598
+  observed SHA-256: 3603037e157779c1d2d3fefcffde073c79c62b8c19d5bdd70069a2b239ebe598
+  load result: Loaded image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260729T142540Z-df9a471ac
+  source tag ID: sha256:78887d4f6e438e0dfbb7a6a1ec07a4d4cdcabdf38fd15ac0e3563088d69e9e40
+  alias command: docker image tag sha256:78887d4f6e438e0dfbb7a6a1ec07a4d4cdcabdf38fd15ac0e3563088d69e9e40 ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm
+  stable alias ID: sha256:78887d4f6e438e0dfbb7a6a1ec07a4d4cdcabdf38fd15ac0e3563088d69e9e40
+  ID comparison: source and stable alias matched exactly
+
+Terminal role-image verification:
+  implementation: App\Services\Operations\LocalFleetUpdateVerifyAction
+  image: ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm
+  result: {"check":"role-images","verified":true,"images":["ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"]}
+
+Supplementary CLI orchestration test:
+  node: orbit-e2e-dev-5bca7e-dev
+  command: cd /home/orbit/orbit-run/apps/cli && vendor/bin/pest --compact tests/Feature/InternalFleetUpdateInstallCliCommandTest.php --filter=hash-verified
+  result: 2 passed, 14 assertions
+
+Gateway stable-alias verification:
+  node: orbit-e2e-dev-5bca7e-gateway
+  command: cd /home/orbit/orbit-run && bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/FleetUpdateVerifierTest.php --filter=stable.runtime.alias
+  result: 1 passed, 6 assertions
+
+Exact source identity:
+  7f41666e8a964c1dd62f2fdce901e10b4ddf01d4c83316a979ae238743d292ab  apps/cli/app/Services/Operations/LocalFleetUpdateInstallCliAction.php
+  dcb93e8ef229e7ddfaedcd359ef3a0bfd36bc571065353e31356eadb7a8b8d23  apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php
+  874befebe9a82d24fdc5366382e8d1f21624690845f0d9fe81da440a41f93ac7  apps/gateway/app/Services/Operations/FleetUpdateVerifier.php
+  3a92509c66af3767d2553d97a8e53ead54f7f8daad0d6f02f204d35a15bde341  apps/gateway/tests/Feature/Services/Operations/FleetUpdateVerifierTest.php
+
+The source hashes above matched the initiating worktree and both retained
+runtime checkouts exactly. The real Docker proof used the published candidate
+archive and no GHCR credentials.

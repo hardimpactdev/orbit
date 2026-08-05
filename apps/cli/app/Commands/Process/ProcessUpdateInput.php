@@ -20,6 +20,8 @@ final readonly class ProcessUpdateInput
 
     public ?string $newName;
 
+    public ?string $label;
+
     public ?string $command;
 
     public ?string $restartPolicy;
@@ -40,6 +42,7 @@ final readonly class ProcessUpdateInput
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
+     *     label?: ?string,
      *     command?: ?string,
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
@@ -55,6 +58,7 @@ final readonly class ProcessUpdateInput
         $this->workspace = $this->stringValue($values, 'workspace');
         $this->name = $this->stringValue($values, 'name');
         $this->newName = $this->stringValue($values, 'new_name');
+        $this->label = $this->stringValue($values, 'label');
         $this->command = $this->stringValue($values, 'command');
         $this->restartPolicy = $this->stringValue($values, 'restart_policy');
         $this->crashNotification = $this->stringValue($values, 'crash_notification');
@@ -70,6 +74,7 @@ final readonly class ProcessUpdateInput
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
+     *     label?: ?string,
      *     command?: ?string,
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
@@ -122,6 +127,7 @@ final readonly class ProcessUpdateInput
             'instance' => $this->instance,
             'workspace' => $this->workspace,
             'name' => $this->newName,
+            'label' => $this->label,
             'command' => $this->command,
             'restart_policy' => $this->restartPolicy,
             'crash_notification' => $this->crashNotification,
@@ -136,6 +142,7 @@ final readonly class ProcessUpdateInput
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
+     *     label?: ?string,
      *     command?: ?string,
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
@@ -152,6 +159,7 @@ final readonly class ProcessUpdateInput
             'workspace' => $values['workspace'] ?? null,
             'name' => $values['name'] ?? null,
             'new_name' => $values['new_name'] ?? null,
+            'label' => $values['label'] ?? null,
             'command' => $values['command'] ?? null,
             'restart_policy' => $values['restart_policy'] ?? null,
             'crash_notification' => $values['crash_notification'] ?? null,

@@ -1,0 +1,86 @@
+{
+  "timestamp_utc": "2026-08-04T12:37:23Z",
+  "operator_cli": "apps/cli/orbit worktree source 0.1.190",
+  "gateway": {
+    "version": "0.1.190",
+    "time": "2026-08-04T12:37:34Z"
+  },
+  "active_gateway": {
+    "active_gateway": "default",
+    "gateways": [
+      {
+        "name": "default",
+        "active": true,
+        "url": "https://10.6.0.2",
+        "wireguard_ip": "10.6.0.2",
+        "ca_fingerprint": "sha256:d4c9703bc0243e0503fa0127e38fca96063f4ee87850f95930d7e2a4ec83faa7",
+        "timeout": 30,
+        "self_mode": "wireguard_https"
+      }
+    ]
+  },
+  "nodes_scanned": [
+    "agent",
+    "services1",
+    "beast",
+    "mini",
+    "NMBP",
+    "main1",
+    "database1",
+    "gateway",
+    "ingress1"
+  ],
+  "affected_nodes": [
+    {
+      "node": "beast",
+      "platform": "ubuntu_24-04",
+      "roles": [
+        "app-dev",
+        "database"
+      ],
+      "findings": [
+        {
+          "kind": "tool_row",
+          "slug": "polyscope-server",
+          "expected_state": "installed",
+          "source": "tool:list --node=beast"
+        },
+        {
+          "kind": "live_probe",
+          "slug": "polyscope-server",
+          "observed_state": "installed",
+          "managed": true,
+          "source": "tool:show polyscope-server --node=beast --live --json"
+        },
+        {
+          "kind": "agent_ide_config",
+          "adapter": "polyscope",
+          "source_field": "node",
+          "source": "node:show beast"
+        }
+      ],
+      "applicable_cleanup": [
+        "polyscope-server"
+      ],
+      "not_applicable": [
+        "opencode-cli"
+      ],
+      "notes": "opencode-cli tool:show --live returned tool.not_found; no opencode-cli/opencode-server process row in process:list"
+    }
+  ],
+  "unaffected_summary": {
+    "opencode-cli": "not found on agent, services1, beast, main1, database1, ingress1; unsupported on mini/NMBP (darwin); gateway not a tool node",
+    "polyscope-server": "only beast has registry+live installed state",
+    "agent_ide_non_null_adapter": [
+      "beast only"
+    ]
+  },
+  "cleanup_plan_post_update": [
+    {
+      "node": "beast",
+      "commands": [
+        "./apps/cli/orbit tool:remove polyscope-server --node=beast --force --json"
+      ]
+    }
+  ]
+}

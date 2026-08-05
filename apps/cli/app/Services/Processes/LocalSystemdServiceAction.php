@@ -13,7 +13,7 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalSystemdServiceAction
 {
-    private const array ACTIONS = ['apply', 'probe', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'is-active', 'probe', 'remove', 'restart', 'start', 'stop'];
 
     /**
      * @param  array<string, mixed>  $payload
@@ -183,7 +183,7 @@ final readonly class LocalSystemdServiceAction
             return [
                 'action' => $action,
                 'service' => $service,
-                'changed' => true,
+                'changed' => $action !== 'is-active',
             ];
         }
 

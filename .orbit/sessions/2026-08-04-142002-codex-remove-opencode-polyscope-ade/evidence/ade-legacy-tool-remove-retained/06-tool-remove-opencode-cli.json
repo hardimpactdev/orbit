@@ -1,0 +1,1 @@
+{"success":{"data":{"tool":{"name":"opencode-cli","node":"app-dev-1","stale_record":true,"legacy_runtime_cleanup":true,"routes_removed":0,"tool_row_removed":true,"process":{"name":"opencode-server","runtime":"systemd","tool":"opencode-cli","action":"removed"}}},"meta":[]}}

@@ -822,6 +822,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $timer,
             $startGatewayApiBeforeBake,
         ));
+
+        // After retarget writes the agent CLI config, prepare the managed agent
+        // user + ACL and probe LocalAgentRuntimeProbe paths.
+        if (isset($instances['agent'])) {
+            $timer->measure('agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                $instances,
+                $timer,
+            ));
+        }
+
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config, $timer));
 
         return $primaryUsers;
@@ -1026,6 +1036,14 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer,
                 $startGatewayApiBeforeBake,
             ));
+
+            if (isset($instances['agent'])) {
+                $cycleTimer->measure('reset.agent-runtime-readiness', fn () => $this->ensureAgentRuntimeReadiness(
+                    $instances,
+                    $cycleTimer,
+                ));
+            }
+
             $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes(
                 $instances,
                 $this->config,
@@ -1075,7 +1093,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                     continue;
                 }
 
-                $cycleTimer->measure("reset.command-ready.{$role}", fn () => $instance->waitForSsh(
+                $cycleTimer->measure("reset.command-ready.{$role}", static fn () => $instance->waitForSsh(
                     $primaryUser,
                     $sshKeyPair,
                 ));
@@ -1266,6 +1284,17 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 'retarget.bake',
                 timeoutSeconds: 900,
                 failureMessage: 'Could not retarget prepared downstream roles',
+            );
+        }
+
+        // bake-agent-node only registers the gateway row. Write the canonical
+        // orbit runtime CLI config on the agent VM so LocalAgentAclEnsure and
+        // LocalAgentRuntimeProbe can use /home/orbit/.config/orbit/config.json.
+        if (isset($instances['agent'])) {
+            $this->writeOrbitRuntimeCliConfig(
+                instance: $instances['agent'],
+                runtimeUser: 'orbit',
+                sshKeyPair: $sshKeyPair,
             );
         }
 
@@ -1512,31 +1541,42 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         SshKeyPair $sshKeyPair,
         bool $sourceMountedCheckout,
     ): void {
-        $this->writeOperatorCliConfig($operator, $config, $sshKeyPair, writeSourceEnv: false);
+        $this->writeOrbitRuntimeCliConfig(
+            instance: $operator,
+            runtimeUser: $config->operatorUser,
+            sshKeyPair: $sshKeyPair,
+            writeSourceEnv: false,
+        );
     }
 
-    private function writeOperatorCliConfig(
-        IncusInstance $operator,
-        E2EConfig $config,
+    /**
+     * Write the canonical Orbit CLI JSON config for an orbit-owned topology VM
+     * (operator, agent, app hosts). Same contract LocalAgentUserEnsure shim,
+     * LocalAgentAclEnsure, and LocalAgentRuntimeProbe read at
+     * /home/{runtimeUser}/.config/orbit/config.json.
+     */
+    private function writeOrbitRuntimeCliConfig(
+        IncusInstance $instance,
+        string $runtimeUser,
         SshKeyPair $sshKeyPair,
-        bool $writeSourceEnv,
+        bool $writeSourceEnv = false,
     ): void {
         $gatewayUrl = 'http://'.self::GatewayWireGuardIp;
-        $configDir = "/home/{$config->operatorUser}/.config/orbit";
+        $configDir = "/home/{$runtimeUser}/.config/orbit";
         $configPath = "{$configDir}/config.json";
         $commands = [];
 
         if ($writeSourceEnv) {
             $commands = [
-                'cd '.escapeshellarg("/home/{$config->operatorUser}/orbit/apps/cli"),
+                'cd '.escapeshellarg("/home/{$runtimeUser}/orbit/apps/cli"),
                 'touch .env',
                 "grep -Ev '^(ORBIT_GATEWAY_URL|ORBIT_GATEWAY_IDENTITY)=' .env > .env.tmp || true",
                 'mv .env.tmp .env',
                 sprintf("printf 'ORBIT_GATEWAY_URL=%%s\\n' %s >> .env", escapeshellarg($gatewayUrl)),
                 sprintf(
                     'chown %s:%s .env',
-                    escapeshellarg($config->operatorUser),
-                    escapeshellarg($config->operatorUser),
+                    escapeshellarg($runtimeUser),
+                    escapeshellarg($runtimeUser),
                 ),
             ];
         }
@@ -1551,9 +1591,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 escapeshellarg($configPath),
             ),
             sprintf('chmod 0600 %s', escapeshellarg($configPath)),
+            sprintf(
+                'chown %s:%s %s %s',
+                escapeshellarg($runtimeUser),
+                escapeshellarg($runtimeUser),
+                escapeshellarg($configDir),
+                escapeshellarg($configPath),
+            ),
         ];
 
-        E2ECommand::ssh($operator, $config->operatorUser, $sshKeyPair, implode(' && ', $commands), timeoutSeconds: 60);
+        E2ECommand::ssh($instance, $runtimeUser, $sshKeyPair, implode(' && ', $commands), timeoutSeconds: 60);
     }
 
     private function cliJsonConfigBody(string $gatewayUrl): string
@@ -1827,6 +1874,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     }
 
     /**
+     * Install a real home-local Orbit launcher that execs the source-mounted
+     * checkout binary. Production installs a real file at
+     * `$HOME/.local/bin/orbit`; prepared topologies previously used
+     * `ln -sfn` into the virtiofs source mount, and `setfacl` on that symlink
+     * target fails (stage=binary_acl). A real wrapper on the home filesystem
+     * keeps LocalAgentAclEnsure fail-closed while remaining agent-executable.
+     *
      * @param  array<string, IncusInstance>  $instances
      */
     private function activateSourceMountedLaunchers(
@@ -1834,13 +1888,24 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EConfig $config,
         ?E2EPhaseTimer $timer = null,
     ): void {
-        $sourceLauncher = '/home/orbit/orbit/bin/orbit';
+        // Pre-overlay only: bake/retarget need a home launcher before checkout.overlay
+        // installs the final /home/orbit/orbit-run runtime. Final proof must not
+        // rely on this path — E2ECurrentCheckout rewrites the wrapper after overlay.
+        $sourceLauncher = '/home/orbit/orbit/apps/cli/orbit';
         $tasks = [];
 
         foreach ($instances as $role => $instance) {
             $user = $role === 'operator' ? $config->operatorUser : 'orbit';
             $localBinDirectory = "/home/{$user}/.local/bin";
             $localLauncher = "{$localBinDirectory}/orbit";
+            // Real file on the home filesystem (not a symlink into virtiofs).
+            // LocalAgentAclEnsure setfacl -m u:agent:r-x requires ACL-capable FS.
+            $wrapperContents = <<<'BASH'
+                #!/usr/bin/env bash
+                set -euo pipefail
+
+                exec /home/orbit/orbit/apps/cli/orbit "$@"
+                BASH;
 
             $tasks[$role] = sprintf(
                 'incus exec %s -- sh -lc %s',
@@ -1852,8 +1917,19 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                         escapeshellarg($user),
                         escapeshellarg($localBinDirectory),
                     ),
-                    'ln -sfn '.escapeshellarg($sourceLauncher).' '.escapeshellarg($localLauncher),
-                    sprintf('chown -h %1$s:%1$s %2$s', escapeshellarg($user), escapeshellarg($localLauncher)),
+                    // Drop any prior symlink into the source mount; setfacl
+                    // must target a real file on the home filesystem.
+                    'rm -f '.escapeshellarg($localLauncher),
+                    'printf %s '.escapeshellarg($wrapperContents).' > '.escapeshellarg($localLauncher),
+                    'chmod 0755 '.escapeshellarg($localLauncher),
+                    sprintf(
+                        'chown %1$s:%1$s %2$s',
+                        escapeshellarg($user),
+                        escapeshellarg($localLauncher),
+                    ),
+                    'test -f '.escapeshellarg($localLauncher),
+                    'test ! -L '.escapeshellarg($localLauncher),
+                    'test -x '.escapeshellarg($localLauncher),
                 ])),
             );
         }
@@ -1865,6 +1941,49 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             'source-mounted-launcher',
             timeoutSeconds: 60,
             failureMessage: 'Could not activate source-mounted Orbit launchers',
+        );
+    }
+
+    /**
+     * Prepare the managed agent runtime user and required Orbit CLI/home
+     * accessibility on retained agent topologies before product proof begins.
+     * Mirrors the product agent-user ensure + ACL posture so tool install/probe
+     * does not require ad hoc role repair.
+     *
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function ensureAgentRuntimeReadiness(
+        array $instances,
+        ?E2EPhaseTimer $timer = null,
+    ): void {
+        $agent = $instances['agent'] ?? null;
+
+        if (! $agent instanceof IncusInstance) {
+            return;
+        }
+
+        // Canonical services only: user ensure, ACL ensure, runtime probe.
+        // Config must already exist from writeOrbitRuntimeCliConfig during retarget.
+        $script = <<<'SH_WRAP'
+            set -euo pipefail
+            test -f /home/orbit/.config/orbit/config.json
+            cd /home/orbit/orbit/apps/cli
+            php -r 'require "vendor/autoload.php"; (new App\Services\Nodes\LocalAgentUserEnsure)->ensure(); (new App\Services\Nodes\LocalAgentAclEnsure)->ensure(); $probe = (new App\Services\Nodes\LocalAgentRuntimeProbe)->check(); if (($probe["runtime_user"] ?? false) !== true || ($probe["orbit_cli"] ?? false) !== true) { fwrite(STDERR, json_encode($probe)."\n"); exit(1); }'
+            SH_WRAP;
+
+        IncusParallelHostTasks::run(
+            $this->hostFor($instances),
+            [
+                'agent' => sprintf(
+                    'incus exec %s -- bash -lc %s',
+                    escapeshellarg($agent->name()),
+                    escapeshellarg($script),
+                ),
+            ],
+            $timer ?? new E2EPhaseTimer,
+            'agent-runtime-readiness',
+            timeoutSeconds: 180,
+            failureMessage: 'Could not prepare the managed agent runtime user and Orbit CLI access',
         );
     }
 

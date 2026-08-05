@@ -10,7 +10,7 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'project' => 'docs',
+                'app' => 'docs',
                 'url' => 'https://feature-docs.docs.test',
             ],
         ], ['registry_only' => true]));
@@ -47,7 +47,7 @@ describe('workspace:show', function (): void {
 
         try {
             fakeGateway(fakeSuccessEnvelope([
-                'workspace' => ['name' => 'feature-docs', 'project' => 'docs'],
+                'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
             ]));
 
             [$exitCode, $output] = runCommand($this, 'workspace:show', [
@@ -78,13 +78,12 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'project' => 'docs',
+                'app' => 'docs',
                 'node' => 'app-1',
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
                 'url' => 'https://feature-docs.docs.test',
                 'php_version' => '8.5',
                 'php_inherited' => true,
-                'agent_ide' => ['adapter' => 'opencode', 'workspace_id' => null],
                 'adopted' => false,
                 'lifecycle_status' => 'expected',
             ],
@@ -114,11 +113,6 @@ describe('workspace:show', function (): void {
             ->toContain('Path')
             ->and($output)
             ->toContain('/home/orbit/apps/docs/.worktrees/feature-docs')
-            // Agent IDE
-            ->and($output)
-            ->toContain('Agent IDE')
-            ->and($output)
-            ->toContain('opencode')
             // PHP
             ->and($output)
             ->toContain('PHP')

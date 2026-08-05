@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 describe('process:list', function (): void {
     it('returns a canonical success envelope in JSON mode and forwards filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'vite',
@@ -44,14 +44,14 @@ describe('process:list', function (): void {
     it('forwards an app-instance selector and preserves concrete context in JSON', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'context' => [
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'workspace' => null,
             ],
             'processes' => [
                 [
                     'name' => 'vite',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'production',
                 ],
             ],
@@ -77,9 +77,62 @@ describe('process:list', function (): void {
             ->toBe('production');
     });
 
+    it('forwards the app hostname selector and rejects combining it with instance', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'context' => [
+                'app' => 'docs',
+                'instance' => 'development',
+                'workspace' => null,
+            ],
+            'processes' => [
+                [
+                    'name' => 'vite',
+                    'status' => 'running',
+                    'last_event' => ['id' => 1, 'type' => 'started'],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:list', [
+            '--app' => 'test.app.example',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            urldecode($request->url()),
+            'app=test.app.example',
+        ));
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['processes'][0]['status'])
+            ->toBe('running');
+
+        Http::fake();
+
+        [$rejectCode, $rejectOutput] = runCommand($this, 'process:list', [
+            '--app' => 'test.app.example',
+            '--instance' => 'docs',
+            '--json' => true,
+        ]);
+
+        $rejected = json_decode($rejectOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($rejectCode)
+            ->toBe(1)
+            ->and($rejected['error']['code'])
+            ->toBe('validation_failed')
+            ->and($rejected['error']['meta']['field'])
+            ->toBe('context');
+    });
+
     it('renders human output as a table with uppercase headers and derived status', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'instance' => 'production', 'workspace' => null],
+            'context' => ['app' => 'docs', 'instance' => 'production', 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'vite',
@@ -105,7 +158,9 @@ describe('process:list', function (): void {
             ->and($output)
             ->toContain('Processes for docs.production')
             ->and($output)
-            ->toContain('NAME')
+            ->toContain('KEY')
+            ->and($output)
+            ->toContain('LABEL')
             ->and($output)
             ->toContain('COMMAND')
             ->and($output)
@@ -135,7 +190,7 @@ describe('process:list', function (): void {
 
     it('renders each PostgreSQL service version and published endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['node' => 'database1', 'project' => null, 'workspace' => null],
+            'context' => ['node' => 'database1', 'app' => null, 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'postgres',
@@ -183,7 +238,7 @@ describe('process:list', function (): void {
 
     it('renders the missing-tool cell as an em dash', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [
                 ['name' => 'worker', 'command' => 'php worker', 'tool' => null, 'last_event' => null],
             ],
@@ -196,7 +251,7 @@ describe('process:list', function (): void {
 
     it('renders the documented empty state when no processes exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [],
         ]));
 

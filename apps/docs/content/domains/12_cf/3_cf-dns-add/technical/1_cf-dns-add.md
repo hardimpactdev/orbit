@@ -53,7 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Orbit Configuration Boundaries
 
-`cf-dns:add` writes Cloudflare provider state only. It must not create app domains, proxy routes, DNS resolver overrides local to the caller, or gateway-owned DNS configuration. Orbit-owned hostnames should normally be created through app and proxy flows that may call provider DNS application internally.
+`cf-dns:add` writes Cloudflare provider state only. It must not create instance domains, proxy routes, DNS resolver overrides local to the caller, or gateway-owned DNS configuration. Orbit-owned hostnames should normally be created through instance and proxy flows that may call provider DNS application internally.
 
 ## Renderer Contracts
 
@@ -69,7 +69,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`cf-dns:add` may help apply provider DNS for a proxy or app hostname, but it does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns ingress route health and [`doctor --family=instance`](../../../5_project/instance-doctor.md) owns app-domain health.
+`cf-dns:add` may help apply provider DNS for a proxy or app hostname, but it does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns ingress route health and [`doctor --family=instance`](../../../5_app/instance-doctor.md) owns app-domain health.
 
 ## Test Mapping
 

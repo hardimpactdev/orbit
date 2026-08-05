@@ -527,7 +527,117 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->and($legacyVpnRemoval)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
-        ->toContain('/home/orbit/orbit/bin/orbit');
+        ->toContain('/home/orbit/orbit/apps/cli/orbit');
+});
+
+it('installs a real home-local orbit launcher for source-mounted topologies', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+    $instances['agent'] = new IncusInstance(
+        $host,
+        'clone-agent',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+        hostSourcePath: '/home/orbit/orbit',
+    );
+
+    $method = new ReflectionMethod($provider, 'activateSourceMountedLaunchers');
+    $method->setAccessible(true);
+    $method->invoke(
+        $provider,
+        $instances,
+        incusAcquisitionReadinessConfig(),
+        new E2EPhaseTimer,
+    );
+
+    $joined = implode("\n", $commands());
+
+    // Pre-overlay prepare installs a real home launcher for bake/retarget. Final
+    // post-overlay shape is owned by E2ECurrentCheckout (orbit-run/apps/cli/orbit).
+    expect($joined)
+        ->toContain('/home/orbit/.local/bin/orbit')
+        ->toContain('/home/orbit/orbit/apps/cli/orbit')
+        ->toContain('exec /home/orbit/orbit/apps/cli/orbit')
+        ->toContain('rm -f ')
+        ->toContain('printf %s ')
+        ->toContain('test -f ')
+        ->toContain('test ! -L ')
+        ->toContain('test -x ')
+        ->not
+        ->toContain('ln -sfn ')
+        ->and($joined)
+        ->toContain("incus exec 'clone-agent'")
+        ->toContain("incus exec 'clone-gateway'")
+        ->toContain('/home/operator/.local/bin/orbit')
+        ->toMatch('/rm -f .*\/home\/orbit\/\.local\/bin\/orbit/')
+        ->toMatch('/test ! -L .*\/home\/orbit\/\.local\/bin\/orbit/')
+        ->toMatch('/printf %s .*exec \/home\/orbit\/orbit\/apps\/cli\/orbit/s');
+});
+
+it('prepares managed agent runtime user and CLI access before product proof on agent topologies', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+    $instances['agent'] = new IncusInstance(
+        $host,
+        'clone-agent',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+        hostSourcePath: '/home/orbit/orbit',
+    );
+
+    $method = new ReflectionMethod($provider, 'prepareInstances');
+    $method->setAccessible(true);
+    $method->invoke(
+        $provider,
+        $instances,
+        incusAcquisitionReadinessConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
+        E2ETopologyKind::OperatorGatewayAgent,
+    );
+
+    $joined = implode("\n", $commands());
+    $launcher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $agentBake = strpos($joined, 'orbit:internal:bake-agent-node');
+    $agentConfig = strpos($joined, '/home/orbit/.config/orbit/config.json');
+    $agentUserEnsure = strpos($joined, 'LocalAgentUserEnsure');
+    $agentAclEnsure = strpos($joined, 'LocalAgentAclEnsure');
+    $agentRuntimeProbe = strpos($joined, 'LocalAgentRuntimeProbe');
+
+    // bake-agent-node only registers the gateway row; the topology writer must
+    // place the canonical orbit CLI config before fail-closed ACL ensure.
+    expect($launcher)
+        ->toBeInt()
+        ->and($agentBake)
+        ->toBeInt()
+        ->and($agentConfig)
+        ->toBeInt()
+        ->and($agentUserEnsure)
+        ->toBeInt()
+        ->and($agentAclEnsure)
+        ->toBeInt()
+        ->and($agentRuntimeProbe)
+        ->toBeInt()
+        ->and($launcher)
+        ->toBeLessThan($agentBake)
+        ->and($agentBake)
+        ->toBeLessThan($agentConfig)
+        ->and($agentConfig)
+        ->toBeLessThan($agentUserEnsure)
+        ->and($agentUserEnsure)
+        ->toBeLessThan($agentAclEnsure)
+        ->and($agentAclEnsure)
+        ->toBeLessThan($agentRuntimeProbe)
+        ->and($joined)
+        ->toContain("incus exec 'clone-agent' -- runuser -u 'orbit'")
+        ->toContain('test -f /home/orbit/.config/orbit/config.json')
+        ->toMatch("/incus exec 'clone-agent' -- runuser -u 'orbit' -- bash -lc 'mkdir -p/")
+        // Pre-overlay ACL-compatible launcher (final post-overlay uses orbit-run via checkout).
+        ->toContain('exec /home/orbit/orbit/apps/cli/orbit')
+        ->not->toContain('ln -sfn ');
 });
 
 it('restores standalone wg-easy when post-convergence handoff cleanup fails', function (): void {
@@ -606,7 +716,7 @@ it('starts the gateway api before snapshot reset retarget bakes downstream roles
         ->and($sourceMountedLauncher)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
-        ->toContain('/home/orbit/orbit/bin/orbit');
+        ->toContain('/home/orbit/orbit/apps/cli/orbit');
 });
 
 it('clears known hosts on every clone through one parallel host call', function (): void {

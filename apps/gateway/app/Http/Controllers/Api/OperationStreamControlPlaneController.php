@@ -313,8 +313,20 @@ final readonly class OperationStreamControlPlaneController
         ]));
     }
 
-    public function stopDecision(OperationRun $operationRun): JsonResponse
+    public function stopDecision(Request $request, OperationRun $operationRun): JsonResponse
     {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node || $operationRun->target_node_id !== $caller->id) {
+            return $this->error(
+                'authorization_failed',
+                'Only the trusted target agent may evaluate the operation stream stop decision.',
+                [],
+                403,
+            );
+        }
+
         $channel = $this->channel($operationRun);
         $activeSubscribers = $this->leases->activeCount($operationRun, $channel);
 

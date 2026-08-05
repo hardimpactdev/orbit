@@ -103,7 +103,7 @@ access grant.
    include `node:read` or `*`; write modes require `node:permissions` or `*`.
    Callers without the required permission receive `authorization_failed`.
 3. Compute the normalized target permission set from the requested mode.
-4. Enforce the app-dev-only workspace boundary against both grant endpoints.
+4. Enforce the app-prod workspace-permission rejection against both grant endpoints.
 5. Apply the change to the grant. Reads return the current permissions
    without mutation. Mutations write the normalized set and report whether
    the grant was created or updated.

@@ -12,7 +12,7 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -71,7 +71,7 @@ final readonly class WorkspaceStepListController implements Loggable
         $app = $selection->app;
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return $this->validationFailed(
                 'instance',
                 $app->name,
@@ -90,7 +90,7 @@ final readonly class WorkspaceStepListController implements Loggable
 
         if (! $servingNode instanceof Node) {
             return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
-                'project' => $app->name,
+                'app' => $app->name,
             ]);
         }
 

@@ -28,7 +28,7 @@ function workspaceLogSeed(E2ETopologyHarness $topology): array
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -39,7 +39,7 @@ function workspaceLogSeed(E2ETopologyHarness $topology): array
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -179,7 +179,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
             ->toBe($runIds['failed'])
             ->and($failedRun['workspace'])
             ->toBe('feature-docs')
-            ->and($failedRun['project'])
+            ->and($failedRun['app'])
             ->toBe('docs')
             ->and($failedRun['status'])
             ->toBe('failed')

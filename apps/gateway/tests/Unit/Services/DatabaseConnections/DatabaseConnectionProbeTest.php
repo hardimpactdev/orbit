@@ -3,19 +3,18 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
-use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,7 +51,7 @@ describe('DatabaseConnectionProbe', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => databaseConnectionProbeAppInstance($app)->id,
+            'instance_id' => databaseConnectionProbeInstance($app)->id,
             'name' => 'feature',
             'path' => $workspacePath,
         ]);
@@ -69,7 +68,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'path' => '/srv/docs/.worktrees/feature/database/database.sqlite',
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $appConnection->id,
                 'env_prefix' => 'DB',
@@ -127,7 +126,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -168,7 +167,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'stored-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -237,13 +236,122 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
             ]);
 
         expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+    });
+
+    it('accepts managed docker postgres service aliases on the same node as the app target', function (): void {
+        $node = Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'beast',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $path = storage_path('framework/testing/database-probe-managed-docker-postgres-alias');
+        File::ensureDirectoryExists($path);
+        $dbPassword = substr(hash('sha256', 'horizon-demo-db'), 0, 16);
+        File::put(
+            $path.'/.env',
+            "DB_CONNECTION=pgsql\nDB_HOST=horizon-demo-postgres\nDB_PORT=5432\nDB_DATABASE=horizon\nDB_USERNAME=orbit\nDB_PASSWORD={$dbPassword}\n",
+        );
+
+        $app = databaseConnectionProbeApp([
+            'node_id' => $node->id,
+            'name' => 'horizon-demo',
+            'path' => $path,
+        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'horizon-demo-postgres',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'postgres',
+                    'version' => '16',
+                    'endpoint' => [
+                        'host' => '10.6.0.7',
+                        'port' => 5433,
+                    ],
+                    'ports' => [
+                        [
+                            'published' => 5433,
+                            'target' => 5432,
+                            'protocol' => 'tcp',
+                        ],
+                    ],
+                ],
+            ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'horizon-demo',
+            'driver' => 'pgsql',
+            'host' => '10.6.0.7',
+            'port' => 5433,
+            'database' => 'horizon',
+            'username' => 'orbit',
+            'credentials' => ['password' => $dbPassword],
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->forInstance(databaseConnectionProbeInstance($app))
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
+
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBeEmpty();
+    });
+
+    it('treats local sqlite connection-only and complete local sqlite env groups as not applicable', function (): void {
+        $node = Node::factory()->gateway()->create(['name' => 'nmbp', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-local-sqlite-not-applicable');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', <<<'ENV'
+            DB_CONNECTION=sqlite
+            HORIZON_DB_CONNECTION=sqlite
+            HORIZON_DB_DATABASE=database/database.sqlite
+            ENV);
+
+        databaseConnectionProbeApp([
+            'node_id' => $node->id,
+            'name' => 'mealou',
+            'path' => $path,
+        ]);
+
+        $issues = app(DatabaseConnectionProbe::class)->probe($node);
+
+        expect($issues)
+            ->toBe([])
+            ->and(collect($issues)->pluck('key')->all())
+            ->not->toContain('database_connection.unverifiable')
+            ->not->toContain('database_connection.env_extra');
+    });
+
+    it('still reports partial non-sqlite env groups as unverifiable', function (): void {
+        $node = Node::factory()->gateway()->create(['name' => 'nmbp', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-partial-pgsql-still-unverifiable');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\n");
+
+        databaseConnectionProbeApp([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+
+        $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+            ->firstWhere('key', 'database_connection.unverifiable');
+
+        expect($issue)
+            ->not
+            ->toBeNull()
+            ->and($issue['detail']['reason'] ?? null)
+            ->toBe('partial_env_group');
     });
 
     it('accepts renamed managed docker mysql service aliases as the stored endpoint', function (): void {
@@ -298,7 +406,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -339,7 +447,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -382,7 +490,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -410,9 +518,9 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe('unverifiable')
             ->and($issue['detail'])
             ->toMatchArray([
-                'target_type' => 'app_instance',
+                'target_type' => 'instance',
                 'app' => 'docs',
-                'app_instance' => 'development',
+                'instance' => 'development',
                 'env_prefix' => 'DB',
                 'connection' => 'docs',
                 'node' => 'gateway-1',
@@ -432,7 +540,7 @@ describe('DatabaseConnectionProbe', function (): void {
         );
     });
 
-    it('reports macOS as unsupported for same-node managed database self-route diagnostics without route mutation', function (): void {
+    it('treats macOS unsupported same-node database self-route diagnostics as not applicable without drift', function (): void {
         $node = Node::factory()
             ->gateway()
             ->create([
@@ -464,7 +572,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -476,14 +584,7 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.wireguard_self_route_unavailable');
 
         expect($issue)
-            ->not
             ->toBeNull()
-            ->and($issue['detail'])
-            ->toMatchArray([
-                'platform' => 'macos_15-4',
-                'reason' => 'unsupported_platform',
-                'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-            ])
             ->and($shell->scripts)
             ->toBe([]);
     });
@@ -646,7 +747,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'path' => $path,
         ]);
 
-        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBeEmpty();
     });
 
     it('reports a missing target mapping when observed env matches an existing connection', function (): void {
@@ -730,7 +831,7 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe('docs');
     });
 
-    it('requires sqlite node ownership when matching missing target mappings', function (): void {
+    it('does not treat local sqlite env as fleet env_extra even when another node owns a sqlite connection', function (): void {
         $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $otherNode = Node::factory()->gateway()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-probe-sqlite-node');
@@ -756,10 +857,9 @@ describe('DatabaseConnectionProbe', function (): void {
         $keys = collect(app(DatabaseConnectionProbe::class)->probe($node))->pluck('key')->all();
 
         expect($keys)
-            ->not
-            ->toContain('database_connection.target_missing')
-            ->and($keys)
-            ->toContain('database_connection.env_extra');
+            ->not->toContain('database_connection.target_missing')
+            ->not->toContain('database_connection.env_extra')
+            ->not->toContain('database_connection.unverifiable');
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {
@@ -784,7 +884,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -888,12 +988,12 @@ describe('DatabaseConnectionProbe', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionProbeApp(array $attributes): Project
+function databaseConnectionProbeApp(array $attributes): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
@@ -904,7 +1004,7 @@ function databaseConnectionProbeApp(array $attributes): Project
     return $app;
 }
 
-function databaseConnectionProbeAppInstance(Project $app): AppInstance
+function databaseConnectionProbeInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
 }

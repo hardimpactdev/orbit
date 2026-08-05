@@ -16,8 +16,9 @@ use Override;
  * @property ProcessEventType $event
  * @property string $event_id
  * @property int|null $process_id
+ * @property string $process_name
  * @property int|null $app_id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property int|null $workspace_id
  * @property int|null $node_id
  * @property string|null $unit_name
@@ -25,6 +26,14 @@ use Override;
  * @property string|null $exit_status
  * @property Carbon|null $exited_at
  * @property Carbon|null $recorded_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Process|null $process
+ * @property-read App|null $app
+ * @property-read App|null $app
+ * @property-read Instance|null $instance
+ * @property-read Node|null $node
+ * @property-read Workspace|null $workspace
  */
 class ProcessEvent extends Model
 {
@@ -35,8 +44,9 @@ class ProcessEvent extends Model
         'event',
         'event_id',
         'process_id',
+        'process_name',
         'app_id',
-        'app_instance_id',
+        'instance_id',
         'workspace_id',
         'node_id',
         'unit_name',
@@ -58,27 +68,19 @@ class ProcessEvent extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     /**

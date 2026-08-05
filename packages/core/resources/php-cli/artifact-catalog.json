@@ -1,0 +1,162 @@
+{
+    "schema_version": 1,
+    "tool": "php-cli",
+    "catalog_role": "runtime",
+    "install_contract": "matrix",
+    "static_php_cli_version": "2.8.5",
+    "static_php_cli_ext_json_sha256": "0fe7716d8cb199f34076c06a601b3ff9c8ffbce11d92a0bbd455d9d4f2d18d42",
+    "static_php_cli_source_json_sha256": "573dc8b14c1e9f7bf4623054064c27a0c09ff6a67ce262cf53a73ad91104b4a0",
+    "sqlite_version": "3.44.6",
+    "sqlite_source_id": "863c171b76cd36e0c71662d4a50d84da531cc7fbead893d02459577febdf6396",
+    "sqlite_archive_sha256": "c25cd42f803d5fb0af5f1a2863c9f529a8fd35177cb24b0f6e970b1cc96f00f0",
+    "pcov": {
+        "version": "1.0.12",
+        "url": "https://pecl.php.net/get/pcov-1.0.12.tgz",
+        "filename": "pcov-1.0.12.tgz",
+        "archive_sha256": "23255c8c9335a9636ccb743f5302436a97a582a0bbde9869485be911bbc15da8",
+        "spc_source_name": "pcov",
+        "config_m4_php_version_patch": "packages/core/resources/php-cli/pcov-1.0.12-config-m4-php-version.patch",
+        "config_m4_php_version_patch_sha256": "c8aa7d1496e437549cbb13a5df734f83b26b59545eeb436184957e20db089951",
+        "note": "config.m4 patch avoids PHP_VERSION=$($PHP_CONFIG --vernum) clobber when PHP_CONFIG is empty in static in-tree builds."
+    },
+    "patch_pins": {
+        "8.5": "8.5.8",
+        "8.4": "8.4.21",
+        "8.3": "8.3.31"
+    },
+    "php_source_sha256": {
+        "8.5.8": "58910198d19e873048fe87cdfe16bc790025417ede3d1651bfa1c4b533d573f2",
+        "8.4.21": "7cf5d8ab12c3b2016875bcfaec71bef1ef0b07bed6148f2c447577074431f984",
+        "8.3.31": "66410cee07f4b2baeb0843140bb2a2b52ef930b5cf9b3d6e6d158b33aae8fa37"
+    },
+    "spc_archive_sha256": {
+        "linux-x86_64": "523ba4279c54c7a377156c0dd3a36adf92ee64b01e9a7f5e9e2ec084b8e458e5",
+        "macos-aarch64": "acf2f25d56d0cbf8e65aa82e5054fef555f7be7c5c38046c6e0819f266d83225"
+    },
+    "platforms": [
+        "linux-x86_64",
+        "macos-aarch64"
+    ],
+    "variants": [
+        "coverage",
+        "standard"
+    ],
+    "extensions": {
+        "base": [
+            "apcu",
+            "bcmath",
+            "bz2",
+            "calendar",
+            "ctype",
+            "curl",
+            "dba",
+            "dom",
+            "zlib",
+            "openssl",
+            "sockets",
+            "event",
+            "exif",
+            "fileinfo",
+            "filter",
+            "ftp",
+            "gd",
+            "gmp",
+            "iconv",
+            "imagick",
+            "imap",
+            "intl",
+            "mbstring",
+            "mbregex",
+            "mysqlnd",
+            "mysqli",
+            "opcache",
+            "opentelemetry",
+            "pcntl",
+            "pdo",
+            "pdo_mysql",
+            "pgsql",
+            "phar",
+            "posix",
+            "protobuf",
+            "readline",
+            "session",
+            "redis",
+            "shmop",
+            "simplexml",
+            "xml",
+            "libxml",
+            "soap",
+            "sodium",
+            "sqlite3",
+            "swoole-hook-pgsql",
+            "swoole-hook-mysql",
+            "swoole-hook-sqlite",
+            "swoole",
+            "sysvmsg",
+            "sysvsem",
+            "sysvshm",
+            "tokenizer",
+            "xmlreader",
+            "xmlwriter",
+            "xsl",
+            "zip"
+        ],
+        "coverage_extra": [
+            "pcov"
+        ]
+    },
+    "compatibility": {
+        "note": "Retained production install path until the fleet-scoped 9-cell Orbit matrix is published and install_contract is promoted to matrix: Orbit-owned checksummed 8.5 plus intentional unchecksummed historical bulk static-php.dev for 8.3/8.4. Role variant config is still persisted as desired; doctor classifies against the effective standard compatibility runtime (desired/effective/pending evidence, no false coverage_missing). Only matrix install_contract fails closed on missing checksums.",
+        "orbit_artifact_base_url": "https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6",
+        "bulk_base_url": "https://dl.static-php.dev/static-php-cli/bulk",
+        "orbit_owned_minors": [
+            "8.5"
+        ],
+        "artifact_name_template": "php-{patch}-cli-{platform}.tar.gz",
+        "published_checksums": {
+            "8.5.8": {
+                "linux-x86_64": "305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828",
+                "macos-aarch64": "fbd88fc83c699e2f65030f314937ec05edba41209bd38c8baa11b86f224a9329"
+            }
+        }
+    },
+    "matrix": {
+        "artifact_base_url": "https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6",
+        "artifacts": {
+            "8.5.8": {
+                "coverage": {
+                    "linux-x86_64": "99b4c794928963bb777432318493d08bdf5e57eab8ed19fc232057dd4e09846e",
+                    "macos-aarch64": "433e5771e93440a42d7dfe51b7b6471a579cdebe06ecea43d4033b44280e3475"
+                },
+                "standard": {
+                    "linux-x86_64": "40a7d8144d5e90a7ce8d2cd12fc86758acef8dedc4f95025dee56d1b3a6ddf15"
+                }
+            },
+            "8.4.21": {
+                "coverage": {
+                    "linux-x86_64": "ef263520a63801d396a2ef82e4bd5cf914f5d22e53ad7778fa77f93b542782c8",
+                    "macos-aarch64": "501aac4737a3fed18844df1c9072f07b19640e6554bfc80b977f50006e80cde9"
+                },
+                "standard": {
+                    "linux-x86_64": "cfc0a7a9c22280a2eda800b3f3bf6f674b0cbe8e74c6d677d2e6ac21c3461859"
+                }
+            },
+            "8.3.31": {
+                "coverage": {
+                    "linux-x86_64": "7ad21714b60d0f8e6c5988aa86b38967baa1171ac6a91b4133b050c170fdd239",
+                    "macos-aarch64": "0e6133985f20b9f5691c419701e79513112e38f7954aa1bd898d087b73e60bef"
+                },
+                "standard": {
+                    "linux-x86_64": "524db47fbfae402a338dd63ab0c16064e34054790fd892a022fef22539030bf1"
+                }
+            }
+        }
+    },
+    "publication": {
+        "status": "published",
+        "note": "Promoted from build catalog after object-storage publication of the fleet-scoped 9-cell matrix.",
+        "published_count": 9,
+        "total_count": 9,
+        "updated_at": "2026-07-29T23:00:46+00:00"
+    }
+}

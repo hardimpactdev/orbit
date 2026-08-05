@@ -11,7 +11,7 @@ supported removal path.
 ## Usage
 
 ```bash
-orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples
@@ -24,7 +24,9 @@ orbit tool:remove composer --node=app-1 --json --force
 
 ## Arguments and options
 
-- `tool`: Tool name from Orbit's tool catalog.
+- `tool`: Tool name from Orbit's tool catalog, or a documented removal-only
+  residual slug accepted by this command (`openclaw`, `opencode-cli`,
+  `opencode`, `opencode-server`, `polyscope-server`).
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--instance`: Resolve the target node from a concrete instance. Bare logical
   shorthand is valid only when exactly one instance is visible.
@@ -48,18 +50,55 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 2. Verifies the tool supports managed removal.
 3. Requires destructive consent from `--force` or an interactive confirmation
    prompt. Output mode never grants consent.
-4. Removes managed node artifacts through the gateway.
-5. Removes tool-owned credential material and service endpoint configuration when the
+4. When the tool definition declares a `relatedProcess()`, removes that
+   process intent and runtime unit first (matched by process `name` and
+   `tool`), before tool binary/home teardown, so a restarting unit cannot
+   race cleanup. Process runtime-unit warnings from that step are returned
+   on the removal result when present.
+5. Removes managed node artifacts through the gateway.
+6. Removes tool-owned credential material and service endpoint configuration when the
    selected tool owns those artifacts.
-6. Removes the gateway tool row when cleanup succeeds.
-7. Reports partial cleanup if gateway configuration and node reality diverge.
+7. Removes the gateway tool row when cleanup succeeds.
+8. Removes matching tool-owned proxy routes for that tool on the target node
+   through the same backend/TLS cleanup path as `proxy:remove --force`
+   (`ProxyRouteFixer::removeExtra`), then deletes the registry rows. When
+   backend cleanup fails the registry row is kept so the operator can retry.
+9. Reports partial cleanup if gateway configuration and node reality diverge.
 
 The gateway cleans up its tool row and tool-owned configuration locally.
 Target-node cleanup uses Agent push; `tool:remove` exposes no node transport
 selector and never falls back to SSH.
 
+Tools that currently declare a related process include `hermes` (`orbit-hermes-dashboard`).
+Removed OpenCode and PolyScope tools are accepted only as removal-only migration
+cleanup (same pattern as OpenClaw), not as active related-process product tools.
+
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.
+
+### OpenClaw removal-only migration
+
+OpenClaw is **not** a supported first-party agent tool (no install, update,
+reconfigure, or credentials). The exact slug `openclaw` remains accepted by
+`tool:remove` as a **removal-only migration**:
+
+```bash
+orbit tool:remove openclaw --node=<agent-node> --force --json
+```
+
+That path runs even when no `NodeTool` row remains. It stops residual
+OpenClaw systemd/user units, uses privileged `sudo ss` to terminate
+listeners on port `18789` (including agent-owned PIDs), kills
+leftover agent-owned OpenClaw processes, deletes `/home/agent/.openclaw`,
+clears matching process intent, and only then removes tool-owned proxy
+backend/TLS plus registry rows. Hermes is not affected.
+
+Host cleanup success is **verified**: the script exits nonzero (and
+`tool:remove` fails with `tool.remote_action_failed`, without deleting
+proxy/tool rows after the script step) if port `18789` is still listening,
+an OpenClaw process remains, or `/home/agent/.openclaw` still exists.
+Successful process-unit removal alone is not sufficient proof
+that the runtime is gone.
 
 ## Output
 

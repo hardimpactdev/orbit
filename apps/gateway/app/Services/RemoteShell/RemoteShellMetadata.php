@@ -37,6 +37,12 @@ final class RemoteShellMetadata
         'VITE_VALET_HOST',
     ];
 
+    /**
+     * Prefix redaction for residual env keys. ORBIT_POLYSCOPE_ is retained so
+     * historical host env exports still redact without restoring product support.
+     *
+     * @var list<string>
+     */
     private const array Prefixes = [
         'ORBIT_DEPLOY_',
         'ORBIT_POLYSCOPE_',

@@ -36,12 +36,16 @@ it('keeps a gateway image build context that excludes host secrets and local art
         ->and($ignore)
         ->toContain('!packages/core/src/**')
         ->and($ignore)
+        ->toContain('!packages/core/resources/php-cli/artifact-catalog.json')
+        ->and($ignore)
         ->toContain('!packages/sdk/src/**')
         ->and($ignore)
         ->not->toContain('!apps/gateway/**')->and($ignore)
         ->not->toContain('!apps/reverb/**')->and($ignore)
         ->not->toContain('!packages/core/**')->and($ignore)
-        ->not->toContain('!packages/sdk/**')->and($ignore)->toContain('.git')->and($ignore)->toContain(
+        ->not->toContain('!packages/sdk/**')->and($ignore)
+        ->not->toContain('!packages/core/resources/php-cli/artifact-catalog.build.json')
+        ->not->toContain('!packages/core/resources/php-cli/**')->toContain('.git')->and($ignore)->toContain(
             'apps/gateway/database/*.sqlite',
         )->and($ignore)->toContain('apps/gateway/storage/*.sqlite')->and($ignore)->toContain(
             'apps/gateway/storage/logs',
@@ -89,13 +93,13 @@ it('keeps the gateway image capable of mounted source commands for source-dev to
         ->toContain('composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts')
         ->toContain('composer dump-autoload --no-dev --no-interaction --optimize --no-scripts')
         ->toContain('COPY packages/core/src /srv/orbit/packages/core/src')
+        ->toContain(
+            'COPY packages/core/resources/php-cli/artifact-catalog.json /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json',
+        )
         ->toContain('COPY packages/sdk/src /srv/orbit/packages/sdk/src')
-        ->toContain('download.docker.com/linux/debian')
-        ->toContain('docker-ce-cli')
-        ->toContain('docker-compose-plugin')
-        ->toContain('git')
-        ->toContain('openssh-client')
-        ->toContain('procps')
+        ->not->toContain('artifact-catalog.build.json')->toContain('download.docker.com/linux/debian')->toContain(
+            'docker-ce-cli',
+        )->toContain('docker-compose-plugin')->toContain('git')->toContain('openssh-client')->toContain('procps')
         ->not->toContain('COPY --from=composer')
         ->not->toContain('COPY --from=docker')->and($entrypoint)->toContain(
             'ORBIT_GATEWAY_APP_ROOT:-/srv/orbit/apps/gateway',

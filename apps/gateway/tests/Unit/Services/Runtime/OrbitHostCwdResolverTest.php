@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\Project;
+use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -12,18 +12,18 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function appAtPath(string $name, string $path): Project
+function appAtPath(string $name, string $path): App
 {
     $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => "app-{$name}"]);
 
-    return Project::factory()->for($node, 'node')->create([
+    return App::factory()->for($node, 'node')->create([
         'name' => $name,
         'path' => $path,
         'runtime' => AppRuntimeKind::Php,
     ]);
 }
 
-function workspaceAtPath(Project $app, string $name, string $path): Workspace
+function workspaceAtPath(App $app, string $name, string $path): Workspace
 {
     return Workspace::factory()->for($app, 'app')->create([
         'name' => $name,

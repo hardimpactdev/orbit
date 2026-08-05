@@ -17,7 +17,7 @@ it('reads configured and generated tool credentials from gateway intent', functi
         $result = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:credentials opencode-server --node=app-dev-1 --json',
+                'cd %s && orbit tool:credentials hermes --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -28,7 +28,7 @@ it('reads configured and generated tool credentials from gateway intent', functi
             ->toBeTrue()
             ->and($payload['success']['data']['credentials'])
             ->toMatchArray([
-                'tool' => 'opencode-server',
+                'tool' => 'hermes',
                 'node' => 'app-dev-1',
                 'fields' => [
                     'host' => '127.0.0.1',
@@ -38,12 +38,12 @@ it('reads configured and generated tool credentials from gateway intent', functi
                 ],
             ]);
 
-        toolCredentialsSeedOpencodeServerGatewayIntent($topology);
+        toolCredentialsSeedHermesGatewayIntent($topology);
 
         $generatedResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:credentials opencode-server --node=app-dev-1 --json',
+                'cd %s && orbit tool:credentials hermes --node=app-dev-1 --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 180,
@@ -58,12 +58,12 @@ it('reads configured and generated tool credentials from gateway intent', functi
             ->toBeTrue()
             ->and($generatedPayload['success']['data']['credentials'])
             ->toMatchArray([
-                'tool' => 'opencode-server',
+                'tool' => 'hermes',
                 'node' => 'app-dev-1',
                 'fields' => [
                     'host' => '127.0.0.1',
                     'port' => 4096,
-                    'url' => 'https://opencode.app-dev-1.test',
+                    'url' => 'https://hermes.app-dev-1.test',
                     'username' => 'orbit',
                     'password' => 'generated-secret',
                 ],
@@ -79,7 +79,7 @@ function toolCredentialsSeedGatewayIntent(E2ETopologyHarness $topology): void
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
         \App\Models\NodeTool::query()->updateOrCreate(
-            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            ['node_id' => $node->id, 'name' => 'hermes'],
             [
                 'expected_state' => 'running',
                 'expected_version' => null,
@@ -106,13 +106,13 @@ function toolCredentialsSeedGatewayIntent(E2ETopologyHarness $topology): void
     );
 }
 
-function toolCredentialsSeedOpencodeServerGatewayIntent(E2ETopologyHarness $topology): void
+function toolCredentialsSeedHermesGatewayIntent(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
         \App\Models\NodeTool::query()->updateOrCreate(
-            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            ['node_id' => $node->id, 'name' => 'hermes'],
             [
                 'expected_state' => 'running',
                 'expected_version' => null,
@@ -121,7 +121,7 @@ function toolCredentialsSeedOpencodeServerGatewayIntent(E2ETopologyHarness $topo
                     'fields' => [
                         'host' => '127.0.0.1',
                         'port' => 4096,
-                        'url' => 'https://opencode.app-dev-1.test',
+                        'url' => 'https://hermes.app-dev-1.test',
                         'username' => 'orbit',
                         'password' => 'generated-secret',
                     ],

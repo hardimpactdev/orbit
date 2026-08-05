@@ -28,7 +28,7 @@ describe('instance:env', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/projects/billing/instances/development/env'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
                 && $request->data() === [
                     'key' => 'APP_DEBUG',
                     'value' => 'false',
@@ -42,7 +42,7 @@ describe('instance:env', function (): void {
     it('renders human set output naming the saved key and instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'instance',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'development',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-development/.env',
@@ -83,7 +83,7 @@ describe('instance:env', function (): void {
     it('renders human render output as an aligned effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'instance',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -121,7 +121,7 @@ describe('instance:env', function (): void {
     it('renders human render output with an empty effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'instance',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -164,7 +164,7 @@ describe('instance:env', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/projects/billing/instances/production/env/render'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/production/env/render'
             ),
         );
 
@@ -174,7 +174,7 @@ describe('instance:env', function (): void {
     it('renders human list output as a table of non-secret env variables', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'instance',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -218,7 +218,7 @@ describe('instance:env', function (): void {
     it('renders human empty list output when no env variables exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'instance',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -292,7 +292,7 @@ describe('instance:env', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/projects/billing/instances/development/env'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
                 && $request->data() === [
                     'key' => 'MAIL_MAILER',
                     'value' => 'smtp',

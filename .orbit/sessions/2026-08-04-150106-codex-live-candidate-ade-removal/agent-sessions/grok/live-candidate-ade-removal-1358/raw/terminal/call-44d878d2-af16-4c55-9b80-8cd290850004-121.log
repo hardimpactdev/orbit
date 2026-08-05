@@ -1,0 +1,17 @@
+FINALIZATION: PASS git merge codex/live-candidate-ade-removal
+MERGE_CHECK_EXIT=0
+Updating a9fb5932d..8ae06ade9
+Fast-forward
+ apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php              |  1 -
+ apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php                  |  1 -
+ apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php |  9 +++++++
+ apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php  | 93 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ docker/orbit-gateway/Dockerfile                                       |  1 -
+ docker/orbit-gateway/Dockerfile.dockerignore                          |  2 --
+ 6 files changed, 100 insertions(+), 7 deletions(-)
+MERGE_EXIT=0
+8ae06ade95405b5c08eccbc6056d74ee1f5b334a
+8ae06ade9 Drop stale node-scripts fingerprint paths and harden COPY test
+d749df13d Remove stale gateway Docker node-scripts packaging
+a9fb5932d Archive ADE/OpenCode/PolyScope removal compact loop
+## main...origin/main [ahead 2]

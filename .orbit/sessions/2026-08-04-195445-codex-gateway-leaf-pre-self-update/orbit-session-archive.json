@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T17:54:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-leaf-pre-self-update/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-195445-codex-gateway-leaf-pre-self-update",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T175156Z-1910526d5bae.json"
+    ],
+    "entry_digests": {
+        "loop.md": "90aed15ea1ef5f2dd5d334eb8ad7dee070d2632c41ff408c031e2e6ae20f98e5",
+        "quality-gates/quality-check-2026-08-04T175156Z-1910526d5bae.json": "7618b783c15921986d9da578d4590dec7c822bb6b11c4d14776ccdf868062963"
+    },
+    "slug": "codex-gateway-leaf-pre-self-update",
+    "requested_slug": "codex-gateway-leaf-pre-self-update",
+    "compatible_slugs": [
+        "codex-gateway-leaf-pre-self-update"
+    ],
+    "branch": "codex/gateway-leaf-pre-self-update",
+    "candidate_commit": "83bced2a3683eaedde39752c6083d06224638ad8",
+    "accepted_feature_tip": "83bced2a3683eaedde39752c6083d06224638ad8",
+    "accepted_main_tip": "8c5fd7a8fd832053537d2821ed3c209ee0385533",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

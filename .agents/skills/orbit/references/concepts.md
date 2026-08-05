@@ -71,7 +71,7 @@ Standing configuration is tracked as **state families**. Each family is a gatewa
 | Family key | Tracks |
 |---|---|
 | `node` | Fleet membership, roles, gateway identity, node reachability |
-| `instance` | Concrete project-instance placement and runtime intent |
+| `instance` | Concrete app-instance placement and runtime intent |
 | `workspace` | Per-workspace route, setup policy, PHP override, and runtime intent |
 | `process` | Runtime units for instances, workspaces, and node processes |
 | `proxy` | HTTP ingress for instances, workspaces, custom routes, tool routes, redirects, gateway API |
@@ -112,17 +112,17 @@ they do not own gateway state.
 ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$
 ```
 
-Length limits: project <=40, instance <=63, node <=63, workspace <=63,
+Length limits: app <=40, instance <=63, node <=63, workspace <=63,
 process <=64.
 
 Hostnames:
 
-- Development instance: `{project}.{node-tld}` (e.g. `myapp.beast`).
-- Workspace: `{workspace}.{project}.{tld}` (e.g. `feature.myapp.beast`).
+- Development instance: `{app}.{node-tld}` (e.g. `myapp.beast`).
+- Workspace: `{workspace}.{app}.{tld}` (e.g. `feature.myapp.beast`).
 - Production instance: the value of `--domain` (globally unique across the fleet).
 
 Process runtime unit name:
-`orbit_<project>_<instance>_<workspace|main>_<process>`.
+`orbit_<app>_<instance>_<workspace|main>_<process>`.
 Launchd-backed units use label `dev.hardimpact.orbit.<runtimeUnit>`.
 
 ## Target resolution order
@@ -158,7 +158,7 @@ transitional transport only for commands that have not yet migrated.
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
-agent-facing stream JSON commands include `doctor`, `project:new`, `instance:setup`,
+agent-facing stream JSON commands include `doctor`, `app:new`, `instance:setup`,
 `workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
 `tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, `s3:unpublish`,
 and `update:all`. `--stream-json` and `--json` are mutually exclusive; use
@@ -184,6 +184,6 @@ not need this.
 - It doesn't keep a separate "sync" command per family  -  adoption is `doctor --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.
 - It doesn't use PHP-FPM or Supervisor for instance/workspace web runtimes.
-- It doesn't proxy git credentials. `project:new --repo=...` clones through Agent
+- It doesn't proxy git credentials. `app:new --repo=...` clones through Agent
   push as the target node's Orbit runtime user, using credentials already
   available on that node.

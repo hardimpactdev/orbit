@@ -11,8 +11,8 @@ use App\Exceptions\AnalyticsOperationFailed;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use App\Services\Analytics\AppAnalyticsPayloadFactory;
 use App\Services\Apps\AppSelectorResolver;
@@ -30,7 +30,7 @@ final class AppAnalyticsController implements Loggable
         private readonly AppAnalyticsPayloadFactory $payloads,
     ) {}
 
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     private ?string $activityTargetName = null;
 
@@ -62,7 +62,7 @@ final class AppAnalyticsController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         $publicHosts = $request->input('public_hosts', []);
 
@@ -81,7 +81,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: $exception->errorCode(),
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         } catch (InvalidArgumentException $exception) {
@@ -95,7 +95,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.prerequisite_failed',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -129,7 +129,7 @@ final class AppAnalyticsController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $binding = $service->disable($targetApp);
@@ -137,14 +137,14 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: $exception->errorCode(),
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -178,7 +178,7 @@ final class AppAnalyticsController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $binding = $service->show($targetApp);
@@ -186,7 +186,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -220,7 +220,7 @@ final class AppAnalyticsController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $binding = $service->show($targetApp);
@@ -228,7 +228,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }

@@ -19,8 +19,7 @@ use Override;
  * @property string $reverb_app_secret
  * @property list<string> $allowed_origins
  * @property list<string> $public_hosts
- * @property-read Project $project
- * @property-read Project $app
+ * @property-read App $app
  */
 class AppWebSocketBinding extends Model
 {
@@ -53,18 +52,10 @@ class AppWebSocketBinding extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 }

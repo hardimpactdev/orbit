@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -47,7 +47,7 @@ describe('ProcessRestartController', function (): void {
         $caller = createProcessRestartCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessRestartAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessRestartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -68,7 +68,8 @@ describe('ProcessRestartController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_development_main_vite')
-            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'stopped');
+            ->assertJsonPath('success.data.runtimes.0.events.0.type', 'restarting')
+            ->assertJsonPath('success.data.runtimes.0.events.1.type', 'started');
 
         expect(ProcessEvent::query()->where('event', 'started')->exists())->toBeTrue();
     });
@@ -76,7 +77,7 @@ describe('ProcessRestartController', function (): void {
     it('returns partial runtime failure data', function (): void {
         createProcessRestartCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessRestartApiRemoteShell([
@@ -106,7 +107,7 @@ describe('ProcessRestartController', function (): void {
     it('requires authorization before runtime side effects', function (): void {
         createProcessRestartCallerNode();
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessRestartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);

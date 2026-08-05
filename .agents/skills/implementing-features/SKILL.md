@@ -37,7 +37,15 @@ result.
 3. Resolve the outcome, owned paths, constraints, and out-of-scope work. Check
    `PRODUCT_DECISIONS.md` and the relevant `apps/docs/content/` authority.
 4. Fill or update the seeded `.orbit/loop.md` Goal and Scope. Keep the anchor
-   compact; raw feedback belongs in `.orbit/feedback.jsonl`.
+   compact; raw feedback belongs in `.orbit/feedback.jsonl`. For stateful,
+   lifecycle, or concrete UX features, append one optional compact clause on the
+   existing Scope `Owned` row:
+   `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+   Omit the clause for ordinary/local changes. When the markers are present,
+   deterministic lint checks only syntax and field presence (both markers, the
+   five known transition keys, no duplicates/empties/placeholders); it does not
+   decide statefulness or grade prose. Do not invent a new Scope row, lane, or
+   semantic grader for this framing.
 5. Retrieve relevant prior feedback by exact or parent surface when a stable
    scope exists. The command searches the primary archive corpus by default and
    returns matched records plus linked promotions and waivers:
@@ -70,8 +78,14 @@ observer, analyzer, capture, or specialist lanes.
 
 ## PROVE
 
-Run the narrowest relevant verification while building. Before review, run the
-diff-routed broader gate:
+After FRAME, derive the proof venue before expensive PROVE work:
+
+```bash
+bin/orbit-feature-acceptance route
+```
+
+Use that venue for the rest of the loop. Run the narrowest relevant verification
+while building. Before review, run the diff-routed broader gate:
 
 - docs-only: `composer docs-lint`;
 - any non-docs repository change: `composer quality-check`;
@@ -81,8 +95,21 @@ diff-routed broader gate:
 When the Goal claims runtime reachability or convergence, proof must directly
 exercise the claimed final outcome. Configuration validation, artifact
 presence, and successful intermediate hops are supporting evidence, not
-substitutes. A failed or explicitly excluded final hop means
-`Verification.runtime` cannot be recorded as `passed`.
+substitutes. A failed, excluded, still-required, or deferred final hop means
+`Verification.runtime` cannot be recorded as `passed`. For non-`automated`
+venues, record the structured runtime receipt on the existing
+`Verification.runtime` row (candidate-bound `candidate=`, `venue=`,
+`environment=`, `target=` or `command=`, `expected=`, `observed=`,
+`result=passed`, exact existing `evidence=` file under `.orbit/evidence/` or
+`.orbit/quality-gates/`). Live/production claims require exact
+`environment=live`; ordinary retained topology may use `environment=dev-fixture`.
+Scan incomplete final-hop language in free-form detail or `observed=` only. Do
+not invent a parallel receipt, artifact, or lane. If the final hop is
+incomplete, failed, or deferred, remain in PROVE: acceptance cannot arm or stay
+armed; follow FIX -> BUILD -> PROVE before ACCEPT or LAND. A same-candidate
+proof retry may keep Review and Reviewed feature tip; a repair that changes HEAD
+still needs a refreshed review. Do not treat post-LAND closure proof as a
+substitute for the current candidate receipt.
 
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.
@@ -139,10 +166,13 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 
 The conservative venues are:
 
-- `automated` as the proof venue for docs, tests, declarative workflow files,
-  and repository tooling under `bin/`; repository tooling still requires
-  diff-routed `composer quality-check`;
-- `retained-incus` for CLI and node/runtime behavior;
+- `automated` for docs, tests, declarative workflow files, repository tooling
+  under `bin/`, and repository-only TypeScript SDK packaging under
+  `packages/sdk-typescript/**`; those surfaces still require diff-routed
+  `composer quality-check`;
+- `retained-incus` for shared core (`packages/core/src/**`), PHP SDK
+  (`packages/sdk/**`; production require of CLI/gateway), CLI, and
+  node/runtime behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
 
@@ -225,6 +255,23 @@ message rather than accepting a bare `source=user` claim.
 
 ## LAND
 
+Prefer the resumable primary-main coordinator:
+
+```bash
+bin/orbit-feature-land \
+  --branch=<feature> \
+  --worktree=<exact-feature-worktree> \
+  --solo-project-id=<session-owned-numeric-id>
+```
+
+`--status`/`--plan` report the observed phase and next safe action; `--one-step`
+executes only that boundary. Resume is idempotent from Git/archive/Solo state.
+Every destructive mutation still goes through
+`bin/orbit-feature-finalization-check` and is executed only after
+`FINALIZATION: PASS`.
+
+Manual equivalent:
+
 1. Fill final Proof and Status in `.orbit/loop.md`.
 2. Lint it with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`.
 3. Confirm exact successful gates, reviewer PASS, acceptance, feature HEAD,
@@ -234,14 +281,21 @@ message rather than accepting a bare `source=user` claim.
    After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd, never cwd main.
-   Cite each retained evidence or quality-gate file in `.orbit/loop.md` as one
-   exact inline-code path; do not cite directories, prose, or padded spans.
-   Use `--full` only for failure, escalation, security/release scope, or explicit
-   request.
-6. Commit the archive/index.
+   Cite each retained evidence, quality-gate, or release-evidence file in
+   `.orbit/loop.md` as one exact inline-code path under `.orbit/evidence/`,
+   `.orbit/quality-gates/`, or `.orbit/release-evidence/`; do not cite
+   directories, prose, or padded spans. Runtime acceptance receipts remain
+   limited to `.orbit/evidence/` and `.orbit/quality-gates/`. Use `--full`
+   only for failure, escalation, security/release scope, or explicit request.
+6. Commit the archive/index (cleanup requires those bytes tracked/committed).
 7. After the archive/index commit:
+   - Cleanup in order: stop session-owned processes; delete the session-owned
+     Solo project (exact path == feature worktree); remove the exact clean
+     merged worktree; delete the exact merged feature branch. Solo project
+     deletion must complete before worktree removal so ownership checks remain
+     satisfiable.
    - Validate each cleanup mutation with
-     `bin/orbit-feature-finalization-check <exact git command>`.
+     `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.
    Leave the primary checkout on updated `main` without altering unrelated
    files.

@@ -1,11 +1,11 @@
 # `orbit cf-cache-rule:remove`
 
-Remove the Cloudflare cache rule that Orbit manages for an app domain.
+Remove the Cloudflare cache rule that Orbit manages for an app's Cloudflare-backed domain.
 
 ## Usage
 
 ```bash
-orbit cf-cache-rule:remove <project> [--force] [--json]
+orbit cf-cache-rule:remove <app> [--force] [--json]
 ```
 
 ## Examples
@@ -17,17 +17,21 @@ orbit cf-cache-rule:remove docs --force --json
 
 ## Arguments and options
 
-- `project`: Orbit project name whose Cloudflare cache rule should be removed.
+- `app`: Bare app name. Current gateway resolution uses
+  `App.domain` to find the Cloudflare zone. Dotted `app.instance`
+  selectors are not implemented.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
-Run `orbit cf-cache-rule:remove <project>` to remove the Cloudflare cache rule that Orbit manages for the project.
+Run `orbit cf-cache-rule:remove <app>` to remove the Cloudflare cache rule
+that Orbit manages for the app's Cloudflare zone.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
-cache rule for the app's Cloudflare zone. It does not remove app domains, DNS
-records, proxy routes, or app deployment policy.
+cache rule for the zone resolved from the app's domain. It does not remove
+app domains, DNS records, proxy routes, or deployment policy. Direction
+(pending): zone resolution from instance-owned domains.
 
 Removal is destructive. Interactive use asks for confirmation unless `--force`
 is supplied. Non-interactive use, including `--json`, requires `--force`.
@@ -44,8 +48,8 @@ output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The app exists and has a real domain in a Cloudflare zone.
-- A Cloudflare cache rule managed by Orbit exists for the app.
+- The named app exists and has a Cloudflare-backed `App.domain`.
+- A Cloudflare cache rule managed by Orbit exists for that zone.
 
 ## Related Commands
 

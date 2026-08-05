@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# Merge immutable php-cli build manifests into the build/handoff catalog.
+# Does not publish artifacts or invent credentials.
+# Null artifact slots are intentional and must be writable (array_key_exists, not isset).
+
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CATALOG_PATH="${ORBIT_PHP_CLI_CATALOG:-${ROOT_DIR}/packages/core/resources/php-cli/artifact-catalog.build.json}"
+manifest_dir=""
+promote_runtime=0
+
+usage() {
+    echo "Usage: bin/orbit-php-cli-catalog-handoff --manifest-dir <dir> [--catalog <path>] [--promote-runtime]" >&2
+    echo "  Updates the build catalog from manifests. With --promote-runtime, when the" >&2
+    echo "  build matrix is fully published, also writes install_contract=matrix into the" >&2
+    echo "  runtime catalog (packages/core/resources/php-cli/artifact-catalog.json)." >&2
+    exit 64
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --manifest-dir)
+            manifest_dir="${2:-}"
+            shift 2
+            ;;
+        --catalog)
+            CATALOG_PATH="${2:-}"
+            shift 2
+            ;;
+        --promote-runtime)
+            promote_runtime=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "unknown argument: $1" >&2
+            usage
+            ;;
+    esac
+done
+
+[ -n "$manifest_dir" ] || usage
+[ -d "$manifest_dir" ] || { echo "manifest dir not found: ${manifest_dir}" >&2; exit 1; }
+[ -f "$CATALOG_PATH" ] || { echo "catalog not found: ${CATALOG_PATH}" >&2; exit 1; }
+
+RUNTIME_CATALOG_PATH="${ORBIT_PHP_CLI_RUNTIME_CATALOG:-${ROOT_DIR}/packages/core/resources/php-cli/artifact-catalog.json}"
+
+php -r '
+    $catalogPath = $argv[1];
+    $manifestDir = $argv[2];
+    $promoteRuntime = $argv[3] === "1";
+    $runtimeCatalogPath = $argv[4];
+
+    $catalog = json_decode((string) file_get_contents($catalogPath), true, flags: JSON_THROW_ON_ERROR);
+    if (! is_array($catalog)) {
+        throw new RuntimeException("Catalog must be a JSON object: {$catalogPath}");
+    }
+
+    $artifactsRoot = null;
+    if (isset($catalog["artifacts"]) && is_array($catalog["artifacts"])) {
+        $artifactsRoot =& $catalog["artifacts"];
+    } elseif (isset($catalog["matrix"]["artifacts"]) && is_array($catalog["matrix"]["artifacts"])) {
+        $artifactsRoot =& $catalog["matrix"]["artifacts"];
+    } else {
+        throw new RuntimeException("Catalog is missing artifacts or matrix.artifacts: {$catalogPath}");
+    }
+
+    $hasSlot = static function (array $artifacts, string $patch, string $variant, string $platform): bool {
+        if (! array_key_exists($patch, $artifacts) || ! is_array($artifacts[$patch])) {
+            return false;
+        }
+        if (! array_key_exists($variant, $artifacts[$patch]) || ! is_array($artifacts[$patch][$variant])) {
+            return false;
+        }
+
+        return array_key_exists($platform, $artifacts[$patch][$variant]);
+    };
+
+    $expectedFilename = static function (string $patch, string $variant, string $platform): string {
+        return "php-{$patch}-cli-{$variant}-{$platform}.tar.gz";
+    };
+
+    $updated = 0;
+    $seenCells = [];
+    $manifestFiles = glob(rtrim($manifestDir, "/")."/*.manifest.json") ?: [];
+
+    foreach ($manifestFiles as $manifestFile) {
+        $manifest = json_decode((string) file_get_contents($manifestFile), true, flags: JSON_THROW_ON_ERROR);
+        $tool = $manifest["tool"] ?? null;
+        $patch = $manifest["php_version"] ?? null;
+        $variant = $manifest["variant"] ?? null;
+        $platform = $manifest["platform"] ?? null;
+        $sha = $manifest["sha256"] ?? null;
+        $filename = $manifest["filename"] ?? null;
+
+        if ($tool !== "php-cli") {
+            throw new RuntimeException("Manifest tool must be php-cli: {$manifestFile}");
+        }
+
+        if (! is_string($patch) || ! is_string($variant) || ! is_string($platform) || ! is_string($sha)) {
+            throw new RuntimeException("Invalid manifest: {$manifestFile}");
+        }
+
+        if (! preg_match("/^[a-f0-9]{64}$/", $sha)) {
+            throw new RuntimeException("Invalid sha256 in {$manifestFile}");
+        }
+
+        $cellKey = "{$patch}/{$variant}/{$platform}";
+        if (isset($seenCells[$cellKey])) {
+            throw new RuntimeException("Duplicate manifest cell {$cellKey}: {$manifestFile} conflicts with {$seenCells[$cellKey]}");
+        }
+        $seenCells[$cellKey] = $manifestFile;
+
+        // Filename is required: never invent/default the cell name from patch/variant/platform.
+        $expected = $expectedFilename($patch, $variant, $platform);
+        if (! is_string($filename) || $filename === "") {
+            throw new RuntimeException(
+                "Manifest filename must be a non-empty string equal to {$expected}: {$manifestFile}",
+            );
+        }
+        if ($filename !== $expected) {
+            throw new RuntimeException(
+                "Manifest filename mismatch in {$manifestFile}: got {$filename}, expected {$expected}",
+            );
+        }
+
+        if (! $hasSlot($artifactsRoot, $patch, $variant, $platform)) {
+            throw new RuntimeException("Catalog has no slot for {$patch}/{$variant}/{$platform}");
+        }
+
+        $artifactsRoot[$patch][$variant][$platform] = $sha;
+        $updated++;
+    }
+
+    $published = 0;
+    $total = 0;
+    foreach ($artifactsRoot as $patch => $variants) {
+        if (! is_array($variants)) {
+            continue;
+        }
+        foreach ($variants as $variant => $platforms) {
+            if (! is_array($platforms)) {
+                continue;
+            }
+            foreach ($platforms as $platform => $sha) {
+                $total++;
+                if (is_string($sha) && preg_match("/^[a-f0-9]{64}$/", $sha)) {
+                    $published++;
+                }
+            }
+        }
+    }
+
+    $catalog["publication"] = [
+        "status" => $published === $total && $total > 0
+            ? "published"
+            : ($published > 0 ? "partial" : "unpublished"),
+        "note" => "Checksums are filled by CI/build handoff after immutable artifact publication. null sha256 means the artifact is not yet published.",
+        "published_count" => $published,
+        "total_count" => $total,
+        "updated_at" => gmdate("c"),
+    ];
+
+    file_put_contents(
+        $catalogPath,
+        json_encode($catalog, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+    );
+
+    fwrite(STDOUT, "Updated {$updated} catalog checksum slots ({$published}/{$total} published) in {$catalogPath}.\n");
+
+    if (! $promoteRuntime) {
+        exit(0);
+    }
+
+    if ($published !== $total || $total === 0) {
+        throw new RuntimeException(
+            "Refusing runtime promotion: build matrix is not fully published ({$published}/{$total}).",
+        );
+    }
+
+    $artifactBaseUrl = $catalog["artifact_base_url"] ?? null;
+    if (! is_string($artifactBaseUrl) || trim($artifactBaseUrl) === "") {
+        throw new RuntimeException(
+            "Refusing runtime promotion: build catalog is missing artifact_base_url.",
+        );
+    }
+    $artifactBaseUrl = rtrim($artifactBaseUrl, "/");
+
+    if (! is_file($runtimeCatalogPath)) {
+        throw new RuntimeException("Runtime catalog not found: {$runtimeCatalogPath}");
+    }
+
+    $runtime = json_decode((string) file_get_contents($runtimeCatalogPath), true, flags: JSON_THROW_ON_ERROR);
+    if (! is_array($runtime)) {
+        throw new RuntimeException("Runtime catalog must be a JSON object");
+    }
+
+    $runtime["install_contract"] = "matrix";
+    $runtime["catalog_role"] = "runtime";
+    $runtime["matrix"] = [
+        "artifact_base_url" => $artifactBaseUrl,
+        "artifacts" => $artifactsRoot,
+    ];
+    $runtime["publication"] = [
+        "status" => "published",
+        "note" => "Promoted from build catalog after object-storage publication of the fleet-scoped 9-cell matrix.",
+        "published_count" => $published,
+        "total_count" => $total,
+        "updated_at" => gmdate("c"),
+    ];
+
+    file_put_contents(
+        $runtimeCatalogPath,
+        json_encode($runtime, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+    );
+
+    fwrite(STDOUT, "Promoted runtime catalog to install_contract=matrix ({$published}/{$total}) at {$artifactBaseUrl}.\n");
+' "$CATALOG_PATH" "$manifest_dir" "$promote_runtime" "$RUNTIME_CATALOG_PATH"

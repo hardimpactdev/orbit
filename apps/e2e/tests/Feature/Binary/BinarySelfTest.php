@@ -417,7 +417,7 @@ it('--version prints the expected version', function (): void {
         // Use --no-ansi to strip ANSI color codes from the version output.
         $result = runOrbitBinary(['--version', '--no-ansi'], env: ['HOME' => $sandboxHome]);
 
-        // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
+        // Note: Pest's toContain() is variadic — do not pass a failure message as a
         // second argument; it would be interpreted as a second needle and fail.
         expect($result['exit_code'])
             ->toBe(0, 'Binary --version exited with '.$result['exit_code'].': '.$result['stderr']);

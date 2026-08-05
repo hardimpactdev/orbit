@@ -25,54 +25,6 @@ message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
-code = "literal-named-argument"
-message = "Literal argument `''` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
-code = "no-nested-ternary"
-message = "Nested ternary expressions are confusing due to PHP's operator associativity rules."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "no-boolean-flag-parameter"
-message = "Avoid boolean flag parameters."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
-count = 2
-
-[[issues]]
-file = "app/Commands/App/AppAgentIdeCommand.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Commands/App/AppEnvCommand.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -125,30 +77,6 @@ file = "app/Commands/App/AppNewCommand.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
 count = 1
-
-[[issues]]
-file = "app/Commands/App/AppPruneCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppPruneCommand.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppPruneCommand.php"
-code = "no-boolean-flag-parameter"
-message = "Avoid boolean flag parameters."
-count = 2
-
-[[issues]]
-file = "app/Commands/App/AppPruneCommand.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
-count = 2
 
 [[issues]]
 file = "app/Commands/App/AppRegisterCommand.php"
@@ -955,126 +883,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "constant-name"
-message = "Constant name `AdapterOpenCode` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "constant-name"
-message = "Constant name `AdapterPolyscope` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterLookupCommand.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `AdapterOpenCode` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `AdapterPolyscope` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `MaxBranchLength` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `MaxWorkspaceIdLength` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `MaxWorkspacePathLength` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `UpdateHostBranch` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "constant-name"
-message = "Constant name `UpdateWorkspaceBranch` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "halstead"
-message = "Method has a high halstead effort"
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Commands/Metrics/MetricsEnableCommand.php"
 code = "constant-name"
 message = "Constant name `GatewayTimeoutSeconds` should be in constant case."
@@ -1096,12 +904,6 @@ count = 1
 file = "app/Commands/Metrics/MetricsStatusCommand.php"
 code = "prefer-early-continue"
 message = "Consider using early continue pattern to reduce nesting."
-count = 1
-
-[[issues]]
-file = "app/Commands/Node/NodeAgentIdeCommand.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
 count = 1
 
 [[issues]]
@@ -3799,42 +3601,6 @@ message = "Literal argument `404` should be passed as a named argument for clari
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "function-name"
-message = "Function name `agentIdeMessageSuccess` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "function-name"
-message = "Function name `runAgentIdeMessageWithStdin` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume and effort"
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'agent-ide:message'` should be passed as a named argument for clarity."
-count = 8
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'r+'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `500` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
 file = "tests/Feature/Commands/Analytics/AnalyticsUpdateCommandTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
@@ -3955,31 +3721,31 @@ message = "Literal argument `'instance:env'` should be passed as a named argumen
 count = 11
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:add'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:list'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:remove'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:show'` should be passed as a named argument for clarity."
 count = 2
@@ -8776,186 +8542,6 @@ count = 1
 file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `configureWorkspaceAdapterOperationTokenGuard` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `createEmptySqliteDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `createOpenCodeWorkspaceDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `createPolyscopeConfigDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `createPolyscopeWorkspaceDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `createWritableSqliteDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `removeWorkspaceAdapterTempDirectory` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `runWorkspaceAdapterLookupCommand` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "function-name"
-message = "Function name `workspaceAdapterSignedOperationToken` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
-code = "no-literal-password"
-message = "Literal passwords or sensitive data should not be stored in code."
-count = 2
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "explicit-octal"
-message = "Use explicit octal numeral notation."
-count = 3
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `configureWorkspaceAdapterUpdateOperationTokenGuard` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `createEmptyWorkspaceAdapterUpdateDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `createPolyscopeWorkspaceUpdateDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `createWritableWorkspaceAdapterUpdateDatabase` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `removeWorkspaceAdapterUpdateTempDirectory` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `runWorkspaceAdapterUpdateCommand` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `validWorkspaceAdapterUpdateOptions` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `workspaceAdapterUpdateDatabaseRow` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `workspaceAdapterUpdateRunProcess` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "function-name"
-message = "Function name `workspaceAdapterUpdateSignedOperationToken` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume and effort"
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = 'Literal argument `"base\n"` should be passed as a named argument for clarity.'
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = 'Literal argument `"created by opencode\n"` should be passed as a named argument for clarity.'
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = 'Literal argument `"test\n"` should be passed as a named argument for clarity.'
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0444` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0644` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `256` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
-code = "no-literal-password"
-message = "Literal passwords or sensitive data should not be stored in code."
 count = 1
 
 [[issues]]

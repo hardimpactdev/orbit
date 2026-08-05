@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T17:39:58+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-live-topology-intent/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-193958-live-topology-intent",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/dev-92f4b4-openclaw-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T173417Z-17c49a52df08.json"
+    ],
+    "entry_digests": {
+        "evidence/dev-92f4b4-openclaw-runtime-proof.md": "1fdff4752c46a27726e4b98396f4854a4f3c34f70bf82fd4a7f8d16cde39856c",
+        "loop.md": "8f7a027d17f2c47414a0da3c0c0d802cc138456cb72eeb400e072ac57db323fe",
+        "quality-gates/quality-check-2026-08-02T173417Z-17c49a52df08.json": "2bea5616112c071d839893a6aa1eb1e28201c0bf213b3c0d2c0abe005dca839c"
+    },
+    "branch": "codex/live-topology-intent",
+    "candidate_commit": "496f895cdce72e3b12264fd98ed114668ec02ff5",
+    "accepted_feature_tip": "496f895cdce72e3b12264fd98ed114668ec02ff5",
+    "accepted_main_tip": "b60c0a357cf301d0abcc26103228d16da6efd4a5",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

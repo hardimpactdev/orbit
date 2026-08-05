@@ -13,7 +13,7 @@ workspace or reset its state.
 Run this command to tear down a workspace and its owned artifacts.
 
 ```bash
-orbit workspace:remove [name] [--instance=<project.instance>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--instance=<app.instance>] [--keep-files] [--force] [--json]
 ```
 
 Destructive consent is always required before removal side effects start.
@@ -60,7 +60,7 @@ orbit workspace:remove feature-api --force
 
 - `name`: workspace name. Optional when running from inside a registered
   workspace directory.
-- `--instance=<project.instance>`: the parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: the parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to target one concrete instance.
   Required only when the workspace name is ambiguous across visible targets.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy

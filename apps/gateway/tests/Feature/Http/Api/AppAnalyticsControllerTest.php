@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\AppAnalyticsBinding;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
@@ -73,7 +73,7 @@ function createAppAnalyticsRoutePrerequisites(bool $withRouter = true, bool $wit
     }
 }
 
-function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): Project
+function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -100,15 +100,15 @@ function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress 
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    $project = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,
     ]);
 
-    AppInstance::factory()->for($project)->create(['name' => 'production']);
+    Instance::factory()->for($app)->create(['name' => 'production']);
 
-    return $project;
+    return $app;
 }
 
 /**
@@ -174,7 +174,7 @@ describe('AppAnalyticsController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.project', 'docs')
+            ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.site_domain', 'docs.test')
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')
@@ -256,7 +256,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.prerequisite_failed')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppAnalyticsBinding::query()->count())->toBe(0);
     });
@@ -274,7 +274,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.domain_required')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
             ->toBeFalse()
@@ -294,9 +294,9 @@ describe('AppAnalyticsController', function (): void {
                 return new ProxyRoute(['domain' => self::ServiceDomain]);
             }
 
-            public function assertPublicHostsAvailable(Project $app, array $hosts): void {}
+            public function assertPublicHostsAvailable(App $app, array $hosts): void {}
 
-            public function removeObsoletePublicHosts(Project $app, array $desiredHosts): void {}
+            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void {}
 
             public function syncPublicHosts(AppAnalyticsBinding $binding): void {}
 
@@ -314,7 +314,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.route_enactment_failed')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue();
@@ -332,7 +332,7 @@ describe('AppAnalyticsController', function (): void {
         $registrar = new class extends AnalyticsRouteRegistrar {
             public function __construct() {}
 
-            public function removeObsoletePublicHosts(Project $app, array $desiredHosts): void
+            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
             {
                 throw new RuntimeException('Ingress Caddy cleanup failed.');
             }
@@ -344,7 +344,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.route_cleanup_failed')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue();
@@ -362,7 +362,7 @@ describe('AppAnalyticsController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.project', 'docs')
+            ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', false)
             ->assertJsonPath('success.data.binding.public_hosts', []);
 
@@ -389,7 +389,7 @@ describe('AppAnalyticsController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.project', 'docs')
+            ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test']);
     });
@@ -404,7 +404,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.binding_missing')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
     });
 
     it('returns read-only public verification context for authorized callers', function (): void {
@@ -422,7 +422,7 @@ describe('AppAnalyticsController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.verification_context.binding.project', 'docs')
+            ->assertJsonPath('success.data.verification_context.binding.app', 'docs')
             ->assertJsonPath('success.data.verification_context.binding.enabled', true)
             ->assertJsonPath('success.data.verification_context.routes.0.host', 'analytics.docs.test')
             ->assertJsonPath('success.data.verification_context.routes.0.status', 'registered')

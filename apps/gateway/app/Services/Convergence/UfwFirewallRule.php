@@ -12,6 +12,7 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Firewall\FirewallRuleProbe;
+use App\Services\Firewall\FirewallRuleShapeCanonicalizer;
 use App\Services\Firewall\RemoteFirewallRule;
 
 final readonly class UfwFirewallRule
@@ -227,14 +228,21 @@ final readonly class UfwFirewallRule
      */
     public function expectedShape(): array
     {
+        $source = $this->normalizeAnyEndpoint($this->source);
+        $destination = $this->destination === null ? null : $this->normalizeAnyEndpoint($this->destination);
+
         return [
             'direction' => $this->direction,
             'action' => $this->action,
-            'source' => $this->normalizeAnyEndpoint($this->source),
-            'destination' => $this->destination === null ? null : $this->normalizeAnyEndpoint($this->destination),
+            'source' => $source,
+            'destination' => $destination,
             'port' => $this->port,
             'protocol' => $this->protocol,
-            'address_family' => $this->addressFamily,
+            'address_family' => FirewallRuleShapeCanonicalizer::effectiveAddressFamily(
+                $this->addressFamily,
+                $source,
+                $destination,
+            ),
             'interface' => $this->interface,
         ];
     }
@@ -346,10 +354,12 @@ final readonly class UfwFirewallRule
 
     private function normalizeAnyEndpoint(string $value): string
     {
-        return match ($value) {
+        $value = match ($value) {
             '0.0.0.0/0', '::/0' => 'any',
             default => $value,
         };
+
+        return FirewallRuleShapeCanonicalizer::canonicalizeHostCidr($value);
     }
 
     /**

@@ -52,7 +52,7 @@ final class DoctorPanelRenderer
      * @var array<string, array{label: string, keys: list<string>}>
      */
     private const array ENTITY_COLUMNS = [
-        'instance' => ['label' => 'INSTANCE', 'keys' => ['instance', 'project', 'slug', 'name']],
+        'instance' => ['label' => 'INSTANCE', 'keys' => ['instance', 'app', 'slug', 'name']],
         'workspace' => ['label' => 'WORKSPACE', 'keys' => ['workspace', 'name']],
         'process' => ['label' => 'PROCESS', 'keys' => ['process', 'name', 'unit']],
         'proxy' => ['label' => 'DOMAIN', 'keys' => ['domain', 'host']],
@@ -71,7 +71,7 @@ final class DoctorPanelRenderer
      * @var array<string, array{label: string, keys: list<string>}>
      */
     private const array ISSUE_RESOURCE_LABELS = [
-        'instance' => ['label' => 'Instance', 'keys' => ['instance', 'project', 'slug', 'name']],
+        'instance' => ['label' => 'Instance', 'keys' => ['instance', 'app', 'slug', 'name']],
         'workspace' => ['label' => 'Workspace', 'keys' => ['workspace', 'name']],
         'process' => ['label' => 'Process', 'keys' => ['process', 'name', 'unit']],
         'proxy' => ['label' => 'Proxy route', 'keys' => ['domain', 'host', 'route']],
@@ -118,7 +118,7 @@ final class DoctorPanelRenderer
      *
      * @var list<string>
      */
-    private const array PROCESS_APP_KEYS = ['project', 'slug'];
+    private const array PROCESS_APP_KEYS = ['app', 'slug'];
 
     /** Issue-kind sort order within a category. */
     private const array KIND_ORDER = ['unverifiable', 'missing', 'divergent', 'extra'];
@@ -237,19 +237,21 @@ final class DoctorPanelRenderer
             $nodeIssues = $issuesByNode[$nodeName] ?? [];
             $rendersIssueDetails = $mode === 'verify' && $nodeIssues !== [];
             $nodeProgress = $this->nodeCheckProgress($report, $nodeName);
+            $status = $this->fleetNodeStatusText(
+                nodeIssues: $nodeIssues,
+                options: [
+                    'progressStatus' => $this->nodeProgressStatus($report, $nodeName),
+                    'mode' => $mode,
+                    'detailsFollow' => $rendersIssueDetails,
+                    'completed' => $nodeProgress['completed'] ?? null,
+                    'total' => $nodeProgress['total'] ?? null,
+                ],
+            );
+            $status = $this->withFleetNodeRoles($status, $this->fleetNodeRoles($report, $nodeName));
 
             foreach ($this->fleetNodeRows(
                 $nodeName,
-                $this->fleetNodeStatusText(
-                    nodeIssues: $nodeIssues,
-                    options: [
-                        'progressStatus' => $this->nodeProgressStatus($report, $nodeName),
-                        'mode' => $mode,
-                        'detailsFollow' => $rendersIssueDetails,
-                        'completed' => $nodeProgress['completed'] ?? null,
-                        'total' => $nodeProgress['total'] ?? null,
-                    ],
-                ),
+                $status,
                 $frame,
             ) as $categoryLine) {
                 $lines[] = $categoryLine;
@@ -633,6 +635,7 @@ final class DoctorPanelRenderer
 
                 return [
                     "{$issueCount} among {$nodeCount}",
+                    ...$this->dispositionSummaryLines($report),
                     'Run doctor --fix manually or through an LLM to resolve issues',
                 ];
             }
@@ -641,6 +644,7 @@ final class DoctorPanelRenderer
 
             return [
                 $count,
+                ...$this->dispositionSummaryLines($report),
                 'Run doctor --fix manually or through an LLM to resolve issues',
             ];
         }
@@ -657,16 +661,72 @@ final class DoctorPanelRenderer
         $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
         $failed = $this->intValue($summary, 'failed');
         $completed = $this->intValue($summary, 'fixed') + $this->intValue($summary, 'adopted');
+        $lines = [];
 
         if ($failed > 0) {
-            return ["{$failed} actions failed; review remaining issues"];
+            $lines[] = "{$failed} actions failed; review remaining issues";
+        } elseif ($totalIssues === 0) {
+            $lines[] = "No issues remaining; {$completed} actions completed";
+        } else {
+            $lines[] = "{$totalIssues} issues remaining";
         }
 
-        if ($totalIssues === 0) {
-            return ["No issues remaining; {$completed} actions completed"];
+        $stopReason = is_string($summary['stop_reason'] ?? null) ? $summary['stop_reason'] : null;
+        $passes = is_int($summary['passes'] ?? null) ? $summary['passes'] : null;
+
+        if ($stopReason !== null && $passes !== null && $this->mode($report) === 'restore') {
+            $lines[] = "Restore convergence: {$passes} pass(es), stop={$stopReason}";
         }
 
-        return ["{$totalIssues} issues remaining"];
+        return [
+            ...$lines,
+            ...$this->dispositionSummaryLines($report),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function dispositionSummaryLines(array $report): array
+    {
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $dispositions = is_array($summary['dispositions'] ?? null) ? $summary['dispositions'] : null;
+
+        if ($dispositions === null) {
+            $counts = [
+                'genuine_drift' => 0,
+                'blocked_inspection' => 0,
+                'invalid_intent' => 0,
+                'runtime_incident' => 0,
+            ];
+
+            foreach ($this->issues($report) as $issue) {
+                $disposition = is_string($issue['disposition'] ?? null) ? $issue['disposition'] : '';
+
+                if (array_key_exists($disposition, $counts)) {
+                    $counts[$disposition]++;
+                }
+            }
+
+            $dispositions = $counts;
+        }
+
+        $parts = [];
+
+        foreach (['genuine_drift', 'blocked_inspection', 'invalid_intent', 'runtime_incident'] as $disposition) {
+            $count = is_int($dispositions[$disposition] ?? null) ? $dispositions[$disposition] : 0;
+
+            if ($count > 0) {
+                $parts[] = "{$disposition}={$count}";
+            }
+        }
+
+        if ($parts === []) {
+            return [];
+        }
+
+        return ['Dispositions: '.implode(' ', $parts)];
     }
 
     private function actionRunningText(string $mode): string
@@ -962,12 +1022,34 @@ final class DoctorPanelRenderer
     {
         $summary = $this->issueSummary($issue);
         $resource = $this->issueResourceLabel($issue);
+        $disposition = $this->issueDispositionLabel($issue);
+        $body = $summary;
 
-        if ($resource === '' || str_contains(strtolower($summary), strtolower($resource))) {
-            return $summary;
+        if ($resource !== '' && ! str_contains(strtolower($summary), strtolower($resource))) {
+            $body = "{$resource}: {$summary}";
         }
 
-        return "{$resource}: {$summary}";
+        if ($disposition === '') {
+            return $body;
+        }
+
+        return "[{$disposition}] {$body}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function issueDispositionLabel(array $issue): string
+    {
+        $disposition = is_string($issue['disposition'] ?? null) ? $issue['disposition'] : '';
+
+        return match ($disposition) {
+            'genuine_drift' => 'genuine_drift',
+            'blocked_inspection' => 'blocked_inspection',
+            'invalid_intent' => 'invalid_intent',
+            'runtime_incident' => 'runtime_incident',
+            default => '',
+        };
     }
 
     /**
@@ -1046,11 +1128,11 @@ final class DoctorPanelRenderer
             return "{$resource['label']} {$value}";
         }
 
-        $project = $this->firstDetailValue($detail, self::PROCESS_APP_KEYS);
+        $app = $this->firstDetailValue($detail, self::PROCESS_APP_KEYS);
 
-        return $project === ''
+        return $app === ''
             ? "{$resource['label']} {$value}"
-            : "{$resource['label']} {$value} for project {$project}";
+            : "{$resource['label']} {$value} for app {$app}";
     }
 
     /**
@@ -1073,15 +1155,15 @@ final class DoctorPanelRenderer
                 : "Database connection {$envPrefix} for workspace {$workspace}";
         }
 
-        $project = $this->firstDetailValue($detail, ['project']);
+        $app = $this->firstDetailValue($detail, ['app']);
 
-        if ($project === '') {
+        if ($app === '') {
             return '';
         }
 
         return $envPrefix === ''
-            ? "Database connection for project {$project}"
-            : "Database connection {$envPrefix} for project {$project}";
+            ? "Database connection for app {$app}"
+            : "Database connection {$envPrefix} for app {$app}";
     }
 
     /**
@@ -1289,6 +1371,74 @@ final class DoctorPanelRenderer
     private function fleetNodeRows(string $nodeName, string $status, int $frame): array
     {
         return $this->labeledStatusRows($nodeName, $status, $frame);
+    }
+
+    /**
+     * Surface the complete active role set in the status column so fleet node
+     * names stay stable while multi-role nodes remain visible without JSON.
+     *
+     * @param  list<string>  $roles
+     */
+    private function withFleetNodeRoles(string $status, array $roles): string
+    {
+        // Single-role rows stay compact; multi-role nodes surface the full
+        // active set so operators are not limited to Node::displayRole().
+        if (count($roles) < 2) {
+            return $status;
+        }
+
+        $roleText = implode(', ', $roles);
+
+        if (str_contains($status, $roleText)) {
+            return $status;
+        }
+
+        return "{$status} · {$roleText}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function fleetNodeRoles(array $report, string $nodeName): array
+    {
+        $nodes = is_array($report['nodes'] ?? null) ? $report['nodes'] : [];
+
+        foreach ($nodes as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+
+            if (($node['node'] ?? null) !== $nodeName) {
+                continue;
+            }
+
+            $roles = $node['roles'] ?? null;
+
+            if (is_array($roles)) {
+                $normalized = [];
+
+                foreach ($roles as $role) {
+                    if (! (is_string($role) && $role !== '')) {
+                        continue;
+                    }
+
+                    $normalized[] = $role;
+                }
+
+                return $normalized;
+            }
+
+            $primaryRole = $node['role'] ?? null;
+
+            return (
+                is_string($primaryRole) && $primaryRole !== '' && $primaryRole !== 'fleet'
+                    ? [$primaryRole]
+                    : []
+            );
+        }
+
+        return [];
     }
 
     /**

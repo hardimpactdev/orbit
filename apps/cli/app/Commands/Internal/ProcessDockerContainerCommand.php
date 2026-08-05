@@ -8,7 +8,6 @@ use App\Services\Processes\LocalDockerContainerAction;
 use App\Services\Processes\LocalDockerContainerFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class ProcessDockerContainerCommand extends InternalExecutorCommand
 {
@@ -61,16 +60,5 @@ final class ProcessDockerContainerCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

@@ -27,7 +27,7 @@ use Override;
  * @property string|null $error_code
  * @property string|null $error_message
  * @property array<string, mixed>|null $diagnostics
- * @property-read Project $app
+ * @property-read App $app
  */
 class AppDependencyAuditSummary extends Model
 {
@@ -70,18 +70,10 @@ class AppDependencyAuditSummary extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 }

@@ -16,11 +16,6 @@ node, and runs configured setup steps.
 cd /var/www/my-app/.worktrees/feature-a
 orbit workspace:setup
 
-# Register and set up an adapter-managed worktree (e.g. a PolyScope worktree
-# Orbit does not yet know about): identity discovered from the adapter
-cd /var/www/my-app/.worktrees/feature-a
-orbit workspace:setup
-
 # Set up or adopt a workspace by explicit identity
 orbit workspace:setup feature-a --instance=my-app
 
@@ -40,19 +35,19 @@ orbit workspace:setup feature-a --instance=my-app --stream-json
 
 ## Arguments and options
 
-- `name`: The workspace identity slug. Required unless local workspace context,
-  structured Codex Git-worktree metadata for an explicit `--path`, or an Agent
-  IDE adapter can resolve it; can be prompted in interactive mode.
-- `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
+- `name`: The workspace identity slug. Required unless local workspace context
+  or structured Codex Git-worktree metadata for an explicit `--path` can
+  resolve it; can be prompted in interactive mode.
+- `--instance=<app.instance>`: The parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
-  A bare project slug is shorthand only when it resolves to exactly one concrete
+  A bare app slug is shorthand only when it resolves to exactly one concrete
   instance; zero or multiple instances fail with `instance_required`.
   Defaults to the existing workspace's selected instance, the local app
   context when it resolves one instance, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
-  that node. The path may live outside the parent project path, including external
-  agent worktrees such as Codex or Claude worktree directories. The parent project
+  that node. The path may live outside the parent app path, including external
+  agent worktrees such as Codex or Claude worktree directories. The parent app
   root itself is not a valid workspace path. A relative or non-absolute value
   fails before side effects.
 - `--json`: Output JSON.
@@ -66,25 +61,25 @@ when explicit input is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) returns one of:
 
 - **A registered workspace path** — the workspace identity (`name` and
-  parent `project`, required selected instance, and `path` are resolved
+  parent `app`, required selected instance, and `path` are resolved
   from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
-- **A registered app's own root path** — the CWD is the parent project's own
+- **A registered app's own root path** — the CWD is the parent app's own
   path, not a workspace path under it. The command fails before side effects
   with a hint to run
   [`workspace:new`](../1_workspace-new/workspace-new.md) instead. Use
   `workspace:setup` only when the CWD is (or will be adopted as) a workspace
   path; the app root is never itself a workspace.
 - **A path inside a registered app** — the CWD is under a known app's path
-  but not a registered workspace. The parent project is resolved from the lookup.
+  but not a registered workspace. The parent app is resolved from the lookup.
   The lookup must also resolve exactly one concrete instance or fail with
-  `instance_required`. The workspace identity is filled in through the
-  adapter probe described in the next subsection, or falls through to prompts.
+  `instance_required`. The workspace identity is filled in through local Codex
+  Git-worktree metadata when available, or falls through to prompts / explicit
+  input.
 - **An unregistered path** — the CWD does not match any known app or
-  workspace path. The agent-IDE adapter probe runs across the caller's
-  configured adapters; on a single match, identity is resolved from the
-  adapter. Otherwise the command falls through to explicit input (`[name]`,
-  `--instance`, `--path`) or interactive prompts.
+  workspace path. The command falls through to explicit input (`[name]`,
+  `--instance`, `--path`), local Codex Git-worktree metadata for an absolute
+  path when present, or interactive prompts.
 
 ### Local Codex worktree metadata
 
@@ -95,53 +90,20 @@ metadata without executing a shell command. A synced
 workspace slug. Otherwise, a valid `codex-thread.json` identifies the worktree
 and the CLI uses `codex-<key>`. The result is deterministic, valid, and at most
 63 characters. Explicit `[name]` always wins, and paths without valid Codex
-metadata follow the existing local-context and Agent IDE adapter flow. Codex is
-not an Agent IDE adapter.
-
-### Agent-IDE adapter probe
-
-`workspace:setup` registers adapter-managed worktrees on first run. Some
-adapters expose a `workspace_path_resolution` capability. PolyScope is one.
-An adapter with this capability answers a single question: which managed
-workspace does this absolute path belong to?
-
-Orbit consults the probe when `[name]` is missing and either the gateway lookup
-returned `inside_app`/`unregistered` or an explicit `--path` was supplied for an
-app with an effective adapter. A successful probe fills in the workspace name
-and parent project. The adapter also returns its own id for the workspace, which
-Orbit stores. Adoption then proceeds as usual (`result.action=adopted`). A
-dotted `--instance` selects the concrete instance explicitly; a bare project selector
-must resolve to exactly one instance. Adapter-provided identity never creates
-a parent-project-only workspace row.
-
-See
-[`agent-ide-concepts.md`](../../15_agent-ide/agent-ide-concepts.md#adapter-model)
-for the capability definition.
-
-Probe outcomes:
-
-- **One adapter resolves the path** — adoption proceeds using the adapter's
-  answer. `--instance` and `[name]`, if also supplied, must agree with the
-  adapter or the command fails with `validation_failed`.
-- **No adapter resolves the path** — fall through to prompts (interactive)
-  or `validation_failed` (non-interactive).
-- **Multiple adapters claim the path** — fails with `validation_failed`
-  asking the operator to disambiguate with `--instance`.
+metadata require an explicit workspace name or interactive prompt.
 
 ## Behavior Summary
 
 The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
-  Codex Git-worktree metadata for an explicit `--path`, Agent IDE adapter path
-  resolution, or interactive prompts.
+  Codex Git-worktree metadata for an explicit path, or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
   Adoption is based on explicit command input and, when `[name]` is omitted,
-  local Codex Git-worktree metadata for an explicit `--path` or Agent IDE
-  adapter path resolution;
-  `workspace:setup` does not inspect project files to discover workspace
-  identity.
+  local Codex Git-worktree metadata for an explicit `--path`.
+  `workspace:setup` does not consult an external workspace service and does
+  not inspect project files to invent workspace identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
@@ -150,7 +112,7 @@ The following steps describe what the command does during a successful run.
   selected instance's node, base path, document root, and domain.
 - **Environment Initialization**: Preserves an existing workspace `.env`.
   When missing, initializes it from the workspace's own `.env.example` when
-  present, then overlays the effective `workspace:env` values. The parent project
+  present, then overlays the effective `workspace:env` values. The parent app
   `.env` is never copied.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
@@ -166,7 +128,7 @@ operators and agents can see what changed.
 
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
-  parent project.
+  parent app.
 - The gateway can reach the owning node through Agent push.
 
 ## Output Summary

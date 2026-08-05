@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Processes;
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -14,18 +14,17 @@ use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
-use App\Models\LocalGatewaySettings;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\NodeRuntimeContainersProbe;
-use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
@@ -43,9 +42,10 @@ beforeEach(function (): void {
     $this->probe = new ProcessesProbe;
 });
 
-function processesProbeWithShell(ProcessesProbeRecordingRemoteShell $shell): ProcessesProbe
+function processesProbeWithShell(RemoteShell&RunsInternalCommands $shell): ProcessesProbe
 {
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     return new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
 }
@@ -322,7 +322,7 @@ describe('WireGuard self-route diagnostics', function (): void {
         expect(issue($drift, 'process.wireguard_self_route_unavailable'))->toBeNull();
     });
 
-    it('reports macOS as unsupported for process self-route diagnostics without route commands', function (): void {
+    it('treats macOS unsupported self-route diagnostics as not applicable without drift', function (): void {
         $node = Node::factory()
             ->database()
             ->create([
@@ -350,127 +350,56 @@ describe('WireGuard self-route diagnostics', function (): void {
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
-            ->toMatchArray([
-                'platform' => 'macos_15-4',
-                'reason' => 'unsupported_platform',
-                'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-            ])
+        expect(issue($drift, 'process.wireguard_self_route_unavailable'))
+            ->toBeNull()
             ->and($shell->scripts)
             ->toBe([]);
     });
-});
 
-describe('lifecycle event notifier reality', function (): void {
-    it('introspects crash event notifier material for crash-reporting processes', function (): void {
-        LocalGatewaySettings::current()->fill(['gateway_url' => 'https://10.6.0.2'])->save();
-
-        $app = processableApp();
-        $process = processFor($app, [
-            'name' => 'vite',
-            'crash_notification' => ProcessCrashNotification::AgentIde,
-        ]);
-        $shell = new ProcessesProbeRecordingRemoteShell([
+    it('still reports supported Linux self-route drift when the local route is unhealthy', function (): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'endpoint' => [
+                        'name' => 'valkey',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
+                ],
+            ]);
+        app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: processesProbeSuccessData([
-                    'available' => true,
                     'exit_code' => 0,
-                    'output' => 'systemd OK',
+                    'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
                 ]),
                 stderr: '',
                 durationMs: 1,
             ),
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "orbit_{$app->name}_development_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-        ]);
+        ]));
 
-        $snapshot = processesProbeWithShell($shell)->introspect($process);
+        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
-        expect($snapshot->get('vite')['event_notifier'])->toMatchArray([
-            'script_exists' => true,
-            'script_executable' => true,
-            'script_matches' => true,
-            'gateway_endpoint_exists' => true,
-            'gateway_endpoint_matches' => true,
-        ]);
-    });
-
-    it('detects missing crash event notifier material for crash-reporting processes', function (): void {
-        $app = processableApp();
-        $process = processFor($app, [
-            'name' => 'vite',
-            'crash_notification' => ProcessCrashNotification::AgentIde,
-        ]);
-
-        $snapshot = new ProbeSnapshot([
-            'vite' => [
-                'runtime_backend_available' => true,
-                'event_notifier' => [
-                    'script_exists' => false,
-                    'script_executable' => false,
-                    'script_matches' => false,
-                    'gateway_endpoint_exists' => false,
-                    'gateway_endpoint_matches' => false,
-                ],
-            ],
-        ]);
-
-        $drift = $this->probe->diff($process, $snapshot);
-
-        expect(issue($drift, 'process.event_notifier_missing')?->kind)->toBe(DriftKind::Missing);
-    });
-
-    it('detects divergent crash event notifier material for crash-reporting processes', function (): void {
-        $app = processableApp();
-        $process = processFor($app, [
-            'name' => 'vite',
-            'crash_notification' => ProcessCrashNotification::AgentIde,
-        ]);
-
-        $snapshot = new ProbeSnapshot([
-            'vite' => [
-                'runtime_backend_available' => true,
-                'event_notifier' => [
-                    'script_exists' => true,
-                    'script_executable' => true,
-                    'script_matches' => false,
-                    'gateway_endpoint_exists' => true,
-                    'gateway_endpoint_matches' => true,
-                ],
-            ],
-        ]);
-
-        $drift = $this->probe->diff($process, $snapshot);
-
-        expect(issue($drift, 'process.event_notifier_mismatch')?->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('does not require notifier material when crash reporting is disabled', function (): void {
-        $app = processableApp();
-        $process = processFor($app, [
-            'name' => 'vite',
-            'crash_notification' => ProcessCrashNotification::None,
-        ]);
-
-        $snapshot = new ProbeSnapshot([
-            'vite' => [
-                'runtime_backend_available' => true,
-                'event_notifier' => [
-                    'script_exists' => false,
-                    'gateway_endpoint_exists' => false,
-                ],
-            ],
-        ]);
-
-        $drift = $this->probe->diff($process, $snapshot);
-
-        expect(issue($drift, 'process.event_notifier_missing'))->toBeNull();
-        expect(issue($drift, 'process.event_notifier_mismatch'))->toBeNull();
+        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
+            ->toMatchArray([
+                'reason' => 'self_route_missing',
+                'supported' => true,
+            ]);
     });
 });
 
@@ -605,29 +534,29 @@ describe('systemd unit reality', function (): void {
     it('probes inherited runtime units only for workspaces on the process app instance', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
         $productionNode = createTestAppHostNode(['name' => 'app-production']);
-        $app = Project::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
-        $development = AppInstance::factory()->create([
+        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $development = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $developmentNode->id),
         ]);
-        $production = AppInstance::factory()->create([
+        $production = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $productionNode->id),
         ]);
         Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'name' => 'feature-dev',
         ]);
         Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $production->id,
+            'instance_id' => $production->id,
             'name' => 'feature-prod',
         ]);
         $process = Process::factory()
             ->forOwner($app, $developmentNode)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'vite',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
@@ -788,6 +717,118 @@ describe('systemd unit restart and environment reality', function (): void {
         expect(issue($drift, 'process.runtime_environment_mismatch')?->kind)->toBe(DriftKind::Divergent);
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
     });
+
+    it('flags extra Environment lines as process.runtime_environment_mismatch for node-owned systemd units', function (): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'gateway',
+                'user' => 'orbit',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'tld' => 'gateway',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+                'runtime' => ProcessRuntime::Systemd,
+                'restart_policy' => ProcessRestartPolicy::Always,
+                'crash_notification' => ProcessCrashNotification::None,
+                'sort_order' => 1,
+            ]);
+
+        $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
+        $surrogateApp = new App([
+            'name' => $node->name,
+            'path' => '/home/orbit',
+            'node_id' => $node->id,
+        ]);
+        $surrogateApp->setRelation('node', $node);
+        $expectedUnit = $renderer->render($node, $surrogateApp, $process);
+        $runtimeUnit = $renderer->unitName($surrogateApp, $process);
+        $canonicalPath = $renderer->unitPath($runtimeUnit);
+
+        $root = sys_get_temp_dir().'/orbit-process-probe-env-'.bin2hex(random_bytes(6));
+        $unitPath = "{$root}/{$runtimeUnit}.service";
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($root);
+        \Illuminate\Support\Facades\File::put(
+            $unitPath,
+            $expectedUnit."Environment=\"APP_URL=https://gateway.stale\"\n",
+        );
+
+        $shell = new ProcessesProbeExecutingSystemdRemoteShell(
+            unitPathMap: [$canonicalPath => $unitPath],
+        );
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
+        $observed = $snapshot->get('node-exporter')['runtime_units'][$runtimeUnit] ?? null;
+
+        $probeScript = collect($shell->scripts)
+            ->first(
+                static fn (string $script): bool => str_contains($script, 'probe_unit'),
+            ) ?? '';
+
+        expect($probeScript)
+            ->toContain('actual_environment=')
+            ->toContain("grep -E '^Environment='")
+            ->and($observed)
+            ->toMatchArray([
+                'config_exists' => true,
+                'config_matches' => false,
+                'restart_policy_matches' => true,
+                'environment_matches' => false,
+            ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_environment_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'process.runtime_unit_mismatch'))
+            ->toBeNull();
+
+        \Illuminate\Support\Facades\File::deleteDirectory($root);
+    });
+
+    it('keeps matching Environment multisets green for app-owned systemd units', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Systemd,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+        $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
+        $node = $app->node;
+        $expectedUnit = $renderer->render($node, $app, $process);
+        $runtimeUnit = $renderer->unitName($app, $process);
+        $canonicalPath = $renderer->unitPath($runtimeUnit);
+
+        $root = sys_get_temp_dir().'/orbit-process-probe-env-app-'.bin2hex(random_bytes(6));
+        $unitPath = "{$root}/{$runtimeUnit}.service";
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($root);
+        \Illuminate\Support\Facades\File::put($unitPath, $expectedUnit);
+
+        $shell = new ProcessesProbeExecutingSystemdRemoteShell(
+            unitPathMap: [$canonicalPath => $unitPath],
+        );
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
+        $observed = $snapshot->get('vite')['runtime_units'][$runtimeUnit] ?? null;
+
+        expect($observed)
+            ->toMatchArray([
+                'config_exists' => true,
+                'config_matches' => true,
+                'restart_policy_matches' => true,
+                'environment_matches' => true,
+            ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_environment_mismatch'))->toBeNull();
+
+        \Illuminate\Support\Facades\File::deleteDirectory($root);
+    });
 });
 
 describe('registry intent', function (): void {
@@ -813,7 +854,7 @@ describe('registry intent', function (): void {
             'node_id' => $app->node_id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
-            'app_instance_id' => $app->instances()->value('id'),
+            'instance_id' => $app->instances()->value('id'),
             'name' => 'vite',
             'command' => '',
             'restart_policy' => ProcessRestartPolicy::Never->value,
@@ -883,7 +924,7 @@ describe('registry intent', function (): void {
 describe('owner app eligibility', function (): void {
     it('requires an owner app on an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = Project::factory()->for($node, 'node')->create();
+        $app = App::factory()->for($node, 'node')->create();
         $process = processFor($app, ['name' => 'vite']);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
@@ -949,7 +990,7 @@ describe('docker runtime probe scope', function (): void {
                 exitCode: 0,
                 stdout: processesProbeSuccessData([
                     'states' => [[
-                        'key' => "app-instance-{$process->app_instance_id}",
+                        'key' => "app-instance-{$process->instance_id}",
                         'awake' => false,
                         'hibernated' => true,
                         'last_activity_at' => 1_767_268_799,
@@ -1274,7 +1315,7 @@ describe('docker runtime probe scope', function (): void {
                 ],
             ]);
         $containerHash = app(ProcessDockerContainerRenderer::class)
-            ->render(new Project(['name' => 'runtime']), $process)
+            ->render(new App(['name' => 'runtime']), $process)
             ->specHash();
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
@@ -1703,22 +1744,67 @@ describe('docker runtime probe scope', function (): void {
     });
 });
 
+describe('process placement after instance move', function (): void {
+    it('probes moved app processes on the current placement node and not the stale node_id', function (): void {
+        $oldNode = createTestAppHostNode(['name' => 'beast']);
+        $newNode = createTestAppHostNode(['name' => 'nmbp']);
+        $app = App::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+        $instance = Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $oldNode->id,
+                node: $oldNode->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        $process = Process::factory()
+            ->forOwner($app)
+            ->create([
+                'instance_id' => $instance->id,
+                'name' => 'dev',
+                'command' => 'php artisan serve',
+                'runtime' => ProcessRuntime::Docker,
+            ]);
+
+        // Instance placement moved; denormalized process.node_id is intentionally stale.
+        $instance->forceFill([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $newNode->id,
+                node: $newNode->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ])->save();
+        DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
+        $process->refresh();
+
+        $method = new \ReflectionMethod(ProcessesProbe::class, 'processNode');
+        $method->setAccessible(true);
+        $resolved = $method->invoke($this->probe, $process);
+
+        expect($resolved?->is($newNode))->toBeTrue()->and($process->node_id)->toBe($oldNode->id);
+    });
+});
+
 function issue(array $drift, string $key): ?DriftEntry
 {
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
 }
 
-function processableApp(array $overrides = []): Project
+function processableApp(array $overrides = []): App
 {
     $node = createTestAppHostNode();
 
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -1730,7 +1816,7 @@ function processableApp(array $overrides = []): Project
     return $app;
 }
 
-function processFor(Project $app, array $overrides = []): Process
+function processFor(App $app, array $overrides = []): Process
 {
     return Process::factory()
         ->forOwner($app)
@@ -1747,6 +1833,101 @@ function processFor(Project $app, array $overrides = []): Process
             'sort_order' => 1,
             ...$overrides,
         ]);
+}
+
+/**
+ * Executes real systemd probe scripts against fixture unit paths so environment
+ * multiset matching is proven end-to-end, not only via canned probe rows.
+ */
+final class ProcessesProbeExecutingSystemdRemoteShell implements RemoteShell, RunsInternalCommands
+{
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    /**
+     * @param  array<string, string>  $unitPathMap  canonical unit path => fixture path
+     */
+    public function __construct(
+        private array $unitPathMap,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if (str_contains($script, 'probe_unit')) {
+            foreach ($this->unitPathMap as $canonicalPath => $fixturePath) {
+                $script = str_replace($canonicalPath, $fixturePath, $script);
+            }
+
+            $process = new \Symfony\Component\Process\Process(['/bin/bash', '-c', $script]);
+            $process->run();
+
+            return new RemoteShellResult(
+                exitCode: (int) $process->getExitCode(),
+                stdout: $process->getOutput(),
+                stderr: $process->getErrorOutput(),
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName === 'internal:runtime-backend:probe') {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'available' => true,
+                    'exit_code' => 0,
+                    'output' => 'systemd OK',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if ($commandName === 'internal:tool:run-script') {
+            $payload = json_decode(
+                (string) ($transportOptions['input'] ?? ''),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+            $result = $this->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => ['data' => [
+                        'exit_code' => $result->exitCode,
+                        'stdout' => $result->stdout,
+                        'stderr' => $result->stderr,
+                        'duration_ms' => $result->durationMs,
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: $result->durationMs,
+            );
+        }
+
+        return $this->run(
+            $node,
+            implode(' ', [
+                $commandName,
+                ...array_map(static fn (mixed $argument): string => escapeshellarg((string) $argument), $arguments),
+            ]),
+            $transportOptions,
+        );
+    }
 }
 
 final class ProcessesProbeRecordingRemoteShell implements RemoteShell, RunsInternalCommands
@@ -1851,7 +2032,7 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'platform' => 'macos_26-5-1',
         'user' => 'orbit',
     ]);
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'docs',
@@ -1906,4 +2087,120 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'config_matches' => true,
         'loaded' => true,
     ]);
+});
+
+it('reports launchd processes on linux placement as unrenderable instead of inventing Library paths', function (): void {
+    $linux = createTestAppHostNode([
+        'name' => 'beast',
+        'platform' => 'ubuntu_24-04',
+        'user' => 'nckrtl',
+    ]);
+    $app = App::factory()
+        ->for($linux, 'node')
+        ->create([
+            'name' => 'mealou',
+            'path' => '/home/nckrtl/apps/mealou',
+        ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $linux->id,
+            node: $linux->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+    $process = Process::factory()
+        ->forOwner($app)
+        ->create([
+            'instance_id' => $instance->id,
+            'node_id' => $linux->id,
+            'name' => 'dev',
+            'command' => 'npm run dev',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+
+    $snapshot = app(ProcessesProbe::class)->introspect($process);
+    $drift = app(ProcessesProbe::class)->diff($process, $snapshot);
+
+    expect($snapshot->get('dev')['runtime_unit_renderable'] ?? null)
+        ->toBeFalse()
+        ->and(collect($drift)->firstWhere('key', 'process.runtime_unit_unrenderable'))
+        ->not->toBeNull()->and(
+            (string) (collect($drift)->firstWhere('key', 'process.runtime_unit_unrenderable')?->detail['reason'] ?? ''),
+        )->toContain('macOS')->and(json_encode($drift))
+        ->not->toContain('Library/LaunchAgents')
+        ->not->toContain('/home/nckrtl/Library');
+});
+
+it('bounds long launchd unit names so they remain renderable', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'mac-app',
+        'platform' => 'macos_26-5-1',
+        'user' => 'nckrtl',
+    ]);
+    $app = App::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'laravel-toolbar',
+            'path' => '/Users/nckrtl/apps/laravel-toolbar',
+        ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'name' => 'filament-pages-og-images',
+        'path' => $app->path.'/filament-pages-og-images',
+    ]);
+    $process = Process::factory()
+        ->forOwner($workspace)
+        ->create([
+            'instance_id' => $instance->id,
+            'node_id' => $node->id,
+            'name' => 'inertia-ssr',
+            'command' => 'npm run ssr',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+
+    $shell = new ProcessesProbeRecordingRemoteShell([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: processesProbeSuccessData([
+                'available' => true,
+                'exit_code' => 0,
+                'output' => 'launchd OK',
+            ]),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: "bounded\t1\t1\t1\n",
+            stderr: '',
+            durationMs: 1,
+        ),
+    ]);
+
+    $snapshot = processesProbeWithShell($shell)->introspect($process);
+    $unit = app(\App\Services\Processes\LaunchdPlistRenderer::class)->unitName($app, $process, $workspace);
+
+    expect(ProcessRuntimeUnitName::isValid($unit))
+        ->toBeTrue()
+        ->and(strlen($unit))
+        ->toBeLessThanOrEqual(ProcessRuntimeUnitName::MaxLength)
+        ->and($snapshot->get('inertia-ssr')['runtime_unit_renderable'] ?? true)
+        ->toBeTrue()
+        ->and($shell->scripts[1] ?? '')
+        ->toContain($unit)
+        ->not->toContain('orbit_laravel-toolbar_development_filament-pages-og-images_inertia-ssr');
 });

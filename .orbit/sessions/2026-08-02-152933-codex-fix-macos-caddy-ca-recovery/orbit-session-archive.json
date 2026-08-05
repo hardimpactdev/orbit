@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T13:29:33+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-macos-caddy-ca-recovery/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-152933-codex-fix-macos-caddy-ca-recovery",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof-caddy-3599d.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T132737Z-c9336184bc4d.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof-caddy-3599d.txt": "7d2c89ae8c94953d3824c3328b4bb22029fe425ff78535eb925e2f54912035d5",
+        "loop.md": "94fd2c2781b66883de97d0e8cd0e2d64436fc401ed3284023d08f9c2ca0a6120",
+        "quality-gates/quality-check-2026-08-02T132737Z-c9336184bc4d.json": "d989116fde4653d439dafdc08e0beaafaa61682ccd1690a2ec825a7ead308d77"
+    },
+    "branch": "codex/fix-macos-caddy-ca-recovery",
+    "candidate_commit": "deeb6cc8e19f5d4dd061684a8e146fd294ccca7a",
+    "accepted_feature_tip": "deeb6cc8e19f5d4dd061684a8e146fd294ccca7a",
+    "accepted_main_tip": "c34d556f639cb588900f2a524169edcfd87aa4cb",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
-use App\Data\Doctor\DoctorAppInstanceTarget;
+use App\Data\Doctor\DoctorInstanceTarget;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
-use App\Services\Doctor\DoctorAppInstanceTargetResolver;
+use App\Services\Doctor\DoctorInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorPublicVocabulary;
 use App\Services\Doctor\DoctorReportRunner;
@@ -44,7 +44,7 @@ final class DoctorFixController implements Loggable
         DoctorPublicVocabulary $vocabulary,
         NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
-        DoctorAppInstanceTargetResolver $appTargets,
+        DoctorInstanceTargetResolver $appTargets,
         WorkspaceRoleGuard $workspaceRoleGuard,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
@@ -107,7 +107,7 @@ final class DoctorFixController implements Loggable
             ], 422);
         }
 
-        if ($appTarget instanceof DoctorAppInstanceTarget && $target->id !== $appTarget->node->id) {
+        if ($appTarget instanceof DoctorInstanceTarget && $target->id !== $appTarget->node->id) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
@@ -128,7 +128,7 @@ final class DoctorFixController implements Loggable
             return $authorization;
         }
 
-        $scope = $appTarget instanceof DoctorAppInstanceTarget
+        $scope = $appTarget instanceof DoctorInstanceTarget
             ? $appTarget->scope($this->scopeValue($request, 'workspace'))
             : DoctorTargetScope::from(
                 $this->scopeValue($request, 'instance'),
@@ -173,6 +173,7 @@ final class DoctorFixController implements Loggable
                 $key,
                 $dryRun,
                 $scope,
+                $this->wantsCompactProgress($request),
             );
         }
 
@@ -197,6 +198,9 @@ final class DoctorFixController implements Loggable
     /**
      * @param  list<string>  $families
      * @param  list<array<string, mixed>>|null  $issues
+     * @mago-expect lint:halstead
+     * @mago-expect lint:excessive-parameter-list
+     * @mago-expect lint:no-boolean-flag-parameter
      */
     private function stream(
         ProgressEventStreamResponseFactory $streams,
@@ -210,6 +214,7 @@ final class DoctorFixController implements Loggable
         ?string $key,
         bool $dryRun,
         DoctorTargetScope $scope,
+        bool $compactProgress = false,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -222,24 +227,32 @@ final class DoctorFixController implements Loggable
             $key,
             $dryRun,
             $scope,
+            $compactProgress,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
 
-            $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
-                'doctor' => $vocabulary->publicReport($progressReports->report(
-                    target: $target,
-                    mode: $mode,
-                    families: $renderedFamilies,
-                    key: $key,
-                    issues: [],
-                    actions: [],
-                    familyStatuses: $familyStatuses,
-                    app: $scope->app,
-                    workspace: $scope->workspace,
-                    appInstance: $scope->appInstance,
-                )),
-            ]);
+            $events->stepEvent(
+                '__doctor_panel',
+                'running',
+                'Doctor queued',
+                $compactProgress
+                    ? ['compact_progress' => true]
+                    : [
+                        'doctor' => $vocabulary->publicReport($progressReports->report(
+                            target: $target,
+                            mode: $mode,
+                            families: $renderedFamilies,
+                            key: $key,
+                            issues: [],
+                            actions: [],
+                            familyStatuses: $familyStatuses,
+                            app: $scope->app,
+                            workspace: $scope->workspace,
+                            instance: $scope->instance,
+                        )),
+                    ],
+            );
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
                     'key' => $vocabulary->publicFamily($family),
@@ -251,20 +264,31 @@ final class DoctorFixController implements Loggable
             foreach ($renderedFamilies as $family) {
                 $familyStatuses[$family] = $mode === 'adopt' ? 'adopting' : 'restoring';
                 $publicFamily = $vocabulary->publicFamily($family);
-                $events->stepEvent($publicFamily, 'running', "{$mode} {$publicFamily}", [
-                    'doctor' => $vocabulary->publicReport($progressReports->report(
-                        target: $target,
-                        mode: $mode,
-                        families: $renderedFamilies,
-                        key: $key,
-                        issues: [],
-                        actions: [],
-                        familyStatuses: $familyStatuses,
-                        app: $scope->app,
-                        workspace: $scope->workspace,
-                        appInstance: $scope->appInstance,
-                    )),
-                ]);
+                $events->stepEvent(
+                    $publicFamily,
+                    'running',
+                    "{$mode} {$publicFamily}",
+                    $compactProgress
+                        ? [
+                            'compact_progress' => true,
+                            'family' => $publicFamily,
+                            'phase' => 'running',
+                        ]
+                        : [
+                            'doctor' => $vocabulary->publicReport($progressReports->report(
+                                target: $target,
+                                mode: $mode,
+                                families: $renderedFamilies,
+                                key: $key,
+                                issues: [],
+                                actions: [],
+                                familyStatuses: $familyStatuses,
+                                app: $scope->app,
+                                workspace: $scope->workspace,
+                                instance: $scope->instance,
+                            )),
+                        ],
+                );
             }
 
             $doctor = $issues === null || $dryRun
@@ -292,20 +316,31 @@ final class DoctorFixController implements Loggable
             foreach ($renderedFamilies as $family) {
                 $familyStatuses[$family] = 'done';
                 $publicFamily = $vocabulary->publicFamily($family);
-                $events->stepEvent($publicFamily, 'done', "{$publicFamily} {$mode} complete", [
-                    'doctor' => $vocabulary->publicReport($progressReports->report(
-                        target: $target,
-                        mode: $mode,
-                        families: $renderedFamilies,
-                        key: $key,
-                        issues: $this->doctorEntries($doctor, 'issues'),
-                        actions: $this->doctorEntries($doctor, 'actions'),
-                        familyStatuses: $familyStatuses,
-                        app: $scope->app,
-                        workspace: $scope->workspace,
-                        appInstance: $scope->appInstance,
-                    )),
-                ]);
+                $events->stepEvent(
+                    $publicFamily,
+                    'done',
+                    "{$publicFamily} {$mode} complete",
+                    $compactProgress
+                        ? [
+                            'compact_progress' => true,
+                            'family' => $publicFamily,
+                            'phase' => 'done',
+                        ]
+                        : [
+                            'doctor' => $vocabulary->publicReport($progressReports->report(
+                                target: $target,
+                                mode: $mode,
+                                families: $renderedFamilies,
+                                key: $key,
+                                issues: $this->doctorEntries($doctor, 'issues'),
+                                actions: $this->doctorEntries($doctor, 'actions'),
+                                familyStatuses: $familyStatuses,
+                                app: $scope->app,
+                                workspace: $scope->workspace,
+                                instance: $scope->instance,
+                            )),
+                        ],
+                );
             }
 
             if (($doctor['healthy'] ?? false) === true || $dryRun) {
@@ -356,20 +391,21 @@ final class DoctorFixController implements Loggable
         ?string $key,
         DoctorTargetScope $scope,
     ): array {
-        $probe = $runner->probe($target, $families, $key, scope: $scope);
         $actions = $runner->apply($target, $mode, $issues);
 
-        if ($runner->restoreRequiresVerification($mode, $key, $probe)) {
-            return $runner->finalizeRestore($target, $families, $key, $scope, $actions);
-        }
-
-        return $runner->finalize($probe, $mode, $actions);
+        return $runner->finalizeResolution(
+            $target,
+            $mode,
+            $actions,
+            $families,
+            new DoctorRunRequest($key, dryRun: false, scope: $scope),
+        );
     }
 
     private function resolveTarget(
         Request $request,
         Node $caller,
-        ?DoctorAppInstanceTarget $appTarget = null,
+        ?DoctorInstanceTarget $appTarget = null,
     ): ?Node {
         $name = $request->input('node');
 
@@ -500,6 +536,11 @@ final class DoctorFixController implements Loggable
         $mode = $request->input('mode');
 
         return is_string($mode) && in_array($mode, ['restore', 'adopt'], true) ? $mode : null;
+    }
+
+    private function wantsCompactProgress(Request $request): bool
+    {
+        return $request->boolean('compact_progress');
     }
 
     private function wantsEventStream(Request $request): bool

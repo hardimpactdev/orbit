@@ -9,6 +9,11 @@ use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
 
+/**
+ * Same-node Docker consumers use the managed process service alias and internal
+ * container port. Remote consumers continue to use the stored WireGuard /
+ * published-port endpoint. Supports managed MySQL and PostgreSQL Docker processes.
+ */
 final readonly class ManagedDockerMysqlEndpointResolver
 {
     /**
@@ -16,7 +21,9 @@ final readonly class ManagedDockerMysqlEndpointResolver
      */
     public function resolve(DatabaseConnection $connection, Node $targetNode): ?array
     {
-        if ($connection->driver !== 'mysql' || ! $connection->node instanceof Node) {
+        $service = $this->managedServiceName($connection->driver);
+
+        if ($service === null || ! $connection->node instanceof Node) {
             return null;
         }
 
@@ -24,7 +31,7 @@ final readonly class ManagedDockerMysqlEndpointResolver
             return null;
         }
 
-        $process = $this->matchingManagedDockerMysqlProcess($connection);
+        $process = $this->matchingManagedDockerDatabaseProcess($connection, $service);
 
         if (! $process instanceof Process) {
             return null;
@@ -32,12 +39,23 @@ final readonly class ManagedDockerMysqlEndpointResolver
 
         return [
             'host' => $process->name,
-            'port' => $this->managedMysqlTargetPort($process),
+            'port' => $this->managedTargetPort($process, $connection->driver),
         ];
     }
 
-    private function matchingManagedDockerMysqlProcess(DatabaseConnection $connection): ?Process
+    private function managedServiceName(string $driver): ?string
     {
+        return match ($driver) {
+            'mysql' => 'mysql',
+            'pgsql' => 'postgres',
+            default => null,
+        };
+    }
+
+    private function matchingManagedDockerDatabaseProcess(
+        DatabaseConnection $connection,
+        string $service,
+    ): ?Process {
         if ($connection->host === null || $connection->port === null || $connection->node_id === null) {
             return null;
         }
@@ -45,7 +63,7 @@ final readonly class ManagedDockerMysqlEndpointResolver
         $processes = Process::query()
             ->where('node_id', $connection->node_id)
             ->where('runtime', ProcessRuntime::Docker)
-            ->where('runtime_config->service', 'mysql')
+            ->where('runtime_config->service', $service)
             ->get();
 
         foreach ($processes as $process) {
@@ -73,7 +91,7 @@ final readonly class ManagedDockerMysqlEndpointResolver
         );
     }
 
-    private function managedMysqlTargetPort(Process $process): int
+    private function managedTargetPort(Process $process, string $driver): int
     {
         $ports = is_array($process->runtime_config['ports'] ?? null)
             ? $process->runtime_config['ports']
@@ -91,6 +109,6 @@ final readonly class ManagedDockerMysqlEndpointResolver
             }
         }
 
-        return 3306;
+        return $driver === 'pgsql' ? 5432 : 3306;
     }
 }

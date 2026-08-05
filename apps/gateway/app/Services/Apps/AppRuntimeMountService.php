@@ -6,10 +6,10 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\AppInstance;
-use App\Models\AppInstanceRuntimeMount;
+use App\Models\App;
+use App\Models\Instance;
+use App\Models\InstanceRuntimeMount;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
@@ -26,13 +26,13 @@ final readonly class AppRuntimeMountService
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function mountsForRuntime(Project $app, ?AppInstance $instance = null): array
+    public function mountsForRuntime(App $app, ?Instance $instance = null): array
     {
         if (! $this->isSupportedAppDevPhpApp($app)) {
             return [];
         }
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return [];
         }
 
@@ -49,9 +49,9 @@ final readonly class AppRuntimeMountService
     }
 
     /**
-     * @return array{action: string, mount: AppInstanceRuntimeMount, mounts: Collection<int, AppInstanceRuntimeMount>}
+     * @return array{action: string, mount: InstanceRuntimeMount, mounts: Collection<int, InstanceRuntimeMount>}
      */
-    public function addToInstance(AppInstance $instance, string $source, string $target, bool $readOnly = true): array
+    public function addToInstance(Instance $instance, string $source, string $target, bool $readOnly = true): array
     {
         $instance->loadMissing('app.node');
         $app = $instance->app;
@@ -84,9 +84,9 @@ final readonly class AppRuntimeMountService
     }
 
     /**
-     * @return array{action: string, mount: AppInstanceRuntimeMount|null, mounts: Collection<int, AppInstanceRuntimeMount>}
+     * @return array{action: string, mount: InstanceRuntimeMount|null, mounts: Collection<int, InstanceRuntimeMount>}
      */
-    public function removeFromInstance(AppInstance $instance, string $target): array
+    public function removeFromInstance(Instance $instance, string $target): array
     {
         $target = $this->normalizePath($target, 'target');
 
@@ -95,7 +95,7 @@ final readonly class AppRuntimeMountService
             ->where('target', $target)
             ->first();
 
-        if (! $mount instanceof AppInstanceRuntimeMount) {
+        if (! $mount instanceof InstanceRuntimeMount) {
             return [
                 'action' => 'missing',
                 'mount' => null,
@@ -114,17 +114,17 @@ final readonly class AppRuntimeMountService
     }
 
     /**
-     * @return Collection<int, AppInstanceRuntimeMount>
+     * @return Collection<int, InstanceRuntimeMount>
      */
-    public function listForInstance(AppInstance $instance): Collection
+    public function listForInstance(Instance $instance): Collection
     {
         $mounts = [];
 
-        foreach (AppInstanceRuntimeMount::query()
-            ->where('app_instance_id', $instance->id)
+        foreach (InstanceRuntimeMount::query()
+            ->where('instance_id', $instance->id)
             ->orderBy('target')
             ->get() as $mount) {
-            if ($mount instanceof AppInstanceRuntimeMount) {
+            if ($mount instanceof InstanceRuntimeMount) {
                 $mounts[] = $mount;
             }
         }
@@ -135,7 +135,7 @@ final readonly class AppRuntimeMountService
     /**
      * @return array{source: string, target: string, read_only: bool}
      */
-    public function instanceMountPayload(AppInstanceRuntimeMount $mount): array
+    public function instanceMountPayload(InstanceRuntimeMount $mount): array
     {
         return [
             'source' => $mount->source,
@@ -147,7 +147,7 @@ final readonly class AppRuntimeMountService
     /**
      * @return array{0: string, 1: string}
      */
-    private function validateIntent(Project $app, string $source, string $target, ?AppInstance $instance = null): array
+    private function validateIntent(App $app, string $source, string $target, ?Instance $instance = null): array
     {
         $this->assertSupportedApp($app, $instance);
 
@@ -183,9 +183,9 @@ final readonly class AppRuntimeMountService
         return [$source, $target];
     }
 
-    private function homeForValidation(Project $app, ?AppInstance $instance = null): string
+    private function homeForValidation(App $app, ?Instance $instance = null): string
     {
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $node = $this->placement->nodeForInstance($instance);
 
             if ($node instanceof Node) {
@@ -202,16 +202,16 @@ final readonly class AppRuntimeMountService
         return NodeHostPaths::homeDirectoryFor(null, $this->nodeUser($app));
     }
 
-    private function assertSupportedApp(Project $app, ?AppInstance $instance): void
+    private function assertSupportedApp(App $app, ?Instance $instance): void
     {
-        $selector = $instance instanceof AppInstance ? "{$app->name}.{$instance->name}" : $app->name;
+        $selector = $instance instanceof Instance ? "{$app->name}.{$instance->name}" : $app->name;
         $runtime = $app->runtimeKind();
 
         if ($runtime !== AppRuntimeKind::Php) {
             throw $this->validationFailure(
                 'instance_runtime_not_php',
                 "Instance '{$selector}' does not use the PHP runtime.",
-                ['project' => $app->name, 'instance' => $instance?->name, 'runtime' => $runtime->value],
+                ['app' => $app->name, 'instance' => $instance?->name, 'runtime' => $runtime->value],
             );
         }
 
@@ -219,24 +219,24 @@ final readonly class AppRuntimeMountService
             throw $this->validationFailure(
                 'instance_mounts_app_dev_only',
                 'Configurable instance runtime mounts are currently supported on app-dev nodes only.',
-                ['project' => $app->name, 'instance' => $instance?->name],
+                ['app' => $app->name, 'instance' => $instance?->name],
             );
         }
     }
 
-    private function isSupportedAppDevPhpApp(Project $app): bool
+    private function isSupportedAppDevPhpApp(App $app): bool
     {
         return $app->runtimeKind() === AppRuntimeKind::Php && $this->isAppDevApp($app);
     }
 
-    private function isAppDevApp(Project $app): bool
+    private function isAppDevApp(App $app): bool
     {
         $app->loadMissing('node.roleAssignments');
 
         return $app->node instanceof Node && $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 
-    private function nodeUser(Project $app): string
+    private function nodeUser(App $app): string
     {
         $app->loadMissing('node');
 
@@ -245,8 +245,8 @@ final readonly class AppRuntimeMountService
         if ($nodeUser === '' || preg_match('/^[A-Za-z0-9._-]+$/', $nodeUser) !== 1) {
             throw $this->validationFailure(
                 'node_user_invalid',
-                "Project '{$app->name}' has an invalid runtime user.",
-                ['project' => $app->name],
+                "App '{$app->name}' has an invalid runtime user.",
+                ['app' => $app->name],
             );
         }
 
@@ -316,7 +316,7 @@ final readonly class AppRuntimeMountService
         );
     }
 
-    private function isReservedTarget(Project $app, string $target): bool
+    private function isReservedTarget(App $app, string $target): bool
     {
         $reservedTargets = [
             AppRuntimeContainer::SourceTarget,

@@ -6,6 +6,129 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Assert;
 
+/**
+ * @param  array<string, mixed>  $schema
+ */
+function assert_process_open_api_contracts(array $schema): void
+{
+    $processParameters = data_get($schema, 'paths./processes.get.parameters');
+
+    Assert::assertIsArray($processParameters);
+
+    $processParameterNames = [];
+
+    foreach ($processParameters as $processParameter) {
+        Assert::assertIsArray($processParameter);
+
+        $processParameterNames[] = $processParameter['name'] ?? null;
+    }
+
+    Assert::assertSame(['app', 'node', 'instance', 'workspace'], $processParameterNames);
+    Assert::assertSame(
+        ['starting', 'running', 'stopping', 'stopped', 'restarting', 'crashed', 'unknown'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.status.enum',
+        ),
+    );
+    Assert::assertSame(
+        [
+            'node',
+            'app',
+            'instance',
+            'workspace',
+            'key',
+            'label',
+            'name',
+            'command',
+            'restart_policy',
+            'crash_notification',
+            'runtime',
+            'tool',
+            'service',
+            'runtime_unit',
+            'status',
+            'last_event',
+        ],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.required',
+        ),
+    );
+    Assert::assertSame(
+        ['node', 'app', 'instance', 'workspace'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.context.required',
+        ),
+    );
+    Assert::assertSame(
+        ['starting', 'started', 'stopping', 'stopped', 'restarting', 'crashed', 'failed'],
+        data_get(
+            $schema,
+            'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.last_event.properties.type.enum',
+        ),
+    );
+    // service is array<string, mixed>|null metadata, not a closed empty object.
+    // JSON `{}` for additionalProperties decodes as [] with associative json_decode.
+    $serviceSchema = data_get(
+        $schema,
+        'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.processes.items.properties.service',
+    );
+    Assert::assertIsArray($serviceSchema);
+    Assert::assertArrayHasKey('additionalProperties', $serviceSchema);
+    Assert::assertSame(
+        ['app', 'node', 'instance', 'workspace', 'name'],
+        array_keys(data_get(
+            $schema,
+            'paths./processes/start.post.requestBody.content.application/json.schema.properties',
+        ) ?? []),
+    );
+
+    $startRuntimeProperties = data_get(
+        $schema,
+        'paths./processes/start.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.properties',
+    ) ?? [];
+    $restartRuntimeProperties = data_get(
+        $schema,
+        'paths./processes/restart.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.properties',
+    ) ?? [];
+
+    Assert::assertArrayHasKey('event', $startRuntimeProperties);
+    Assert::assertArrayHasKey('events', $startRuntimeProperties);
+    Assert::assertArrayHasKey('events', $restartRuntimeProperties);
+    Assert::assertArrayNotHasKey('event', $restartRuntimeProperties);
+    Assert::assertSame(
+        ['process', 'node', 'app', 'instance', 'workspace', 'runtime_unit', 'state', 'event', 'events'],
+        data_get(
+            $schema,
+            'paths./processes/start.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.required',
+        ),
+    );
+    Assert::assertContains(
+        'events',
+        data_get(
+            $schema,
+            'paths./processes/restart.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.required',
+        ) ?? [],
+    );
+    Assert::assertTrue(
+        (bool) data_get($schema, 'paths./processes/stream.get.parameters.0.required'),
+    );
+    Assert::assertSame(
+        'app',
+        data_get($schema, 'paths./processes/stream.get.parameters.0.name'),
+    );
+    Assert::assertSame(
+        'processesStream',
+        data_get($schema, 'paths./processes/stream.get.operationId'),
+    );
+    Assert::assertArrayNotHasKey(
+        'options',
+        data_get($schema, 'paths./processes', []) ?? [],
+    );
+}
+
 test('gateway openapi export includes stable contract metadata', function (): void {
     ini_set('memory_limit', '1G');
 
@@ -42,24 +165,12 @@ test('gateway openapi export includes stable contract metadata', function (): vo
     Assert::assertSame('toolStart', data_get($schema, 'paths./tools/{tool}/start.post.operationId'));
     Assert::assertSame('toolStop', data_get($schema, 'paths./tools/{tool}/stop.post.operationId'));
     Assert::assertSame('toolRestart', data_get($schema, 'paths./tools/{tool}/restart.post.operationId'));
-    $processParameters = data_get($schema, 'paths./processes.get.parameters');
-
-    Assert::assertIsArray($processParameters);
-
-    $processParameterNames = [];
-
-    foreach ($processParameters as $processParameter) {
-        Assert::assertIsArray($processParameter);
-
-        $processParameterNames[] = $processParameter['name'] ?? null;
-    }
-
-    Assert::assertSame(['node', 'instance', 'workspace'], $processParameterNames);
+    assert_process_open_api_contracts($schema);
 
     /** @var array<string, mixed>|null $projectListItem */
     $projectListItem = data_get(
         target: $schema,
-        key: 'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.projects.items',
+        key: 'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.apps.items',
     );
 
     Assert::assertIsArray($projectListItem);
@@ -93,14 +204,14 @@ test('gateway openapi export includes stable contract metadata', function (): vo
     Assert::assertSame('integer', data_get($projectListItem, 'properties.workspace_count.type'));
     $projectListResponseStatuses = array_map(
         static fn (int|string $status): string => (string) $status,
-        array_keys(data_get($schema, 'paths./projects.get.responses', [])),
+        array_keys(data_get($schema, 'paths./apps.get.responses', [])),
     );
     sort($projectListResponseStatuses);
 
     Assert::assertSame(['200', '400', '403'], $projectListResponseStatuses);
     Assert::assertSame('array', data_get(
         $schema,
-        'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
+        'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
     ));
 
     /** @var array<string, mixed>|null $instanceSetupResponses */
@@ -123,7 +234,7 @@ test('gateway openapi export includes stable contract metadata', function (): vo
 
     Assert::assertIsArray($instanceSetupData);
     Assert::assertSame([
-        'project',
+        'app',
         'instance',
         'node',
         'path',

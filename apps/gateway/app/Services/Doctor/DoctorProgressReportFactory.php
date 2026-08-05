@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class DoctorProgressReportFactory
 {
     /**
@@ -43,7 +45,7 @@ final class DoctorProgressReportFactory
         array $familyCheckCounts = [],
         ?string $app = null,
         ?string $workspace = null,
-        ?string $appInstance = null,
+        ?string $instance = null,
     ): array {
         return [
             'healthy' => false,
@@ -52,9 +54,12 @@ final class DoctorProgressReportFactory
                 'families' => $families,
                 'node' => $target->name,
                 'role' => $target->displayRole(),
+                'roles' => ($roles = app(NodeRoleAssignments::class)->activeRoleNames($target)) === []
+                    ? ['operator']
+                    : $roles,
                 'self' => false,
                 'app' => $app,
-                'app_instance' => $appInstance,
+                'instance' => $instance,
                 'workspace' => $workspace,
                 'key' => $key,
             ],

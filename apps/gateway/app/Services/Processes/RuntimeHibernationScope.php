@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 
 final readonly class RuntimeHibernationScope
@@ -65,9 +65,9 @@ final readonly class RuntimeHibernationScope
             return $this->normalizedPath($this->context->workspace->path);
         }
 
-        $config = $this->context->appInstance?->driver_config;
+        $config = $this->context->instance?->driver_config;
 
-        if ($config instanceof OrbitAppInstanceDriverConfigData) {
+        if ($config instanceof OrbitInstanceDriverConfigData) {
             return $this->normalizedPath($config->path);
         }
 
@@ -76,10 +76,10 @@ final readonly class RuntimeHibernationScope
 
     public function displayName(): string
     {
-        $config = $this->context->appInstance?->driver_config;
+        $config = $this->context->instance?->driver_config;
 
         if ($this->context->workspace instanceof Workspace) {
-            $domain = $config instanceof OrbitAppInstanceDriverConfigData ? $config->domain : null;
+            $domain = $config instanceof OrbitInstanceDriverConfigData ? $config->domain : null;
 
             return is_string($domain) && $domain !== ''
                 ? "{$this->context->workspace->name}.{$domain}"
@@ -87,15 +87,15 @@ final readonly class RuntimeHibernationScope
         }
 
         if (
-            $this->context->appInstance instanceof AppInstance
-            && $config instanceof OrbitAppInstanceDriverConfigData
+            $this->context->instance instanceof Instance
+            && $config instanceof OrbitInstanceDriverConfigData
             && is_string($config->domain)
             && $config->domain !== ''
         ) {
             return $config->domain;
         }
 
-        return $this->context->app instanceof Project ? $this->context->app->name : 'application';
+        return $this->context->app instanceof App ? $this->context->app->name : 'application';
     }
 
     private function normalizedPath(?string $path): ?string

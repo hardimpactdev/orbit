@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -48,7 +48,7 @@ describe('WorkspaceHistoryController', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantWorkspaceHistoryAccess($caller, $node);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         WorkspaceRun::factory()->create([
@@ -85,7 +85,7 @@ describe('WorkspaceHistoryController', function (): void {
     it('caps limit at 500 and reports the cap', function (): void {
         createWorkspaceHistoryCallerNode(role: 'gateway');
         $node = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -107,7 +107,7 @@ describe('WorkspaceHistoryController', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceHistoryAccess($caller, $node);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -134,18 +134,18 @@ describe('WorkspaceHistoryController', function (): void {
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceHistoryAccess($caller, $localNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'domain' => 'happie.test',
             'path' => '/home/nckrtl/apps/happie',
         ]);
-        $instance = AppInstance::factory()
+        $instance = Instance::factory()
             ->for($app)
             ->create([
                 'name' => 'nmbp',
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver' => InstanceDriver::Orbit,
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $localNode->id,
                     node: 'NMBP',
                     path: '/Users/nckrtl/apps/happie',
@@ -156,7 +156,7 @@ describe('WorkspaceHistoryController', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'recipes',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         WorkspaceRun::factory()->create([
             'workspace_id' => $workspace->id,
@@ -200,7 +200,7 @@ describe('WorkspaceHistoryController', function (): void {
     it('returns authorization failure when the caller has no workspace visibility', function (): void {
         createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode();
-        $app = Project::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(

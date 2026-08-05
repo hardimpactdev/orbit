@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Contracts;
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 
 interface PhpRuntimeArtifactConverger
@@ -13,7 +13,7 @@ interface PhpRuntimeArtifactConverger
     /**
      * @return list<array<string, string>>
      */
-    public function forApp(Project $app): array;
+    public function forApp(App $app): array;
 
     /**
      * @return list<array<string, string>>

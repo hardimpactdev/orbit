@@ -49,7 +49,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($addPayload['success']['data']['process'])
             ->toMatchArray([
                 'name' => $process,
-                'project' => $app,
+                'app' => $app,
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
                 'runtime' => 'docker',
@@ -93,7 +93,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($startPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'project' => $app,
+                'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
@@ -128,7 +128,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($restartPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'project' => $app,
+                'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
@@ -147,7 +147,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($stopPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'project' => $app,
+                'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'stopped',
             ])
@@ -173,7 +173,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'project' => $app,
+                'app' => $app,
                 'workspace' => $workspace,
                 'runtime' => 'docker',
             ])
@@ -207,7 +207,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'project' => $app,
+                'app' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
                 'state' => 'running',
@@ -232,7 +232,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'project' => $app,
+                'app' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
             ])
@@ -256,7 +256,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'project' => $app,
+                'app' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
                 'state' => 'stopped',
@@ -279,7 +279,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'project' => $app,
+                'app' => $app,
                 'workspace' => $workspace,
             ])
             ->and($workspaceRemovePayload['success']['data']['removed_runtime_units'])
@@ -297,14 +297,14 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($removePayload['success']['data']['process'])
             ->toMatchArray([
                 'name' => $process,
-                'project' => $app,
+                'app' => $app,
             ])
             ->and($removePayload['success']['data']['removed_runtime_units'])
             ->toContain($runtimeUnit);
 
         $registry = processCommandRunGatewayTinker(
             $topology,
-            "\$app = \\App\\Models\\Project::query()->where('name', '{$app}')->first(); echo \$app instanceof \\App\\Models\\Project && \\App\\Models\\Process::query()->where('name', '{$process}')->where('owner_type', \$app->getMorphClass())->where('owner_id', \$app->id)->exists() ? 'present' : 'absent';",
+            "\$app = \\App\\Models\\App::query()->where('name', '{$app}')->first(); echo \$app instanceof \\App\\Models\\Project && \\App\\Models\\Process::query()->where('name', '{$process}')->where('owner_type', \$app->getMorphClass())->where('owner_id', \$app->id)->exists() ? 'present' : 'absent';",
         );
 
         expect(trim($registry->output()))->toBe('absent');
@@ -328,7 +328,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             'gateway',
             "cd {$checkout} && orbit process:add {$runtimeUnit} "
             .escapeshellarg('printf "systemd-e2e-ready\n"; sleep 300')
-            .' --node=app-dev-1 --runtime=systemd --tool=opencode --start --json',
+            .' --node=app-dev-1 --runtime=systemd --tool=php-cli --start --json',
             timeoutSeconds: 180,
             allowFailure: true,
         );
@@ -348,10 +348,10 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'php-cli',
             ])
             ->and($addPayload['success']['data']['runtime_units'][0])
             ->toMatchArray([
@@ -377,16 +377,16 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->and($listPayload['success']['data']['context'])
             ->toBe([
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
             ])
             ->and(collect($listPayload['success']['data']['processes'])->firstWhere('name', $runtimeUnit))
             ->toMatchArray([
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'php-cli',
                 'runtime_unit' => $runtimeUnit,
             ]);
 
@@ -403,7 +403,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
             ])
@@ -424,7 +424,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
@@ -443,7 +443,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'stopped',
@@ -518,7 +518,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'project' => null,
+                'app' => null,
                 'workspace' => null,
             ])
             ->and($removePayload['success']['data']['removed_runtime_units'])
@@ -546,7 +546,7 @@ function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
         $node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
-        \App\Models\Project::query()->updateOrCreate(
+        \App\Models\App::query()->updateOrCreate(
             ['name' => '__APP__'],
             [
                 'node_id' => $node->id,
@@ -578,7 +578,7 @@ function processCommandSeedWorkspace(E2ETopologyHarness $topology, string $app, 
     }
 
     $script = <<<'PHP'
-        $app = \App\Models\Project::query()->where('name', '__APP__')->firstOrFail();
+        $app = \App\Models\App::query()->where('name', '__APP__')->firstOrFail();
 
         \App\Models\Workspace::query()->updateOrCreate(
             ['app_id' => $app->id, 'name' => '__WORKSPACE__'],
@@ -642,7 +642,7 @@ function processCommandCleanup(
         processCommandRemoveDockerHostPath($topology, $path);
     }
 
-    $script = "\\App\\Models\\Process::query()->whereIn('name', ['worker', 'frankenphp-worker'])->delete(); if (\$app = \\App\\Models\\Project::query()->where('name', '{$app}')->first()) { \$app->delete(); }";
+    $script = "\\App\\Models\\Process::query()->whereIn('name', ['worker', 'frankenphp-worker'])->delete(); if (\$app = \\App\\Models\\App::query()->where('name', '{$app}')->first()) { \$app->delete(); }";
 
     processCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }

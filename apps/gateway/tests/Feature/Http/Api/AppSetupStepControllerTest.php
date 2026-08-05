@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -39,13 +39,13 @@ function grantAppSetupStepAccess(Node $caller, Node $appNode, array $permissions
 function createAppSetupStepTarget(): array
 {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -104,7 +104,7 @@ describe('AppSetupStepController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
-            ->assertJsonPath('success.data.step.project', 'docs')
+            ->assertJsonPath('success.data.step.app', 'docs')
             ->assertJsonPath('success.data.step.instance', 'development')
             ->assertJsonPath('success.data.step.order', 1)
             ->assertJsonPath('success.data.step.timeout_seconds', 900);
@@ -115,7 +115,7 @@ describe('AppSetupStepController', function (): void {
         $caller = createAppSetupStepCallerNode();
         grantAppSetupStepAccess($caller, $node, ['instance:read']);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'command' => 'php artisan migrate',
             'sort_order' => 1,
         ]);
@@ -133,7 +133,7 @@ describe('AppSetupStepController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.steps.0.project', 'docs')
+            ->assertJsonPath('success.data.steps.0.app', 'docs')
             ->assertJsonPath('success.data.steps.0.instance', 'development')
             ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate');
     });
@@ -143,7 +143,7 @@ describe('AppSetupStepController', function (): void {
         $caller = createAppSetupStepCallerNode();
         grantAppSetupStepAccess($caller, $node, ['instance:write']);
         $step = AppSetupStep::factory()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'sort_order' => 1,
         ]);
 
@@ -172,9 +172,9 @@ describe('AppSetupStepController', function (): void {
 
     it('keeps setup steps isolated between instances', function (): void {
         [$node, $app, $development] = createAppSetupStepTarget();
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/srv/docs',
@@ -183,11 +183,11 @@ describe('AppSetupStepController', function (): void {
             ),
         ]);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'command' => 'composer install',
         ]);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $production->id,
+            'instance_id' => $production->id,
             'command' => 'php artisan migrate --force',
         ]);
         $caller = createAppSetupStepCallerNode();
@@ -212,9 +212,9 @@ describe('AppSetupStepController', function (): void {
     it('requires a concrete selector without exposing a hidden sibling', function (): void {
         [$visibleNode, $app, $development] = createAppSetupStepTarget();
         $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $hiddenNode->id,
                 node: $hiddenNode->name,
                 path: '/srv/docs',
@@ -223,11 +223,11 @@ describe('AppSetupStepController', function (): void {
             ),
         ]);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'command' => 'composer install',
         ]);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $production->id,
+            'instance_id' => $production->id,
             'command' => 'php artisan migrate --force',
         ]);
         $caller = createAppSetupStepCallerNode();
@@ -255,9 +255,9 @@ describe('AppSetupStepController', function (): void {
     it('does not reveal whether an unauthorized explicit sibling exists', function (): void {
         [$visibleNode, $app] = createAppSetupStepTarget();
         $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $hiddenNode->id,
                 node: $hiddenNode->name,
                 path: '/srv/docs',

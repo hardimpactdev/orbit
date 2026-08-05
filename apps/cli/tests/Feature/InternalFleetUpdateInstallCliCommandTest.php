@@ -9,6 +9,49 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+// Isolate every suite in this file from the runner's real install metadata path.
+// Successful installs write InstallMetadataStore output; without this override they
+// would pollute $HOME/.config/orbit/install.json (or a pre-set ORBIT_INSTALL_METADATA_PATH).
+beforeEach(function (): void {
+    $this->previousOrbitInstallMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
+
+    $metadataDir = sys_get_temp_dir().'/orbit-fleet-install-metadata-'.bin2hex(random_bytes(8));
+    mkdir($metadataDir, permissions: 0o700, recursive: true);
+    $metadataPath = "{$metadataDir}/install.json";
+
+    $this->orbitFleetInstallMetadataDir = $metadataDir;
+    $this->orbitFleetInstallMetadataPath = $metadataPath;
+
+    putenv("ORBIT_INSTALL_METADATA_PATH={$metadataPath}");
+    $_ENV['ORBIT_INSTALL_METADATA_PATH'] = $metadataPath;
+    $_SERVER['ORBIT_INSTALL_METADATA_PATH'] = $metadataPath;
+});
+
+afterEach(function (): void {
+    fleet_update_install_cli_restore_env_var(
+        'ORBIT_INSTALL_METADATA_PATH',
+        $this->previousOrbitInstallMetadataPath,
+    );
+
+    $metadataDir = $this->orbitFleetInstallMetadataDir ?? null;
+
+    if (! is_string($metadataDir) || $metadataDir === '' || ! is_dir($metadataDir)) {
+        return;
+    }
+
+    foreach (glob($metadataDir.'/*') ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        unlink($path);
+    }
+
+    if (is_dir($metadataDir)) {
+        rmdir($metadataDir);
+    }
+});
+
 /** @mago-expect lint:cyclomatic-complexity */
 describe('internal fleet update install cli command', function (): void {
     beforeEach(function (): void {
@@ -43,6 +86,7 @@ describe('internal fleet update install cli command', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [
@@ -59,6 +103,9 @@ describe('internal fleet update install cli command', function (): void {
             ], JSON_THROW_ON_ERROR),
         );
         $data = fleet_update_install_cli_success_data($output);
+        $metadata = is_file($metadataPath)
+            ? json_decode((string) file_get_contents($metadataPath), associative: true, flags: JSON_THROW_ON_ERROR)
+            : null;
 
         expect($exitCode)
             ->toBe(0, $output)
@@ -74,7 +121,161 @@ describe('internal fleet update install cli command', function (): void {
             ->and(fleet_update_install_cli_sha256(fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256)
             ->and(shell_exec(escapeshellarg("{$workspace}/bin/orbit").' --version --local'))
-            ->toBe("Orbit 9.9.9\n");
+            ->toBe(fleet_update_install_cli_fake_version_output())
+            ->and($metadata)
+            ->toMatchArray([
+                'schema_version' => 1,
+                'version' => '9.9.9',
+                'binary_path' => "{$workspace}/bin/orbit",
+                'install_root' => "{$workspace}/install-root",
+            ])
+            ->and($metadata['installed_at'] ?? null)
+            ->not->toBeNull();
+    });
+
+    it('does not create or alter install metadata when artifact hash verification fails', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
+        $seededMetadata =
+            json_encode([
+                'schema_version' => 1,
+                'version' => '1.0.0',
+                'released_at' => null,
+                'installed_at' => '2020-01-01T00:00:00+00:00',
+                'binary_path' => '/seeded/bin/orbit',
+                'install_root' => '/seeded/install-root',
+            ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n";
+
+        file_put_contents($metadataPath, $seededMetadata);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => str_repeat('0', times: 64),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'] ?? null)
+            ->toBe('fleet_update.cli_install_failed')
+            ->and(file_get_contents($metadataPath))
+            ->toBe($seededMetadata);
+
+        unlink($metadataPath);
+
+        [$createExitCode, $createOutput] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => str_repeat('0', times: 64),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($createExitCode)
+            ->toBe(1, $createOutput)
+            ->and(is_file($metadataPath))
+            ->toBeFalse();
+    });
+
+    it('writes install metadata from structured version JSON ignoring earlier semver-like stdout', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
+
+        // Progress noise may contain dotted triples; only JSON version wins.
+        file_put_contents($artifactPath, <<<'SH'
+            #!/usr/bin/env sh
+            echo "pulling ghcr.io/hardimpactdev/orbit-reverb:1.2.3@sha256:deadbeef"
+            printf '%s\n' '{"success":{"data":{"version":"9.9.9","latest_version":"1.2.3","update_available":true,"released_at":null,"installed_at":null},"meta":[]}}'
+            SH);
+        chmod(filename: $artifactPath, permissions: 0o755);
+
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $metadata = is_file($metadataPath)
+            ? json_decode((string) file_get_contents($metadataPath), associative: true, flags: JSON_THROW_ON_ERROR)
+            : null;
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($metadata)
+            ->toMatchArray([
+                'schema_version' => 1,
+                'version' => '9.9.9',
+                'binary_path' => "{$workspace}/bin/orbit",
+                'install_root' => "{$workspace}/install-root",
+            ]);
+    });
+
+    it('fails when CLI install succeeds but version output is not structured JSON', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
+
+        // Human Version table only — install process exits 0 but metadata path fails closed.
+        file_put_contents($artifactPath, <<<'SH'
+            #!/usr/bin/env sh
+            echo "Version       9.9.9"
+            echo "Released at   unknown"
+            echo "Installed at  unknown"
+            SH);
+        chmod(filename: $artifactPath, permissions: 0o755);
+
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and(is_file($metadataPath))
+            ->toBeFalse()
+            ->and($output)
+            ->toContain('fleet_update.cli_version_unstructured')
+            ->toContain('structured JSON');
     });
 
     it('installs from a hash-verified payload file', function (): void {
@@ -113,6 +314,7 @@ describe('internal fleet update install cli command', function (): void {
     it('rejects a payload file when its hash does not match', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $payloadFile = "{$workspace}/payload.json";
+        $metadataPath = (string) $this->orbitFleetInstallMetadataPath;
 
         file_put_contents($payloadFile, '{"artifact_url":"file:///tmp/orbit"}');
 
@@ -126,7 +328,9 @@ describe('internal fleet update install cli command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure('validation_failed', 'Fleet update CLI install payload is invalid.'));
+            ->toBe(JsonEnvelope::failure('validation_failed', 'Fleet update CLI install payload is invalid.'))
+            ->and(is_file($metadataPath))
+            ->toBeFalse();
     });
 
     it('retries transient curl failures while downloading artifacts', function (): void {
@@ -460,8 +664,10 @@ describe('internal fleet update install cli command', function (): void {
         $roleImageArchive = "{$workspace}/artifact/orbit-reverb.tar";
         file_put_contents($roleImageArchive, data: 'verified role image archive');
         $dockerLog = "{$workspace}/docker.log";
-        $dockerPath = make_fleet_update_install_cli_fake_docker_bin($workspace, $dockerLog);
+        $dockerPath = make_fleet_update_install_cli_offline_docker_bin($workspace, $dockerLog);
         $originalPath = $_SERVER['PATH'] ?? getenv('PATH');
+        $candidateImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate@sha256:'.str_repeat('a', times: 64);
+        $stableImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9';
 
         putenv('PATH='.$dockerPath.':'.(is_string($originalPath) ? $originalPath : ''));
         $_ENV['PATH'] = getenv('PATH');
@@ -478,11 +684,15 @@ describe('internal fleet update install cli command', function (): void {
                 'install_root' => "{$workspace}/install-root",
                 'bin_path' => "{$workspace}/bin/orbit",
                 'shared_binary_path' => null,
-                'role_images' => ['ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64)],
+                'role_images' => [$candidateImage],
                 'role_image_artifacts' => [[
-                    'image' => 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64),
+                    'image' => $candidateImage,
                     'url' => "file://{$roleImageArchive}",
                     'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
+                'role_image_aliases' => [[
+                    'source' => $candidateImage,
+                    'target' => $stableImage,
                 ]],
             ], JSON_THROW_ON_ERROR),
         );
@@ -491,8 +701,9 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe(0, $output)
             ->and((string) file_get_contents($dockerLog))
             ->toContain('load --input')
-            ->toContain('image inspect ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:')
-            ->not->toContain('pull ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:');
+            ->toContain('image inspect ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate')
+            ->toContain("image tag sha256:orbit-test-image {$stableImage}")
+            ->toContain("pull {$candidateImage}");
     });
 });
 
@@ -663,6 +874,163 @@ describe('managed Orbit Agent service boundary during fleet update install', fun
             ->toBe($oldCaPem)
             ->and($calls)
             ->not->toContain('systemctl');
+    });
+
+    it('writes Agent config and CA when host php is unavailable', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
+        $pathWithoutPhp = make_fleet_update_install_cli_path_without_php($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        $agentCaPath = "{$workspace}/ca/root.crt";
+        $agentConfig = implode("\n", [
+            'gateway_url = "https://10.6.0.1"',
+            'node_name = "services-1"',
+            'platform = "ubuntu_24-04"',
+            'managed = true',
+            'wireguard_address = "10.6.0.9"',
+            '',
+        ]);
+        $agentCaPem = "-----BEGIN CERTIFICATE-----\nc2VydmljZXMx\n-----END CERTIFICATE-----\n";
+
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+
+        $path = $systemdBin.PATH_SEPARATOR.$pathWithoutPhp;
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        expect(trim((string) shell_exec('command -v php || true')))->toBeEmpty();
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => fleet_update_install_cli_sha256($artifactPath),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => fleet_update_install_cli_sha256($agentArtifactPath),
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'agent_service' => [
+                    'unit_name' => 'orbit-agent',
+                    'exec_start' => "{$workspace}/bin/orbit-agent",
+                    'config_path' => $agentConfigPath,
+                    'config' => $agentConfig,
+                    'ca_path' => $agentCaPath,
+                    'ca_pem' => $agentCaPem,
+                    'http_bind' => '10.6.0.9:9477',
+                    'user' => 'orbit',
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($stdout)
+            ->toContain('write_agent_config')
+            ->toContain('schedule_agent_restart')
+            ->and(file_get_contents($agentConfigPath))
+            ->toBe($agentConfig)
+            ->and(file_get_contents($agentCaPath))
+            ->toBe($agentCaPem)
+            ->and($stdout)
+            ->not->toContain('php: command not found');
+    });
+
+    it('loads role image side effects when host php is unavailable', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
+        $pathWithoutPhp = make_fleet_update_install_cli_path_without_php($workspace);
+        $dockerLog = "{$workspace}/docker.log";
+        $dockerBin = make_fleet_update_install_cli_fake_docker_bin($workspace, $dockerLog);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $roleImageArchive = "{$workspace}/artifact/orbit-reverb.tar";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        $agentCaPath = "{$workspace}/ca/root.crt";
+        $agentCaPem = "-----BEGIN CERTIFICATE-----\nc2VydmljZXMx\n-----END CERTIFICATE-----\n";
+        $roleImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('c', times: 64);
+        $candidateRuntimeImage =
+            'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-build@sha256:'
+            .str_repeat('d', times: 64);
+        $runtimeImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm';
+
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        file_put_contents(filename: $roleImageArchive, data: 'verified role image archive');
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+
+        $path = $systemdBin.PATH_SEPARATOR.$dockerBin.PATH_SEPARATOR.$pathWithoutPhp;
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        expect(trim((string) shell_exec('command -v php || true')))->toBeEmpty();
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => fleet_update_install_cli_sha256($artifactPath),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => fleet_update_install_cli_sha256($agentArtifactPath),
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'agent_service' => [
+                    'unit_name' => 'orbit-agent',
+                    'exec_start' => "{$workspace}/bin/orbit-agent",
+                    'config_path' => $agentConfigPath,
+                    'config' => "node_name = \"services-1\"\n",
+                    'ca_path' => $agentCaPath,
+                    'ca_pem' => $agentCaPem,
+                    'http_bind' => '10.6.0.9:9477',
+                    'user' => 'orbit',
+                ],
+                'role_images' => [$roleImage, $candidateRuntimeImage],
+                'role_image_artifacts' => [[
+                    'image' => $roleImage,
+                    'url' => "file://{$roleImageArchive}",
+                    'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
+                'role_image_aliases' => [[
+                    'source' => $candidateRuntimeImage,
+                    'target' => $runtimeImage,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($stdout)
+            ->toContain('write_agent_config')
+            ->toContain('load_required_image_artifacts')
+            ->toContain('alias_required_images')
+            ->toContain('schedule_agent_restart')
+            ->and((string) file_get_contents($dockerLog))
+            ->toContain('load --input')
+            ->toContain("image tag sha256:orbit-test-image {$runtimeImage}");
     });
 });
 
@@ -1067,6 +1435,25 @@ function fleet_update_install_cli_success_data(string $output): array
     return $data;
 }
 
+/**
+ * Mirrors VersionCommand --version --local --json success envelope.
+ */
+function fleet_update_install_cli_fake_version_output(string $version = '9.9.9'): string
+{
+    return json_encode([
+        'success' => [
+            'data' => [
+                'version' => $version,
+                'latest_version' => null,
+                'update_available' => false,
+                'released_at' => null,
+                'installed_at' => null,
+            ],
+            'meta' => [],
+        ],
+    ], JSON_THROW_ON_ERROR)."\n";
+}
+
 function make_fleet_update_install_cli_workspace(): string
 {
     $workspace = sys_get_temp_dir().'/orbit-fleet-update-install-cli-'.bin2hex(random_bytes(8));
@@ -1075,9 +1462,10 @@ function make_fleet_update_install_cli_workspace(): string
     mkdir("{$workspace}/bin", recursive: true);
     $artifact = "{$workspace}/artifact/orbit";
 
+    // Match VersionCommand JSON contract: --version --local --json.
     file_put_contents($artifact, <<<'SH'
         #!/usr/bin/env sh
-        echo "Orbit 9.9.9"
+        printf '%s\n' '{"success":{"data":{"version":"9.9.9","latest_version":null,"update_available":false,"released_at":null,"installed_at":null},"meta":[]}}'
         SH);
     chmod(filename: $artifact, permissions: 0o755);
 
@@ -1086,24 +1474,71 @@ function make_fleet_update_install_cli_workspace(): string
 
 function make_fleet_update_install_cli_path_without_docker(string $workspace): string
 {
-    $bin = "{$workspace}/path-bin";
+    return make_fleet_update_install_cli_restricted_path(
+        workspace: $workspace,
+        directory: 'path-bin',
+        commands: [
+            'awk',
+            'basename',
+            'bash',
+            'cp',
+            'dirname',
+            'install',
+            'ln',
+            'mktemp',
+            'mv',
+            'readlink',
+            'rm',
+            'sh',
+        ],
+    );
+}
+
+function make_fleet_update_install_cli_path_without_php(string $workspace): string
+{
+    return make_fleet_update_install_cli_restricted_path(
+        workspace: $workspace,
+        directory: 'path-without-php',
+        commands: [
+            'awk',
+            'base64',
+            'basename',
+            'bash',
+            'cat',
+            'cp',
+            'date',
+            'dirname',
+            'env',
+            'head',
+            'id',
+            'install',
+            'ln',
+            'mktemp',
+            'mv',
+            'printf',
+            'readlink',
+            'rm',
+            'sed',
+            'sh',
+            'sleep',
+            'tr',
+        ],
+    );
+}
+
+/**
+ * @param  list<string>  $commands
+ */
+function make_fleet_update_install_cli_restricted_path(
+    string $workspace,
+    string $directory,
+    array $commands,
+): string {
+    $bin = "{$workspace}/{$directory}";
 
     mkdir($bin, recursive: true);
 
-    foreach ([
-        'awk',
-        'basename',
-        'bash',
-        'cp',
-        'dirname',
-        'install',
-        'ln',
-        'mktemp',
-        'mv',
-        'readlink',
-        'rm',
-        'sh',
-    ] as $command) {
+    foreach ($commands as $command) {
         $path = trim((string) shell_exec('command -v '.escapeshellarg($command)));
 
         if ($path !== '') {
@@ -1134,6 +1569,38 @@ function make_fleet_update_install_cli_fake_docker_bin(string $workspace, string
         if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "${3:-}" = "--format" ]; then
             printf '%s\n' "sha256:orbit-test-image"
         fi
+        exit 0
+        SH);
+    chmod("{$bin}/docker", permissions: 0o755);
+    putenv("ORBIT_TEST_DOCKER_LOG={$log}");
+    $_ENV['ORBIT_TEST_DOCKER_LOG'] = $log;
+    $_SERVER['ORBIT_TEST_DOCKER_LOG'] = $log;
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_offline_docker_bin(string $workspace, string $log): string
+{
+    $bin = "{$workspace}/offline-docker-bin";
+    mkdir($bin, recursive: true);
+    file_put_contents("{$bin}/docker", <<<'SH'
+        #!/usr/bin/env sh
+        printf '%s\n' "$*" >> "$ORBIT_TEST_DOCKER_LOG"
+
+        if [ "$1" = "pull" ]; then
+            exit 1
+        fi
+
+        if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+            case "$*" in
+                *@sha256:*) exit 1 ;;
+            esac
+
+            if [ "${3:-}" = "--format" ]; then
+                printf '%s\n' "sha256:orbit-test-image"
+            fi
+        fi
+
         exit 0
         SH);
     chmod("{$bin}/docker", permissions: 0o755);

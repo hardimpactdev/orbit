@@ -266,6 +266,29 @@ The expected target shape per calling context:
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command
   exits successfully.
+- Workload installs that need Agent config, Agent artifacts, or role-image work
+  use a two-stage `internal:fleet-update:install-cli` contract.
+  - Stage 1 invokes the currently installed CLI with a CLI-only payload:
+    artifact URL/hash, install root, and launcher path only. It omits
+    `agent_artifact`, `agent_service`, `role_images`, `role_image_artifacts`, and
+    `role_image_aliases` so the candidate CLI binary is installed atomically by
+    the still-running process that received the dispatch.
+  - Stage 2 invokes the same internal command again through the newly installed
+    CLI with the full original payload so Agent config, Agent binary, and
+    role-image work run under the candidate implementation.
+  - Self-update disconnect handling and empty exit code `255` retry remain per
+    stage. Final result validation still requires Agent install confirmation
+    when the full payload includes an Agent artifact.
+  - A CLI-only payload (no Agent or role-image work) stays a single install call.
+- After a successful `internal:fleet-update:install-cli` shell install, the
+  local install action runs the installed launcher with
+  `orbit --version --local --json` (as the final install-script verify) and
+  records install metadata only from parseable structured version JSON.
+  Successful process exit with missing or malformed version JSON fails the
+  install with `fleet_update.cli_version_unstructured` and must not write
+  install metadata under a version scraped from human Version table rows,
+  progress noise, or any guessed fallback. Fleet verify of the CLI check
+  likewise requires structured JSON version output.
 - When an Orbit Agent artifact is selected, the remote update verifies the
   installed owner-user local `orbit-agent` hash and restarts a managed
   `orbit-agent` service when one is present, but only after required role image
@@ -273,7 +296,11 @@ The expected target shape per calling context:
   interrupt those side effects. If no systemd or launchd service is present but
   an unmanaged listener is running from the installed binary path, the update
   replaces that listener with the new binary and preserves the configured Agent
-  endpoint.
+  endpoint. Writing or replacing managed Agent config and CA trust files during
+  that install uses portable shell decoding of gateway-supplied base64 payloads
+  and atomic staged install. It must not invoke host `php`. The local install
+  action prepares role-image lists and aliases as base64 line records so the
+  target shell can iterate them without host PHP JSON helpers.
 - Agent-role nodes may expose an `agent` Unix user for tools. That user is a
   consumer user, not a second Orbit owner. Provisioning converges a shim such as
   `/home/agent/.local/bin/orbit` that executes the owner user's CLI with
@@ -286,10 +313,15 @@ The expected target shape per calling context:
   metadata.
 - When that snapshot provides a hash-addressed archive for a required role
   image, each selected Linux role host downloads and verifies the archive,
-  loads it into the local Docker image store, and confirms the exact image
-  reference before attempting a registry pull. This lets candidate channels
-  verify private, digest-pinned role images without distributing registry
-  credentials to workload nodes.
+  loads it into the local Docker image store, and confirms the digest-free local
+  tag. Orbit then checks the exact digest-pinned reference and attempts a
+  registry pull only when that reference is absent; a failed pull preserves the
+  verified local artifact. Because some Docker storage drivers restore the
+  candidate tag without the registry manifest-list digest, Orbit resolves the
+  exact local image ID from the digest-free reference and aliases that ID to the
+  stable runtime reference. Final verification inspects the stable alias. This
+  lets candidate channels verify private role images without distributing
+  registry credentials to workload nodes.
 - For each remote update, the gateway authorizes a typed Orbit Agent request
   and pushes it over WireGuard to the selected Agent-eligible node.
   `update:all` never selects SSH, and the gateway does not target operator
@@ -354,6 +386,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Runtime hibernator recovery failed | The runtime hibernator could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Agent service missing | An Agent artifact is selected, but the target has neither an existing managed Agent service nor an unmanaged Agent listener to replace. | The target fails closed and requires bootstrap to create the first Agent service; `update:all` does not create it. |
+| CLI version unstructured | After a successful CLI install shell, `orbit --version --local --json` is missing or not parseable structured version JSON. | Target install fails closed with `fleet_update.cli_version_unstructured`; no install metadata is written under a guessed version. |
 | Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, runtime hibernator, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 
@@ -367,7 +400,7 @@ fleet failures are Orbit-handled command failures.
 - Run `doctor --family=<family>` after updates to verify convergence for a specific family.
 - A remote update failure may leave a node on a different Orbit version.
 - Such a version mismatch creates node-family drift.
-- Node doctor owns any later reachability or readiness diagnosis once its contract is converted in this repo.
+- Node doctor owns later reachability or readiness diagnosis for those nodes.
 
 ## Activity Logging
 

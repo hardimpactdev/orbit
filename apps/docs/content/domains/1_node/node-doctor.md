@@ -32,13 +32,13 @@ The node family owns these facts:
   and installed-Agent expectation must not remain after the last workload role
   is removed unless the roleless node is explicitly managed;
 - node identity and related defaults: every active node has a mandatory valid
-  node-owned TLD; the node family projects a concrete DNS record for every
+  node-owned TLD; the node family apps a concrete DNS record for every
   active node and wildcard records for active development and agent roles,
   alongside `vpn` role settings and WireGuard runtime, local
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
-  and agent IDE defaults at the node level.
+  at the node level.
 
-Tools, firewall rules, projects, instances, workspaces, processes, proxy routes, schedules,
+Tools, firewall rules, apps, instances, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
 node probe facts.
 
@@ -107,13 +107,20 @@ The node probe reads gateway node records and checks these layers:
    update driver supports the selected target. Unsupported targets are silent:
    node doctor never creates `node.updates_not_applicable` or
    `node.updates_driver_unsupported` findings.
-13. **Node DNS projection:** concrete and wildcard mismatches attach to their
-    active source node. Orphan directives from deleted or renamed nodes are
+13. **Node DNS projection:** the shared `dnsmasq.d/10-node-records.conf`
+    artifact is verified only on the DNS-serving host (gateway-coupled active
+    `vpn` role), not on nodes that only contribute records. Targeted
+    (`--node=gateway`) and broad (`--all`) scopes share this consumer gate:
+    content is probed only when the live `orbit-dns` runtime mounts the
+    managed projection directory, so unmounted host files cannot produce false
+    positives. Concrete and wildcard mismatches still name their active source
+    node in the issue. Orphan directives from deleted or renamed nodes are
     reported once on the active gateway projection anchor. Every active node
     with a valid TLD and WireGuard address has a concrete `orbit.{tld}` record;
     only active `app-dev` and `agent` nodes have wildcard and local-zone
     directives. Container, listener, forwarding, and client-DNS checks belong
-    to the tool family.
+    to the tool family. Local operator-machine resolver overrides remain the
+    `dns:*` command surface, not node doctor.
 14. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
@@ -162,10 +169,11 @@ The node probe reads gateway node records and checks these layers:
    family.
 
    `database` and `gateway` assignments have no role settings in v1.
-15. **Node-related defaults:** local `node:default` preferences point at
-   active, authorized `app-dev` nodes when `--self` inspects the CLI's
-   local configuration, and agent IDE defaults at the node level point at
-   supported adapters.
+15. **Node-related defaults:** the issue catalog includes
+   `node.local_default_invalid` for a missing or unauthorized local default.
+   A dedicated default-preference probe that actively validates
+   `node:default` under `--self` is not implemented as current doctor
+   behavior; treat that probe as pending, not present tense.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
@@ -212,6 +220,15 @@ is `removing`, or the baseline convergence path when the assignment is `error`.
 
 ## Node Issue Codes
 
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 Each code below identifies a specific kind of node-family drift that `doctor --family=node` may report.
 
 | Code | Detected when |
@@ -248,15 +265,17 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.security.runtime_user` | A persisted managed node record has no Orbit owner/runtime user, or that user is absent on the host. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
-| `node.security.home_perms` | The managed user's home directory permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
+| `node.security.home_perms` | Managed home is weaker than owner `0700`-equivalent posture. Linux may keep managed Agent traversal ACL `u:agent:--x` (mask `--x`); broader ACLs or group/world access remain findings. |
+| `node.security.posture_probe_failed` | The remote node security posture probe raised, returned non-success, or produced an empty/malformed payload, so posture drift is unverifiable for this run. |
 | `node.updates_config_missing` | A supported update driver found that `unattended-upgrades` or required apt auto-upgrade config is absent. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_config_mismatch` | A supported update driver found apt auto-upgrade config that differs from Orbit's expected policy. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_dry_run_failed` | A supported update driver found that `sudo unattended-upgrade --dry-run` failed. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_last_run_failed` | A supported update driver found recent unattended-upgrades evidence reporting a failed run. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
-| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-dev` node. |
-| `node.agent_ide_default_invalid` | A node-level agent IDE default points at a missing or unsupported adapter. |
+| `node.local_default_invalid` | Catalogued issue for a missing or unauthorized local `node:default` preference. A dedicated default-preference probe under `--self` is pending, not current doctor behavior. |
+
+`node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent. Use `node:permissions` for permission-set repair and `doctor --family=node --adopt` when peer attachment is the intended recovery.
 
 ## Node Fix Map
 
@@ -267,10 +286,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.gateway_api_unreachable` | Restart or restore gateway service only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
 | `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --family=node --adopt`. |
-| `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
-| `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path. |
 | `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, then re-probe the backend certificate and keep the issue visible if drift remains. |
@@ -278,20 +295,22 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
-| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
+| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
+| `node.security.home_perms` | Through the authenticated node path, chmod only `/home/{nodes.user}` to `0700` after passwd-home and ownership checks. Runtime-user absence is report-only. Does not run against a correctly ACL-hardened Agent home (owner `0700` bits plus managed `u:agent:--x`), so restore cannot fight role-baseline ACL repair. |
 | `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
-`node.runtime_missing`, `node.security.runtime_user`, `node.security.home_perms`,
-`node.local_default_invalid`, or
-`node.agent_ide_default_invalid`.
+`node.runtime_missing`, `node.security.runtime_user`,
+`node.security.posture_probe_failed`,
+`node.access_permission_invalid`, `node.wireguard_peer_extra`,
+or `node.local_default_invalid`.
 
 `node.runtime_missing` is report-only because the gateway never owns bootstrap
 SSH credentials or a client-to-target SSH session. Resume or rerun `node:new`
@@ -302,9 +321,8 @@ normal gateway-to-Agent path.
 `node.dns_mapping_mismatch` is not adoptable. DNS record projection is derived
 from gateway node intent; observed resolver content cannot become node state.
 
-`node.local_default_invalid` and `node.agent_ide_default_invalid` are
-reported only. `node:default` and `node:agent-ide` are explicit user actions;
-doctor must not silently clear or replace those preferences under
+`node.local_default_invalid` is reported only. `node:default` is an explicit
+user action; doctor must not silently clear or replace those preferences under
 `doctor --family=node --restore`.
 
 `node.updates_reboot_required` is non-restorable drift. The restore path may
@@ -340,7 +358,7 @@ exactly one unambiguous allowed address.
 `doctor --family=node --adopt` does not handle `node.runtime_missing`,
 unselected hosts, unresolved caller identities, unknown WireGuard peers,
 public IPv4/IPv6 metadata, security settings, evidence for SSH host keys, or
-artifacts that belong to tools, firewall rules, projects, instances, workspaces,
+artifacts that belong to tools, firewall rules, apps, instances, workspaces,
 processes, proxy routes, schedules, or deployments.
 
 Node doctor never stores, probes, compares, restores, or adopts SSH host keys.

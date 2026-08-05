@@ -61,15 +61,21 @@ final readonly class RuntimeActivationRunner
         }
 
         try {
-            $this->restoreDependencies($run, $scope, $plan['dependencies']);
-            $this->ensureDependenciesReady($run, $scope);
+            if ($plan['cold']) {
+                $this->restoreDependencies($run, $scope, $plan['dependencies']);
+                $this->ensureDependenciesReady($run, $scope);
+            }
+
             $this->startProcesses($run, $scope, $plan['processes']);
 
-            if (! $this->fence->runScope(
-                $run,
-                $scope,
-                fn (): bool => $this->coldStorage->markScopeWarm($scope),
-            )) {
+            if (
+                $plan['cold']
+                && ! $this->fence->runScope(
+                    $run,
+                    $scope,
+                    fn (): bool => $this->coldStorage->markScopeWarm($scope),
+                )
+            ) {
                 throw new RuntimeException('Runtime cold state could not be cleared.');
             }
 
@@ -77,6 +83,7 @@ final readonly class RuntimeActivationRunner
             $this->operationRuns->succeeded($run->id, result: [
                 'runtime_activation' => [
                     'scope' => $scope->key(),
+                    'cold' => $plan['cold'],
                 ],
             ]);
         } catch (Throwable $exception) {
@@ -164,6 +171,7 @@ final readonly class RuntimeActivationRunner
     /**
      * @return array{
      *     scope: array{type: string, id: int},
+     *     cold: bool,
      *     dependencies: list<array{key: string, label: string}>,
      *     processes: list<array{id: int, name: string, label: string}>
      * }|null
@@ -180,13 +188,21 @@ final readonly class RuntimeActivationRunner
         $scope = $this->scopePlan($rawPlan['scope'] ?? null);
         $dependencies = $this->dependencyPlan($rawPlan['dependencies'] ?? null);
         $processes = $this->processPlan($rawPlan['processes'] ?? null);
+        // Legacy cold runs predate the explicit mode flag; treat them as cold.
+        $cold = array_key_exists('cold', $rawPlan) ? $rawPlan['cold'] : true;
 
-        if ($scope === null || $dependencies === null || $processes === null) {
+        if (
+            $scope === null
+            || $dependencies === null
+            || $processes === null
+            || ! is_bool($cold)
+        ) {
             return null;
         }
 
         return [
             'scope' => $scope,
+            'cold' => $cold,
             'dependencies' => $dependencies,
             'processes' => $processes,
         ];

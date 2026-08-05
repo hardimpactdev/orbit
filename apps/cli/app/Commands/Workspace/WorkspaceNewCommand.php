@@ -16,7 +16,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:new
         {name? : Workspace name}
-        {--instance= : Owning instance selector (project.instance)}
+        {--instance= : Owning instance selector (app.instance)}
         {--base=main : Base git ref}
         {--php-version= : PHP version override}
         {--json : Output JSON}
@@ -44,7 +44,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
         if ($app === null) {
             return $this->failValidation(
                 'instance',
-                'Owning instance is required. Pass --instance= or run from a project directory.',
+                'Owning instance is required. Pass --instance= or run from an app directory.',
             );
         }
 

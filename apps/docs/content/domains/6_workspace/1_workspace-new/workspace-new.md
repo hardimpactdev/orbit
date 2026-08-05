@@ -17,7 +17,7 @@ configurations.
 cd /var/www/my-app
 orbit workspace:new
 
-# Bare parent-project shorthand; succeeds only when my-app has one instance
+# Bare parent-app shorthand; succeeds only when my-app has one instance
 orbit workspace:new feature-a --instance=my-app
 
 # Explicit name on one concrete instance
@@ -34,11 +34,11 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 
 - `name`: workspace slug; lowercase letters, digits, and hyphens only, up to
   63 characters. The reserved name `main` is rejected. Must be unique within
-  the parent project. Prompted in interactive mode when omitted.
-- `--instance=<project.instance>`: instance selector or bare parent-project shorthand.
+  the parent app. Prompted in interactive mode when omitted.
+- `--instance=<app.instance>`: instance selector or bare parent-app shorthand.
   - Dot notation such as `happie.nmbp` selects one concrete instance
     directly.
-  - A bare project slug, parent-project marker, or parent project path succeeds only when it
+  - A bare app slug, parent-app marker, or parent app path succeeds only when it
     resolves uniquely to one registered instance.
   - When omitted, Orbit infers an instance from an `.orbit/config` marker or a
     gateway path-ownership lookup against registered paths.
@@ -51,7 +51,7 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 - `--base=<ref>`: source git ref used to create the worktree. Defaults to
   `main` (not prompted).
 - `--php-version=<version>`: workspace PHP version override. When omitted, the
-  workspace inherits the parent project's PHP version.
+  workspace inherits the parent app's PHP version.
 - `--json`: output structured JSON (forces non-interactive mode).
 - `--stream-json`: stream newline-delimited progress JSON. Mutually exclusive
   with `--json` and forces non-interactive mode.
@@ -61,16 +61,16 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 `workspace:new` resolves one concrete instance from the caller's current
 directory when `--instance` is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) accepts registered instance and
-workspace paths directly. An instance's main path or parent-project marker is only
+workspace paths directly. An instance's main path or parent-app marker is only
 shorthand: it must map to exactly one registered instance. Zero or multiple
 matches fail with `validation_failed` and
-the `instance_required` reason. Orbit never falls back to a project-level
-node or creates a parent-project-only workspace. See the
+the `instance_required` reason. Orbit never falls back to an app-level
+node or creates a parent-app-only workspace. See the
 [JSON renderer contract](technical/6.2_workspace-new_output-render_json.md)
 for the exact envelope.
 
 Project files (`composer.json`, `package.json`, `.php-version`) are not
-inspected to infer the parent project. Path inference is gateway-authoritative.
+inspected to infer the parent app. Path inference is gateway-authoritative.
 
 ## Behavior Summary
 
@@ -78,9 +78,8 @@ The following steps describe what the command does during a successful run.
 
 - **Gateway Configuration**: Creates initial workspace configuration on the
   gateway with a non-null `instance_id`.
-- **Workspace Source**: Creates a new workspace source for the selected concrete
-  instance on its owning node. Generic and OpenCode-backed sources use Git
-  worktrees; PolyScope-backed sources are provisioned through the PolyScope SDK.
+- **Workspace Source**: Creates a new Git worktree for the selected concrete
+  instance on its owning node through the worktree source driver.
 - **Setup Pipeline**: Runs the same setup behavior exposed by
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md). The pipeline
   creates workspace-owned proxy routes, renders workspace runtime container artifacts,

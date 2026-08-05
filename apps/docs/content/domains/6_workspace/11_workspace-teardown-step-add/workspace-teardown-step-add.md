@@ -5,7 +5,7 @@ Add a workspace teardown step for one concrete instance.
 ## Usage
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb my_app_feature" --instance=<project.instance> [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-teardown-step:add --command="dropdb my_app_feature" --instance=<app.instance> [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Description
@@ -14,7 +14,6 @@ The `workspace-teardown-step:add` command registers a shell command that
 runs whenever Orbit removes a workspace for the selected instance
 ([`workspace:remove`](../5_workspace-remove/workspace-remove.md)) or prunes
 stale workspaces for the selected instance
-([`instance:prune`](../../5_project/7_instance-prune/instance-prune.md)). These steps are used
 for app-specific cleanup that needs the workspace path intact, such as
 dropping feature-specific databases or notifying external services.
 
@@ -25,13 +24,13 @@ artifact removal.
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--instance=<project.instance>`: Concrete dotted instance selector, such as
+- `--instance=<app.instance>`: Concrete dotted instance selector, such as
   `my-app.development`. A caller context may supply the same concrete instance
   using the same precedence chain as
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
   lookup keyed on `(caller node identity, absolute cwd)` → interactive
-  prompt or non-interactive failure. Bare project slugs return an
+  prompt or non-interactive failure. Bare app slugs return an
   instance-required validation error. The exact error shape is defined by
   the [JSON renderer contract](technical/6.2_workspace-teardown-step-add_output-render_json.md).
   Project files such as `composer.json`, `package.json`, and `.php-version` are
@@ -52,7 +51,6 @@ The following rules govern how a step is added and when it runs.
 
 Adding a step does not execute it immediately. Steps run during
 [`workspace:remove`](../5_workspace-remove/workspace-remove.md) and
-[`instance:prune`](../../5_project/7_instance-prune/instance-prune.md).
 
 ### Execution Timing
 
@@ -90,7 +88,6 @@ identified by the numeric `id` used by
 
 ### Failure Handling at Execution
 
-A teardown step that fails during `workspace:remove` or `instance:prune` is
 reported as a non-fatal structured warning on the consumer command.
 Subsequent teardown steps still run, and the workspace removal continues
 with runtime container removal and worktree removal.
@@ -98,7 +95,6 @@ with runtime container removal and worktree removal.
 ### No Runtime Lock
 
 The command never blocks on, or aborts because of, in-flight
-`workspace:remove` / `instance:prune` runs. The new step takes effect on the next
 teardown pipeline run that begins after the gateway commit.
 
 ## Examples
@@ -136,7 +132,6 @@ These commands work alongside `workspace-teardown-step:add` to manage and execut
 - [`orbit workspace-teardown-step:remove`](../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
 - [`orbit workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md)
 - [`orbit workspace:remove`](../5_workspace-remove/workspace-remove.md)
-- [`orbit instance:prune`](../../5_project/7_instance-prune/instance-prune.md)
 - [`orbit doctor --family=workspace`](../workspace-doctor.md)
 
 [See the technical contract for detailed behavior and failure semantics.](technical/1_workspace-teardown-step-add.md)

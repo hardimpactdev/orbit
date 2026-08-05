@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -12,35 +12,35 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('removes legacy setup and teardown steps that consume the parent env', function (): void {
-    $app = Project::factory()->create();
-    $instance = AppInstance::factory()->for($app)->create();
+    $app = App::factory()->create();
+    $instance = Instance::factory()->for($app)->create();
     $unsafeSetup = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
     ]);
     $unsafeTeardown = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Teardown,
         'command' => 'cp "${ORBIT_APP_PATH}/.env" .env.backup',
     ]);
     $unsafeQuotedVariable = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'command' => 'cp "$ORBIT_APP_PATH"/.env .env',
     ]);
     $unsafeQuotedBracedVariable = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Teardown,
         'command' => 'cp "${ORBIT_APP_PATH}"/.env .env.backup',
     ]);
     $safe = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'command' => 'composer install',
     ]);

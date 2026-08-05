@@ -8,7 +8,6 @@ use App\Services\CodexApp\LocalCodexAppConfigAction;
 use App\Services\CodexApp\LocalCodexAppConfigFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class CodexAppConfigCommand extends InternalExecutorCommand
 {
@@ -61,16 +60,5 @@ final class CodexAppConfigCommand extends InternalExecutorCommand
         }
 
         return $normalized;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

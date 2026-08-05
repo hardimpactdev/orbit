@@ -20,8 +20,10 @@ These fields describe the PHP image tool's identity, backend, and support model 
 ## Capabilities
 
 `php` supports image inventory, `tool:update` where Orbit refreshes supported
-image metadata, safe doctor fix, and safe doctor adopt. It does not install
-host PHP packages or manage a host PHP-FPM service.
+image metadata, `tool:remove` for gateway registry cleanup, safe doctor fix,
+and safe doctor adopt. It does not install host PHP packages or manage a host
+PHP-FPM service. `tool:remove php` clears the tool registry row only; it does
+not delete shared FrankenPHP images that other apps or workspaces may still use.
 
 ## Credentials
 

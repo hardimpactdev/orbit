@@ -8,7 +8,6 @@ use App\Services\Database\LocalDatabaseQueryAction;
 use App\Services\Database\LocalDatabaseQueryFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class DatabaseQueryLocalCommand extends InternalExecutorCommand
 {
@@ -54,16 +53,5 @@ final class DatabaseQueryLocalCommand extends InternalExecutorCommand
         }
 
         return $payload;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

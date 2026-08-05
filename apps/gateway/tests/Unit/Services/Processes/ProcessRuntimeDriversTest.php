@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\LaunchdProcessRuntimeDriver;
@@ -38,7 +38,7 @@ it('runs docker process lifecycle through the docker runtime driver', function (
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($app)
         ->create([
@@ -77,7 +77,7 @@ it('applies, removes, and cleans up docker process runtime units through the doc
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',
@@ -129,7 +129,7 @@ it('keeps stopped always-restart app containers stopped across Docker restarts',
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/srv/docs',
     ]);
@@ -157,7 +157,7 @@ it('applies node owned docker service processes from runtime config', function (
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -225,7 +225,7 @@ it('publishes managed service ports when applying node owned docker processes', 
             'name' => 'beast',
             'wireguard_address' => '10.6.0.7',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -265,7 +265,7 @@ it('renders managed service data paths as docker named volumes for node owned do
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -329,7 +329,7 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -371,7 +371,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -477,7 +477,7 @@ it('does not exit early from docker swarm apply scripts when the service spec al
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -512,7 +512,7 @@ it('uses the image entrypoint for docker swarm service processes configured for 
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -550,7 +550,7 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
             'orbit_path' => '/home/orbit/orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -592,7 +592,7 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
             'orbit_path' => '/home/orbit/orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -633,7 +633,7 @@ it('installs app-dev systemd units disabled while app-prod and node process unit
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/srv/docs',
     ]);
@@ -657,7 +657,7 @@ it('installs app-dev systemd units disabled while app-prod and node process unit
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $productionApp = Project::factory()->for($productionNode, 'node')->create([
+    $productionApp = App::factory()->for($productionNode, 'node')->create([
         'name' => 'docs-production',
         'path' => '/srv/docs-production',
     ]);
@@ -694,7 +694,7 @@ it('installs app-dev launchd units disabled while app-prod and node process unit
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.81',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/Users/orbit/docs',
     ]);
@@ -719,7 +719,7 @@ it('installs app-dev launchd units disabled while app-prod and node process unit
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.82',
         ]);
-    $productionApp = Project::factory()->for($productionNode, 'node')->create([
+    $productionApp = App::factory()->for($productionNode, 'node')->create([
         'name' => 'docs-production',
         'path' => '/Users/orbit/docs-production',
     ]);

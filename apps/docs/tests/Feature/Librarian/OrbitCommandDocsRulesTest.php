@@ -972,11 +972,11 @@ it('requires a non-null instance on canonical workspace json entities', function
         Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
 
         ```json
-        {"success":{"data":{"workspace":{"name":"feature","project":"docs","node":"beast","url":"https://feature.docs.beast"}}}}
+        {"success":{"data":{"workspace":{"name":"feature","app":"docs","node":"beast","url":"https://feature.docs.beast"}}}}
         ```
 
         ```json
-        {"success":{"data":{"workspace":{"name":"feature","project":"docs","instance":null,"node":"beast","url":"https://feature.docs.beast"}}}}
+        {"success":{"data":{"workspace":{"name":"feature","app":"docs","instance":null,"node":"beast","url":"https://feature.docs.beast"}}}}
         ```
         MARKDOWN);
 
@@ -997,11 +997,11 @@ it('requires a non-null instance on canonical workspace json entities', function
         );
 });
 
-it('accepts the compact project list summary instead of the instance placement entity', function (): void {
+it('accepts the compact app list summary instead of the instance placement entity', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md',
+        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1009,7 +1009,7 @@ it('accepts the compact project list summary instead of the instance placement e
             {
               "success": {
                 "data": {
-                  "projects": [{
+                  "apps": [{
                     "name": "docs",
                     "repository": null,
                     "dependency_audit_status": "unknown",
@@ -1040,11 +1040,11 @@ it('accepts the compact project list summary instead of the instance placement e
         ->toBeEmpty();
 });
 
-it('requires every compact project list summary field', function (): void {
+it('requires every compact app list summary field', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md',
+        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1052,7 +1052,7 @@ it('requires every compact project list summary field', function (): void {
             {
               "success": {
                 "data": {
-                  "projects": [{
+                  "apps": [{
                     "name": "docs",
                     "repository": null,
                     "dependency_audit_status": "unknown",
@@ -1080,15 +1080,15 @@ it('requires every compact project list summary field', function (): void {
         ->toBe(1)
         ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
         ->toContain(
-            'JSON example 1 success.data.projects[0] is missing required canonical project field `workspace_count`.',
+            'JSON example 1 success.data.apps[0] is missing required canonical app field `workspace_count`.',
         );
 });
 
-it('accepts canonical project entities without instance placement', function (): void {
+it('accepts canonical app entities without instance placement', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_project/4_project-show/technical/6.2_project-show_output-render_json.md',
+        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1096,7 +1096,7 @@ it('accepts canonical project entities without instance placement', function ():
             {
               "success": {
                 "data": {
-                  "project": {
+                  "app": {
                     "name": "docs",
                     "repository": null,
                     "runtime": "php",
@@ -1128,11 +1128,11 @@ it('accepts canonical project entities without instance placement', function ():
         ->toBeEmpty();
 });
 
-it('reports instance-owned placement and worker fields on canonical project entities', function (): void {
+it('reports instance-owned placement and worker fields on canonical app entities', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_project/4_project-show/technical/6.2_project-show_output-render_json.md',
+        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1140,7 +1140,7 @@ it('reports instance-owned placement and worker fields on canonical project enti
             {
               "success": {
                 "data": {
-                  "project": {
+                  "app": {
                     "name": "docs",
                     "repository": null,
                     "runtime": "frankenphp",
@@ -1177,13 +1177,13 @@ it('reports instance-owned placement and worker fields on canonical project enti
         ->toBe(0)
         ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
         ->toContain(
-            'JSON example 1 success.data.project contains non-canonical project field `node`.',
-            'JSON example 1 success.data.project contains non-canonical project field `url`.',
-            'JSON example 1 success.data.project contains non-canonical project field `path`.',
-            'JSON example 1 success.data.project contains non-canonical project field `root`.',
-            'JSON example 1 success.data.project contains non-canonical project field `adopted`.',
-            'JSON example 1 success.data.project contains non-canonical project field `worker_enabled`.',
-            'JSON example 1 success.data.project contains non-canonical project field `worker_config`.',
+            'JSON example 1 success.data.app contains non-canonical app field `node`.',
+            'JSON example 1 success.data.app contains non-canonical app field `url`.',
+            'JSON example 1 success.data.app contains non-canonical app field `path`.',
+            'JSON example 1 success.data.app contains non-canonical app field `root`.',
+            'JSON example 1 success.data.app contains non-canonical app field `adopted`.',
+            'JSON example 1 success.data.app contains non-canonical app field `worker_enabled`.',
+            'JSON example 1 success.data.app contains non-canonical app field `worker_config`.',
         );
 });
 
@@ -1348,7 +1348,7 @@ it('accepts registered command handoffs while still reporting unregistered docto
         Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
 
         ```json
-        {"success":{"meta":{"warnings":[{"code":"proxy.enactment_deferred","family":"proxy","message":"Proxy enactment is deferred.","next_command":"doctor --family=proxy --restore --node=app-1"},{"code":"firewall_rule.host_upstream_may_block","family":"firewall_rule","message":"The host firewall may block the upstream.","next_command":"firewall:allow caddy-to-host-5173 --node=app-1"},{"code":"proxy.unregistered_handoff","family":"proxy","message":"An unregistered handoff remains strict.","next_command":"doctor --family=proxy --restore --node=app-1"}]}}}
+        {"success":{"meta":{"warnings":[{"code":"proxy.enactment_failed","family":"proxy","message":"Proxy enactment failed.","next_command":"doctor --family=proxy --restore --node=app-1"},{"code":"firewall_rule.host_upstream_may_block","family":"firewall_rule","message":"The host firewall may block the upstream.","next_command":"firewall:allow caddy-to-host-5173 --node=app-1"},{"code":"proxy.unregistered_handoff","family":"proxy","message":"An unregistered handoff remains strict.","next_command":"doctor --family=proxy --restore --node=app-1"}]}}}
         ```
         MARKDOWN);
     writeOrbitDocsFile(
@@ -1489,7 +1489,7 @@ it('reports json next command fields outside recovery metadata', function (): vo
 it('reports project docs that use the old php option contract', function (): void {
     writeOrbitDocsFile(
         $this->docsRoot,
-        'docs/domains/5_project/README.md',
+        'docs/domains/5_app/README.md',
         "# Project Commands\n\nUse `--php` to select the runtime.\n",
     );
 
@@ -1505,7 +1505,7 @@ it('reports project docs that use the old php option contract', function (): voi
         ->toBe(1)
         ->and($matchingFindings[0] ?? null)
         ->toMatchArray([
-            'path' => 'docs/domains/5_project/README.md',
+            'path' => 'docs/domains/5_app/README.md',
             'severity' => 'error',
             'rule' => 'command_docs.app_php_version_contract',
             'message' => 'Project and instance command docs must use `--php-version`; `--php` is not part of the converted contract.',
@@ -1950,7 +1950,7 @@ it('reports canonical public options omitted from a normative public Usage signa
             orbit node:new [--json]
             ```
             MARKDOWN,
-        canonicalContract: validOrbitCanonicalContract(signature: 'orbit node:new [--project=<project>] [--json]'),
+        canonicalContract: validOrbitCanonicalContract(signature: 'orbit node:new [--app<project>] [--json]'),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1969,7 +1969,7 @@ it('reports canonical public options omitted from a normative public Usage signa
         ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'severity' => 'error',
-            'message' => 'Public Usage signature omits canonical public option `--project`.',
+            'message' => 'Public Usage signature omits canonical public option `--app`.',
         ]);
 });
 
@@ -2269,7 +2269,7 @@ it('reports bare project selectors and parent-project ownership in instance-requ
             ## Signature
 
             ```text
-            orbit workspace-setup-step:add --command=<command> [--instance=<project.instance>]
+            orbit workspace-setup-step:add --command=<command> [--instance=<app.instance>]
             ```
 
             ## Failure Semantics
@@ -2326,7 +2326,7 @@ it('reports bare project selectors in instance-required lifecycle list companion
             ## Signature
 
             ```text
-            orbit workspace-setup-step:list [--instance=<project.instance>]
+            orbit workspace-setup-step:list [--instance=<app.instance>]
             ```
 
             ## Failure Semantics
@@ -2375,7 +2375,7 @@ it('accepts concrete instance selectors in lifecycle list companions', function 
             ## Signature
 
             ```text
-            orbit workspace-setup-step:list [--instance=<project.instance>]
+            orbit workspace-setup-step:list [--instance=<app.instance>]
             ```
 
             ## Failure Semantics
@@ -2386,12 +2386,12 @@ it('accepts concrete instance selectors in lifecycle list companions', function 
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md',
-        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--instance=<project.instance>]\n```\n",
+        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--instance=<app.instance>]\n```\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.1_workspace-setup-step-list_output-render_human.md',
-        "# Human Renderer\n\nPass `--instance=<project.instance>` or use caller context that resolves one concrete instance.\n",
+        "# Human Renderer\n\nPass `--instance=<app.instance>` or use caller context that resolves one concrete instance.\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,

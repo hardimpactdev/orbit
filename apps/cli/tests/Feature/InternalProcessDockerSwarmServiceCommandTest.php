@@ -167,6 +167,26 @@ describe('internal process Docker Swarm service command', function (): void {
                 'changed' => false,
             ]);
     });
+
+    it('treats a swarm service as active only when observed running tasks meet desired tasks', function (): void {
+        Process::fake(fn (PendingProcess $process) => Process::result(output: "1 1\n"));
+
+        $result = app(LocalDockerSwarmServiceAction::class)->run('is-active', 'orbit-valkey-8');
+
+        expect($result)
+            ->toBe([
+                'action' => 'is-active',
+                'service' => 'orbit-valkey-8',
+                'changed' => false,
+            ]);
+    });
+
+    it('rejects swarm is-active when desired replicas are not yet running', function (): void {
+        Process::fake(fn (PendingProcess $process) => Process::result(output: "0 1\n"));
+
+        expect(fn (): array => app(LocalDockerSwarmServiceAction::class)->run('is-active', 'orbit-valkey-8'))
+            ->toThrow(LocalDockerSwarmServiceFailure::class);
+    });
 });
 
 function configure_process_docker_swarm_service_operation_token_guard(): void

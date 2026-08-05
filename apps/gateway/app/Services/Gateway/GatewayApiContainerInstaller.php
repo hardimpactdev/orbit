@@ -51,7 +51,10 @@ class GatewayApiContainerInstaller
             throw new RuntimeException("Invalid WireGuard API address: {$wireguardAddress}");
         }
 
-        $leaf = $this->caService->issueLeaf($wireguardAddress);
+        $leaf = $this->caService->issueLeaf(
+            $wireguardAddress,
+            GatewayLeafIdentity::additionalSansForWireguardIp(),
+        );
 
         $this->ensureOrbitGatewayContainer($orbitPath);
         $this->ensureOrbitCaddyContainer($wireguardAddress);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Activity;
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -31,11 +31,11 @@ final class ActivityHistory
     ];
 
     /**
-     * @param  array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}  $filters
+     * @param  array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}  $filters
      * @return array{
      *     activities: list<array<string, mixed>>,
      *     meta: array{
-     *         filters: array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool},
+     *         filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool},
      *         limit: int,
      *         count: int,
      *         has_more: bool
@@ -75,8 +75,8 @@ final class ActivityHistory
             $query = $this->applyNodeFilter($query, $filters['node']);
         }
 
-        if ($filters['project'] !== null) {
-            $query = $this->applyProjectFilter($query, $filters['project']);
+        if ($filters['app'] !== null) {
+            $query = $this->applyAppFilter($query, $filters['app']);
         }
 
         $query->orderByDesc('id');
@@ -94,7 +94,7 @@ final class ActivityHistory
             'activities' => $this->activityPayloads($activities),
             'meta' => [
                 'filters' => [
-                    'project' => $filters['project'],
+                    'app' => $filters['app'],
                     'node' => $filters['node'],
                     'effect' => $filters['effect'],
                     'correlation' => $filters['correlation'],
@@ -204,18 +204,16 @@ final class ActivityHistory
      * @param  Builder<Activity>  $query
      * @return Builder<Activity>
      */
-    private function applyProjectFilter(Builder $query, string $project): Builder
+    private function applyAppFilter(Builder $query, string $app): Builder
     {
-        return $query->where(function (Builder $query) use ($project): void {
+        return $query->where(function (Builder $query) use ($app): void {
             $query
-                ->whereHasMorph('subject', [Project::class], fn (Builder $query): Builder => $query->where(
+                ->whereHasMorph('subject', [App::class], fn (Builder $query): Builder => $query->where(
                     'name',
-                    $project,
+                    $app,
                 ))
-                ->orWhere('properties->project', $project)
-                ->orWhere('properties->project_name', $project)
-                ->orWhere('properties->app', $project)
-                ->orWhere('properties->app_name', $project);
+                ->orWhere('properties->app', $app)
+                ->orWhere('properties->app_name', $app);
         });
     }
 
@@ -238,20 +236,20 @@ final class ActivityHistory
             ->properties
             ->except(['type', 'command'])
             ->toArray();
-        $canonical = ActivityPayloadCompatibility::normalize($activity, $properties);
+        $formatted = ActivityPayloadFormatter::format($activity, $properties);
 
         return [
             'id' => $activity->id,
             'occurred_at' => $activity->created_at?->toIso8601String(),
             'correlation_id' => $activity->batch_uuid,
             'type' => $activity->event,
-            'effect' => $canonical['effect'],
+            'effect' => $formatted['effect'],
             'subject' => $this->subjectPayload($activity->subject),
             'actor' => $this->actorPayload($activity->causer),
             'command' => $activity->properties->get('command'),
             'description' => $activity->description,
-            'properties' => $canonical['properties'] === [] ? (object) [] : $canonical['properties'],
-            'channel' => $canonical['channel'],
+            'properties' => $formatted['properties'] === [] ? (object) [] : $formatted['properties'],
+            'channel' => $formatted['channel'],
         ];
     }
 
@@ -260,9 +258,9 @@ final class ActivityHistory
      */
     private function subjectPayload(?Model $subject): ?array
     {
-        if ($subject instanceof Project) {
+        if ($subject instanceof App) {
             return [
-                'type' => 'project',
+                'type' => 'app',
                 'name' => $subject->name,
             ];
         }

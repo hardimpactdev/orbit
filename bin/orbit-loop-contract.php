@@ -292,7 +292,7 @@ function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
 function orbitLoopProofReferences(string $markdown): array
 {
     preg_match_all(
-        '~\.orbit/(?:evidence|quality-gates)/~',
+        '~\.orbit/(?:evidence|quality-gates|release-evidence)/~',
         $markdown,
         $markers,
         PREG_OFFSET_CAPTURE,
@@ -310,20 +310,21 @@ function orbitLoopProofReferences(string $markdown): array
             ? substr($markdown, $markerOffset - 2, 1)
             : '';
 
-        $openingDelimiterIsExact = $markerOffset > 0
+        $openingDelimiterIsExact =
+            $markerOffset > 0
             && substr($markdown, $markerOffset - 1, 1) === '`'
             && ! in_array($beforeOpeningDelimiter, ['`', '\\'], true);
 
         if (! $openingDelimiterIsExact) {
             throw new RuntimeException(
                 'Compact cited proof must be one exact inline-code path: '
-                .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
+                    .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
             );
         }
 
         $candidate = substr($markdown, $markerOffset);
         $matched = preg_match(
-            '~^\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
+            '~^\.orbit/(?:evidence|quality-gates|release-evidence)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
             $candidate,
             $match,
         );
@@ -418,12 +419,156 @@ function orbitLoopTopLabel(string $markdown, string $label): ?string
 
 function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
-    return in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
-        && ($actual === $required || $required === 'automated');
+    return (
+        in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
+        && ($actual === $required || $required === 'automated')
+    );
 }
 
-function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
+const ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS = [
+    'candidate',
+    'venue',
+    'environment',
+    'expected',
+    'observed',
+    'result',
+    'evidence',
+    'target',
+    'command',
+];
+
+const ORBIT_LOOP_SCOPE_TRANSITION_KEYS = [
+    'success',
+    'failure',
+    'retry',
+    'stop-restart',
+    'stale',
+];
+
+/**
+ * Optional compact Scope framing for stateful, lifecycle, or concrete UX work.
+ *
+ * Parse only the Scope Owned row. Other Scope rows may mention the marker text
+ * without enabling framing. When neither marker appears on Owned, ordinary and
+ * legacy loops stay valid. When primitive= or transitions= appears on Owned,
+ * require the compact syntax only: exact primitive plus the five known
+ * transition keys. Values may be n/a. Do not decide whether a feature is
+ * stateful or whether prose is correct.
+ */
+function orbitLoopScopeFramingProblem(string $markdown): ?string
 {
+    $owned = orbitLoopLabel($markdown, 'Scope', 'Owned');
+
+    if ($owned === null || $owned === '') {
+        return null;
+    }
+
+    if (preg_match_all('/\b(primitive|transitions)\s*=/i', $owned, $markerMatches, PREG_SET_ORDER) === 0) {
+        return null;
+    }
+
+    $primitiveCount = 0;
+    $transitionsCount = 0;
+
+    foreach ($markerMatches as $markerMatch) {
+        if (strtolower($markerMatch[1]) === 'primitive') {
+            $primitiveCount++;
+        } else {
+            $transitionsCount++;
+        }
+    }
+
+    if ($primitiveCount > 1) {
+        return 'Scope framing has duplicate primitive=; use one optional clause on the Owned row';
+    }
+
+    if ($transitionsCount > 1) {
+        return 'Scope framing has duplicate transitions=; use one optional clause on the Owned row';
+    }
+
+    if ($primitiveCount === 0) {
+        return 'Scope framing is incomplete: missing primitive=; when framing is used require primitive=<exact> and transitions=success:...|failure:...|retry:...|stop-restart:...|stale:...';
+    }
+
+    if ($transitionsCount === 0) {
+        return 'Scope framing is incomplete: missing transitions=; when framing is used require primitive=<exact> and transitions=success:...|failure:...|retry:...|stop-restart:...|stale:...';
+    }
+
+    if (preg_match('/\bprimitive\s*=\s*([^;\r\n]*)/i', $owned, $primitiveMatch) !== 1) {
+        return 'Scope framing primitive= is missing a value; use primitive=<exact requested primitive>';
+    }
+
+    $primitive = trim($primitiveMatch[1]);
+
+    if ($primitive === '') {
+        return 'Scope framing primitive= is empty; use primitive=<exact requested primitive>';
+    }
+
+    if (preg_match('/<[^>\r\n]+>/', $primitive) === 1) {
+        return 'Scope framing contains a template placeholder in primitive=; replace placeholders with concrete values';
+    }
+
+    if (preg_match('/\btransitions\s*=\s*(.*)$/is', $owned, $transitionsMatch) !== 1) {
+        return 'Scope framing transitions= is missing a value; require success|failure|retry|stop-restart|stale keys';
+    }
+
+    $transitionsRaw = trim($transitionsMatch[1]);
+
+    if ($transitionsRaw === '') {
+        return 'Scope framing transitions= is empty; require success|failure|retry|stop-restart|stale keys';
+    }
+
+    if (preg_match('/<[^>\r\n]+>/', $transitionsRaw) === 1) {
+        return 'Scope framing contains a template placeholder in transitions=; replace placeholders with concrete values or n/a';
+    }
+
+    $parts = explode('|', $transitionsRaw);
+    $seen = [];
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+
+        if ($part === '') {
+            return 'Scope framing transitions= has an empty segment; use key:value pairs separated by |';
+        }
+
+        if (preg_match('/^([a-z0-9-]+)\s*:\s*(.*)$/s', $part, $segmentMatch) !== 1) {
+            return "Scope framing transitions= segment is not key:value: {$part}";
+        }
+
+        $key = strtolower($segmentMatch[1]);
+        $value = trim($segmentMatch[2]);
+
+        if (! in_array($key, ORBIT_LOOP_SCOPE_TRANSITION_KEYS, true)) {
+            return "Scope framing transitions= has unknown key: {$key}; allowed keys are success, failure, retry, stop-restart, stale";
+        }
+
+        if (array_key_exists($key, $seen)) {
+            return "Scope framing transitions= has duplicate key: {$key}";
+        }
+
+        if ($value === '') {
+            return "Scope framing transitions= value for {$key} is empty; use concrete text or n/a";
+        }
+
+        $seen[$key] = $value;
+    }
+
+    foreach (ORBIT_LOOP_SCOPE_TRANSITION_KEYS as $requiredKey) {
+        if (! array_key_exists($requiredKey, $seen)) {
+            return "Scope framing transitions= is missing required key: {$requiredKey}; require success, failure, retry, stop-restart, and stale (use n/a when not applicable)";
+        }
+    }
+
+    return null;
+}
+
+function orbitLoopRuntimeProofProblem(
+    string $markdown,
+    string $venue,
+    string $candidateCommit,
+    string $worktree,
+): ?string {
     if ($venue === 'automated') {
         return null;
     }
@@ -434,7 +579,293 @@ function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
         return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
     }
 
+    $runtime = (string) $runtime;
+
+    if (preg_match('/^passed\s+-\s+(.+)$/is', $runtime, $match) !== 1) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+
+    $detail = trim($match[1]);
+    $fields = orbitLoopRuntimeProofParseFields($detail);
+
+    if ($fields === null) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($detail);
+
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+
+    $receiptProblem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree);
+
+    if ($receiptProblem !== null) {
+        return $receiptProblem;
+    }
+
+    foreach (['environment', 'expected', 'observed'] as $narrativeField) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($fields[$narrativeField]);
+
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+    }
+
+    // After deferred-hop narrative checks so open final-hop language keeps its
+    // existing error surface; completed live/production claims still require
+    // exact environment=live.
+    return orbitLoopRuntimeProofLiveEnvironmentProblem($fields);
+}
+
+function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
+{
+    $normalized = strtolower($narrative);
+
+    // Zero / negated outcomes are truthful completed counts, not open final hops.
+    $allowPatterns = [
+        '/\bno\s+failures?\b/',
+        '/\bwithout\s+failures?\b/',
+        '/\bno\s+failed(?:\s+hops?)?\b/',
+        '/\bfailure\s+modes?\s+absent\b/',
+        '/\bprevious\s+failures?\b/',
+        '/\bexpected\s+failures?\b/',
+        '/\bfailures?\s+repaired\b/',
+        '/\brepaired\s+(?:the\s+)?(?:previous\s+)?failures?\b/',
+        '/\b(?:0|zero|no|none|nothing)\s+(?:failed|failures|skipped|pending|outstanding)\b/',
+        '/\b(?:no|none|nothing)\s+outstanding\b/',
+        '/\b\d+\s+skipped\b/',
+        '/\bcompleted\s+without\s+failures?\b/',
+    ];
+
+    foreach ($allowPatterns as $pattern) {
+        $normalized = preg_replace($pattern, ' ', $normalized) ?? $normalized;
+    }
+
+    $blockedPatterns = [
+        // Protect compound product names such as deferred-queue.
+        '/\bdeferred\b(?![\w-])/',
+        '/\bdeferral\b/',
+        '/\bdefer(?:s|ring)?\b(?![\w-])/',
+        '/\bpost-land\b(?![\w-])/',
+        '/\bpost\s+land(?:ing)?\b/',
+        '/\bafter\s+land(?:ing)?\b/',
+        '/\bpost-merge\b(?![\w-])/',
+        '/\bpost\s+merge\b/',
+        '/\bafter\s+merge\b/',
+        '/\bremains\s+required\b/',
+        '/\bstill\s+required\b/',
+        '/\bfollow-up\s+closure\s+proof\b/',
+        '/\bclosure\s+proof\b/',
+        '/\bclosure\s+is\s+a\s+deferral\b/',
+        // Exclude / incomplete only when they signal an open final hop or proof.
+        '/\b(?:was\s+)?exclud(?:e|es|ed)\b(?:\s+the\s+(?:decisive|final)\s+hop)?/',
+        '/\bwe\s+exclud(?:e|es|ed)\b/',
+        '/\bfinal\s+hop\s+(?:excluded|skipped|not\s+reached|not\s+completed|incomplete)\b/',
+        '/\b(?:final|decisive|live)\s+hop\s+(?:is\s+)?(?:incomplete|not\s+completed|not\s+reached)\b/',
+        '/\b(?:live\s+)?(?:verification|proof)\s+(?:is\s+)?(?:incomplete|outstanding|skipped)\b/',
+        '/\bhop\s+skipped\b/',
+        '/\bskipped\s+the\s+(?:live|final|decisive)\s+hop\b/',
+        '/\bre-proof\s+follows\b/',
+        '/\bproof\s+follows\b/',
+        '/\bre-proof\s+after\b/',
+        '/\bwill\s+(?:confirm|re-run)\b/',
+        '/\bto\s+be\s+run\s+later\b/',
+        '/\boutstanding\b/',
+        '/\bfailed\b/',
+        '/\bfailure\b/',
+        '/\bpending\b/',
+    ];
+
+    foreach ($blockedPatterns as $pattern) {
+        if (preg_match($pattern, $normalized) === 1) {
+            return 'Verification runtime claims passed while the decisive final hop failed, was excluded, remains required, or is deferred; remain in PROVE and re-prove the final hop';
+        }
+    }
+
     return null;
+}
+
+/**
+ * @param  array<string, string>  $fields
+ */
+function orbitLoopRuntimeProofReceiptProblem(
+    array $fields,
+    string $venue,
+    string $candidateCommit,
+    string $worktree,
+): ?string {
+    foreach (array_keys($fields) as $key) {
+        if (! in_array($key, ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS, true)) {
+            return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+        }
+    }
+
+    $required = ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
+
+    foreach ($required as $key) {
+        if (! array_key_exists($key, $fields) || trim($fields[$key]) === '') {
+            return "Verification runtime structured receipt is missing {$key}=; remain in PROVE and re-prove the final hop";
+        }
+    }
+
+    $hasTarget = array_key_exists('target', $fields) && trim($fields['target']) !== '';
+    $hasCommand = array_key_exists('command', $fields) && trim($fields['command']) !== '';
+
+    if ($hasTarget === $hasCommand) {
+        return 'Verification runtime structured receipt requires exactly one of target= or command=; remain in PROVE and re-prove the final hop';
+    }
+
+    if (preg_match('/^[0-9a-f]{40}$/', $fields['candidate']) !== 1) {
+        return 'Verification runtime structured receipt candidate= must be the exact 40-character candidate commit; remain in PROVE and re-prove the final hop';
+    }
+
+    if (! hash_equals($candidateCommit, $fields['candidate'])) {
+        return 'Verification runtime structured receipt candidate= must equal the candidate commit; remain in PROVE and re-prove the final hop';
+    }
+
+    if ($fields['venue'] !== $venue) {
+        return "Verification runtime structured receipt venue= must equal acceptance venue {$venue}; remain in PROVE and re-prove the final hop";
+    }
+
+    if ($fields['result'] !== 'passed') {
+        return 'Verification runtime structured receipt result= must be passed; remain in PROVE and re-prove the final hop';
+    }
+
+    return orbitLoopRuntimeProofEvidenceProblem($worktree, $fields['evidence']);
+}
+
+/**
+ * Non-automated receipts that claim a live/production surface must set
+ * environment=live exactly. Scan only environment/target/command/expected/observed.
+ *
+ * @param  array<string, string>  $fields
+ */
+function orbitLoopRuntimeProofLiveEnvironmentProblem(array $fields): ?string
+{
+    $claimFields = ['environment', 'target', 'command', 'expected', 'observed'];
+    $claimsLiveOrProduction = false;
+
+    foreach ($claimFields as $key) {
+        if (! array_key_exists($key, $fields)) {
+            continue;
+        }
+
+        if (preg_match('/\b(?:live|production)\b/i', $fields[$key]) === 1) {
+            $claimsLiveOrProduction = true;
+            break;
+        }
+    }
+
+    if (! $claimsLiveOrProduction) {
+        return null;
+    }
+
+    if ($fields['environment'] === 'live') {
+        return null;
+    }
+
+    return 'Verification runtime structured receipt that claims a live/production surface requires exact environment=live; remain in PROVE and re-prove the final hop';
+}
+
+function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidenceField): ?string
+{
+    if (
+        preg_match(
+            '/^`(\.orbit\/(?:evidence|quality-gates)\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]*[A-Za-z0-9_-])`$/',
+            $evidenceField,
+            $match,
+        ) !== 1
+    ) {
+        return 'Verification runtime structured receipt evidence= must be one exact inline-code path under .orbit/evidence/ or .orbit/quality-gates/; remain in PROVE and re-prove the final hop';
+    }
+
+    $reference = $match[1];
+    $relative = substr($reference, strlen('.orbit/'));
+    $segments = explode('/', $relative);
+
+    if (
+        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates'], true)
+        || count($segments) < 2
+        || in_array('', $segments, true)
+        || in_array('.', $segments, true)
+        || in_array('..', $segments, true)
+    ) {
+        return 'Verification runtime structured receipt evidence= path is unsafe; remain in PROVE and re-prove the final hop';
+    }
+
+    $orbitDir = rtrim($worktree, '/').'/.orbit';
+
+    if (is_link($orbitDir)) {
+        return 'Verification runtime structured receipt evidence= must not traverse a symlink; remain in PROVE and re-prove the final hop';
+    }
+
+    $canonicalWorktree = realpath($worktree);
+    $canonicalOrbit = realpath($orbitDir);
+
+    if (
+        $canonicalWorktree === false
+        || $canonicalOrbit === false
+        || $canonicalOrbit !== rtrim($canonicalWorktree, '/').'/.orbit'
+    ) {
+        return 'Verification runtime structured receipt evidence= escapes the active .orbit directory; remain in PROVE and re-prove the final hop';
+    }
+
+    $current = $orbitDir;
+
+    foreach ($segments as $segment) {
+        $current .= '/'.$segment;
+
+        if (is_link($current)) {
+            return 'Verification runtime structured receipt evidence= must not traverse a symlink; remain in PROVE and re-prove the final hop';
+        }
+    }
+
+    if (! is_file($current) || is_link($current)) {
+        return 'Verification runtime structured receipt evidence= must name an existing regular file under the worktree; remain in PROVE and re-prove the final hop';
+    }
+
+    $canonicalSource = realpath($current);
+
+    if (
+        $canonicalSource === false
+        || ! str_starts_with($canonicalSource, rtrim($canonicalOrbit, '/').'/')
+    ) {
+        return 'Verification runtime structured receipt evidence= escapes the active .orbit directory; remain in PROVE and re-prove the final hop';
+    }
+
+    return null;
+}
+
+/**
+ * @return array<string, string>|null
+ */
+function orbitLoopRuntimeProofParseFields(string $detail): ?array
+{
+    $fields = [];
+    $parts = preg_split('/;\s*/', $detail) ?: [];
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+
+        if ($part === '') {
+            continue;
+        }
+
+        if (preg_match('/^([a-z][a-z0-9_]*)=(.*)$/s', $part, $match) !== 1) {
+            return null;
+        }
+
+        $key = $match[1];
+
+        if (array_key_exists($key, $fields)) {
+            return null;
+        }
+
+        $fields[$key] = trim($match[2]);
+    }
+
+    return $fields === [] ? null : $fields;
 }
 
 function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, string $mainTip): ?string
@@ -508,6 +939,15 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
+        // TypeScript SDK is repository packaging only. PHP packages/sdk is a
+        // production require of CLI/gateway and stays retained-incus by default.
+        // packages/core/src remains retained-incus.
+        || str_starts_with($path, 'packages/sdk-typescript/')
+        // Narrow docs automation surfaces only. Do not classify all of apps/docs:
+        // apps/docs/resources/** must stay browser; other docs/runtime source stays retained-incus.
+        || str_starts_with($path, 'apps/docs/app/Librarian/')
+        || str_starts_with($path, 'apps/docs/config/librarian-command-docs/')
+        || str_starts_with($path, 'apps/docs/content/generated/')
         || in_array(
             $path,
             [
@@ -537,14 +977,25 @@ function orbitLoopStrongerVenue(string $left, string $right): string
 }
 
 /**
- * @return list<string>
+ * Fail-closed exact proof-route derivation shared by route/ready/accept.
+ *
+ * @return array{
+ *     candidate: string,
+ *     base: string,
+ *     base_tip: string,
+ *     merge_base: string,
+ *     changed_files: list<string>,
+ *     venue: string
+ * }
  */
-function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $head = 'HEAD'): array
 {
+    $candidate = orbitLoopGitValue($cwd, ['rev-parse', $head]);
+    $baseTip = orbitLoopGitValue($cwd, ['rev-parse', $base]);
     $mergeBase = orbitLoopGitValue($cwd, ['merge-base', $base, $head]);
 
-    if ($mergeBase === null) {
-        return [];
+    if ($candidate === null || $candidate === '' || $baseTip === null || $baseTip === '' || $mergeBase === null || $mergeBase === '') {
+        throw new RuntimeException('unable to derive exact proof route');
     }
 
     $output = orbitLoopGitOutput($cwd, [
@@ -557,9 +1008,26 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
     ]);
 
     if ($output === null) {
-        return [];
+        throw new RuntimeException('unable to derive exact proof route');
     }
 
+    $changedFiles = orbitLoopParseNameStatusDiff($output);
+
+    return [
+        'candidate' => $candidate,
+        'base' => $base,
+        'base_tip' => $baseTip,
+        'merge_base' => $mergeBase,
+        'changed_files' => $changedFiles,
+        'venue' => orbitLoopAcceptanceVenue($changedFiles),
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function orbitLoopParseNameStatusDiff(string $output): array
+{
     $tokens = explode("\0", $output);
     $paths = [];
 
@@ -586,6 +1054,21 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
     }
 
     return array_values(array_unique($paths));
+}
+
+/**
+ * Nullable legacy helper for non-acceptance callers. Prefer
+ * orbitLoopExactProofRoute() for acceptance/route fail-closed derivation.
+ *
+ * @return list<string>
+ */
+function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+{
+    try {
+        return orbitLoopExactProofRoute($cwd, $base, $head)['changed_files'];
+    } catch (RuntimeException) {
+        return [];
+    }
 }
 
 function orbitLoopGitValue(string $cwd, array $arguments): ?string

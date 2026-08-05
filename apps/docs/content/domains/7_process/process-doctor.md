@@ -17,7 +17,9 @@ The process family owns these facts:
   runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for one concrete instance and, on
   `app-dev` only, its workspaces:
-  `orbit_<project>_<instance>_<workspace|main>_<process>`;
+  `orbit_<app>_<instance>_<workspace|main>_<process>`, deterministically
+  bounded with a stable hash when the full name exceeds the shared 64-character
+  backend limit so launchd labels remain valid;
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
@@ -44,7 +46,7 @@ The process family owns these facts:
   back at the owning node's own WireGuard service address.
 
 Node reachability and WireGuard route mutation belong to `node` provisioning
-and topology work. Project source policy, PHP runtime, and instance runtime configuration
+and topology work. App source policy, PHP runtime, and instance runtime configuration
 belong to `instance`. Workspace source directories and setup state belong to
 `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside
 the process family.
@@ -60,7 +62,7 @@ Main instance and node-owned process drift remains visible.
 
 ### Registry configuration
 
-Every selected instance/workspace process definition has valid project and
+Every selected instance/workspace process definition has valid app and
 concrete instance references, plus a process name, command, restart policy,
 and crash-notification policy. Node-owned service process definitions have a
 valid active node owner instead of an instance owner.
@@ -72,11 +74,11 @@ recreate both the derived definition and its container.
 
 ### Owning instance and workspace expansion
 
-The owner resolves to one active `AppInstance`. On `app-dev`, expected runtime
+The owner resolves to one active `Instance`. On `app-dev`, expected runtime
 contexts are that instance's main context plus every active workspace belonging
 to the same instance. On `app-prod`, only the main context is eligible. All
 expected units are placed on the instance's serving node; other instances of
-the same project are outside this definition's expansion.
+the same app are outside this definition's expansion.
 
 ### Process manager availability
 
@@ -124,7 +126,7 @@ to their ordinary checks regardless of hibernation state.
 ### Runtime-unit identity
 
 Each instance/workspace runtime context maps to exactly one runtime unit name that
-Orbit owns, using `orbit_<project>_<instance>_<workspace|main>_<process>`. Node-owned services
+Orbit owns, using `orbit_<app>_<instance>_<workspace|main>_<process>`. Node-owned services
 may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 `seaweedfs` process row.
 
@@ -133,11 +135,25 @@ may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 When a node-owned service process endpoint host equals the owning node's
 WireGuard service address, the process probe runs `ip route get <wireguard-ip>`
 on Linux and expects a local route such as `local <ip> dev lo` or an equivalent
-local route. macOS reports the exact unsupported message
+local route. The probe is host-boundary work: on a containerized gateway it runs
+on the gateway host, not inside the `orbit-gateway` container. macOS reports the
+exact unsupported message
 `WireGuard self-route diagnostics are only supported on Linux.` and does not
-mutate routes. Missing, unsupported, or unverifiable self-route diagnostics are
-reported as process-family `unverifiable` drift because route mutation belongs
-to node provisioning/topology work.
+mutate routes. Unsupported platforms are **not applicable** — they produce no
+process-family drift. Missing or unverifiable self-route diagnostics on a
+**supported** Linux node are reported as process-family `unverifiable` drift
+because route mutation belongs to node provisioning/topology work.
+
+### Runtime placement
+
+Doctor selects and probes app/workspace processes by current app instance and
+workspace placement, not by a possibly stale denormalized `process.node_id`. A
+process whose instance moved nodes is diagnosed on the current placement node.
+A genuinely missing runtime unit on that current node remains reportable.
+Launchd runtime units are only rendered and probed on macOS execution nodes:
+when placement resolves to a Linux node for a launchd process, Doctor reports
+`process.runtime_unit_unrenderable` rather than inventing a Linux
+`Library/LaunchAgents` path.
 
 ### Runtime artifact presence
 
@@ -173,15 +189,24 @@ Latest lifecycle events are history, not desired state. The processes probe may 
 
 ## Process Issue Codes
 
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 Each code below identifies a specific process-family drift condition that the probe can detect.
 
 | Code | Detected when |
 | --- | --- |
-| `process.record_incomplete` | A selected instance/workspace process definition lacks project, concrete instance, name, command, restart policy, or crash-notification policy. |
-| `process.owner_app_invalid` | The process definition points at a missing project, missing instance, or instance whose serving node is not active. |
+| `process.record_incomplete` | A selected instance/workspace process definition lacks app, concrete instance, name, command, restart policy, or crash-notification policy. |
+| `process.owner_app_invalid` | The process definition points at a missing app, missing instance, or instance whose serving node is not active. |
 | `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
 | `process.runtime_context_unresolved` | The expected main instance or same-instance workspace runtime context cannot be derived from gateway configuration. |
-| `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
+| `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but supported Linux self-route diagnostics are missing or unhealthy. Unsupported platforms are not applicable and emit no issue. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_unrenderable` | Gateway process intent is incomplete or invalid, so the expected runtime unit cannot be rendered. |
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact, or an active instance of a managed PHP app lacks its canonical FrankenPHP process row. |
@@ -191,8 +216,6 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
-| `process.event_notifier_missing` | Runtime lifecycle event notifier material is absent for a runtime unit that should emit crash events. |
-| `process.event_notifier_mismatch` | Runtime lifecycle event notifier material exists but points at the wrong gateway endpoint, app, workspace, process, or event intake identity. |
 
 ## Process Fix Map
 
@@ -204,14 +227,12 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway instance, workspace, and process configuration. For a managed PHP instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
-| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. |
+| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. Docker orphan containers use the `orbit-app-*` inventory path. Systemd and launchd extras are removed only when the unit identity is a strict Orbit-owned `orbit_*` name and the expected path is the canonical managed location (`/etc/systemd/system/{unit}.service` or the node user's `~/Library/LaunchAgents/dev.hardimpact.orbit.{unit}.plist`). Arbitrary units are never removed. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
 | `process.runtime_unit_down` | Start the exact current Orbit-owned Docker runtime unit when its configured restart policy is `always`. |
 | `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
-| `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
-| `process.event_notifier_mismatch` | Rewrite lifecycle event notifier material to match gateway configuration and the current gateway event intake identity. |
 
 `doctor --restore` does not handle `process.record_incomplete`,
 `process.owner_app_invalid`, `process.owner_node_invalid`,
@@ -249,7 +270,6 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `process.runtime_unit_unloaded` | No adoption action. Loaded state is repaired through restore or lifecycle commands, not adopted as gateway configuration. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:update` when the observed policy should become configuration. |
 | `process.runtime_environment_mismatch` | No adoption action. Runtime environment is derived from app, workspace, and node configuration. |
-| `process.event_notifier_mismatch` | No adoption action. Event notifier material is derived from gateway-owned process configuration and gateway event intake identity. |
 
 Process doctor does not adopt runtime backend artifacts, logs, event history, app source, workspace source, scheduler artifacts, proxy backend artifacts, tool installs, or firewall rules as process configuration.
 
@@ -273,7 +293,12 @@ owner validation, same-instance workspace expansion, process manager
 availability, and hibernation-aware Docker runtime liveness.
 It also covers runtime-unit identity, canonical FrankenPHP and SeaweedFS
 process rows, and Docker/Docker Swarm managed service metadata.
-WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts,
-launchd plist and loaded-state drift, restart policy drift, runtime environment
-drift, event notifier drift, and exclusion of non-process drift from issue
-codes are also covered.
+WireGuard self-route diagnostics (including unsupported-platform not-applicable
+behavior and true supported unhealthy drift), current-placement resolution after
+instance moves, missing/extra/drifted runtime artifacts, launchd plist and
+loaded-state drift, restart policy drift, runtime environment drift, event
+notifier drift, and exclusion of non-process drift from issue codes are also
+covered.
+
+`DoctorReportRunnerTest` also covers process selection by current app instance
+placement when denormalized `process.node_id` is stale.

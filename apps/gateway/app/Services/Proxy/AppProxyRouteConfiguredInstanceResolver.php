@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\ProxyRoute;
 use App\Services\Workspaces\WorkspacePlacement;
 
@@ -16,7 +16,7 @@ final readonly class AppProxyRouteConfiguredInstanceResolver
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function resolve(Project $app, ProxyRoute $route): ?AppInstance
+    public function resolve(App $app, ProxyRoute $route): ?Instance
     {
         $selector = $this->selectors->forRoute($route);
 
@@ -27,7 +27,7 @@ final readonly class AppProxyRouteConfiguredInstanceResolver
         return $this->instanceMatchingSelector($app, $selector);
     }
 
-    private function instanceMatchingSelector(Project $app, string $selector): ?AppInstance
+    private function instanceMatchingSelector(App $app, string $selector): ?Instance
     {
         $app->loadMissing('instances');
         $fullSelector = str_contains($selector, '.') ? $selector : "{$app->name}.{$selector}";

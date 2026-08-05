@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class NodeWireGuardSelfRouteProbe
@@ -65,6 +66,9 @@ final readonly class NodeWireGuardSelfRouteProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'wireguard-self-route.probe',
                 ],
+                // Host network namespace: leave the orbit-gateway container only
+                // when probing the gateway node itself.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'strict' => true,
                 'timeout' => 15,
             ],

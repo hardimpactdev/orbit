@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T15:55:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-gateway-host-token-context/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-175545-codex-fix-gateway-host-token-context",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T155303Z-ba6594a76ffb.json"
+    ],
+    "entry_digests": {
+        "loop.md": "c976d10f7f0845eb40ba12454f38b5439243ab194e4e1b286fe9ec5bb855c03b",
+        "quality-gates/quality-check-2026-08-02T155303Z-ba6594a76ffb.json": "2536652652b86ba7a9761d5a830821d8adbc850938e4b4286bb261796a2f8c07"
+    },
+    "branch": "codex/fix-gateway-host-token-context",
+    "candidate_commit": "a081db15eeb52d44393d62478b6868593d533bf0",
+    "accepted_feature_tip": "a081db15eeb52d44393d62478b6868593d533bf0",
+    "accepted_main_tip": "6b7a657d14c8c2192b5bd0085ca1f20eb5cb259e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

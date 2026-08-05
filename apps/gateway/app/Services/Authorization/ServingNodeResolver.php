@@ -10,17 +10,19 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
+use App\Services\Processes\ProcessAppHostnameResolver;
 use App\Services\Runtime\OrbitHostCwdContext;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class ServingNodeResolver
 {
@@ -30,7 +32,7 @@ final class ServingNodeResolver
             ServingNode::Gateway => $this->resolveGateway(),
             ServingNode::Target => $this->resolveTarget($request),
             ServingNode::AppOwning => $this->resolveAppOwning($request),
-            ServingNode::AppInstanceOwning => $this->resolveAppInstanceOwning($request),
+            ServingNode::InstanceOwning => $this->resolveInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->resolveWorkspaceOwning($request),
             ServingNode::Caller => $this->resolveCaller($request),
         };
@@ -61,7 +63,16 @@ final class ServingNodeResolver
 
     private function resolveAppOwning(Request $request): ?Node
     {
-        foreach (['project', 'instance'] as $parameter) {
+        // Process list/lifecycle `app` is a proxy-route hostname selector. Resolve it
+        // before unscoped process-name lookup so duplicate process names on other
+        // nodes cannot win grant authorization for the wrong serving node.
+        $hostnameNode = $this->nodeFromAppHostnameSelector($this->requestValue($request, 'app'));
+
+        if ($hostnameNode instanceof Node) {
+            return $hostnameNode;
+        }
+
+        foreach (['app', 'instance'] as $parameter) {
             $node = $this->appNodeFromValue($this->requestValue($request, $parameter));
 
             if ($node instanceof Node) {
@@ -82,19 +93,38 @@ final class ServingNodeResolver
 
         $app = $this->appFromValue($this->requestValue($request, 'name'));
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return $app->node;
         }
 
         foreach (['host_cwd', 'path', 'caller_cwd'] as $parameter) {
             $app = $this->appFromPath($this->requestValue($request, $parameter));
 
-            if ($app instanceof Project) {
+            if ($app instanceof App) {
                 return $app->node;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Resolve an app/workspace proxy-route hostname to its concrete node.
+     *
+     * Invalid or non-hostname values (including legacy project aliases in
+     * `app`) return null so unrelated routes keep their existing fall-through.
+     */
+    private function nodeFromAppHostnameSelector(mixed $value): ?Node
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return app(ProcessAppHostnameResolver::class)->resolve(trim($value))->node;
+        } catch (GatewayApiException) {
+            return null;
+        }
     }
 
     private function resolveWorkspaceOwning(Request $request): ?Node
@@ -128,14 +158,14 @@ final class ServingNodeResolver
         return null;
     }
 
-    private function resolveAppInstanceOwning(Request $request): ?Node
+    private function resolveInstanceOwning(Request $request): ?Node
     {
         $instanceSelector = $this->requestValue($request, 'instance');
         $selection = $this->appSelectionFromValue($instanceSelector);
 
         if (! $selection instanceof AppSelection) {
-            $selection = $this->appInstanceSelectionFromValues(
-                appSelector: $this->requestValue($request, 'project'),
+            $selection = $this->instanceSelectionFromValues(
+                appSelector: $this->requestValue($request, 'app'),
                 instanceSelector: $instanceSelector,
             );
         }
@@ -159,7 +189,7 @@ final class ServingNodeResolver
         return $node instanceof Node ? $node : $this->resolveGateway();
     }
 
-    private function appInstanceSelectionFromValues(mixed $appSelector, mixed $instanceSelector): ?AppSelection
+    private function instanceSelectionFromValues(mixed $appSelector, mixed $instanceSelector): ?AppSelection
     {
         $selection = $this->appSelectionFromValue($appSelector);
 
@@ -176,10 +206,10 @@ final class ServingNodeResolver
             ->app
             ->instances
             ->first(
-                static fn (AppInstance $candidate): bool => $candidate->name === $instanceName,
+                static fn (Instance $candidate): bool => $candidate->name === $instanceName,
             );
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return null;
         }
 
@@ -236,7 +266,7 @@ final class ServingNodeResolver
             ->first();
     }
 
-    private function appFromValue(mixed $value): ?Project
+    private function appFromValue(mixed $value): ?App
     {
         $selection = $this->appSelectionFromValue($value);
 
@@ -244,14 +274,14 @@ final class ServingNodeResolver
             return $selection->app;
         }
 
-        if ($value instanceof Project) {
+        if ($value instanceof App) {
             $value->loadMissing('node');
 
             return $value;
         }
 
         if (is_int($value) || is_string($value) && ctype_digit($value)) {
-            return Project::query()
+            return App::query()
                 ->with('node')
                 ->whereKey($value)
                 ->first();
@@ -261,28 +291,28 @@ final class ServingNodeResolver
             return null;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with('node')
             ->where('name', $value)
             ->first();
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return $app;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with('node')
             ->where('domain', $value)
             ->first();
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return $app;
         }
 
-        return Project::query()
+        return App::query()
             ->with('node')
             ->get()
-            ->first(fn (Project $app): bool => $app->url() === "https://{$value}" || $app->url() === $value);
+            ->first(fn (App $app): bool => $app->url() === "https://{$value}" || $app->url() === $value);
     }
 
     private function appNodeFromValue(mixed $value): ?Node
@@ -317,7 +347,7 @@ final class ServingNodeResolver
         }
     }
 
-    private function processFromValue(mixed $value, ?Project $app = null): ?OrbitProcess
+    private function processFromValue(mixed $value, ?App $app = null): ?OrbitProcess
     {
         if ($value instanceof OrbitProcess) {
             $value->loadMissing('owner');
@@ -331,7 +361,7 @@ final class ServingNodeResolver
 
         return OrbitProcess::query()
             ->with('owner')
-            ->when($app instanceof Project, fn ($query) => $query->ownedBy($app))
+            ->when($app instanceof App, fn ($query) => $query->ownedBy($app))
             ->when(
                 is_int($value) || ctype_digit($value),
                 fn ($query) => $query->whereKey($value),
@@ -340,11 +370,11 @@ final class ServingNodeResolver
             ->first();
     }
 
-    private function appForProcess(OrbitProcess $process): ?Project
+    private function appForProcess(OrbitProcess $process): ?App
     {
         $process->loadMissing('owner');
 
-        if ($process->owner instanceof Project) {
+        if ($process->owner instanceof App) {
             $process->owner->loadMissing('node');
 
             return $process->owner;
@@ -359,7 +389,7 @@ final class ServingNodeResolver
         return null;
     }
 
-    private function workspaceFromValue(mixed $value, ?Project $app = null): ?Workspace
+    private function workspaceFromValue(mixed $value, ?App $app = null): ?Workspace
     {
         if ($value instanceof Workspace) {
             $value->loadMissing('app.node');
@@ -372,8 +402,8 @@ final class ServingNodeResolver
         }
 
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
-            ->when($app instanceof Project, fn ($query) => $query->where('app_id', $app?->id))
+            ->with(['app.node', 'app.instances', 'instance'])
+            ->when($app instanceof App, fn ($query) => $query->where('app_id', $app?->id))
             ->when(
                 is_int($value) || ctype_digit($value),
                 fn ($query) => $query->whereKey($value),
@@ -401,7 +431,7 @@ final class ServingNodeResolver
         return $context?->workspace;
     }
 
-    private function appFromPath(mixed $value): ?Project
+    private function appFromPath(mixed $value): ?App
     {
         $context = $this->resolveCwd($value);
 
@@ -412,7 +442,7 @@ final class ServingNodeResolver
         // Workspace match wins over parent-app match when the cwd is inside
         // a workspace tree. AppOwning authorization mirrors that preference:
         // a path inside a workspace authorizes against the workspace's
-        // parent project (which is the same node), not "some random app whose
+        // parent app (which is the same node), not "some random app whose
         // path happens to be a string prefix".
         return $context->app;
     }

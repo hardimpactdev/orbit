@@ -48,27 +48,33 @@ final readonly class ToolUpdater
         }
 
         $model->loadMissing('node');
+        $node = $model->node;
 
-        if ($model->node === null) {
+        if (! $node instanceof Node) {
             return ToolRegistryFailure::remoteActionFailed($tool, '', 'update', 1, 'Target node is missing.');
         }
 
-        $config = is_array($model->config) ? $model->config : [];
-        $script = $this->catalog->updateScript($tool, $config);
+        $config = $this->resolvedConfigForUpdate($model);
+
+        if ($expectedVersion !== null) {
+            $model->expected_version = $expectedVersion;
+        }
+
+        // Persist role-corrected php-cli variant before running the update script.
+        $model->config = $config === [] ? null : $config;
+        $model->save();
+
+        $scriptConfig = $this->catalog->scriptConfig($tool, $node, $config);
+        $script = $this->catalog->updateScript($tool, $scriptConfig);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
         }
 
-        if ($expectedVersion !== null) {
-            $model->expected_version = $expectedVersion;
-            $model->save();
-        }
-
         $result = $this->runToolScriptWithGitHubAuth(
-            node: $model->node,
+            node: $node,
             tool: $tool,
-            config: $config,
+            config: $scriptConfig,
             scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
         );
 
@@ -79,7 +85,7 @@ final readonly class ToolUpdater
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
-                $model->node->name,
+                $node->name,
                 'update',
                 $result->exitCode,
                 trim($result->stderr),
@@ -88,7 +94,7 @@ final readonly class ToolUpdater
 
         return [
             'name' => $tool,
-            'node' => $model->node->name,
+            'node' => $node->name,
             'version' => $model->expected_version,
         ];
     }
@@ -151,8 +157,21 @@ final readonly class ToolUpdater
                 continue;
             }
 
-            $config = is_array($nt->config) ? $nt->config : [];
-            $script = $this->catalog->updateScript($tool, $config);
+            $targetNode = $nt->node;
+
+            if (! $targetNode instanceof Node) {
+                $failed[] = [
+                    'tool' => $tool,
+                    'node' => '',
+                    'error' => 'Target node is missing.',
+                ];
+
+                continue;
+            }
+
+            $config = $this->resolvedConfigForUpdate($nt);
+            $scriptConfig = $this->catalog->scriptConfig($tool, $targetNode, $config);
+            $script = $this->catalog->updateScript($tool, $scriptConfig);
 
             if ($script === null) {
                 $skipped[] = [
@@ -165,29 +184,20 @@ final readonly class ToolUpdater
             }
 
             $nt->expected_version = $latestVersion;
+            $nt->config = $config === [] ? null : $config;
             $nt->save();
 
-            if ($nt->node === null) {
-                $failed[] = [
-                    'tool' => $tool,
-                    'node' => '',
-                    'error' => 'Target node is missing.',
-                ];
-
-                continue;
-            }
-
             $result = $this->runToolScriptWithGitHubAuth(
-                node: $nt->node,
+                node: $targetNode,
                 tool: $tool,
-                config: $config,
+                config: $scriptConfig,
                 scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
             );
 
             if ($result instanceof ToolRegistryFailure) {
                 $failed[] = [
                     'tool' => $tool,
-                    'node' => $nt->node->name,
+                    'node' => $targetNode->name,
                     'error' => $result->message,
                 ];
 
@@ -197,7 +207,7 @@ final readonly class ToolUpdater
             if (! $result->successful()) {
                 $failed[] = [
                     'tool' => $tool,
-                    'node' => $nt->node->name,
+                    'node' => $targetNode->name,
                     'error' => trim($result->stderr) ?: 'update script failed',
                 ];
 
@@ -206,7 +216,7 @@ final readonly class ToolUpdater
 
             $updated[] = [
                 'tool' => $tool,
-                'node' => $nt->node->name,
+                'node' => $targetNode->name,
             ];
         }
 
@@ -261,5 +271,24 @@ final readonly class ToolUpdater
         }
 
         return $this->githubTokenResolver->token();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolvedConfigForUpdate(NodeTool $tool): array
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+
+        if ($tool->name !== 'php-cli') {
+            return $config;
+        }
+
+        $variant = app(PhpCliVariantResolver::class)->forTool($tool);
+
+        return [
+            ...$config,
+            'variant' => $variant->value,
+        ];
     }
 }

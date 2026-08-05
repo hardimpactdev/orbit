@@ -16,7 +16,7 @@ composer test:e2e:incus
 ```
 
 Incus is the manual E2E provider for systemd-backed process lifecycle tests.
-Node-level Linux services such as OpenCode Server or PolyScope Server use
+Node-level Linux services such as node-level Linux services use
 `runtime=systemd` in the product model, and Docker prepared nodes do not model
 the real `systemctl` and journal behavior those tests need.
 

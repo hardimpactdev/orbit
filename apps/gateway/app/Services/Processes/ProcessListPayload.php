@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\AppInstance;
+use App\Enums\Processes\ProcessRuntimeStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
@@ -19,10 +20,15 @@ class ProcessListPayload
     ) {}
 
     /**
-     * @return array{context: array{node: string, project: string|null, instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
+     * @return array{context: array{node: string, app: string|null, instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
      */
-    public function forContext(?string $nodeName, ?string $appName, ?string $workspaceName, ?Node $caller = null): array
-    {
+    public function forContext(
+        ?string $nodeName,
+        ?string $appName,
+        ?string $workspaceName,
+        ?Node $caller = null,
+        ?string $appHostname = null,
+    ): array {
         $context = $this->contexts->resolveVisible(
             nodeName: $nodeName,
             appName: $appName,
@@ -30,6 +36,7 @@ class ProcessListPayload
             caller: $caller,
             permission: 'process:read',
             allowSingleVisibleAppDefault: true,
+            appHostname: $appHostname,
         );
         $app = $context->runtimeApp();
         $processes = $context->lifecycleProcesses(null);
@@ -40,12 +47,17 @@ class ProcessListPayload
                 $processes->map(function (Process $process) use ($context, $app): array {
                     $workspace = $context->runtimeWorkspaceFor($process);
                     $driver = $this->runtimeDrivers->forProcess($process);
+                    $lastEvent = $this->lastEventModel($process, $workspace, $context->instance);
+                    $status = ProcessRuntimeStatus::fromEventType($lastEvent?->event);
 
                     return [
                         'node' => $context->node->name,
-                        'project' => $context->app?->name,
-                        'instance' => $context->appInstance?->name,
+                        'app' => $context->app?->name,
+                        'instance' => $context->instance?->name,
                         'workspace' => $workspace?->name,
+                        'key' => $process->name,
+                        'label' => $process->label,
+                        // Deprecated compatibility alias; new consumers use key + label.
                         'name' => $process->name,
                         'command' => $process->command,
                         'restart_policy' => $process->restart_policy->value,
@@ -54,7 +66,13 @@ class ProcessListPayload
                         'tool' => $process->tool,
                         'service' => $this->serviceMetadata->forProcess($process),
                         'runtime_unit' => $driver->runtimeUnitName($app, $process, $workspace),
-                        'last_event' => $this->lastEvent($process, $workspace, $context->appInstance),
+                        'status' => $status->value,
+                        'last_event' => $lastEvent instanceof ProcessEvent
+                            ? [
+                                'id' => $lastEvent->id,
+                                'type' => $lastEvent->event->value,
+                            ]
+                            : null,
                     ];
                 })
                     ->all(),
@@ -62,14 +80,14 @@ class ProcessListPayload
         ];
     }
 
-    /**
-     * @return array{id: int, type: string}|null
-     */
-    private function lastEvent(Process $process, ?Workspace $workspace, ?AppInstance $appInstance): ?array
-    {
+    private function lastEventModel(
+        Process $process,
+        ?Workspace $workspace,
+        ?Instance $instance,
+    ): ?ProcessEvent {
         $query = ProcessEvent::query()
             ->where('process_id', $process->id)
-            ->where('app_instance_id', $appInstance?->id);
+            ->where('instance_id', $instance?->id);
 
         if ($workspace instanceof Workspace) {
             $query->where('workspace_id', $workspace->id);
@@ -84,13 +102,6 @@ class ProcessListPayload
             ->latest('id')
             ->first();
 
-        if (! $event instanceof ProcessEvent) {
-            return null;
-        }
-
-        return [
-            'id' => $event->id,
-            'type' => $event->event->value,
-        ];
+        return $event instanceof ProcessEvent ? $event : null;
     }
 }

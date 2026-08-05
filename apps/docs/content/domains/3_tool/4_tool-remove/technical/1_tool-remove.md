@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
 | `node` | `--node` or local `node:default` | Required when `instance` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare project shorthand is valid only when exactly one instance is visible.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare app shorthand is valid only when exactly one instance is visible.` |
 | `force` | `--force` | Required for every non-interactive removal, including JSON mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode; never grants consent. |
 
@@ -49,10 +49,22 @@ fall back to the only visible non-gateway node in non-interactive mode.
 - Requires destructive consent before side effects. Consent source is `force`
   when `--force` is supplied or `interactive_confirm` when the operator accepts
   the prompt. Renderer selection never grants consent.
+- When the tool definition declares `relatedProcess()`, removes that process
+  (intent row and runtime unit) before the tool remove script. Lookup matches
+  both process `name` and `tool` so a same-name foreign process is not torn
+  down. Runtime-unit extras from process removal are surfaced on the tool
+  remove payload as `process.warnings` / `warnings` (not dropped).
 - Removes managed artifacts through the gateway.
 - Removes tool-owned credential material and service endpoint configuration when the
   tool definition owns those artifacts.
 - Removes gateway tool configuration after supported cleanup succeeds.
+- After the tool row is deleted, removes gateway proxy routes owned by that
+  tool on the target node (`config.owner_name` match): for each matching
+  domain call `ProxyRouteFixer::removeExtra` (backend site + TLS/global
+  cleanup) before deleting the registry row — same ordering as
+  `proxy:remove --force`. Failed backend cleanup leaves the row so removal
+  can be retried; remaining orphans are still classified as
+  `proxy.owner_invalid` for force-remove/doctor paths.
 - If cleanup partially fails, Orbit keeps the gateway tool row and any
   tool-owned credential or endpoint configuration needed to retry cleanup. Removal does
   not erase configuration before managed artifacts are either removed or explicitly
@@ -60,10 +72,34 @@ fall back to the only visible non-gateway node in non-interactive mode.
 
 ### Scope Boundaries
 
-`tool-remove` must not create projects, instances, workspaces, processes, schedules, custom
+`tool-remove` must not create apps, instances, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
-Tool-owned endpoint cleanup is allowed only when declared by the selected tool
-definition. Related drift belongs to each owning family doctor contract.
+It may remove a process the tool definition already declared via
+`relatedProcess()`; that is tool-owned lifecycle cleanup, not ad-hoc process
+creation. Tool-owned endpoint cleanup is allowed only when declared by the
+selected tool definition. Related drift belongs to each owning family doctor contract.
+
+### OpenClaw Removal-Only Migration
+
+The slug `openclaw` is not catalog-supported. `tool:remove openclaw` is routed
+to `LegacyOpenClawRuntimeCleanup` instead of the normal catalog remove path:
+
+1. Resolve an active tool-host node (agent nodes qualify).
+2. Remove process intent named `openclaw-gateway` or `tool=openclaw` when present
+   (typed `RemoveProcess`, including runtime unit teardown).
+3. Run the fixed host cleanup script via `internal:tool:run-script` action
+   `remove`: stop/disable Orbit and native OpenClaw units, enumerate and kill
+   listeners with **`sudo ss`** on port `18789` (privileged PID visibility),
+   pkill residual agent openclaw processes, remove agent OpenClaw home state,
+   then **verify** port/process/home are absent (nonzero stderr on residue).
+4. Only after verified host success: remove tool-owned proxy domains with
+   `owner_name=openclaw` via `ProxyRouteFixer::removeExtra` then registry
+   delete, and delete any remaining `NodeTool` row named `openclaw`.
+
+JSON success includes `legacy_runtime_cleanup=true`, `stale_record=true`,
+`routes_removed`, and `tool_row_removed`. Failed host cleanup returns
+`tool.remote_action_failed` and must be retried; proxy/tool rows are not
+removed after a failed script. This is not install or product support.
 
 ## Renderer Contracts
 

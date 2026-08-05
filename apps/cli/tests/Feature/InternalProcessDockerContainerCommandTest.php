@@ -217,6 +217,46 @@ describe('internal process Docker container command', function (): void {
             ->toContain("test -e {$configPath}")
             ->not->toContain("mkdir -p {$configPath}");
     });
+
+    it('treats docker is-active as running when observed State.Running is true', function (): void {
+        $home = process_docker_container_fake_home();
+        $socket = process_docker_container_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $bin = install_process_docker_container_fake_docker_bin_for_is_active(
+            requiredDockerHost: "unix://{$socket}",
+            running: true,
+        );
+
+        $result = app(\App\Services\Processes\LocalDockerContainerAction::class)->run([
+            'action' => 'is-active',
+            'container' => 'orbit_docs_main_queue',
+        ]);
+
+        expect($result['data'] ?? null)
+            ->toBe([
+                'action' => 'is-active',
+                'container' => 'orbit_docs_main_queue',
+                'changed' => false,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('docker inspect --format {{.State.Running}} orbit_docs_main_queue');
+    });
+
+    it('rejects docker is-active when observed State.Running is false', function (): void {
+        $home = process_docker_container_fake_home();
+        $socket = process_docker_container_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        install_process_docker_container_fake_docker_bin_for_is_active(
+            requiredDockerHost: "unix://{$socket}",
+            running: false,
+        );
+
+        expect(fn (): array => app(\App\Services\Processes\LocalDockerContainerAction::class)->run([
+            'action' => 'is-active',
+            'container' => 'orbit_docs_main_queue',
+        ]))
+            ->toThrow(\App\Services\Processes\LocalDockerContainerFailure::class);
+    });
 });
 
 function configure_process_docker_container_operation_token_guard(): void
@@ -270,6 +310,40 @@ function process_docker_container_fake_orbstack_socket(string $home): string
     touch($socket);
 
     return $socket;
+}
+
+function install_process_docker_container_fake_docker_bin_for_is_active(
+    string $requiredDockerHost,
+    bool $running,
+): string {
+    $dir = sys_get_temp_dir().'/orbit-process-docker-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir);
+    $encodedRequiredDockerHost = var_export($requiredDockerHost, return: true);
+    $runningLiteral = $running ? 'true' : 'false';
+
+    file_put_contents("{$dir}/docker", <<<PHP_WRAP
+        #!/usr/bin/env php
+        <?php
+        \$requiredDockerHost = {$encodedRequiredDockerHost};
+        \$dockerHost = getenv('DOCKER_HOST') ?: '';
+        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
+        if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
+            fwrite(STDERR, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'inspect') {
+            echo "{$runningLiteral}\\n";
+            exit(0);
+        }
+        exit(0);
+        PHP_WRAP);
+    chmod("{$dir}/docker", permissions: 0o755);
+
+    $path = getenv('PATH');
+    $path = is_string($path) ? $path : '';
+    putenv("PATH={$dir}:{$path}");
+
+    return $dir;
 }
 
 function install_process_docker_container_fake_docker_bin(string $requiredDockerHost): string

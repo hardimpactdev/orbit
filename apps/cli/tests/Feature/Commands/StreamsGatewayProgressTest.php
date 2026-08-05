@@ -180,7 +180,7 @@ describe('StreamsGatewayProgress', function (): void {
     it('rejects --json and --stream-json together before opening the stream', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--json' => true,
@@ -205,7 +205,7 @@ describe('StreamsGatewayProgress', function (): void {
     it('keeps pre-stream validation failures as plain JSON envelopes in --stream-json mode', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             '--node' => 'app-1',
             '--stream-json' => true,
         ]);
@@ -336,11 +336,11 @@ describe('StreamsGatewayProgress', function (): void {
                 ],
             ]);
     })->with([
-        'project:new' => [
-            'project:new',
+        'app:new' => [
+            'app:new',
             ['name' => 'docs', '--node' => 'app-1', '--repo' => 'hardimpact/docs'],
             'POST',
-            '/api/projects',
+            '/api/apps',
         ],
         'workspace:new' => [
             'workspace:new',
@@ -412,7 +412,7 @@ describe('StreamsGatewayProgress', function (): void {
 
         Http::assertNothingSent();
     })->with([
-        'project:new' => ['project:new', ['name' => 'docs', '--node' => 'app-1']],
+        'app:new' => ['app:new', ['name' => 'docs', '--node' => 'app-1']],
         'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--instance' => 'docs']],
         'workspace:setup' => ['workspace:setup', ['name' => 'feature-docs', '--instance' => 'docs']],
         'node:new' => [

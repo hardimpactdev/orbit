@@ -3,18 +3,18 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
@@ -99,7 +99,8 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'php-cli',
             ])->and(
                 $shell->probeScripts(),
-            )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(7);
+                // Capability batch probes plus dedicated php-cli runtime probes.
+            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(7);
     });
 
     it('rejects the private service namespace as an app node tld', function (): void {
@@ -234,10 +235,10 @@ describe('orbit:internal:bake-app-node', function (): void {
             'host' => '10.6.0.5',
             'wireguard_address' => '10.6.0.5',
         ]);
-        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
-        $instance = AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/srv/docs',
@@ -245,7 +246,7 @@ describe('orbit:internal:bake-app-node', function (): void {
         ]);
         Workspace::factory()->for($app)->create([
             'name' => 'feature-docs',
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         expect(
@@ -491,6 +492,10 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if ($this->isPhpCliRuntimeProbe($script)) {
+            return $this->phpCliRuntimeProbeResult();
+        }
+
         if ($this->isProbeScript($script)) {
             return $this->probeResult($node, $options);
         }
@@ -666,7 +671,31 @@ final class BakeAppNodeRemoteShell implements RemoteShell
 
     private function isProbeScript(string $script): bool
     {
-        return str_contains($script, '# orbit-tool-probe:capability');
+        return str_contains($script, '# orbit-tool-probe:capability') || $this->isPhpCliRuntimeProbe($script);
+    }
+
+    private function isPhpCliRuntimeProbe(string $script): bool
+    {
+        return str_contains($script, 'probe_minor') && str_contains($script, 'expected_variant=');
+    }
+
+    private function phpCliRuntimeProbeResult(): RemoteShellResult
+    {
+        if (! ($this->installed['php-cli'] ?? false)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "8.5|8.5.8|0||0|0|0|0\n8.4|8.4.21|0||0|0|0|0\n8.3|8.3.31|0||0|0|0|0\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: "8.5|8.5.8|1|8.5.8|0|0|0|0\n8.4|8.4.21|1|8.4.21|0|0|0|0\n8.3|8.3.31|1|8.3.31|0|0|0|0\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 
     private function toolForRepairScript(string $script): ?string

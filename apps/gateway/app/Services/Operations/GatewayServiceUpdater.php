@@ -70,6 +70,22 @@ class GatewayServiceUpdater
                 'Gateway host CLI installed',
                 fn (): null => $this->installGatewayHostCli($operationRun, $plan, $targetImage),
             );
+            // Converge leaf TLS material before force-replacing orbit-gateway.
+            // The fleet update runner is a one-shot container with host
+            // /etc/caddy and /etc/orbit bind-mounted under ORBIT_HOST_PATH_PREFIX
+            // (see UpdateRunnerLauncher); keep this step before self-replacement
+            // so serving paths are updated while the update process is stable.
+            $this->runStep(
+                $operationRun,
+                'gateway.leaf',
+                'Converging gateway leaf certificate SANs',
+                'Gateway leaf certificate SANs converged',
+                function (): null {
+                    $this->convergeGatewayLeafServingArtifacts();
+
+                    return null;
+                },
+            );
             $this->runStep(
                 $operationRun,
                 'gateway.service',
@@ -254,6 +270,46 @@ class GatewayServiceUpdater
         $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
 
         return null;
+    }
+
+    private function convergeGatewayLeafServingArtifacts(): void
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if (! $gatewayNode instanceof Node) {
+            return;
+        }
+
+        $wireguardAddress = trim((string) $gatewayNode->wireguard_address);
+
+        if ($wireguardAddress === '' || filter_var($wireguardAddress, FILTER_VALIDATE_IP) === false) {
+            throw new RuntimeException('Gateway node is missing a valid WireGuard API address for leaf convergence.');
+        }
+
+        $this->swarmInstaller()->convergeGatewayLeafServing(
+            wireguardAddress: $wireguardAddress,
+            exposureMode: $this->gatewayExposureMode(),
+            configRoot: $this->configRoot(),
+            wireguardCidr: $this->gatewayWireguardCidr($gatewayNode),
+        );
+    }
+
+    private function gatewayWireguardCidr(Node $gatewayNode): string
+    {
+        $settings = $gatewayNode
+            ->roleAssignments
+            ->first(static fn ($assignment): bool => (string) $assignment->role === 'vpn')
+            ?->settings;
+
+        if (is_array($settings)) {
+            $cidr = $settings['wireguard_cidr'] ?? null;
+
+            if (is_string($cidr) && trim($cidr) !== '') {
+                return trim($cidr);
+            }
+        }
+
+        return '10.6.0.0/24';
     }
 
     private function loadOperationsReverbImageArchive(OperationUpdatePlan $plan): void

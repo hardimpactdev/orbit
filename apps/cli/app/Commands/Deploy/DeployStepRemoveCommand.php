@@ -10,7 +10,7 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:step-remove
-        {instance? : Instance selector (project.instance)}
+        {instance? : Instance selector (app.instance)}
         {step? : Deployment step id or exact title}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
@@ -63,9 +63,9 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 
         $id = $this->stepString($stepData, 'id') ?? $step;
         $title = $this->stepString($stepData, 'title') ?? $step;
-        $project = $this->stepString($stepData, 'project');
+        $app = $this->stepString($stepData, 'app');
         $instance = $this->stepString($stepData, 'instance');
-        $target = $project !== null && $instance !== null ? "{$project}.{$instance}" : $instanceSelector;
+        $target = $app !== null && $instance !== null ? "{$app}.{$instance}" : $instanceSelector;
         $order = $this->stepString($stepData, 'order');
 
         $summary = "Removed deployment step #{$id} '{$title}' from instance '{$target}'.";

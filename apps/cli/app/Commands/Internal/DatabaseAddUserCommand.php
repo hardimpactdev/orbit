@@ -8,7 +8,6 @@ use App\Services\Database\LocalMysqlUserAction;
 use App\Services\Database\LocalMysqlUserFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class DatabaseAddUserCommand extends InternalExecutorCommand
 {
@@ -63,16 +62,5 @@ final class DatabaseAddUserCommand extends InternalExecutorCommand
     private function hasOnlyStringKeys(array $payload): bool
     {
         return array_all(array_keys($payload), fn ($key) => is_string($key));
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

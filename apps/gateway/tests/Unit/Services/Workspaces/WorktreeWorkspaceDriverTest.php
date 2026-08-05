@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorktreeWorkspaceDriver;
@@ -59,9 +59,9 @@ it('reports internal workspace source creation failures as workspace source fail
         ->toThrow(WorkspaceCreateFailed::class, 'Failed to create git worktree: worktree failed');
 });
 
-function worktreeWorkspaceDriverApp(): Project
+function worktreeWorkspaceDriverApp(): App
 {
-    return new Project()->forceFill([
+    return new App()->forceFill([
         'name' => 'docs',
         'path' => '/srv/docs',
     ]);

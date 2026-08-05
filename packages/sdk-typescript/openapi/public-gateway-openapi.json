@@ -132,7 +132,7 @@
                             "filters": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": [
                                     "string",
                                     "null"
@@ -161,7 +161,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "node",
                                 "effect",
                                 "correlation",
@@ -536,620 +536,7 @@
         }
       }
     },
-    "/agent-ide/adapters": {
-      "get": {
-        "operationId": "agentIdeAdapterChoices",
-        "tags": [
-          "AgentIdeAdapterChoices"
-        ],
-        "parameters": [
-          {
-            "name": "scope",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "scope": {
-                              "anyOf": [
-                                {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "reserved_tokens": {
-                              "anyOf": [
-                                {
-                                  "type": "array",
-                                  "prefixItems": [
-                                    {
-                                      "type": "string",
-                                      "const": "none"
-                                    }
-                                  ],
-                                  "minItems": 1,
-                                  "maxItems": 1,
-                                  "additionalItems": false
-                                },
-                                {
-                                  "type": "array",
-                                  "prefixItems": [
-                                    {
-                                      "type": "string",
-                                      "const": "inherit"
-                                    },
-                                    {
-                                      "type": "string",
-                                      "const": "none"
-                                    }
-                                  ],
-                                  "minItems": 2,
-                                  "maxItems": 2,
-                                  "additionalItems": false
-                                },
-                                {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 0,
-                                  "additionalItems": false
-                                }
-                              ]
-                            },
-                            "adapters": {
-                              "type": "array",
-                              "prefixItems": [
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "name": {
-                                      "type": "string",
-                                      "const": "opencode"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "const": "opencode"
-                                    },
-                                    "source": {
-                                      "type": "string",
-                                      "const": "core"
-                                    },
-                                    "capabilities": {
-                                      "type": "array",
-                                      "prefixItems": [
-                                        {
-                                          "type": "string",
-                                          "const": "message_delivery"
-                                        },
-                                        {
-                                          "type": "string",
-                                          "const": "workspace_path_resolution"
-                                        }
-                                      ],
-                                      "minItems": 2,
-                                      "maxItems": 2,
-                                      "additionalItems": false
-                                    }
-                                  },
-                                  "required": [
-                                    "name",
-                                    "label",
-                                    "source",
-                                    "capabilities"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "name": {
-                                      "type": "string",
-                                      "const": "polyscope"
-                                    },
-                                    "label": {
-                                      "type": "string",
-                                      "const": "polyscope"
-                                    },
-                                    "source": {
-                                      "type": "string",
-                                      "const": "core"
-                                    },
-                                    "capabilities": {
-                                      "type": "array",
-                                      "prefixItems": [
-                                        {
-                                          "type": "string",
-                                          "const": "message_delivery"
-                                        },
-                                        {
-                                          "type": "string",
-                                          "const": "workspace_path_resolution"
-                                        }
-                                      ],
-                                      "minItems": 2,
-                                      "maxItems": 2,
-                                      "additionalItems": false
-                                    }
-                                  },
-                                  "required": [
-                                    "name",
-                                    "label",
-                                    "source",
-                                    "capabilities"
-                                  ]
-                                }
-                              ],
-                              "minItems": 2,
-                              "maxItems": 2,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "scope",
-                            "reserved_tokens",
-                            "adapters"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "validation_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "Agent IDE adapter scope is not supported."
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "scope": {
-                              "anyOf": [
-                                {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "supported": {
-                              "type": "array",
-                              "prefixItems": [
-                                {
-                                  "type": "string",
-                                  "const": "node"
-                                },
-                                {
-                                  "type": "string",
-                                  "const": "instance"
-                                }
-                              ],
-                              "minItems": 2,
-                              "maxItems": 2,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "scope",
-                            "supported"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent-ide/message": {
-      "post": {
-        "operationId": "agentIdeMessage",
-        "tags": [
-          "AgentIdeMessage"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SendAgentIdeMessageApiRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationException"
-          }
-        }
-      }
-    },
-    "/instances/{instance}/agent-ide": {
-      "post": {
-        "operationId": "appAgentIde",
-        "tags": [
-          "AppAgentIde"
-        ],
-        "parameters": [
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetAppAgentIdeApiRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "object",
-                              "additionalProperties": {}
-                            },
-                            "agent_ide": {
-                              "type": "object",
-                              "properties": {
-                                "adapter": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                },
-                                "source": {
-                                  "type": "string"
-                                },
-                                "effective_adapter": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "adapter",
-                                "source",
-                                "effective_adapter"
-                              ]
-                            },
-                            "cleanup": {
-                              "type": "object",
-                              "properties": {
-                                "workspaces_removed": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                }
-                              },
-                              "required": [
-                                "workspaces_removed"
-                              ]
-                            },
-                            "action": {
-                              "type": "string"
-                            },
-                            "previous_adapter": {
-                              "type": [
-                                "string",
-                                "null"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "instance",
-                            "agent_ide",
-                            "cleanup",
-                            "action",
-                            "previous_adapter"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "instance.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationException"
-          }
-        }
-      }
-    },
-    "/instances": {
-      "get": {
-        "operationId": "appInstance.all",
-        "tags": [
-          "AppInstance"
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/projects/{project}/instances": {
-      "get": {
-        "operationId": "appInstance.index",
-        "tags": [
-          "AppInstance"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "appInstance.store",
-        "tags": [
-          "AppInstance"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/projects/{project}/instances/{instance}": {
-      "get": {
-        "operationId": "appInstance.show",
-        "tags": [
-          "AppInstance"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "appInstance.destroy",
-        "tags": [
-          "AppInstance"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/projects": {
+    "/apps": {
       "get": {
         "operationId": "appList",
         "tags": [
@@ -1166,7 +553,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The compact project inventory.",
+            "description": "The compact app inventory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1178,7 +565,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "projects": {
+                            "apps": {
                               "type": "array",
                               "items": {
                                 "type": "object",
@@ -1228,7 +615,7 @@
                             }
                           },
                           "required": [
-                            "projects"
+                            "apps"
                           ]
                         },
                         "meta": {
@@ -1343,7 +730,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "This node is not authorized to read the project registry."
+                              "const": "This node is not authorized to read the app registry."
                             },
                             "meta": {
                               "type": "object",
@@ -1354,7 +741,7 @@
                                 },
                                 "missing_permission": {
                                   "type": "string",
-                                  "const": "project:read"
+                                  "const": "app:read"
                                 }
                               },
                               "required": [
@@ -1422,276 +809,6 @@
               "application/json": {
                 "schema": {
                   "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/instances/prune": {
-      "post": {
-        "operationId": "appPrune",
-        "tags": [
-          "AppPrune"
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "project": {
-                              "type": "string"
-                            },
-                            "instance": {
-                              "type": "string"
-                            },
-                            "stale_workspaces": {
-                              "type": "string"
-                            },
-                            "dry_run": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "project",
-                            "instance",
-                            "stale_workspaces",
-                            "dry_run"
-                          ]
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "warnings": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "warnings"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "instance.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "instance.agent_ide_query_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "instance": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "instance"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "instance.no_agent_ide_adapter"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "No agent IDE adapter configured for this instance."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "instance": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "instance"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "workspace.unsupported_for_production"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "string",
-                                      "enum": [
-                                        "unknown"
-                                      ]
-                                    }
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
                 }
               }
             }
@@ -1815,7 +932,7 @@
         }
       }
     },
-    "/projects/{project}": {
+    "/apps/{app}": {
       "delete": {
         "operationId": "appRemove",
         "tags": [
@@ -1823,7 +940,7 @@
         ],
         "parameters": [
           {
-            "name": "project",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -1845,63 +962,14 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "project": {
-                              "type": "object",
-                              "properties": {
-                                "name": {
-                                  "type": "string"
-                                },
-                                "node": {
-                                  "type": "string"
-                                },
-                                "url": {
-                                  "type": "string"
-                                },
-                                "path": {
-                                  "type": "string"
-                                },
-                                "root": {
-                                  "type": "string"
-                                },
-                                "repository": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                },
-                                "runtime": {
-                                  "type": "string"
-                                },
-                                "runtime_config": {
-                                  "type": "object",
-                                  "properties": {
-                                    "proxy_transport": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "proxy_transport"
-                                  ]
-                                },
-                                "php_version": {
-                                  "type": "string"
-                                },
-                                "adopted": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "node",
-                                "url",
-                                "path",
-                                "root",
-                                "repository",
-                                "runtime",
-                                "runtime_config",
-                                "php_version",
-                                "adopted"
-                              ]
+                            "app": {
+                              "type": "string"
+                            },
+                            "instances": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
                             },
                             "result": {
                               "type": "object",
@@ -1918,40 +986,62 @@
                             "cleanup": {
                               "type": "object",
                               "properties": {
-                                "proxy_routes_removed": {
-                                  "type": "integer"
+                                "aggregate": {
+                                  "type": "object",
+                                  "properties": {
+                                    "instances_removed": {
+                                      "type": "integer"
+                                    },
+                                    "proxy_routes_removed": {
+                                      "type": "integer"
+                                    },
+                                    "workspaces_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "schedules_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "processes_removed": {
+                                      "type": "string"
+                                    },
+                                    "runtime_containers_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "runtime_configs_removed": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "paths_removed": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "instances_removed",
+                                    "proxy_routes_removed",
+                                    "workspaces_removed",
+                                    "schedules_removed",
+                                    "processes_removed",
+                                    "runtime_containers_removed",
+                                    "runtime_configs_removed",
+                                    "paths_removed"
+                                  ]
                                 },
-                                "workspaces_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "schedules_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "processes_removed": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                },
-                                "runtime_container_removed": {
-                                  "type": "string"
-                                },
-                                "runtime_config_removed": {
+                                "instances": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "proxy_routes_removed",
-                                "workspaces_removed",
-                                "schedules_removed",
-                                "processes_removed",
-                                "runtime_container_removed",
-                                "runtime_config_removed"
+                                "aggregate",
+                                "instances"
                               ]
                             }
                           },
                           "required": [
-                            "project",
+                            "app",
+                            "instances",
                             "result",
                             "cleanup"
                           ]
@@ -1993,7 +1083,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "project.not_found"
+                          "const": "app.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -2001,12 +1091,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "project": {
+                            "app": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "project"
+                            "app"
                           ]
                         }
                       },
@@ -2040,7 +1130,7 @@
                         },
                         "message": {
                           "type": "string",
-                          "const": "Use --force to remove this project."
+                          "const": "Use --force to remove this app."
                         },
                         "meta": {
                           "type": "object",
@@ -2078,7 +1168,7 @@
         ],
         "parameters": [
           {
-            "name": "project",
+            "name": "app",
             "in": "path",
             "required": true,
             "schema": {
@@ -2100,7 +1190,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "project": {
+                            "app": {
                               "type": "object",
                               "additionalProperties": {}
                             },
@@ -2111,7 +1201,61 @@
                                   "type": "string"
                                 },
                                 "instances": {
-                                  "type": "string"
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "driver": {
+                                        "type": "string"
+                                      },
+                                      "environment": {
+                                        "type": "string"
+                                      },
+                                      "node": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "url": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "null"
+                                      },
+                                      "root": {
+                                        "type": "null"
+                                      },
+                                      "domain": {
+                                        "type": "null"
+                                      },
+                                      "adopted": {
+                                        "type": "boolean"
+                                      },
+                                      "workspaces": {
+                                        "type": "array",
+                                        "items": {}
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "driver",
+                                      "environment",
+                                      "node",
+                                      "url",
+                                      "path",
+                                      "root",
+                                      "domain",
+                                      "adopted",
+                                      "workspaces"
+                                    ]
+                                  }
                                 },
                                 "processes": {
                                   "type": "array",
@@ -2152,7 +1296,7 @@
                             }
                           },
                           "required": [
-                            "project",
+                            "app",
                             "details"
                           ]
                         }
@@ -2187,7 +1331,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "This node is not authorized to read this project."
+                              "const": "This node is not authorized to read this app."
                             },
                             "meta": {
                               "type": "object",
@@ -2198,7 +1342,7 @@
                                 },
                                 "missing_permission": {
                                   "type": "string",
-                                  "const": "project:read"
+                                  "const": "app:read"
                                 }
                               },
                               "required": [
@@ -2264,7 +1408,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "project.not_found"
+                          "const": "app.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -2272,12 +1416,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "project": {
+                            "app": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "project"
+                            "app"
                           ]
                         }
                       },
@@ -2532,7 +1676,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "project": {
+                            "app": {
                               "type": "string"
                             },
                             "instance": {
@@ -2575,7 +1719,7 @@
                             }
                           },
                           "required": [
-                            "project",
+                            "app",
                             "instance",
                             "node",
                             "path",
@@ -2940,7 +2084,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -2961,7 +2105,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -2987,7 +2131,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3008,7 +2152,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -3034,7 +2178,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3052,7 +2196,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config"
@@ -3274,7 +2418,7 @@
                                   "type": "string",
                                   "const": "instance_unavailable"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3284,7 +2428,7 @@
                               "required": [
                                 "field",
                                 "reason",
-                                "project",
+                                "app",
                                 "instance"
                               ]
                             }
@@ -3367,7 +2511,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3388,7 +2532,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -3414,7 +2558,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3435,7 +2579,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -3461,7 +2605,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3479,7 +2623,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config"
@@ -3701,7 +2845,7 @@
                                   "type": "string",
                                   "const": "instance_unavailable"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3711,7 +2855,7 @@
                               "required": [
                                 "field",
                                 "reason",
-                                "project",
+                                "app",
                                 "instance"
                               ]
                             }
@@ -3794,7 +2938,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3815,7 +2959,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -3841,7 +2985,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3862,7 +3006,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config",
@@ -3888,7 +3032,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -3906,7 +3050,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "worker_enabled",
                                 "worker_config"
@@ -4128,7 +3272,7 @@
                                   "type": "string",
                                   "const": "instance_unavailable"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -4138,7 +3282,7 @@
                               "required": [
                                 "field",
                                 "reason",
-                                "project",
+                                "app",
                                 "instance"
                               ]
                             }
@@ -4278,6 +3422,64 @@
         }
       }
     },
+    "/codex/apps/{project}": {
+      "post": {
+        "operationId": "codexApp.add",
+        "tags": [
+          "CodexApp"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "codexApp.remove",
+        "tags": [
+          "CodexApp"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/dashboard/runtime-inventory": {
       "get": {
         "operationId": "dashboardRuntimeInventory",
@@ -4302,7 +3504,7 @@
                               "type": "array",
                               "items": {}
                             },
-                            "projects": {
+                            "apps": {
                               "type": "array",
                               "items": {}
                             },
@@ -4317,7 +3519,7 @@
                           },
                           "required": [
                             "nodes",
-                            "projects",
+                            "apps",
                             "processes",
                             "tools"
                           ]
@@ -4818,7 +4020,7 @@
                                         "limit_capped"
                                       ]
                                     },
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     },
                                     "instance": {
@@ -4827,7 +4029,7 @@
                                   },
                                   "required": [
                                     "pagination",
-                                    "project",
+                                    "app",
                                     "instance"
                                   ]
                                 }
@@ -5002,7 +4204,7 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     },
                                     "instance": {
@@ -5042,7 +4244,7 @@
                                   },
                                   "required": [
                                     "id",
-                                    "project",
+                                    "app",
                                     "instance",
                                     "status",
                                     "exit_code",
@@ -5530,7 +4732,7 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     },
                                     "instance": {
@@ -5541,7 +4743,7 @@
                                     }
                                   },
                                   "required": [
-                                    "project",
+                                    "app",
                                     "instance",
                                     "count"
                                   ]
@@ -5652,7 +4854,7 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     },
                                     "instance": {
@@ -5679,7 +4881,7 @@
                                   },
                                   "required": [
                                     "id",
-                                    "project",
+                                    "app",
                                     "instance",
                                     "title",
                                     "command",
@@ -5882,7 +5084,7 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     },
                                     "instance": {
@@ -5909,7 +5111,7 @@
                                   },
                                   "required": [
                                     "id",
-                                    "project",
+                                    "app",
                                     "instance",
                                     "title",
                                     "command",
@@ -6555,6 +5757,158 @@
         }
       }
     },
+    "/instances": {
+      "get": {
+        "operationId": "instance.all",
+        "tags": [
+          "Instance"
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/apps/{app}/instances": {
+      "get": {
+        "operationId": "instance.index",
+        "tags": [
+          "Instance"
+        ],
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "instance.store",
+        "tags": [
+          "Instance"
+        ],
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/apps/{app}/instances/{instance}": {
+      "get": {
+        "operationId": "instance.show",
+        "tags": [
+          "Instance"
+        ],
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "instance.destroy",
+        "tags": [
+          "Instance"
+        ],
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me": {
       "get": {
         "operationId": "me",
@@ -6678,200 +6032,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/nodes/{name}/agent-ide": {
-      "post": {
-        "operationId": "nodeAgentIde",
-        "tags": [
-          "NodeAgentIde"
-        ],
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetNodeAgentIdeApiRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string"
-                            },
-                            "agent_ide": {
-                              "anyOf": [
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "adapter": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    },
-                                    "source": {
-                                      "type": "string",
-                                      "const": "node"
-                                    }
-                                  },
-                                  "required": [
-                                    "adapter",
-                                    "source"
-                                  ]
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "adapter": {
-                                      "type": "null"
-                                    },
-                                    "source": {
-                                      "type": "string",
-                                      "const": "default"
-                                    }
-                                  },
-                                  "required": [
-                                    "adapter",
-                                    "source"
-                                  ]
-                                }
-                              ]
-                            },
-                            "action": {
-                              "type": "string",
-                              "enum": [
-                                "converged",
-                                "set"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "agent_ide",
-                            "action"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "authorization_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "Peer identity unknown."
-                        },
-                        "meta": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "node.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "name"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationException"
           }
         }
       }
@@ -8142,45 +7302,6 @@
                                     "wireguard"
                                   ]
                                 },
-                                "agent_ide": {
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "adapter": {
-                                          "type": [
-                                            "string",
-                                            "null"
-                                          ]
-                                        },
-                                        "source": {
-                                          "type": "string",
-                                          "const": "node"
-                                        }
-                                      },
-                                      "required": [
-                                        "adapter",
-                                        "source"
-                                      ]
-                                    },
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "adapter": {
-                                          "type": "null"
-                                        },
-                                        "source": {
-                                          "type": "string",
-                                          "const": "default"
-                                        }
-                                      },
-                                      "required": [
-                                        "adapter",
-                                        "source"
-                                      ]
-                                    }
-                                  ]
-                                },
                                 "grants": {
                                   "type": "object",
                                   "properties": {
@@ -8268,7 +7389,6 @@
                                 "platform",
                                 "roles",
                                 "addresses",
-                                "agent_ide",
                                 "grants"
                               ]
                             }
@@ -9094,7 +8214,7 @@
                                             "null"
                                           ]
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9121,13 +8241,13 @@
                                             "name": {
                                               "type": "string"
                                             },
-                                            "project": {
+                                            "app": {
                                               "type": "string"
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "project"
+                                            "app"
                                           ]
                                         },
                                         "workspace": {
@@ -9162,7 +8282,7 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace"
                                       ]
@@ -9318,7 +8438,7 @@
                                             "null"
                                           ]
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9345,13 +8465,13 @@
                                             "name": {
                                               "type": "string"
                                             },
-                                            "project": {
+                                            "app": {
                                               "type": "string"
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "project"
+                                            "app"
                                           ]
                                         },
                                         "workspace": {
@@ -9386,7 +8506,7 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace"
                                       ]
@@ -9401,7 +8521,7 @@
                                         "node": {
                                           "type": "string"
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": "null"
                                         },
                                         "instance": {
@@ -9429,7 +8549,7 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace",
                                         "previous",
@@ -9489,7 +8609,7 @@
                                             "null"
                                           ]
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9516,13 +8636,13 @@
                                             "name": {
                                               "type": "string"
                                             },
-                                            "project": {
+                                            "app": {
                                               "type": "string"
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "project"
+                                            "app"
                                           ]
                                         },
                                         "workspace": {
@@ -9557,7 +8677,7 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace"
                                       ]
@@ -9572,11 +8692,8 @@
                                         "node": {
                                           "type": "string"
                                         },
-                                        "project": {
-                                          "type": [
-                                            "string",
-                                            "null"
-                                          ]
+                                        "app": {
+                                          "type": "string"
                                         },
                                         "instance": {
                                           "type": "string"
@@ -9585,14 +8702,7 @@
                                           "type": "string"
                                         },
                                         "previous": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
-                                          ]
+                                          "type": "string"
                                         },
                                         "version": {
                                           "type": [
@@ -9619,7 +8729,7 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace",
                                         "previous",
@@ -9677,7 +8787,7 @@
                                             "null"
                                           ]
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9704,13 +8814,13 @@
                                             "name": {
                                               "type": "string"
                                             },
-                                            "project": {
+                                            "app": {
                                               "type": "string"
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "project"
+                                            "app"
                                           ]
                                         },
                                         "workspace": {
@@ -9745,7 +8855,7 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace"
                                       ]
@@ -9760,7 +8870,7 @@
                                         "node": {
                                           "type": "string"
                                         },
-                                        "project": {
+                                        "app": {
                                           "type": "string"
                                         },
                                         "instance": {
@@ -9788,7 +8898,7 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "project",
+                                        "app",
                                         "instance",
                                         "workspace",
                                         "previous",
@@ -9960,6 +9070,14 @@
         ],
         "parameters": [
           {
+            "name": "app",
+            "in": "query",
+            "description": "Strict app-instance or workspace hostname (no scheme/path/port) resolved via exact proxy_routes.domain. Mutually exclusive with node, instance, and workspace.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "node",
             "in": "query",
             "description": "Filter processes by node name.",
@@ -9970,7 +9088,7 @@
           {
             "name": "instance",
             "in": "query",
-            "description": "Filter processes by project.instance selector.",
+            "description": "Filter processes by app.instance selector.",
             "schema": {
               "type": "string"
             }
@@ -9986,70 +9104,200 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process definitions with concrete status for a node, instance, workspace, or app hostname context.",
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
+                  "type": "object",
+                  "properties": {
+                    "success": {
                       "type": "object",
                       "properties": {
-                        "success": {
+                        "data": {
                           "type": "object",
                           "properties": {
-                            "data": {
+                            "context": {
                               "type": "object",
                               "properties": {
-                                "context": {
-                                  "type": "object",
-                                  "properties": {
-                                    "node": {
-                                      "type": "string"
-                                    },
-                                    "project": {
-                                      "type": "string"
-                                    },
-                                    "instance": {
-                                      "type": "string"
-                                    },
-                                    "workspace": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "node",
-                                    "project",
-                                    "instance",
-                                    "workspace"
+                                "node": {
+                                  "type": "string"
+                                },
+                                "app": {
+                                  "type": [
+                                    "string",
+                                    "null"
                                   ]
                                 },
-                                "processes": {
-                                  "type": "array",
-                                  "items": {}
+                                "instance": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "workspace": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 }
                               },
                               "required": [
-                                "context",
-                                "processes"
+                                "node",
+                                "app",
+                                "instance",
+                                "workspace"
                               ]
                             },
-                            "meta": {
-                              "type": "string"
+                            "processes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "app": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "key": {
+                                    "type": "string",
+                                    "description": "Stable process identity slug (current Process.name). New consumers must use key + label."
+                                  },
+                                  "label": {
+                                    "type": "string",
+                                    "description": "Durable human display label for the process."
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "description": "Deprecated compatibility alias equal to key. New consumers must use key + label."
+                                  },
+                                  "command": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "restart_policy": {
+                                    "type": "string"
+                                  },
+                                  "crash_notification": {
+                                    "type": "string"
+                                  },
+                                  "runtime": {
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "service": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "additionalProperties": {}
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "description": "Runtime status from the latest durable process lifecycle event: transitional starting/stopping/restarting, terminal running/stopped/crashed, or unknown (including failed lifecycle actions and no event yet).",
+                                    "enum": [
+                                      "starting",
+                                      "running",
+                                      "stopping",
+                                      "stopped",
+                                      "restarting",
+                                      "crashed",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "last_event": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "node",
+                                  "app",
+                                  "instance",
+                                  "workspace",
+                                  "key",
+                                  "label",
+                                  "name",
+                                  "command",
+                                  "restart_policy",
+                                  "crash_notification",
+                                  "runtime",
+                                  "tool",
+                                  "service",
+                                  "runtime_unit",
+                                  "status",
+                                  "last_event"
+                                ]
+                              }
                             }
                           },
                           "required": [
-                            "data",
-                            "meta"
+                            "context",
+                            "processes"
                           ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
                         }
                       },
                       "required": [
-                        "success"
+                        "data",
+                        "meta"
                       ]
-                    },
-                    {
-                      "type": "string"
                     }
+                  },
+                  "required": [
+                    "success"
                   ]
                 }
               }
@@ -10348,13 +9596,147 @@
         "tags": [
           "ProcessRestart"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "App.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process restart result with ordered durable events (restarting then started/failed).",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "app": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "events": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "integer"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "type"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "app",
+                                  "instance",
+                                  "workspace",
+                                  "runtime_unit",
+                                  "state",
+                                  "events"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -10368,13 +9750,173 @@
         "tags": [
           "ProcessStart"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "App.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "",
+            "description": "Process start/stop result with ordered durable events (transitional then terminal, including failed→unknown).",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "app": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  },
+                                  "events": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "integer"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "type"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "app",
+                                  "instance",
+                                  "workspace",
+                                  "runtime_unit",
+                                  "state",
+                                  "event",
+                                  "events"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -10388,13 +9930,418 @@
         "tags": [
           "ProcessStop"
         ],
+        "requestBody": {
+          "description": "Process lifecycle target selectors and optional process name.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "description": "Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). Mutually exclusive with node, instance, and workspace."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Owning node name."
+                  },
+                  "instance": {
+                    "type": "string",
+                    "description": "App.instance selector."
+                  },
+                  "workspace": {
+                    "type": "string",
+                    "description": "Workspace name."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional process name. Omit to act on all processes in the context."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
+            "description": "Process start/stop result with ordered durable events (transitional then terminal, including failed→unknown).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "runtimes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "process": {
+                                    "type": "string"
+                                  },
+                                  "node": {
+                                    "type": "string"
+                                  },
+                                  "app": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "instance": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "workspace": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "runtime_unit": {
+                                    "type": "string"
+                                  },
+                                  "state": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer"
+                                      },
+                                      "type": {
+                                        "type": "string",
+                                        "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                        "enum": [
+                                          "starting",
+                                          "started",
+                                          "stopping",
+                                          "stopped",
+                                          "restarting",
+                                          "crashed",
+                                          "failed"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "type"
+                                    ]
+                                  },
+                                  "events": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "integer"
+                                        },
+                                        "type": {
+                                          "type": "string",
+                                          "description": "Durable process lifecycle event type: starting, started, stopping, stopped, restarting, crashed, or failed.",
+                                          "enum": [
+                                            "starting",
+                                            "started",
+                                            "stopping",
+                                            "stopped",
+                                            "restarting",
+                                            "crashed",
+                                            "failed"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "type"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "process",
+                                  "node",
+                                  "app",
+                                  "instance",
+                                  "workspace",
+                                  "runtime_unit",
+                                  "state",
+                                  "event",
+                                  "events"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "runtimes"
+                          ]
+                        },
+                        "meta": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/processes/stream": {
+      "get": {
+        "operationId": "processesStream",
+        "description": "Server-sent process lifecycle stream for browser toolbars. Every connect emits a fresh authoritative snapshot at a durable high-water mark (SSE id, 0 when no events), then ordered process_events after that mark. Snapshot process items expose key, label, and deprecated name (= key). Update frames expose key/name aliases and include current label only when the related process key matches the durable event key; otherwise label falls back to that key (snapshot-authoritative labels). Last-Event-ID is accepted for native EventSource reconnect and never replays history after the snapshot. Auth matches process list (WireGuard peer + process:read). X-Orbit-Client is never required.",
+        "tags": [
+          "ProcessStream"
+        ],
+        "parameters": [
+          {
+            "name": "app",
+            "in": "query",
+            "required": true,
+            "description": "Required strict app-instance or workspace hostname. Only browser/stream selector; url and other process selectors are rejected.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream of process lifecycle frames: snapshot (SSE id = high-water mark, 0 when none), ordered update events, optional SSE comment heartbeats, and terminal error frames.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "meta": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "field": {
+                                      "type": "string",
+                                      "const": "app"
+                                    },
+                                    "reason": {
+                                      "type": "string",
+                                      "const": "stream_scope_required"
+                                    }
+                                  },
+                                  "required": [
+                                    "field",
+                                    "reason"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string",
+                              "const": "The process stream accepts only the app hostname selector."
+                            },
+                            "meta": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "field": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "enum": [
+                                            "query"
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": "string",
+                                      "const": "stream_app_only"
+                                    }
+                                  },
+                                  "required": [
+                                    "field",
+                                    "reason"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string",
+                              "const": "The app hostname is required for the process stream."
+                            },
+                            "meta": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "field": {
+                                      "type": "string",
+                                      "const": "app"
+                                    }
+                                  },
+                                  "required": [
+                                    "field"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "const": "authorization_failed"
+                        },
+                        "message": {
+                          "type": "string",
+                          "const": "Peer identity unknown."
+                        },
+                        "meta": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "minItems": 0,
+                              "maxItems": 0,
+                              "additionalItems": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "meta"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -10471,7 +10418,7 @@
                                           "type": "string",
                                           "enum": [
                                             "instance",
-                                            "project",
+                                            "app",
                                             "analytics",
                                             "websocket",
                                             "workspace",
@@ -10515,7 +10462,7 @@
                                     },
                                     "status": {
                                       "type": "string",
-                                      "const": "removed_with_drift"
+                                      "const": "removed"
                                     },
                                     "placement": {
                                       "type": "string",
@@ -10592,45 +10539,32 @@
                                 "tls_removed": {
                                   "type": "boolean"
                                 },
+                                "removal_reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "orphan_owner",
+                                    "custom"
+                                  ]
+                                },
                                 "warnings": {
                                   "type": "array",
-                                  "prefixItems": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "code": {
-                                          "type": "string",
-                                          "const": "proxy.cleanup_deferred"
-                                        },
-                                        "family": {
-                                          "type": "string",
-                                          "const": "proxy"
-                                        },
-                                        "message": {
-                                          "type": "string",
-                                          "const": "Proxy route intent was removed, but backend/TLS cleanup is deferred to proxy doctor fix mode."
-                                        },
-                                        "next_command": {
-                                          "type": "string"
-                                        }
-                                      },
-                                      "required": [
-                                        "code",
-                                        "family",
-                                        "message",
-                                        "next_command"
-                                      ]
-                                    }
-                                  ],
-                                  "minItems": 1,
-                                  "maxItems": 1,
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 0,
                                   "additionalItems": false
+                                },
+                                "owner_type": {
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "backend_removed",
                                 "tls_removed",
-                                "warnings"
+                                "removal_reason",
+                                "warnings",
+                                "owner_type"
                               ]
                             }
                           },
@@ -11864,9 +11798,13 @@
                                           "type": "string"
                                         },
                                         "node": {
-                                          "type": [
-                                            "string",
-                                            "null"
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
                                           ]
                                         }
                                       },
@@ -12314,6 +12252,26 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/solo/projects": {
+      "get": {
+        "operationId": "soloProxy.projects",
+        "tags": [
+          "SoloProxy"
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
                 }
               }
             }
@@ -14779,11 +14737,8 @@
                                 "workspace": {
                                   "type": "string"
                                 },
-                                "project": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                "app": {
+                                  "type": "string"
                                 },
                                 "node": {
                                   "type": [
@@ -14825,7 +14780,7 @@
                               "required": [
                                 "id",
                                 "workspace",
-                                "project",
+                                "app",
                                 "node",
                                 "type",
                                 "status",
@@ -15178,7 +15133,7 @@
                             "name": {
                               "type": "string"
                             },
-                            "project": {
+                            "app": {
                               "type": "string"
                             },
                             "instance": {
@@ -15203,7 +15158,7 @@
                           },
                           "required": [
                             "name",
-                            "project",
+                            "app",
                             "instance",
                             "action",
                             "proxy_routes_removed",
@@ -15552,11 +15507,8 @@
                                     "name": {
                                       "type": "string"
                                     },
-                                    "project": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
+                                    "app": {
+                                      "type": "string"
                                     },
                                     "instance": {
                                       "type": "string"
@@ -15564,7 +15516,7 @@
                                   },
                                   "required": [
                                     "name",
-                                    "project",
+                                    "app",
                                     "instance"
                                   ]
                                 }
@@ -15815,11 +15767,8 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "project": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                "app": {
+                                  "type": "string"
                                 },
                                 "instance": {
                                   "type": "string"
@@ -15845,27 +15794,6 @@
                                 "php_inherited": {
                                   "type": "boolean"
                                 },
-                                "agent_ide": {
-                                  "type": "object",
-                                  "properties": {
-                                    "adapter": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    },
-                                    "workspace_id": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "adapter",
-                                    "workspace_id"
-                                  ]
-                                },
                                 "adopted": {
                                   "type": "boolean"
                                 },
@@ -15875,14 +15803,13 @@
                               },
                               "required": [
                                 "name",
-                                "project",
+                                "app",
                                 "instance",
                                 "node",
                                 "path",
                                 "url",
                                 "php_version",
                                 "php_inherited",
-                                "agent_ide",
                                 "adopted",
                                 "lifecycle_status"
                               ]
@@ -15949,78 +15876,46 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
+                  "type": "object",
+                  "properties": {
+                    "error": {
                       "type": "object",
                       "properties": {
-                        "error": {
+                        "code": {
+                          "type": "string",
+                          "const": "workspace.ambiguous_name"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "meta": {
                           "type": "object",
                           "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "workspace.ambiguous_name"
-                            },
-                            "message": {
+                            "name": {
                               "type": "string"
                             },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "name": {
-                                  "type": "string"
-                                },
-                                "instances": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                }
-                              },
-                              "required": [
-                                "name",
-                                "instances"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
+                            "instances": {
                               "type": "array",
-                              "items": {}
+                              "items": {
+                                "type": "string"
+                              }
                             }
                           },
                           "required": [
-                            "code",
-                            "message",
-                            "meta"
+                            "name",
+                            "instances"
                           ]
                         }
                       },
                       "required": [
-                        "error"
+                        "code",
+                        "message",
+                        "meta"
                       ]
                     }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -16278,7 +16173,7 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -16353,7 +16248,7 @@
                                 }
                               },
                               "required": [
-                                "project",
+                                "app",
                                 "instance",
                                 "workspace",
                                 "node",
@@ -16689,11 +16584,8 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "project": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
+                                "app": {
+                                  "type": "string"
                                 },
                                 "instance": {
                                   "type": "string"
@@ -16719,27 +16611,6 @@
                                 "php_inherited": {
                                   "type": "boolean"
                                 },
-                                "agent_ide": {
-                                  "type": "object",
-                                  "properties": {
-                                    "adapter": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    },
-                                    "workspace_id": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "adapter",
-                                    "workspace_id"
-                                  ]
-                                },
                                 "adopted": {
                                   "type": "boolean"
                                 },
@@ -16749,14 +16620,13 @@
                               },
                               "required": [
                                 "name",
-                                "project",
+                                "app",
                                 "instance",
                                 "node",
                                 "path",
                                 "url",
                                 "php_version",
                                 "php_inherited",
-                                "agent_ide",
                                 "adopted",
                                 "lifecycle_status"
                               ]
@@ -16823,73 +16693,41 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
+                  "type": "object",
+                  "properties": {
+                    "error": {
                       "type": "object",
                       "properties": {
-                        "error": {
+                        "code": {
+                          "type": "string",
+                          "const": "validation_failed"
+                        },
+                        "message": {
+                          "type": "string",
+                          "const": "Workspace path is required."
+                        },
+                        "meta": {
                           "type": "object",
                           "properties": {
-                            "code": {
+                            "field": {
                               "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Workspace path is required."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "const": "path"
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
+                              "const": "path"
                             }
                           },
                           "required": [
-                            "code",
-                            "message",
-                            "meta"
+                            "field"
                           ]
                         }
                       },
                       "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
+                        "code",
+                        "message",
+                        "meta"
                       ]
                     }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -17180,7 +17018,7 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -17201,7 +17039,7 @@
                               },
                               "required": [
                                 "id",
-                                "project",
+                                "app",
                                 "instance",
                                 "phase",
                                 "order",
@@ -17250,36 +17088,6 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -17487,12 +17295,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "project"
+                                    "app"
                                   ]
                                 }
                               ]
@@ -17568,7 +17376,7 @@
                                 "step_id": {
                                   "type": "integer"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -17577,7 +17385,7 @@
                               },
                               "required": [
                                 "step_id",
-                                "project",
+                                "app",
                                 "phase"
                               ]
                             }
@@ -17940,12 +17748,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "project"
+                                    "app"
                                   ]
                                 }
                               ]
@@ -18124,7 +17932,7 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "instance": {
@@ -18145,7 +17953,7 @@
                               },
                               "required": [
                                 "id",
-                                "project",
+                                "app",
                                 "instance",
                                 "phase",
                                 "order",
@@ -18182,36 +17990,6 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
                     {
                       "type": "object",
                       "properties": {
@@ -18433,7 +18211,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Workspace lifecycle steps cannot read or copy the parent project .env file."
+                              "const": "Workspace lifecycle steps cannot read or copy the parent app .env file."
                             },
                             "meta": {
                               "type": "array",
@@ -18600,12 +18378,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "project": {
+                                    "app": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "project"
+                                    "app"
                                   ]
                                 }
                               ]
@@ -18681,7 +18459,7 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "project": {
+                                "app": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -18690,7 +18468,7 @@
                               },
                               "required": [
                                 "id",
-                                "project",
+                                "app",
                                 "phase"
                               ]
                             }
@@ -18791,7 +18569,7 @@
     "securitySchemes": {
       "orbitWireGuardIdentity": {
         "type": "apiKey",
-        "description": "Gateway-trusted WireGuard peer identity header injected by the Orbit gateway proxy.",
+        "description": "Not a client-supplied credential. CLI/SDK/browser callers authenticate via the actual WireGuard peer source IP and never send this header. When the private gateway proxy hop is trusted, the Orbit gateway proxy may inject this header from the observed peer address after stripping any client copy.",
         "in": "header",
         "name": "X-Orbit-WireGuard-Ip"
       }
@@ -19031,54 +18809,6 @@
         ],
         "title": "RevokeNodeApiRequest"
       },
-      "SendAgentIdeMessageApiRequest": {
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "instance": {
-            "type": "string"
-          },
-          "workspace": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "SendAgentIdeMessageApiRequest"
-      },
-      "SetAppAgentIdeApiRequest": {
-        "type": "object",
-        "properties": {
-          "agent_ide": {
-            "type": "string"
-          },
-          "force": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "agent_ide"
-        ],
-        "title": "SetAppAgentIdeApiRequest"
-      },
-      "SetNodeAgentIdeApiRequest": {
-        "type": "object",
-        "properties": {
-          "agent_ide": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_ide"
-        ],
-        "title": "SetNodeAgentIdeApiRequest"
-      },
       "UpdateAllStartApiRequest": {
         "type": "object",
         "properties": {
@@ -19261,7 +18991,7 @@
   },
   "x-orbit-sdk-surface": {
     "source": "apps/gateway/openapi-sdk-surface.json",
-    "public_schema_only_operations": 22,
-    "removed_internal_or_deferred_operations": 51
+    "public_schema_only_operations": 23,
+    "removed_internal_or_deferred_operations": 48
   }
 }

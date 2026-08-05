@@ -57,7 +57,7 @@ final readonly class SchedulesProbe
         private ?RunsInternalCommands $localExecutor = null,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
-        private ?ScheduleAppInstanceResolver $appInstances = null,
+        private ?ScheduleInstanceResolver $instances = null,
     ) {}
 
     public function key(): string
@@ -200,8 +200,8 @@ final readonly class SchedulesProbe
         $validAppOwnership =
             $schedule->scope !== 'app'
             || $schedule->app_id !== null
-            && $schedule->app_instance_id !== null
-            && $schedule->appInstance?->app_id === $schedule->app_id;
+            && $schedule->instance_id !== null
+            && $schedule->instance?->app_id === $schedule->app_id;
 
         if (
             $schedule->schedule_key === ''
@@ -525,14 +525,14 @@ final readonly class SchedulesProbe
 
     private function targetNode(Schedule $schedule): ?Node
     {
-        $schedule->loadMissing(['app', 'appInstance', 'node']);
+        $schedule->loadMissing(['app', 'instance', 'node']);
 
         if ($schedule->scope === 'app') {
-            if ($schedule->appInstance?->app_id !== $schedule->app_id) {
+            if ($schedule->instance?->app_id !== $schedule->app_id) {
                 return null;
             }
 
-            return $this->appInstanceResolver()->targetNode($schedule);
+            return $this->instanceResolver()->targetNode($schedule);
         }
 
         if ($schedule->scope === 'node') {
@@ -553,9 +553,9 @@ final readonly class SchedulesProbe
             ->first();
     }
 
-    private function appInstanceResolver(): ScheduleAppInstanceResolver
+    private function instanceResolver(): ScheduleInstanceResolver
     {
-        return $this->appInstances ?? app(ScheduleAppInstanceResolver::class);
+        return $this->instances ?? app(ScheduleInstanceResolver::class);
     }
 
     private function canRunSchedules(Node $node): bool

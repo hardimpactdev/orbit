@@ -2,11 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
+use App\Services\Proxy\ProxyRouteFixer;
+use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
@@ -38,6 +46,22 @@ function grantProxyRouteMutationAccess(Node $caller, Node $servingNode): void
 }
 
 describe('ProxyRoute mutation API', function (): void {
+    beforeEach(function (): void {
+        $shell = new class implements RemoteShell {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+            }
+        };
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(ProxyRouteFixer::class, new ProxyRouteFixer(
+            renderer: new ProxyRouteRenderer,
+            ca: new ProxyMutationFakeCa,
+            siteCertificateInstaller: new SiteCertificateInstallerFake,
+        ));
+    });
+
     it('stores custom upstream route intent for authorized callers', function (): void {
         $caller = createProxyRouteMutationCallerNode();
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
@@ -55,13 +79,15 @@ describe('ProxyRoute mutation API', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'vite.docs.test')
             ->assertJsonPath('success.meta.action', 'created')
-            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.enactment_deferred');
+            ->assertJsonPath('success.data.route.status', 'converged');
+        $codes = collect($response->json('success.meta.warnings') ?? [])->pluck('code')->all();
+        expect($codes)->not->toContain('proxy.enactment_deferred');
     });
 
     it('denies domain conflicts for non-custom routes', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,
@@ -83,7 +109,7 @@ describe('ProxyRoute mutation API', function (): void {
         $response
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
-            ->assertJsonPath('error.meta.owner_type', 'project');
+            ->assertJsonPath('error.meta.owner_type', 'app');
     });
 
     it('removes custom route intent with destructive consent', function (): void {
@@ -107,8 +133,8 @@ describe('ProxyRoute mutation API', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'old.test')
-            ->assertJsonPath('success.data.route.status', 'removed_with_drift')
-            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.cleanup_deferred');
+            ->assertJsonPath('success.data.route.status', 'removed')
+            ->assertJsonPath('success.meta.backend_removed', true);
 
         expect(ProxyRoute::query()->where('domain', 'old.test')->exists())->toBeFalse();
     });
@@ -126,4 +152,159 @@ describe('ProxyRoute mutation API', function (): void {
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
     });
+
+    it('denies force removal of a living workspace-owned route', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/feature.docs.test', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'proxy.owned_route_denied')
+            ->assertJsonPath('error.meta.owner_type', 'workspace');
+
+        expect(ProxyRoute::query()->where('domain', 'feature.docs.test')->exists())->toBeTrue();
+    });
+
+    it('force-removes an orphaned workspace-owned route and reports why it was safe', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'app_id' => $app->id,
+            'workspace_id' => null,
+            'domain' => 'auth.craft-starterkit-react.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/auth.craft-starterkit-react.test', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.route.domain', 'auth.craft-starterkit-react.test')
+            ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
+            ->assertJsonPath('success.meta.owner_type', 'workspace')
+            ->assertJsonPath('success.meta.backend_removed', true);
+
+        expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeFalse();
+    });
+
+    it('force-removes an orphaned tool-owned route when the NodeTool is gone', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'agent-1', 'tld' => 'agent']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/hermes.agent', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.route.domain', 'hermes.agent')
+            ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
+            ->assertJsonPath('success.meta.owner_type', 'tool')
+            ->assertJsonPath('success.meta.backend_removed', true);
+
+        expect(ProxyRoute::query()->where('domain', 'hermes.agent')->exists())->toBeFalse();
+    });
+
+    it('denies force-remove of a living tool-owned route', function (): void {
+        createProxyRouteMutationCallerNode(role: 'gateway');
+        $servingNode = createTestAppHostNode(['name' => 'agent-1', 'tld' => 'agent']);
+        \App\Models\NodeTool::factory()->create([
+            'node_id' => $servingNode->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $servingNode->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/hermes.agent', [
+            'destructive_consent' => true,
+        ]);
+
+        $response
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'proxy.owned_route_denied')
+            ->assertJsonPath('error.meta.owner_type', 'tool');
+
+        expect(ProxyRoute::query()->where('domain', 'hermes.agent')->exists())->toBeTrue();
+    });
 });
+
+final readonly class ProxyMutationFakeCa extends OrbitCaService
+{
+    #[\Override]
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    #[\Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $dir = sys_get_temp_dir().'/orbit-proxy-mutation-ca';
+
+        if (! is_dir($dir)) {
+            mkdir($dir, 0o777, true);
+        }
+
+        $cert = "{$dir}/{$host}.crt";
+        $key = "{$dir}/{$host}.key";
+        file_put_contents($cert, "fake-cert-for-{$host}");
+        file_put_contents($key, "fake-key-for-{$host}");
+
+        return ['cert' => $cert, 'key' => $key];
+    }
+}

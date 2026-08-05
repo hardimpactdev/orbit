@@ -2313,7 +2313,7 @@ count = 1
 [[issues]]
 file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'domains/21_analytics/1_analytics-update'` should be passed as a named argument for clarity."
+message = "Literal argument `'domains/20_analytics/1_analytics-update'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]

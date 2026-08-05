@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenCommandContext;
+use Orbit\Core\Security\OperationTokenEnvironment;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Tests\Fakes\RemoteLocalExecutorCountingCommands;
@@ -33,8 +34,9 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe(RemoteLocalExecutor::class, function (): void {
-    it('runs gateway-targeted node execution through the local gateway runtime even when ssh is requested', function (): void {
+    it('runs gateway-targeted node execution through the local gateway runtime by default', function (): void {
         Http::preventStrayRequests();
         ProcessFacade::preventStrayProcesses();
         ProcessFacade::fake([
@@ -42,7 +44,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         ]);
         $sshTransport = new RemoteLocalExecutorRecordingTransport(
             static fn (): RemoteShellResult => throw new RuntimeException(
-                'SSH transport must never be called for a gateway target.',
+                'SSH transport must never be called for a gateway target by default.',
             ),
         );
         $executor =
@@ -88,6 +90,522 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->not->toBeNull();
     });
 
+    it('forces host-owned gateway commands onto the gateway host boundary', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:wireguard-self-route',
+                arguments: ['10.6.0.2'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000429',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-ok\n");
+            ProcessFacade::assertRan(function (PendingProcess $process): bool {
+                $command = (string) $process->command;
+
+                return (
+                    str_contains($command, 'internal:wireguard-self-route')
+                    && ! str_contains($command, 'docker exec -i')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '))
+                );
+            });
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('does not pre-authorize force_remote_host gateway work so the host CLI remains the sole token consumer', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-token-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+            $operationId = '00000000-0000-4000-8000-000000000430';
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:wireguard-self-route',
+                arguments: ['10.6.0.2'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationId,
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-token-ok\n");
+
+            $hostBoundaryDispatched = false;
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$hostBoundaryDispatched): bool {
+                $command = (string) $process->command;
+                $matches =
+                    str_contains($command, 'internal:wireguard-self-route')
+                    && str_contains($command, '--operation-token=')
+                    && ! str_contains($command, 'docker exec -i')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '))
+                    && ! str_contains($command, 'ORBIT_TRUSTED_EXECUTION_LANE=');
+
+                if ($matches) {
+                    $hostBoundaryDispatched = true;
+                }
+
+                return $matches;
+            });
+
+            expect($hostBoundaryDispatched)->toBeTrue();
+
+            $row = remote_local_executor_operation_run($operationId);
+
+            // ProcessFacade fakes the host process, so the host CLI never
+            // verifies/consumes. Pre-auth would wrongly mark the row consumed.
+            expect($row->operation_token_consumed_at)->toBeNull();
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('uses the installed host orbit binary for force_remote_host instead of container orbit-cli', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        $previousBinary = config('orbit.local_executor_binary');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        config()->set('orbit.local_executor_binary', '/usr/local/bin/orbit-cli');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-binary-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            $node = remoteLocalExecutorNode(['gateway']);
+            $capturedCommand = null;
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:app-runtime-containers:probe',
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000440',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-binary-ok\n");
+
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$capturedCommand): bool {
+                $command = (string) $process->command;
+                $matches =
+                    str_contains($command, 'internal:app-runtime-containers:probe')
+                    && str_contains($command, '--operation-token=')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '));
+
+                if ($matches) {
+                    $capturedCommand = $command;
+                }
+
+                return $matches;
+            });
+
+            expect($capturedCommand)
+                ->toBeString()
+                ->and($capturedCommand)
+                ->toContain('/home/orbit/.local/bin/orbit')
+                ->and($capturedCommand)
+                ->not->toContain('/usr/local/bin/orbit-cli');
+        } finally {
+            config()->set('orbit.local_executor_binary', $previousBinary);
+
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('mints force_remote_host command context matching the host CLI verification payload including bound input', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-host-context-ok\n"),
+        ]);
+
+        try {
+            $executor = remoteLocalExecutor(
+                transport: new RemoteLocalExecutorRecordingTransport(
+                    static fn (): RemoteShellResult => throw new RuntimeException(
+                        'Agent-push transport must not be used for forced gateway host work.',
+                    ),
+                ),
+            );
+            // internal:caddy-config is gateway-allowed and binds JSON stdin.
+            $node = remoteLocalExecutorNode(['gateway']);
+            $hostHome = '/home/orbit';
+            $operationId = '00000000-0000-4000-8000-000000000431';
+            $boundInput = json_encode([
+                'container' => 'orbit-caddy',
+                'action' => 'read-global',
+            ], JSON_THROW_ON_ERROR);
+            $capturedCommand = null;
+            $capturedInput = null;
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'input' => $boundInput,
+                    'bind_input' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationId,
+                    ],
+                ],
+            );
+
+            expect($result->stdout)->toBe("gateway-host-context-ok\n");
+
+            ProcessFacade::assertRan(function (PendingProcess $process) use (&$capturedCommand, &$capturedInput): bool {
+                $command = (string) $process->command;
+                $matches =
+                    str_contains($command, 'internal:caddy-config')
+                    && str_contains($command, '--operation-token=')
+                    && ! str_contains($command, 'docker exec -i')
+                    && (str_contains($command, 'ssh ') || str_starts_with($command, 'bash -c '));
+
+                if ($matches) {
+                    $capturedCommand = $command;
+                    $capturedInput = $process->input;
+                }
+
+                return $matches;
+            });
+
+            expect($capturedCommand)
+                ->toBeString()
+                ->and($capturedCommand)
+                ->toContain('cd ')
+                ->and($capturedCommand)
+                ->toContain($hostHome)
+                ->and($capturedCommand)
+                ->toContain("{$hostHome}/.local/bin/orbit")
+                ->and($capturedCommand)
+                ->toContain('unset '.implode(' ', OperationTokenEnvironment::forceRemoteHostUnsetKeys()))
+                ->and($capturedCommand)
+                ->not->toContain('/usr/local/bin/orbit-cli')->and($capturedCommand)
+                ->not->toContain('APP_KEY=')->and($capturedCommand)
+                ->not->toContain('gateway-secret')->and($capturedInput)->toBe($boundInput);
+
+            $compactToken = remoteLocalExecutorTokenFromNestedSshCommand((string) $capturedCommand);
+            $token = OperationToken::parse($compactToken);
+            $hostArgv = new LocalExecutorCommandBuilder()->buildArgv(
+                targetNode: $node,
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
+                options: [],
+                operationToken: $compactToken,
+            );
+
+            // Host CLI OperationTokenGuard submits getcwd(), allowlisted env present in
+            // the remote process, and the piped stdin payload. force_remote_host SSH
+            // must mint that exact context (HOME only + bound input, no APP_KEY).
+            // After the host script unsets allowlisted keys, the CLI guard only
+            // observes HOME. Reconstruct with that process view via the shared helper.
+            $hostVerificationContext = OperationTokenCommandContext::fromAgentVerification(
+                argv: $hostArgv,
+                cwd: $hostHome,
+                environment: OperationTokenEnvironment::allowlisted([
+                    'HOME' => $hostHome,
+                ]),
+                input: $boundInput,
+                operationToken: $compactToken,
+            );
+
+            expect($token->commandContextHash)
+                ->toBe($hostVerificationContext->hash())
+                ->and(remote_local_executor_operation_run($operationId)->operation_token_consumed_at)
+                ->toBeNull();
+
+            $activities = remoteLocalExecutorActivityRows();
+            expect($activities)
+                ->toHaveCount(2)
+                ->and($activities[0]->event)
+                ->toBe('force_remote_host.dispatching')
+                ->and(remoteLocalExecutorActivityProperties($activities[0]))
+                ->toMatchArray([
+                    'lane' => 'internal',
+                    'transport' => 'force_remote_host',
+                    'status' => 'dispatching',
+                ])
+                ->and($activities[1]->event)
+                ->toBe('force_remote_host.completed')
+                ->and(remoteLocalExecutorActivityProperties($activities[1]))
+                ->toMatchArray([
+                    'lane' => 'internal',
+                    'transport' => 'force_remote_host',
+                    'status' => 'succeeded',
+                ]);
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
+    it('records gateway_local transport activity for container-local gateway targets', function (): void {
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-local-ok\n"),
+        ]);
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException(
+                    'Agent-push transport must not be used for gateway-local targets.',
+                ),
+            ),
+        );
+        $node = remoteLocalExecutorNode(['gateway']);
+        $operationId = '00000000-0000-4000-8000-000000000440';
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => $operationId,
+                ],
+            ],
+        );
+
+        $activities = remoteLocalExecutorActivityRows();
+
+        expect($result->stdout)
+            ->toBe("gateway-local-ok\n")
+            ->and($activities)
+            ->toHaveCount(2)
+            ->and($activities[0]->event)
+            ->toBe('gateway_local.dispatching')
+            ->and(remoteLocalExecutorActivityProperties($activities[0]))
+            ->toMatchArray([
+                'lane' => 'internal',
+                'transport' => 'gateway_local',
+                'status' => 'dispatching',
+                'operation_id' => $operationId,
+            ])
+            ->and($activities[1]->event)
+            ->toBe('gateway_local.completed')
+            ->and(remoteLocalExecutorActivityProperties($activities[1]))
+            ->toMatchArray([
+                'lane' => 'internal',
+                'transport' => 'gateway_local',
+                'status' => 'succeeded',
+            ]);
+    });
+
+    it('mints agent-push context that the CLI verification reconstruction accepts without duplicating expected arrays', function (): void {
+        Http::preventStrayRequests();
+        $capturedEnvironment = null;
+        $capturedArgv = null;
+        $capturedToken = null;
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands' => function (Request $request) use (
+                &$capturedEnvironment,
+                &$capturedArgv,
+                &$capturedToken,
+            ) {
+                $payload = remote_local_executor_json_object($request->body());
+                $capturedEnvironment = is_array($payload['environment'] ?? null)
+                    ? $payload['environment']
+                    : null;
+                $capturedArgv = is_array($payload['argv'] ?? null) ? $payload['argv'] : null;
+                $capturedToken = remote_local_executor_agent_push_operation_token($payload);
+
+                return Http::response([
+                    'transport' => 'agent-push',
+                    'operation_id' => $payload['operation_id'] ?? 'unknown',
+                    'binary' => 'orbit',
+                    'status' => 'succeeded',
+                    'exit_code' => 0,
+                    'frames' => [
+                        ['type' => 'stdout', 'message' => "agent-context-ok\n"],
+                        ['type' => 'exit', 'message' => '0'],
+                    ],
+                ]);
+            },
+        ]);
+
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException(
+                    'SSH transport should not be called for agent-push context minting.',
+                ),
+            ),
+            stubAgent: false,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'managed' => true,
+        ])->save();
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
+            transportOptions: [
+                'environment' => [
+                    'ORBIT_REQUEST_MARKER' => 'must-not-bind',
+                    'ORBIT_BIN_PATH' => '/home/orbit/.local/bin/orbit',
+                ],
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000441',
+                ],
+            ],
+        );
+
+        expect($result->stdout)
+            ->toBe("agent-context-ok\n")
+            ->and($capturedToken)
+            ->toBeString()
+            ->and($capturedArgv)
+            ->toBeArray()
+            ->and($capturedEnvironment)
+            ->toBeArray();
+
+        /** @var list<string> $capturedArgv */
+        /** @var array<string, string> $capturedEnvironment */
+        /** @var string $capturedToken */
+        $token = OperationToken::parse($capturedToken);
+        $cliVerificationContext = OperationTokenCommandContext::fromAgentVerification(
+            argv: array_values(array_map(
+                static fn (mixed $argument): string => is_string($argument) ? $argument : '',
+                $capturedArgv,
+            )),
+            cwd: null,
+            environment: OperationTokenEnvironment::allowlisted($capturedEnvironment),
+            input: null,
+            operationToken: $capturedToken,
+        );
+
+        expect($token->commandContextHash)
+            ->toBe($cliVerificationContext->hash())
+            ->and(OperationTokenEnvironment::allowlisted($capturedEnvironment))
+            ->toBe($capturedEnvironment)
+            ->and($capturedEnvironment)
+            ->not
+            ->toHaveKey('ORBIT_REQUEST_MARKER')
+            ->and($capturedEnvironment)
+            ->toHaveKey('ORBIT_BIN_PATH')
+            ->and($capturedEnvironment)
+            ->toHaveKey('HOME')
+            ->and($capturedEnvironment)
+            ->toHaveKey('APP_KEY');
+    });
+
+    it('keeps agent-push ordinary when force_remote_host is requested for non-gateway targets', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+
+        try {
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "agent-push-ordinary\n",
+                    stderr: '',
+                    durationMs: 1,
+                ),
+            );
+            $executor = remoteLocalExecutor(transport: $transport);
+            $node = remoteLocalExecutorNode(['ingress']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:caddy-config',
+                arguments: ['read-global'],
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000432',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)
+                ->toBe("agent-push-ordinary\n")
+                ->and($transport->calls)
+                ->not->toBeEmpty();
+
+            $script = (string) ($transport->calls[0]['script'] ?? '');
+
+            expect($script)
+                ->toContain('internal:caddy-config')
+                ->not->toContain("cd '/home/orbit'")
+                ->not->toContain('unset APP_KEY');
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
+
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {
         Http::preventStrayRequests();
         Http::fake([
@@ -126,9 +644,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
-            commandOptions: ['state-path' => "/home/orbit/.polyscope/state's.db"],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
+            commandOptions: [],
             transportOptions: [
                 'input' => '{"probe":true}',
                 'timeout' => 45,
@@ -193,8 +711,8 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             transportOptions: [
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000426',
@@ -463,14 +981,45 @@ describe(RemoteLocalExecutor::class, function (): void {
             'managed' => false,
             'wireguard_address' => null,
         ])->save();
+        $operationId = '00000000-0000-4000-8000-000000000442';
 
         expect(fn (): RemoteShellResult => $executor->runInternal(
             node: $node,
             commandName: 'internal:executor:verify',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => $operationId,
+                ],
+            ],
         ))
             ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
 
-        expect($transport->calls)->toBeEmpty();
+        $activities = remoteLocalExecutorActivityRows();
+
+        // Selector failure still records a dispatching/completed pair on the
+        // intended agent_push lane (not a lone completed without dispatching).
+        expect($transport->calls)
+            ->toBeEmpty()
+            ->and($activities)
+            ->toHaveCount(2)
+            ->and($activities[0]->event)
+            ->toBe('agent_push.dispatching')
+            ->and(remoteLocalExecutorActivityProperties($activities[0]))
+            ->toMatchArray([
+                'lane' => 'internal',
+                'transport' => 'agent_push',
+                'status' => 'dispatching',
+                'operation_id' => $operationId,
+            ])
+            ->and($activities[1]->event)
+            ->toBe('agent_push.completed')
+            ->and(remoteLocalExecutorActivityProperties($activities[1]))
+            ->toMatchArray([
+                'lane' => 'internal',
+                'transport' => 'agent_push',
+                'status' => 'failed',
+                'operation_id' => $operationId,
+            ]);
     });
 
     it('mints a token, builds a local executor command, dispatches through transport, and returns the transport result', function (): void {
@@ -482,10 +1031,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             commandOptions: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
                 'enabled' => true,
                 'attempts' => 3,
             ],
@@ -516,10 +1064,9 @@ describe(RemoteLocalExecutor::class, function (): void {
         $token = OperationToken::parse($compactToken);
         $auditLine = new LocalExecutorCommandBuilder()->buildAuditLine(
             targetNode: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
+            commandName: 'internal:workspace-source:create',
+            arguments: ['/srv/docs', 'feature-docs', 'main'],
             options: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
                 'enabled' => true,
                 'attempts' => 3,
             ],
@@ -527,7 +1074,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         );
 
         expect($script)
-            ->toContain('internal:workspace-adapter:lookup lookup polyscope')
+            ->toContain('internal:workspace-source:create /srv/docs feature-docs main')
             ->and($script)
             ->not
             ->toContain('docker exec')
@@ -540,7 +1087,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($token->node)
             ->toBe($node->name)
             ->and($token->command)
-            ->toBe('internal:workspace-adapter:lookup')
+            ->toBe('internal:workspace-source:create')
             ->and($token->issuedAt)
             ->toBe(1_798_105_200)
             ->and($token->expiresAt)
@@ -549,14 +1096,13 @@ describe(RemoteLocalExecutor::class, function (): void {
                 secretsByKeyId: [$token->keyId => 'gateway-secret'],
                 token: $token,
                 expectedNode: $node->name,
-                expectedCommand: 'internal:workspace-adapter:lookup',
+                expectedCommand: 'internal:workspace-source:create',
                 expectedCommandContextHash: OperationTokenCommandContext::fromTrustedDispatch(
                     argv: new LocalExecutorCommandBuilder()->buildArgv(
                         targetNode: $node,
-                        commandName: 'internal:workspace-adapter:lookup',
-                        arguments: ['lookup', 'polyscope'],
+                        commandName: 'internal:workspace-source:create',
+                        arguments: ['/srv/docs', 'feature-docs', 'main'],
                         options: [
-                            'state-path' => "/home/orbit/.polyscope/state's.db",
                             'enabled' => true,
                             'attempts' => 3,
                         ],
@@ -594,10 +1140,9 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter:lookup',
-                'arguments' => ['lookup', 'polyscope'],
+                'command' => 'internal:workspace-source:create',
+                'arguments' => ['/srv/docs', 'feature-docs', 'main'],
                 'command_options' => [
-                    'state-path' => "/home/orbit/.polyscope/state's.db",
                     'enabled' => true,
                     'attempts' => 3,
                 ],
@@ -616,7 +1161,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
                 'target_node_name' => 'app-dev',
-                'command' => 'internal:workspace-adapter:lookup',
+                'command' => 'internal:workspace-source:create',
                 'exit_code' => 0,
                 'stdout_summary' => "{\"ok\":true}\n",
                 'stderr_summary' => '',
@@ -990,6 +1535,94 @@ describe(RemoteLocalExecutor::class, function (): void {
         ],
     ]);
 
+    it('redacts APP_KEY material from activity stdout and stderr summaries', function (): void {
+        $secret = 'base64:ActivityMustNotStoreThisKey==';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
+                exitCode: 0,
+                stdout: "{\"success\":{\"data\":{\"app_key\":\"{$secret}\"}}}\n",
+                stderr: "export APP_KEY={$secret}\n",
+                durationMs: 4,
+            ),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            arguments: [],
+            commandOptions: [],
+        );
+
+        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+        $logBlob = remoteLocalExecutorActivityLogBlob();
+
+        expect($completedProperties['stdout_summary'])
+            ->not->toContain($secret)->toContain('"<redacted>"')->and($completedProperties['stderr_summary'])
+            ->not->toContain($secret)->toContain('APP_KEY=<redacted>')->and($logBlob)
+            ->not->toContain($secret);
+    });
+
+    it('redacts secret-shaped command options and command_line on dispatching rows without explicit redact lists', function (): void {
+        $appKeyMaterial = 'base64:DispatchMustNotStoreThisKey==';
+        $passwordMaterial = 'super-secret-password-value';
+        $tokenMaterial = 'dispatch-token-should-not-persist';
+        $marker = '<redacted>';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 5),
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        $node = remoteLocalExecutorNode(['app-dev']);
+        $node->forceFill(['status' => 'active', 'managed' => true])->save();
+
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:app-source:create',
+            arguments: ["APP_KEY={$appKeyMaterial}"],
+            commandOptions: [
+                'action' => 'upsert-peer',
+                // Hyphenated keys only — command option pattern forbids underscores.
+                'password' => $passwordMaterial,
+                'api-token' => $tokenMaterial,
+                'app-key' => $appKeyMaterial,
+                'public-key' => 'peer-public-key-probe',
+            ],
+            transportOptions: [
+                'timeout' => 30,
+                // Intentionally omit redact_command_options so ActivityLogger's
+                // SecretSummaryRedactor boundary must scrub dispatching activity.
+            ],
+        );
+
+        $dispatchProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[0]);
+        $logBlob = remoteLocalExecutorActivityLogBlob();
+        $commandOptions = $dispatchProperties['command_options'] ?? [];
+
+        expect($dispatchProperties)
+            ->toMatchArray([
+                'status' => 'dispatching',
+            ])
+            ->and($commandOptions['action'] ?? null)
+            ->toBe('upsert-peer')
+            ->and($commandOptions['password'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['api-token'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['app-key'] ?? null)
+            ->toBe($marker)
+            ->and($commandOptions['public-key'] ?? null)
+            ->toBe('peer-public-key-probe')
+            ->and($dispatchProperties['arguments'])
+            ->not->toContain($appKeyMaterial)->and($dispatchProperties['command_line'])
+            ->not->toContain($appKeyMaterial)
+            ->not->toContain($passwordMaterial)
+            ->not->toContain($tokenMaterial)->and($logBlob)
+            ->not->toContain($appKeyMaterial)
+            ->not->toContain($passwordMaterial)
+            ->not->toContain($tokenMaterial);
+    });
+
     it('does not write raw operation tokens to activity rows even when command output echoes them', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             static function (Node $node, string $script, array $options): RemoteShellResult {
@@ -1116,11 +1749,9 @@ describe(RemoteLocalExecutor::class, function (): void {
 
             $executor->runInternal(
                 node: remoteLocalExecutorNode(),
-                commandName: 'internal:workspace-adapter:lookup',
+                commandName: 'internal:workspace-source:create',
                 arguments: [],
                 commandOptions: [
-                    'adapter' => 'polyscope',
-                    'lookup' => 'config',
                     'app-path' => '/srv/docs',
                 ],
                 transportOptions: $transportOptions,
@@ -1139,7 +1770,9 @@ describe(RemoteLocalExecutor::class, function (): void {
     )->with([
         'no redaction flags' => [
             ['timeout' => 30],
-            '{"api_token":"poly-token-secret"}',
+            // Secret-shaped JSON is scrubbed by the activity persistence boundary
+            // even when transport redact_* flags are off.
+            '{"api_token":"<redacted>"}',
             'stderr secret',
         ],
         'stdout only' => [
@@ -1149,7 +1782,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         ],
         'stderr only' => [
             ['timeout' => 30, 'redact_stderr' => true],
-            '{"api_token":"poly-token-secret"}',
+            '{"api_token":"<redacted>"}',
             '<suppressed>',
         ],
         'stdout and stderr' => [
@@ -1230,11 +1863,9 @@ describe(RemoteLocalExecutor::class, function (): void {
         try {
             $executor->runInternal(
                 node: remoteLocalExecutorNode(),
-                commandName: 'internal:workspace-adapter:lookup',
+                commandName: 'internal:workspace-source:create',
                 arguments: [],
                 commandOptions: [
-                    'adapter' => 'polyscope',
-                    'lookup' => 'config',
                     'app-path' => '/srv/docs',
                 ],
                 transportOptions: ['redact_stdout' => true],
@@ -1263,7 +1894,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $executor->runInternal(
             node: $node,
-            commandName: 'internal:workspace-adapter:lookup',
+            commandName: 'internal:workspace-source:create',
             transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
         );
 
@@ -1275,7 +1906,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($row->status)
             ->toBe('succeeded')
             ->and($row->internal_command)
-            ->toBe('internal:workspace-adapter:lookup')
+            ->toBe('internal:workspace-source:create')
             ->and($row->lane)
             ->toBe('local')
             ->and((int) $row->target_node_id)
@@ -1460,6 +2091,56 @@ describe(RemoteLocalExecutor::class, function (): void {
             config()->set('app.key', 'gateway-app-key');
         }
     });
+
+    it('strips force_remote_host for non-gateway Agent-push targets so tokens stay valid', function (): void {
+        $previousExposureMode = getenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+        Http::preventStrayRequests();
+        putenv('ORBIT_GATEWAY_EXPOSURE_MODE=router-colocated');
+
+        try {
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "agent-push-ok\n",
+                    stderr: '',
+                    durationMs: 1,
+                ),
+            );
+            $executor = remoteLocalExecutor(transport: $transport);
+            $node = remoteLocalExecutorNode(['ingress']);
+
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:executor:verify',
+                transportOptions: [
+                    'force_remote_host' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000431',
+                    ],
+                ],
+            );
+
+            expect($result->stdout)
+                ->toBe("agent-push-ok\n")
+                ->and($transport->calls)
+                ->not->toBeEmpty();
+
+            $script = (string) ($transport->calls[0]['script'] ?? '');
+
+            expect($script)
+                ->toContain('internal:executor:verify')
+                ->toContain('--operation-token=')
+                // Host-boundary normalization must not force a gateway-home cwd
+                // for Agent-push targets.
+                ->not->toContain("cd '/home/orbit'");
+        } finally {
+            if ($previousExposureMode === false) {
+                putenv('ORBIT_GATEWAY_EXPOSURE_MODE');
+            } else {
+                putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
+            }
+        }
+    });
 });
 
 function remoteLocalExecutor(
@@ -1536,9 +2217,11 @@ function remoteLocalExecutorStartUnsupportedMessage(): string
  */
 function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationTokenFactory
 {
+    $signingMaterial = 'gateway-secret';
+
     return new OperationTokenFactory(
         signer: new OperationTokenSigner,
-        secret: 'gateway-secret',
+        secret: $signingMaterial,
         ttlSeconds: 120,
         clock: $clock ?? static fn (): int => 1_798_105_200,
     );
@@ -1585,6 +2268,23 @@ function remoteLocalExecutorTokenFromScript(string $script): string
     return ($matches[1] ?? '') !== '' ? $matches[1] : $matches[2] ?? '';
 }
 
+function remoteLocalExecutorTokenFromNestedSshCommand(string $command): string
+{
+    $matches = [];
+
+    // Nested ssh/bash -lc quoting wraps --operation-token=... so extract the
+    // compact 8-segment token by shape rather than simple shell word boundaries.
+    preg_match('/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){7})/', $command, $matches);
+
+    $token = $matches[1] ?? '';
+
+    if ($token === '') {
+        throw new RuntimeException('Unable to extract operation token from nested SSH command.');
+    }
+
+    return $token;
+}
+
 /**
  * @return list<stdClass>
  */
@@ -1592,7 +2292,14 @@ function remoteLocalExecutorActivityRows(): array
 {
     $rows = DB::table('activity_log')
         ->where('log_name', 'api')
-        ->whereIn('event', ['agent_push.dispatching', 'agent_push.completed'])
+        ->whereIn('event', [
+            'agent_push.dispatching',
+            'agent_push.completed',
+            'gateway_local.dispatching',
+            'gateway_local.completed',
+            'force_remote_host.dispatching',
+            'force_remote_host.completed',
+        ])
         ->orderBy('id')
         ->get()
         ->all();
@@ -1639,13 +2346,15 @@ function remote_local_executor_default_agent_push_request_matches(Request $reque
         $request->url() === 'http://10.44.0.70:9477/v1/commands'
         && $operationToken !== null
         && ($payload['operation_id'] ?? null) === OperationToken::parse($operationToken)->id
-        && ($payload['environment'] ?? null) == array_merge([
-            'ORBIT_REQUEST_MARKER' => 'agent-push-env',
-        ], remoteLocalExecutorEnvironment())
+        && ($payload['environment'] ?? null) == remoteLocalExecutorEnvironment()
+        && ! array_key_exists(
+            'ORBIT_REQUEST_MARKER',
+            is_array($payload['environment'] ?? null) ? $payload['environment'] : [],
+        )
         && remote_local_executor_request_body_contains_all($body, [
             '"command_id":"orbit.agent.binary"',
             '"binary":"orbit"',
-            '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
+            '"argv":["internal:workspace-source:create","\/srv\/docs","feature-docs","main","--operation-token=',
             '--json"',
             '"input":"{\\"probe\\":true}"',
             '"timeout_seconds":45',

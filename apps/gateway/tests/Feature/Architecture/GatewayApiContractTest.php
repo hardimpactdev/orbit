@@ -14,6 +14,7 @@ it('keeps command action progress streams on their canonical api routes', functi
         'api/operations/{operationRun}/stream/publisher-credentials',
         'api/operations/{operationRun}/stream/publish',
         'api/operations/{operationRun}/stream/stop-decision',
+        'api/processes/stream',
     ];
 
     $violations = collect(Route::getRoutes())

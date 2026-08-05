@@ -132,7 +132,7 @@ function appRuntimeConfigRenderedRuntime(E2ETopologyHarness $topology, string $a
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $appNameValue = var_export($appName, true);
     $script = <<<PHP
-        \$app = \\App\\Models\\Project::query()
+        \$app = \\App\\Models\\App::query()
             ->with('node.roleAssignments')
             ->where('name', {$appNameValue})
             ->firstOrFail();

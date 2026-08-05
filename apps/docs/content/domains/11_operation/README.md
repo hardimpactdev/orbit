@@ -1,6 +1,6 @@
 # Operation Commands
 
-Operation commands cut across Orbit's command surface. They update Orbit installations, verify convergence, and run diagnostic workflows. Activity history reads live in their own family; see [`docs/domains/17_activity`](../17_activity/README.md).
+Operation commands cut across Orbit's command surface. They update Orbit installations, verify convergence, and run diagnostic workflows. Activity history reads live in their own family; see [`docs/domains/16_activity`](../16_activity/README.md).
 
 The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `instance`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and `database_connection`.
 
@@ -33,6 +33,10 @@ These rules constrain all commands in the operation domain.
   one-shot runner. Host PHP and host Composer are not supported gateway update
   fallbacks; production host PHP/Composer is required only on app-role nodes
   where app-source workflows need it.
+- Workload fleet-update install must succeed on nodes that have no host PHP CLI
+  after the Orbit CLI binary, Orbit Agent binary, and Agent config/CA trust
+  files are present. Required role-image side effects on those nodes also must
+  not depend on host PHP.
 - Orbit releases are monorepo releases. The root `VERSION` file is the single
   version source for the CLI binary, core package, gateway package, gateway
   image, and release manifest. `update:all` must use a persisted release
@@ -52,7 +56,7 @@ These rules constrain all commands in the operation domain.
   cross-cutting Loggable contract when they are the canonical actor, and the
   `update`/`update:all` outcome entries are recorded by the gateway start route
   and durable update runner. See
-  [`activity-concepts.md`](../17_activity/activity-concepts.md).
+  [`activity-concepts.md`](../16_activity/activity-concepts.md).
 
 ## Commands
 
@@ -62,6 +66,6 @@ These are the commands in the operation domain.
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
 4. [`orbit version`](4_version/version.md)
-5. [`orbit profile [target]`](5_profile/profile.md)
+5. [`orbit profile [url]`](5_profile/profile.md)
 6. [`orbit manifest:update <url>`](6_manifest-update/manifest-update.md)
 7. [`orbit manifest:remove`](7_manifest-remove/manifest-remove.md)

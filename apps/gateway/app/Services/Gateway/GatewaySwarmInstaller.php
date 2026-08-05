@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use SensitiveParameter;
 
+/** @mago-expect lint:kan-defect */
 class GatewaySwarmInstaller
 {
     private const string GatewayCertPath = '/etc/orbit/certs/gateway.crt';
@@ -50,9 +51,7 @@ class GatewaySwarmInstaller
         File::ensureDirectoryExists("{$configRoot}/certs", 0700);
         $this->bootstrapConfigRoot($configRoot);
 
-        $gatewayLeaf = $this->caService->issueLeaf('gateway', [$wireguardAddress]);
-        File::chmod($gatewayLeaf['cert'], 0o644);
-        File::chmod($gatewayLeaf['key'], 0o600);
+        $gatewayLeaf = $this->issueAndStageGatewayLeaf($wireguardAddress);
         $this->imageAcquirer->ensure($image, $imageArchive);
 
         if ($exposureMode->isGatewayDirect()) {
@@ -75,7 +74,13 @@ class GatewaySwarmInstaller
 
         if ($exposureMode->isRouterColocated()) {
             $this->transitionGuard->assertPublicPortsReleased();
-            $this->convergeRouterOwnedOrbitCaddy($wireguardAddress, $wireguardCidr, $gatewayLeaf);
+            $this->serveGatewayLeafViaRouterCaddy(
+                wireguardAddress: $wireguardAddress,
+                wireguardCidr: $wireguardCidr,
+                gatewayLeaf: $gatewayLeaf,
+                browserHostname: GatewayLeafIdentity::browserHostname(),
+                ensureCaddyContainer: true,
+            );
         }
     }
 
@@ -85,27 +90,89 @@ class GatewaySwarmInstaller
     }
 
     /**
+     * Issue or reissue the gateway API leaf so required SANs are present, then
+     * install router-facing TLS artifacts when exposure is router-colocated.
+     *
+     * Used by fleet update convergence; install() shares the same leaf and
+     * serve helpers. Router container recreation is skipped here because the
+     * public orbit-caddy already owns host ports on a running gateway.
+     *
+     * @return array{cert: string, key: string}
+     */
+    public function convergeGatewayLeafServing(
+        string $wireguardAddress,
+        GatewayExposureMode $exposureMode,
+        ?string $configRoot = null,
+        string $wireguardCidr = '10.6.0.0/24',
+    ): array {
+        if (filter_var($wireguardAddress, FILTER_VALIDATE_IP) === false) {
+            throw new RuntimeException("Invalid WireGuard API address: {$wireguardAddress}");
+        }
+
+        $configRoot = $this->configRoot($configRoot);
+        File::ensureDirectoryExists("{$configRoot}/certs", 0o700);
+
+        $gatewayLeaf = $this->issueAndStageGatewayLeaf($wireguardAddress);
+
+        if ($exposureMode->isRouterColocated()) {
+            $this->serveGatewayLeafViaRouterCaddy(
+                wireguardAddress: $wireguardAddress,
+                wireguardCidr: $wireguardCidr,
+                gatewayLeaf: $gatewayLeaf,
+                browserHostname: GatewayLeafIdentity::browserHostname(),
+                ensureCaddyContainer: false,
+            );
+        }
+
+        return $gatewayLeaf;
+    }
+
+    /**
+     * @return array{cert: string, key: string}
+     */
+    private function issueAndStageGatewayLeaf(string $wireguardAddress): array
+    {
+        $gatewayLeaf = $this->caService->issueLeaf(
+            GatewayLeafIdentity::ShortHost,
+            GatewayLeafIdentity::additionalSansForShortHost($wireguardAddress),
+        );
+        File::chmod($gatewayLeaf['cert'], 0o644);
+        File::chmod($gatewayLeaf['key'], 0o600);
+
+        return $gatewayLeaf;
+    }
+
+    /**
      * @param  array{cert: string, key: string}  $gatewayLeaf
      */
-    private function convergeRouterOwnedOrbitCaddy(
+    private function serveGatewayLeafViaRouterCaddy(
         string $wireguardAddress,
         string $wireguardCidr,
         array $gatewayLeaf,
+        string $browserHostname,
+        bool $ensureCaddyContainer,
     ): void {
         $this->installCaddyReadableGatewayLeaf($gatewayLeaf);
 
-        $container = OrbitCaddyContainer::forPublicIngress($wireguardAddress);
+        if ($ensureCaddyContainer) {
+            $container = OrbitCaddyContainer::forPublicIngress($wireguardAddress);
 
-        $this->runShellScript(
-            $this->caddyTool->updateScript(['container' => $container->spec()]),
-            'converge router-owned orbit-caddy container',
+            $this->runShellScript(
+                $this->caddyTool->updateScript(['container' => $container->spec()]),
+                'converge router-owned orbit-caddy container',
+            );
+        }
+
+        $this->runRequired(
+            'sudo install -d -m 0755 '.escapeshellarg($this->hostFsPath('/etc/caddy/orbit')),
+            'prepare router-owned gateway Caddy include directory',
         );
-
         $this->runRequiredWithInput(
-            'sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null',
+            'sudo tee '.escapeshellarg($this->hostFsPath('/etc/caddy/orbit/orbit-gateway.caddy')).' > /dev/null',
             $this->gatewayRouteRenderer->render(
-                serverNames: [$wireguardAddress, ':443'],
+                serverNames: [$wireguardAddress, $browserHostname, ':443'],
                 wireguardCidr: $wireguardCidr,
+                // Paths inside the orbit-caddy container, not the gateway host-path mount.
                 certPath: self::GatewayCertPath,
                 keyPath: self::GatewayKeyPath,
             ),
@@ -114,7 +181,13 @@ class GatewaySwarmInstaller
 
         $this->assertRouterCaddyCanReadGatewayLeaf();
 
-        $this->runRequired(CaddyTool::reloadCommand('orbit-caddy'), 'reload router-owned orbit-caddy container');
+        // File-backed TLS leaves: reload keeps stale in-memory certs when only the
+        // cert/key bytes change and the Caddyfile text is unchanged. Restart forces
+        // router-owned orbit-caddy to serve the leaf just installed on the host.
+        $this->runRequired(
+            CaddyTool::restartCommand('orbit-caddy'),
+            'restart router-owned orbit-caddy to load gateway leaf certificate',
+        );
     }
 
     private function assertRouterCaddyCanReadGatewayLeaf(): void
@@ -134,15 +207,56 @@ class GatewaySwarmInstaller
      */
     private function installCaddyReadableGatewayLeaf(array $leaf): void
     {
-        $this->runRequired('sudo install -d -m 0755 /etc/orbit/certs', 'prepare Orbit Caddy certificate directory');
+        $hostCertPath = $this->hostFsPath(self::GatewayCertPath);
+        $hostKeyPath = $this->hostFsPath(self::GatewayKeyPath);
+
         $this->runRequired(
-            sprintf('sudo install -m 0644 %s %s', escapeshellarg($leaf['cert']), escapeshellarg(self::GatewayCertPath)),
+            'sudo install -d -m 0755 '.escapeshellarg(dirname($hostCertPath)),
+            'prepare Orbit Caddy certificate directory',
+        );
+        $this->runRequired(
+            sprintf('sudo install -m 0644 %s %s', escapeshellarg($leaf['cert']), escapeshellarg($hostCertPath)),
             'install gateway certificate for router-owned orbit-caddy',
         );
         $this->runRequired(
-            sprintf('sudo install -m 0600 %s %s', escapeshellarg($leaf['key']), escapeshellarg(self::GatewayKeyPath)),
+            sprintf('sudo install -m 0600 %s %s', escapeshellarg($leaf['key']), escapeshellarg($hostKeyPath)),
             'install gateway certificate key for router-owned orbit-caddy',
         );
+    }
+
+    /**
+     * Resolve a host filesystem path when the gateway API runs in the Swarm
+     * container with ORBIT_HOST_PATH_PREFIX (bind mounts of /etc/caddy and
+     * /etc/orbit). Bare-metal installers leave the prefix unset.
+     */
+    private function hostFsPath(string $absolutePath): string
+    {
+        if (! str_starts_with($absolutePath, '/')) {
+            throw new RuntimeException("Host filesystem path must be absolute: {$absolutePath}");
+        }
+
+        $prefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+        if (! is_string($prefix) || trim($prefix) === '') {
+            return $absolutePath;
+        }
+
+        $prefix = rtrim(trim($prefix), '/');
+
+        if (
+            $prefix === ''
+            || ! str_starts_with($prefix, '/')
+            || str_contains($prefix, "\0")
+            || array_any(
+                explode('/', $prefix),
+                static fn (string $segment): bool => $segment === '.'
+                || $segment === '..',
+            )
+        ) {
+            throw new RuntimeException('Gateway host path prefix is invalid.');
+        }
+
+        return $prefix.$absolutePath;
     }
 
     private function runRequired(string $command, string $step): void

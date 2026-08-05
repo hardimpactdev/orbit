@@ -123,7 +123,7 @@ describe('NodePermissionsController', function (): void {
         $grant = NodeAccess::query()->create([
             'consumer_node_id' => $controlId,
             'serving_node_id' => $appId,
-            'permissions' => ['app:read', 'project:read', 'instance:read'],
+            'permissions' => ['app:read', 'instance:read'],
         ]);
 
         postNodePermissionsJson([
@@ -131,7 +131,7 @@ describe('NodePermissionsController', function (): void {
             'serving_node' => 'app-1',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
             ->assertOk()
-            ->assertJsonPath('success.data.permissions', ['instance:read', 'project:read']);
+            ->assertJsonPath('success.data.permissions', ['app:read', 'instance:read']);
 
         postNodePermissionsJson([
             'consuming_node' => 'control-1',
@@ -139,16 +139,16 @@ describe('NodePermissionsController', function (): void {
             'add' => 'node:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
             ->assertOk()
-            ->assertJsonPath('success.data.permissions', ['instance:read', 'node:read', 'project:read']);
+            ->assertJsonPath('success.data.permissions', ['app:read', 'instance:read', 'node:read']);
 
         expect($grant->fresh()?->permissions)
             ->toContain('app:read')
-            ->toContain('project:read', 'instance:read', 'node:read');
+            ->toContain('app:read', 'instance:read', 'node:read');
 
         postNodePermissionsJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-1',
-            'remove' => 'project:read',
+            'remove' => 'app:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
             ->assertOk()
             ->assertJsonPath('success.data.permissions', ['instance:read', 'node:read']);
@@ -213,12 +213,12 @@ describe('NodePermissionsController', function (): void {
             ->first();
 
         expect($grant->permissions)->toBe([
+            'app:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
             'instance:read',
             'node:read',
-            'project:read',
             'tool:read',
         ]);
     });

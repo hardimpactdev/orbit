@@ -8,8 +8,9 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -317,22 +318,32 @@ final readonly class ProxyRouteProbe
 
     public function introspectGlobalConfig(Node $node): ProbeSnapshot
     {
+        // Host-mounted Caddyfile is the source of truth. Resolve the bind source
+        // via docker inspect (works for restarting containers) and fall back to
+        // the default host path when the container is absent — never require a
+        // healthy docker-exec target to decide whether the global config exists.
         $script = <<<'BASH'
+            # orbit-proxy-doctor:global-caddy-config-probe
             set -euo pipefail
-            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
+            container=orbit-caddy
+            source=$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{println}}{{end}}{{end}}' "$container" 2>/dev/null | head -n1 || true)
+            if [ -z "${source}" ]; then
+                base=$(docker container inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/caddy"}}{{.Source}}{{println}}{{end}}{{end}}' "$container" 2>/dev/null | head -n1 || true)
+                if [ -n "${base}" ]; then
+                    source="${base}/Caddyfile"
+                fi
+            fi
+            if [ -z "${source}" ]; then
+                source="/etc/caddy/Caddyfile"
+            fi
+            if [ ! -f "$source" ]; then
                 printf "0\t\n"
                 exit 0
             fi
-            docker exec orbit-caddy sh -c '
-                path="/etc/caddy/Caddyfile"
-                if [ ! -f "$path" ]; then
-                    printf "0\t\n"
-                    exit 0
-                fi
-
-                content=$(base64 -w0 "$path" 2>/dev/null || base64 "$path" | tr -d "\n")
-                printf "1\t%s\n" "$content"
-            '
+            # Prefer stdin redirection: GNU base64 accepts files or stdin; BSD/macOS
+            # base64 does not accept a bare path for encode (needs -i or stdin).
+            content=$(base64 -w0 < "$source" 2>/dev/null || base64 < "$source" | tr -d "\n")
+            printf "1\t%s\n" "$content"
             BASH;
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
@@ -562,9 +573,17 @@ final readonly class ProxyRouteProbe
      */
     public function diff(ProxyRoute $route, ProbeSnapshot $snapshot): array
     {
+        // A missing owner is one conceptual orphan. Suppress record_incomplete
+        // and backend/TLS sub-findings for the same doomed row so restore/remove
+        // paths see a single owner_invalid issue.
+        $ownerDrift = $this->checkOwnerEligibility($route);
+
+        if ($ownerDrift !== []) {
+            return $ownerDrift;
+        }
+
         $drift = [
             ...$this->checkRecordCompleteness($route),
-            ...$this->checkOwnerEligibility($route),
             ...$this->checkNodeEligibility($route),
             ...$this->checkCustomDomainConflict($route),
             ...$this->checkBackendReality($route, $snapshot),
@@ -633,6 +652,10 @@ final readonly class ProxyRouteProbe
                 key: $domain,
                 kind: DriftKind::Extra,
                 summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+                detail: [
+                    'domain' => $domain,
+                    'code' => 'proxy.route_extra',
+                ],
             );
         }
 
@@ -780,6 +803,7 @@ final readonly class ProxyRouteProbe
                 detail: [
                     'domain' => $domain,
                     'source' => 'global_caddy_config',
+                    'code' => 'proxy.route_extra',
                 ],
             );
         }
@@ -982,15 +1006,15 @@ final readonly class ProxyRouteProbe
     {
         $route->loadMissing(['app', 'workspace']);
 
-        if ($route->owner_type === 'app' && ! $route->app instanceof Project) {
+        if ($route->owner_type === 'app' && ! $route->app instanceof App) {
             return [$this->ownerInvalid($route, 'app')];
         }
 
-        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof Project) {
+        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof App) {
             return [$this->ownerInvalid($route, 'app-analytics')];
         }
 
-        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof Project) {
+        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof App) {
             return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
@@ -998,7 +1022,27 @@ final readonly class ProxyRouteProbe
             return [$this->ownerInvalid($route, 'workspace')];
         }
 
+        if ($route->owner_type === 'tool' && $this->toolOwnerIsMissing($route)) {
+            return [$this->ownerInvalid($route, 'tool')];
+        }
+
         return [];
+    }
+
+    private function toolOwnerIsMissing(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
+
+        if ($ownerName === null || $ownerName === '') {
+            return true;
+        }
+
+        return ! NodeTool::query()
+            ->where('node_id', $route->node_id)
+            ->where('name', $ownerName)
+            ->where('expected_state', 'installed')
+            ->exists();
     }
 
     /**
@@ -1082,11 +1126,11 @@ final readonly class ProxyRouteProbe
             return [];
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->where('domain', $route->domain)
             ->first();
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -1110,7 +1154,7 @@ final readonly class ProxyRouteProbe
      */
     private function checkEnactmentState(ProxyRoute $route): array
     {
-        if ($route->owner_type !== 'app') {
+        if (! in_array($route->owner_type, ['app', 'custom'], true)) {
             return [];
         }
 

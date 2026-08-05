@@ -28,7 +28,7 @@ it('shows a schedule from the operator node through the gateway api', function (
 
         $seedPhp = <<<PHP
             \$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            \$app = \App\Models\Project::query()->updateOrCreate(
+            \$app = \App\Models\App::query()->updateOrCreate(
                 ['name' => '{$appName}'],
                 [
                     'node_id' => \$node->id,

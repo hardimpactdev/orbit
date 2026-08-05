@@ -46,6 +46,7 @@ it('renders the gateway and scheduler Swarm services for gateway-direct mode', f
         ->toContain('${ORBIT_INSTALL_ROOT:-/home/orbit/orbit}/bin/orbit-binary:/usr/local/bin/orbit-cli:ro')
         ->toContain('/etc/caddy:/mnt/orbit-host/etc/caddy')
         ->toContain('/etc/orbit:/mnt/orbit-host/etc/orbit')
+        ->toContain('/home:/mnt/orbit-host/home:ro')
         ->toContain('/var/run/docker.sock:/var/run/docker.sock')
         ->toContain('/home/orbit/.ssh:/root/.ssh:ro')
         ->toContain('healthcheck:')
@@ -69,6 +70,17 @@ it('renders the gateway and scheduler Swarm services for gateway-direct mode', f
         ->toContain('order: stop-first')
         ->toContain('node.labels.orbit.role.gateway == true')
         ->toContain('external: true');
+
+    $gatewayBlock = substr(
+        $yaml,
+        strpos($yaml, '  orbit-gateway:'),
+        strpos($yaml, '  orbit-scheduler:') - strpos($yaml, '  orbit-gateway:'),
+    );
+
+    expect($gatewayBlock)
+        ->toContain('ORBIT_HOST_PATH_PREFIX: /mnt/orbit-host')
+        ->toContain('/home:/mnt/orbit-host/home:ro')
+        ->toContain('${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}:/home/orbit/.config/orbit');
 });
 
 it('omits gateway host ports when router-owned Caddy fronts the gateway', function (): void {

@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Services\Version\VersionOutputParser;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalFleetUpdateVerifyAction
 {
     private const array CHECKS = ['cli', 'agent', 'role-images'];
+
+    public function __construct(
+        private VersionOutputParser $versionOutputParser = new VersionOutputParser,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -35,7 +40,7 @@ final readonly class LocalFleetUpdateVerifyAction
     private function verifyCli(array $payload): array
     {
         $binPath = LocalFleetUpdateVerifyBinPath::fromPayload($payload['bin_path'] ?? null);
-        $result = $this->runProcess([$binPath, '--version', '--local'], timeout: 30);
+        $result = $this->runProcess([$binPath, '--version', '--local', '--json'], timeout: 30);
 
         if (! $result->isSuccessful()) {
             throw new LocalFleetUpdateVerifyFailure(
@@ -45,11 +50,21 @@ final readonly class LocalFleetUpdateVerifyAction
             );
         }
 
+        $version = $this->versionOutputParser->fromJsonOutput($result->getOutput());
+
+        if ($version === null) {
+            throw new LocalFleetUpdateVerifyFailure(
+                errorCode: 'fleet_update.cli_verification_failed',
+                message: 'CLI verification failed: version output was not structured JSON.',
+                meta: $this->processMeta($result),
+            );
+        }
+
         return [
             'check' => 'cli',
             'verified' => true,
             'bin_path' => $binPath,
-            'version' => trim($result->getOutput()),
+            'version' => $version,
         ];
     }
 

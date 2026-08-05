@@ -1,0 +1,122 @@
+=== Blast radius: process payload consumers ===
+packages/sdk-typescript/src/process-stream.ts:2: * Durable native EventSource subscriber for GET /api/processes/stream?app=…
+packages/sdk-typescript/src/process-stream.ts:43:export interface ProcessStreamProcess {
+packages/sdk-typescript/src/process-stream.ts:70:    processes: ProcessStreamProcess[];
+packages/sdk-typescript/src/process-stream.ts:318:    const processes: ProcessStreamProcess[] = [];
+packages/sdk-typescript/src/process-stream.ts:365:function asProcess(value: unknown): ProcessStreamProcess | null {
+packages/sdk-typescript/src/index.ts:10:    ProcessStreamProcess,
+packages/sdk-typescript/tests/client.test.ts:50:    it('targets /api/processes/start from a gateway root base URL', async () => {
+packages/sdk-typescript/tests/client.test.ts:70:        assert.equal(requests[0], 'https://gateway.orbit/api/processes/start');
+packages/sdk-typescript/tests/client.test.ts:92:        assert.equal(requests[0], 'https://gateway.orbit/api/processes/start');
+packages/sdk-typescript/tests/client.test.ts:123:        assert.equal(roots[0], 'https://gateway.orbit/api/processes/start');
+packages/sdk-typescript/tests/client.test.ts:124:        assert.equal(apis[0], 'https://gateway.orbit/api/processes/start');
+packages/sdk-typescript/tests/client.test.ts:152:        assert.equal(seenUrl, 'https://gateway.orbit/api/processes?app=app.example.test');
+packages/sdk-typescript/README.md:82:route `GET /api/processes/stream?app=<hostname>` (app hostname URL-encoded).
+packages/sdk-typescript/README.md:84:subscriber builds the full `/api/processes/stream` path. Snapshot
+packages/sdk-typescript/tests/process-stream.test.ts:66:    it('URL-encodes the app hostname and uses exact /api/processes/stream', () => {
+packages/sdk-typescript/tests/process-stream.test.ts:69:        assert.equal(url, 'https://gateway.orbit/api/processes/stream?app=app.example.test');
+packages/sdk-typescript/tests/process-stream.test.ts:76:        assert.ok(url.startsWith('https://gateway.orbit/api/processes/stream?'));
+packages/sdk-typescript/tests/process-stream.test.ts:123:            'https://gateway.orbit/api/processes/stream?app=test.app.example',
+packages/sdk/tests/Unit/GatewaySdkContractDriftTest.php:174:            'endpoint' => '/api/processes',
+packages/sdk/tests/Unit/Requests/Processes/AddProcessRequestTest.php:16:it('resolves to POST /api/processes', function (): void {
+packages/sdk/tests/Unit/Requests/Processes/AddProcessRequestTest.php:19:    expect($request->resolveEndpoint())->toBe('/api/processes');
+packages/sdk/tests/Unit/Requests/Processes/RestartProcessesRequestTest.php:23:        ->toBe('/api/processes/restart')
+packages/sdk/tests/Unit/Requests/Processes/ShowProcessLogsRequestTest.php:23:        ->toBe('/api/processes/vite/log')
+packages/sdk/tests/Unit/Requests/Processes/RemoveProcessRequestTest.php:16:it('resolves to DELETE /api/processes/{name}', function (): void {
+packages/sdk/tests/Unit/Requests/Processes/RemoveProcessRequestTest.php:19:    expect($request->resolveEndpoint())->toBe('/api/processes/vite');
+packages/sdk/tests/Unit/Requests/Processes/StopProcessesRequestTest.php:23:        ->toBe('/api/processes/stop')
+packages/sdk/tests/Unit/Requests/Processes/StartProcessesRequestTest.php:23:        ->toBe('/api/processes/start')
+packages/sdk/tests/Unit/Requests/Processes/ListProcessesRequestTest.php:16:it('resolves to GET /api/processes', function (): void {
+packages/sdk/tests/Unit/Requests/Processes/ListProcessesRequestTest.php:19:    expect($request->resolveEndpoint())->toBe('/api/processes');
+packages/sdk/tests/Unit/Requests/Processes/UpdateProcessRequestTest.php:17:it('resolves to PATCH /api/processes/{name}', function (): void {
+packages/sdk/tests/Unit/Requests/Processes/UpdateProcessRequestTest.php:20:    expect($request->resolveEndpoint())->toBe('/api/processes/vite');
+packages/sdk/src/Requests/Processes/UpdateProcessRequest.php:34:        return '/api/processes/'.rawurlencode($this->name);
+packages/sdk/src/Requests/Processes/AddProcessRequest.php:34:        return '/api/processes';
+packages/sdk/src/Requests/Processes/RemoveProcessRequest.php:28:        return '/api/processes/'.rawurlencode($this->name);
+packages/sdk/src/Requests/Processes/StartProcessesRequest.php:31:        return '/api/processes/start';
+packages/sdk/src/Requests/Processes/RestartProcessesRequest.php:31:        return '/api/processes/restart';
+packages/sdk/src/Requests/Processes/StopProcessesRequest.php:31:        return '/api/processes/stop';
+packages/sdk/src/Requests/Processes/ListProcessesRequest.php:26:        return '/api/processes';
+packages/sdk/src/Requests/Processes/ShowProcessLogsRequest.php:26:        return '/api/processes/'.rawurlencode($this->name).'/log';
+apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php:36:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php:79:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php:176:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php:220:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php:38:                && str_contains($url, '/api/processes/vite/log')
+apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php:102:                && str_contains($url, '/api/processes/opencode-server/log')
+apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php:146:                && str_contains($url, '/api/processes/vite/log-stream')
+apps/cli/tests/Feature/Commands/Process/ProcessListCommandTest.php:35:                && str_contains($url, '/api/processes')
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:32:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:73:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:138:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:182:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:352:                && $request->url() === 'https://gateway.test/api/processes'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:406:                && $request->url() === 'https://gateway.test/api/processes/vite'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:440:                && $request->url() === 'https://gateway.test/api/processes/vite'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:494:                && $request->url() === 'https://gateway.test/api/processes/mysql'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:556:                && $request->url() === 'https://gateway.test/api/processes/opencode-server'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:654:                && $request->url() === 'https://gateway.test/api/processes/vite'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:687:                && $request->url() === 'https://gateway.test/api/processes/worker'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:720:                && $request->url() === 'https://gateway.test/api/processes/vite'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:749:                && $request->url() === "https://gateway.test/api/processes/{$endpoint}"
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:787:                && $request->url() === 'https://gateway.test/api/processes/start'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:821:                && $request->url() === 'https://gateway.test/api/processes/start'
+apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php:854:                && $request->url() === 'https://gateway.test/api/processes/restart'
+apps/docs/content/tech-stack.md:264:`GET /api/processes/stream?app=<hostname>` (no client polling). Auth matches the
+apps/cli/app/Commands/Process/ProcessRemoveCommand.php:54:        $path = '/api/processes/'.rawurlencode((string) $name);
+apps/cli/app/Commands/Process/ProcessListCommand.php:58:            $response = $this->gatewayGet('/api/processes', $this->filledQuery([
+apps/cli/app/Commands/Process/ProcessRuntimeActionCommand.php:56:        $path = "/api/processes/{$this->action()}";
+apps/cli/app/Commands/Process/ProcessAddCommand.php:174:                $response = $this->gatewayPost('/api/processes', $payload);
+apps/cli/app/Commands/Process/ProcessAddCommand.php:212:                    fn (): array => $this->gatewayPost('/api/processes', $payload),
+apps/cli/app/Commands/Process/ProcessUpdateCommand.php:57:        $path = '/api/processes/'.rawurlencode((string) $input->name);
+apps/cli/app/Commands/Process/ProcessLogsCommand.php:77:            $response = $this->gatewayGet('/api/processes/'.rawurlencode($name).'/log', $this->filledQuery([
+apps/cli/app/Commands/Process/ProcessLogsCommand.php:115:            $response = $this->gatewayPost('/api/processes/'.rawurlencode($name).'/log-stream', $query);
+apps/cli/tests/Feature/GatewayApiClientTest.php:318:            'https://gateway.test/api/processes/vite' => Http::response(['updated' => true], 200),
+apps/cli/tests/Feature/GatewayApiClientTest.php:322:            ->patch('/api/processes/vite', ['command' => 'npm run dev']);
+apps/cli/tests/Feature/GatewayApiClientTest.php:329:                && $request->url() === 'https://gateway.test/api/processes/vite'
+apps/cli/tests/Feature/Commands/LogStreamCommandTest.php:51:                && str_contains($url, '/api/processes/vite/log-stream')
+apps/gateway/tests/Feature/Http/Api/ProcessStopControllerTest.php:58:            '/api/processes/stop',
+apps/gateway/tests/Feature/Http/Api/ProcessStopControllerTest.php:90:            '/api/processes/stop',
+apps/gateway/tests/Feature/Http/Api/ProcessStopControllerTest.php:116:            '/api/processes/stop',
+apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php:95:            '/api/processes',
+=== payload key/label writes ===
+packages/sdk/tests/Unit/Requests/Doctor/FixDoctorRequestTest.php:24:    $issues = [['family' => 'proxy', 'key' => 'proxy.route_missing']];
+packages/sdk/tests/Unit/Requests/Doctor/FixDoctorRequestTest.php:45:        'key' => 'proxy.route_missing',
+packages/sdk/tests/Unit/Requests/Processes/AddProcessRequestTest.php:76:        'label' => 'Vite Dev Server',
+packages/sdk/tests/Unit/Requests/Doctor/RunDoctorRequestTest.php:39:        'key' => 'node.security.host_key.app-1',
+apps/gateway/app/Services/Analytics/AnalyticsPublicProxyDoctorProbe.php:95:            'key' => $entry->key,
+packages/sdk/src/Requests/Doctor/RunDoctorRequest.php:50:                'key' => $this->key,
+packages/sdk/src/Requests/Doctor/FixDoctorRequest.php:56:                'key' => $this->key,
+packages/sdk/tests/Unit/Requests/Processes/UpdateProcessRequestTest.php:69:        'label' => 'Vite Dev Server',
+apps/gateway/app/Services/Analytics/AnalyticsProxyDoctorProbe.php:170:            'key' => $entry->key,
+packages/sdk/src/Requests/Processes/UpdateProcessRequest.php:49:                'label' => $this->label,
+apps/gateway/app/Services/Gateway/GatewayApiContainerInstaller.php:83:            'key' => "/etc/orbit/certs/{$wireguardAddress}.key",
+apps/gateway/app/Services/Gateway/GatewaySwarmInstaller.php:395:                'key' => $appKey,
+apps/gateway/app/Services/Doctor/DoctorProgressReportFactory.php:64:                'key' => $key,
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:48:                'key' => 'resolve_app',
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:49:                'label' => 'Resolve instance',
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:57:                'key' => 'run_app_setup_steps',
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:58:                'label' => 'Run instance setup steps',
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:96:            'key' => $step['key'],
+apps/gateway/app/Actions/Apps/SetupAppProgressPlan.php:97:            'label' => $step['label'],
+apps/gateway/app/Support/Streaming/ProgressEventStreamEmitter.php:42:            'key' => $key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:484:                'key' => $key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:717:                        'key' => $state->scope->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:1086:                    'key' => $state->scope->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:1120:                'key' => $scope['key'],
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2002:            'key' => 'node.local_executor_probe_failed',
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2041:            'key' => $key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2080:            'key' => $key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2147:                'key' => 'app.runtime_config_probe_failed',
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2169:                    'key' => 'app.runtime_config_extra',
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2275:                'key' => 'process.runtime_unit_missing',
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2404:                    'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2438:                    'key' => $domain,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2454:                    'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2721:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2741:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2764:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2782:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2801:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2819:            'key' => $entry->key,
+apps/gateway/app/Services/Doctor/DoctorReportRunner.php:2865:                    'key' => $result->key,

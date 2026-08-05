@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Workspace;
 
 final readonly class DatabaseConnectionSelector
@@ -19,13 +19,13 @@ final readonly class DatabaseConnectionSelector
         string $target,
         ?string $connectionSlug = null,
     ): DatabaseConnection|DatabaseConnectionRegistryFailure {
-        $instance = $this->resolver->resolveAppInstanceSelector($target);
+        $instance = $this->resolver->resolveInstanceSelector($target);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return $this->resolveForOwner(
                 $target,
-                'app_instance',
-                'app_instance_id',
+                'instance',
+                'instance_id',
                 $instance->id,
                 $connectionSlug,
             );
@@ -52,7 +52,7 @@ final readonly class DatabaseConnectionSelector
     private function resolveConnection(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
     {
         $connection = DatabaseConnection::query()
-            ->with(['node', 'targets.appInstance.app', 'targets.workspace.app'])
+            ->with(['node', 'targets.instance.app', 'targets.workspace.app'])
             ->where('slug', $slug)
             ->first();
 
@@ -71,7 +71,7 @@ final readonly class DatabaseConnectionSelector
         ?string $connectionSlug,
     ): DatabaseConnection|DatabaseConnectionRegistryFailure {
         $targets = DatabaseConnectionTarget::query()
-            ->with(['connection.node', 'connection.targets.appInstance.app', 'connection.targets.workspace.app'])
+            ->with(['connection.node', 'connection.targets.instance.app', 'connection.targets.workspace.app'])
             ->where($ownerColumn, $ownerId)
             ->get();
 

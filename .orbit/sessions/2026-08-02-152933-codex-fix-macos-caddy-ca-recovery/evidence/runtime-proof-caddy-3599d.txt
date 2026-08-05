@@ -1,0 +1,42 @@
+retained topology proof: synthetic docker caddy:2-alpine (no live Mini mutation)
+date: 2026-08-02T13:16:53Z
+host: nick.local
+os: Darwin 27.0.0
+fixture: /tmp/orbit-caddy-3599d-proof-Y0rLxb
+caddy_image: caddy:2-alpine
+caddy_image_id=sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 version=v2.11.4
+
+== before migration: caddy validate must fail with IntermediateLifetime check ==
+exit=1
+{"level":"warn","ts":1785676589.4566174,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+{"level":"info","ts":1785676589.4569654,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x25dc01a5fc00"}
+{"level":"info","ts":1785676589.457263,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0x25dc01a5fc00"}
+{"level":"info","ts":1785676589.4572804,"logger":"http","msg":"servers shutting down with eternal grace period"}
+Error: loading http app module: provision http: getting tls app: loading tls app module: provision tls: provisioning automation policy 0: loading TLS automation management module: position 0: loading module 'internal': provision tls.issuance.internal: loading pki app module: provision pki: provisioning CA 'local': intermediate certificate lifetime must be less than actual root certificate lifetime (85895h59m58.542751117s)
+
+== after migration: caddy validate ==
+exit=0
+{"level":"warn","ts":1785676608.5909529,"msg":"No files matching import glob pattern","pattern":"/etc/caddy/orbit/*.caddy"}
+{"level":"warn","ts":1785676608.59097,"msg":"No files matching import glob pattern","pattern":"/etc/caddy/sites/*.caddy"}
+{"level":"info","ts":1785676608.5913997,"msg":"adapted config to JSON","adapter":"caddyfile"}
+{"level":"warn","ts":1785676608.591405,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+{"level":"info","ts":1785676608.5921943,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x4c817a90a580"}
+{"level":"info","ts":1785676608.592336,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0x4c817a90a580"}
+{"level":"info","ts":1785676608.5923457,"logger":"http","msg":"servers shutting down with eternal grace period"}
+Valid configuration
+
+== stable running ==
+state1=running true false
+state2=running true false
+http_response=ok
+
+== root fingerprint preservation ==
+root.crt before=2504c6324f652abd4d0a368e2a7e10e861c188a12a8681f954f870361962e444
+root.crt after=2504c6324f652abd4d0a368e2a7e10e861c188a12a8681f954f870361962e444
+root.key match=yes
+intermediate.crt match=yes
+
+== migrated Caddyfile must not contain intermediate_lifetime 3599d ==
+(no intermediate_lifetime lines)
+
+RESULT: PASS

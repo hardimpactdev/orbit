@@ -52,7 +52,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    serving node, target, and TLS policy. Installed agent tools contribute an
    expected route even when no proxy route row remains.
 2. **Owner eligibility:** the owner reference still resolves when the route is
-   owned by a project, instance, WebSocket binding, workspace, gateway route, router
+   owned by an app, instance, WebSocket binding, workspace, gateway route, router
    service, S3 publication, or tool.
 3. **Node eligibility:** the serving node resolves to a visible active Ubuntu
    gateway or node with proxy capability.
@@ -71,7 +71,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets. Every app primary route must keep
-   its project owner while targeting one concrete instance, that
+   its app owner while targeting one concrete instance, that
    instance's serving node, runtime upstream, and inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
@@ -96,18 +96,29 @@ Observed backend routes without Orbit ownership markers are unmanaged node reali
 
 ## Proxy Issue Codes
 
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 Each code below identifies a specific proxy-family drift condition that the probe can detect.
 
 | Code | Detected when |
 | --- | --- |
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy.owner_invalid` | A project, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
+| `proxy.owner_invalid` | An app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
 | `proxy.node_invalid` | The route points at a missing, inactive, unsupported, or role-incompatible serving node. |
-| `proxy.domain_conflict` | A custom route claims a domain owned by a project, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
+| `proxy.domain_conflict` | A custom route claims a domain owned by an app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
-| `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
+| `proxy.caddy_container_down` | The `orbit-caddy` container exists but is not healthy running, including stopped containers and Docker restart loops. Mounted route artifacts are not served. |
 | `proxy.caddy_container_detached` | The running `orbit-caddy` container is not attached to the serving node's managed Docker network. |
+| `proxy.global_config_missing` | The host-mounted global Caddyfile for `orbit-caddy` is absent. Probe and restore use the host bind source with portable stdin `base64` (GNU and BSD/macOS). |
+| `proxy.global_config_mismatch` | The host-mounted global Caddyfile exists but is missing Orbit-managed imports or snippets, or still carries the obsolete local-CA `intermediate_lifetime 3599d` override that Caddy 2.11+ rejects when remaining root life is shorter than that configured intermediate lifetime. |
 | `proxy.agent_tool_route_missing` | An installed agent tool expects an internal route under its node TLD, but the gateway proxy route row is absent. |
 | `proxy.agent_tool_route_mismatch` | The expected agent-tool route row exists for the same tool but its serving node, kind, upstream, owner shape, or source hash differs from canonical proxy intent. |
 | `proxy.agent_tool_route_conflict` | The expected agent-tool domain is occupied by a custom route or a different tool. Proxy doctor reports the conflict but does not overwrite the other owner. |
@@ -138,21 +149,23 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
-For an instance primary route, restoring a mismatch also persists its project
+For an instance primary route, restoring a mismatch also persists its app
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
-| `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
+| `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container from its managed spec (host global config is seeded from the managed bind source before create). Apply-container also strips exact `intermediate_lifetime 3599d` from an existing host Caddyfile without touching Caddy data or root PEMs. |
+| `proxy.caddy_container_down` | With a managed caddy tool spec, apply the container: reconcile host global config first (including stripping exact `intermediate_lifetime 3599d`), start when stopped, force-recreate restart loops even when hash/network match, and finish only when stably running. Without a managed record, start the existing container only. |
 | `proxy.caddy_container_detached` | Reconcile the `orbit-caddy` container from its managed spec so the container is recreated on the managed Docker network. |
+| `proxy.global_config_missing` | Write the expected host-mounted global Caddyfile. When a managed caddy tool spec exists, apply the container so the host file is seeded before create/recreate and repair ends only when the container is stably running with that config present. When no managed spec exists, write the host file and reload if the container can accept reload. |
+| `proxy.global_config_mismatch` | Reconcile the host-mounted global Caddyfile: ensure Orbit-managed imports/snippets, remove exact local-CA `intermediate_lifetime 3599d` (and now-empty wrappers only), preserve unrelated custom options, then reload or apply the managed container. Never deletes root or intermediate PEMs. |
 | `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when it can be identified safely. |
 | `proxy.enactment_incomplete` | Retry the instance route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
-| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
+| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public WebSocket ingress routes from the owning instance binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
@@ -161,13 +174,13 @@ server name before rendering.
 | `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning seaweedfs tool row. |
 | `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
 | `proxy.analytics.router_route_missing` | Re-sync and enact the private `analytics.orbit` route and Orbit-managed TLS from gateway analytics intent. |
-| `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning project analytics binding. |
+| `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning instance analytics binding. |
 | `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor.
+`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor. For `proxy.owner_invalid` registry rows (owner reference missing while the route row remains — including tool-owned routes whose matching installed `NodeTool` is gone), remove the orphan row with [`proxy:remove --force`](3_proxy-remove/proxy-remove.md) after confirming the owner is gone; force is not a bypass for living owners.
 
 ## Proxy Adopt Map
 
@@ -176,9 +189,9 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
-| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing project, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
+| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
 
-`doctor --adopt` does not scan arbitrary hosts, adopt project/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer project ownership from upstream paths, or adopt service health into the proxy family.
+`doctor --adopt` does not scan arbitrary hosts, adopt app/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
 `proxy.dns_mapping_mismatch` is derived projection drift and is never adoptable.
 
 ## Test Mapping
@@ -192,6 +205,13 @@ Required test files:
 | `apps/gateway/tests/Unit/Services/Doctor/ProxyDnsProjectionProbeTest.php` | Router/private `.orbit`, exact backend projection, and `proxy.dns_mapping_mismatch`. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
+| `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container seeds the host-mounted global Caddyfile before create/recreate, force-recreates restarting orbit-caddy containers with matching hash/network, and still starts stopped matching containers. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Global config probe reads the host-mounted Caddyfile artifact with portable stdin `base64` (GNU and BSD/macOS; not docker-exec-only when the container is down). |
+| `apps/gateway/tests/Unit/Services/Gateway/CaddyGlobalConfigTest.php` | `ensure` removes exact `intermediate_lifetime 3599d`, preserves other intermediate_lifetime values and custom options, and does not touch PEM storage. |
+| `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container strips exact `intermediate_lifetime 3599d` from an existing host Caddyfile before recreate while leaving data mounts alone. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore for missing global config plus managed container applies host seed before container apply; healthy mismatch write+reloads; `intermediate_lifetime 3599d` mismatch is rewritten without PEM deletion. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php` | Failed tool log reads keep useful stdout when stderr is empty (including docker logs redirected with `2>&1`). |
+| `apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php` | Internal tool-run payload accepts the `logs` action used by `tool:logs`. |
 | `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |
 
 No current E2E test is mapped for proxy-family doctor coverage.

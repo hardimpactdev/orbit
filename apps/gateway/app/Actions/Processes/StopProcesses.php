@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Enums\ProcessEventType;
+use App\Models\ProcessEvent;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeTargets;
+use Throwable;
 
 final readonly class StopProcesses
 {
@@ -28,18 +30,44 @@ final readonly class StopProcesses
             $process = $target['process'];
             $runtimeUnit = $target['runtime_unit'];
             $workspace = $context->runtimeWorkspaceFor($process);
-            $ok = $target['driver']->stop($context->node, $runtimeUnit);
-            $event = null;
 
-            if ($ok) {
-                $event = $this->recordProcessEvent->handle(
-                    ProcessEventType::Stopped,
+            $events = [
+                $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Stopping,
                     $context->eventApp(),
                     $workspace,
                     $process,
                     $context->node,
                     $runtimeUnit,
-                );
+                )),
+            ];
+
+            try {
+                $ok = $target['driver']->stop($context->node, $runtimeUnit);
+            } catch (Throwable $exception) {
+                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                ));
+
+                throw $exception;
+            }
+
+            $terminal = $this->recordProcessEvent->handle(
+                $ok ? ProcessEventType::Stopped : ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit,
+            );
+            $events[] = $this->eventPayload($terminal);
+
+            if ($ok) {
                 $stopped++;
             }
 
@@ -47,17 +75,13 @@ final readonly class StopProcesses
             $runtimes[] = [
                 'process' => $process->name,
                 'node' => $context->node->name,
-                'project' => $context->app?->name,
-                'instance' => $context->appInstance?->name,
+                'app' => $context->app?->name,
+                'instance' => $context->instance?->name,
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'stopped' : 'failed',
-                'event' => $event === null
-                    ? null
-                    : [
-                        'id' => $event->id,
-                        'type' => $event->event->value,
-                    ],
+                'event' => $this->eventPayload($terminal),
+                'events' => $events,
                 ...($ok ? [] : ['message' => 'The runtime backend reported a stop failure.']),
             ];
         }
@@ -70,6 +94,17 @@ final readonly class StopProcesses
                 'process' => $name,
                 'partial_state' => $stopped === 0 ? 'none_stopped' : 'partially_stopped',
             ],
+        ];
+    }
+
+    /**
+     * @return array{id: int, type: string}
+     */
+    private function eventPayload(ProcessEvent $event): array
+    {
+        return [
+            'id' => $event->id,
+            'type' => $event->event->value,
         ];
     }
 }

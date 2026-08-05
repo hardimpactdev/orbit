@@ -751,7 +751,7 @@ class E2EDevTopologyCommand extends Command
                 // one is deployed, and app traffic is served by the gateway router
                 // (Caddy) at the app domain, not the node port directly.
                 $handle['endpoint'] = "{$wireGuardIp} ({$role} node WireGuard address; FrankenPHP app runtime — no app served until you deploy one)";
-                $handle['note'] = 'Deploy an app from the operator (orbit project:new <name>), then `orbit project:show <name> --json` shows its domain; curl that domain through the gateway router with -w "%{time_total}s" to measure response time.';
+                $handle['note'] = 'Deploy an app from the operator (orbit app:new <name>), then `orbit app:show <name> --json` shows its domain; curl that domain through the gateway router with -w "%{time_total}s" to measure response time.';
             }
 
             $handles[] = $handle;

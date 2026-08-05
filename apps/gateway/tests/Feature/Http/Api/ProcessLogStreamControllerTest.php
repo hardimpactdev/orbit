@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Process;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -47,8 +47,12 @@ describe('ProcessLogStreamStartController', function (): void {
         $response = process_log_stream_start_api_call();
         $operationRunId = $response->json('success.data.operation.uuid');
 
+        $content = (string) $response->getContent();
+
         $response
             ->assertAccepted()
+            ->assertHeader('Content-Type', 'application/json')
+            ->assertHeader('Content-Length', (string) strlen($content))
             ->assertJsonPath(
                 'success.data.operation.stream_descriptor_url',
                 "/api/operations/{$operationRunId}/stream",
@@ -56,7 +60,12 @@ describe('ProcessLogStreamStartController', function (): void {
 
         expect($operationRunId)
             ->toBeString()
-            ->not->toBeEmpty();
+            ->not
+            ->toBeEmpty()
+            ->and($response->headers->get('Transfer-Encoding'))
+            ->toBeNull()
+            ->and(strlen($content))
+            ->toBeGreaterThan(0);
 
         app()->terminate();
 
@@ -79,22 +88,20 @@ describe('ProcessLogStreamStartController', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function process_log_stream_create_app(array $attributes): Project
+function process_log_stream_create_app(array $attributes): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    if (! $app instanceof Project) {
+    if (! $app instanceof App) {
         throw new RuntimeException('Expected app factory to create an app model.');
     }
 
     return $app;
 }
 
-function process_log_stream_create_process(Project $app, string $name): Process
+function process_log_stream_create_process(App $app, string $name): Process
 {
-    $process = Process::factory()
-        ->forOwner($app)
-        ->create(['name' => $name]);
+    $process = Process::factory()->forOwner($app)->create(['name' => $name]);
 
     if (! $process instanceof Process) {
         throw new RuntimeException('Expected process factory to create a process model.');

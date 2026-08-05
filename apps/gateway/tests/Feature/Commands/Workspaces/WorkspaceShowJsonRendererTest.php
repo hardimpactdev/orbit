@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -66,7 +66,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'php_version' => '8.5',
@@ -76,8 +76,6 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             'app_id' => $app->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
             'php_version' => null,
-            'agent_ide' => 'opencode',
-            'agent_ide_workspace_id' => null,
         ]);
 
         $response = $this->call(
@@ -97,7 +95,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->toBeArray()
             ->and($ws['name'])
             ->toBe('feature-docs')
-            ->and($ws['project'])
+            ->and($ws['app'])
             ->toBe('docs')
             ->and($ws['node'])
             ->toBe('app-1')
@@ -107,12 +105,9 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->toBe('8.5')
             ->and($ws['php_inherited'])
             ->toBeTrue()
-            ->and($ws['agent_ide'])
-            ->toBeArray()
-            ->and($ws['agent_ide']['adapter'])
-            ->toBe('opencode')
-            ->and($ws['agent_ide']['workspace_id'])
-            ->toBeNull()
+            ->and($ws)
+            ->not
+            ->toHaveKey('agent_ide')
             ->and($ws['adopted'])
             ->toBeFalse()
             ->and($ws['lifecycle_status'])
@@ -124,7 +119,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode('app-1', '1.2.3.4');
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -147,11 +142,11 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/home/orbit/apps/docs',
@@ -162,13 +157,13 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         Process::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'frankenphp-docs',
                 'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
                 'sort_order' => 0,
@@ -176,30 +171,30 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         Process::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
                 'sort_order' => 1,
             ]);
         Process::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'queue',
                 'sort_order' => 2,
             ]);
         Process::factory()
             ->forOwner($workspace, $node)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'frankenphp-docs-feature-docs',
                 'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
                 'sort_order' => 0,
             ]);
 
-        $otherInstance = AppInstance::factory()->for($app)->create([
+        $otherInstance = Instance::factory()->for($app)->create([
             'name' => 'staging',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/home/orbit/apps/docs-staging',
@@ -210,7 +205,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         Process::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $otherInstance->id,
+                'instance_id' => $otherInstance->id,
                 'name' => 'worker',
                 'sort_order' => 1,
             ]);
@@ -245,7 +240,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -266,7 +261,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -287,7 +282,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -314,7 +309,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -336,7 +331,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -359,13 +354,13 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->not->toHaveKey('latest_setup_run');
     });
 
-    it('does not include agent_ide.inherited_from or agent_ide.workspace_discovery', function (): void {
+    it('does not include removed agent_ide workspace payload fields', function (): void {
         $caller = wsShowJsonCallerNode();
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'agent_ide' => 'opencode']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(
             'GET',
@@ -378,13 +373,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
 
         $response->assertOk();
 
-        $agentIde = $response->json('success.data.workspace.agent_ide');
-
-        expect($agentIde)
-            ->not->toHaveKey('inherited_from')->and($agentIde)
-            ->not->toHaveKey('workspace_discovery')->and($agentIde)->toHaveKey('adapter')->and($agentIde)->toHaveKey(
-                'workspace_id',
-            );
+        expect($response->json('success.data.workspace'))->not->toHaveKey('agent_ide');
     });
 });
 
@@ -427,8 +416,8 @@ describe('WorkspaceShowJsonRenderer error codes', function (): void {
         ]);
         wsShowJsonGrantAccess($caller, $nodeB);
 
-        $appA = Project::factory()->create(['name' => 'docs', 'node_id' => $nodeA->id]);
-        $appB = Project::factory()->create(['name' => 'api', 'node_id' => $nodeB->id]);
+        $appA = App::factory()->create(['name' => 'docs', 'node_id' => $nodeA->id]);
+        $appB = App::factory()->create(['name' => 'api', 'node_id' => $nodeB->id]);
         Workspace::factory()->create(['name' => 'feature-x', 'app_id' => $appA->id]);
         Workspace::factory()->create(['name' => 'feature-x', 'app_id' => $appB->id]);
 
@@ -455,7 +444,7 @@ describe('WorkspaceShowJsonRenderer error codes', function (): void {
         wsShowJsonCallerNode();
         $node = wsShowJsonAppNode();
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call(

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
+# Technical Contract: `orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -91,8 +91,8 @@ the concrete Claude Code binary version returned by `claude --version`.
   `--no-process` is not supplied, `tool:install` converges that process through
   the process family after the capability install succeeds. The process is
   node-owned and uses the runtime, command, and `--tool` dependency declared by
-  the tool definition (for `opencode-cli`: related process `opencode-server`,
-  `runtime=systemd`, command `opencode serve -a`, `tool=opencode-cli`).
+  the tool definition (for `hermes`: related process `orbit-hermes-dashboard`,
+  `runtime=systemd`, command `hermes dashboard --no-open`, `tool=hermes`).
 - The convergence is idempotent: a newly created process is reported as
   `configured`; an existing related process is reported as `converged`. It never
   creates a duplicate.
@@ -105,7 +105,7 @@ the concrete Claude Code binary version returned by `claude --version`.
 
 ### Scope Boundaries
 
-`tool-install` must not create projects, instances, workspaces, schedules, custom proxy routes,
+`tool-install` must not create apps, instances, workspaces, schedules, custom proxy routes,
 non-tool firewall rules, node identities, or node grants. It may configure only
 the singleton service process a tool definition declares as its related process;
 all other process creation belongs to the process family. Tool-owned endpoint

@@ -1,0 +1,97 @@
+{
+  "params": {
+    "grok_build.AskUserQuestion": {
+      "timeout_enabled": true,
+      "timeout_secs": 1800
+    },
+    "grok_build.SearchReplace": {
+      "skip_read_before_edit": false,
+      "empty_old_string_does_not_override": false,
+      "unicode_normalized_fallback": false,
+      "include_user_edit_hint": true
+    },
+    "grok_build.ReadFile": {
+      "cursor_rules_on_read": false
+    },
+    "grok_build.Grep": {
+      "max_output_bytes": null,
+      "max_chars_per_line": null
+    },
+    "grok_build.Bash": {
+      "timeout_secs": null,
+      "max_timeout_secs": 36000.0,
+      "output_byte_limit": null,
+      "cmd_prefix": null,
+      "enabled_background": true,
+      "auto_background_on_timeout": true,
+      "foreground_block_budget_ms": null,
+      "max_block_until_ms": null,
+      "allow_background_operator": true,
+      "surface_bg_completion_reminders": true
+    },
+    "grok_build.UseTool": {
+      "native_tool_correction": true
+    },
+    "grok_build.ListDir": {
+      "max_output_chars": null
+    },
+    "grok_build.WebFetch": {
+      "cache_ttl_secs": null,
+      "max_cache_entries": null,
+      "timeout_secs": null,
+      "max_content_length": null,
+      "max_markdown_length": null,
+      "context_window_tokens": 500000,
+      "allowed_domains": null,
+      "proxy_endpoint": null,
+      "allow_local": null
+    }
+  },
+  "state": {
+    "grok_build.ReportedTaskCompletions": {
+      "reported": [
+        "call-45b4f245-4546-4f8d-9811-f1818fdc7f8a-82",
+        "call-03579e4d-3cf3-4dbf-85b6-e4c6fbc9a42a-35",
+        "call-dd053708-93cd-4ad4-b86e-557510711303-40",
+        "call-e51124a6-324a-4eea-ba61-461c108e1a2d-103",
+        "call-9db26658-1b06-438a-92bc-71f605b56b23-29",
+        "call-78a80afc-3d3b-458d-bd7b-40d6c47ad669-10",
+        "call-4eff6fd8-4ca5-48f9-974d-e83b1540751a-21"
+      ]
+    },
+    "grok_build.Todo": {
+      "todos": {
+        "a1": {
+          "content": "Record PASS in loop + acceptance ready/accept",
+          "priority": "medium",
+          "status": "in_progress"
+        },
+        "a2": {
+          "content": "Finalization merge to primary main + full archive + push + cleanup",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "a3": {
+          "content": "New worktree from pushed main + quality gates",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "a4": {
+          "content": "Recapture baseline/inventory + build candidate",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "a5": {
+          "content": "update:all + legacy cleanup + post-proof + promote-runtime",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "a6": {
+          "content": "Final release report (no GH/E2E)",
+          "priority": "medium",
+          "status": "pending"
+        }
+      }
+    }
+  }
+}

@@ -44,6 +44,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('hardimpactdev/orbit-core')
         ->toContain('hardimpactdev/orbit-cli')
         ->toContain('hardimpactdev/orbit-gateway')
+        ->toContain('rm -rf "$output/node_modules"')
         ->toContain('ORBIT_RELEASE_TOKEN')
         ->toContain('PACKAGIST_USERNAME')
         ->toContain('PACKAGIST_TOKEN')
@@ -52,6 +53,17 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('orbit-release-manifest.json')
         ->toContain('orbit-linux-x64')
         ->toContain('orbit-macos-arm64')
+        // TypeScript SDK is independently versioned and published from its
+        // package repository OIDC workflow, not monorepo orbit-release.yml.
+        ->not->toContain('prepare_and_verify_sdk_typescript')
+        ->not->toContain('publish_sdk_typescript_npm')
+        ->not->toContain('publish_sdk_typescript_split')
+        ->not->toContain('npm publish --access public --provenance')
+        ->not->toContain('NPM_TOKEN')
+        ->not->toContain('NODE_AUTH_TOKEN')
+        ->not->toContain('actions/setup-node@v6')
+        ->not->toContain('actions/setup-node@v4')
+        ->not->toContain('@orbit/sdk-typescript')
         ->not->toContain('docker buildx build')
         ->not->toContain('--push')
         ->not->toContain('--metadata-file')
@@ -70,6 +82,309 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->not->toContain('vendor/bin/phpacker build mac arm')
         ->not->toContain('vendor/bin/phpacker build linux x64')
         ->not->toContain('orbit'.'-runtime');
+});
+
+it('keeps the TypeScript SDK independently versioned with Craft-style package-repo OIDC publish', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
+
+    expect($packageVersion)
+        ->toBe('0.3.0')
+        ->and($packageVersion)
+        ->not
+        ->toBe($rootVersion)
+        ->and($sourcePackage['private'] ?? false)
+        ->toBeTrue();
+
+    $publishWorkflow = (string) file_get_contents(
+        repo_path('packages/sdk-typescript/.github/workflows/publish.yml'),
+    );
+
+    expect($publishWorkflow)
+        ->toContain('name: Publish package to npm')
+        ->toContain('types: [published]')
+        ->toContain('workflow_dispatch:')
+        ->toContain('contents: read')
+        ->toContain('id-token: write')
+        ->toContain('actions/setup-node@v6')
+        ->toContain('node-version: "24"')
+        ->toContain('package-manager-cache: false')
+        ->toContain('registry-url: "https://registry.npmjs.org"')
+        ->toContain('npm ci')
+        ->toContain('npm test')
+        ->toContain('npm run build')
+        ->toContain('npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version')
+        ->toContain('npm publish --provenance --access public')
+        // Steady-state release path is token-free OIDC.
+        ->toContain('github.event_name == \'release\'')
+        ->toContain('Publish release via OIDC Trusted Publisher')
+        // One-time bootstrap is fail-closed and split-repo secret only.
+        ->toContain('github.event_name == \'workflow_dispatch\'')
+        ->toContain('Guard one-time bootstrap publish')
+        ->toContain('Bootstrap refuses version')
+        ->toContain('scripts/npm-bootstrap-registry-absent.sh')
+        ->toContain('only exact 0.1.0 is allowed')
+        ->toContain('confirmed npm E404 absence')
+        ->toContain('secrets.NPM_BOOTSTRAP_TOKEN')
+        ->toContain('Publish bootstrap with short-lived split-repo credential')
+        // Monorepo durable secret name must not appear (bootstrap uses NPM_BOOTSTRAP_TOKEN only).
+        ->not->toContain('secrets.NPM_TOKEN')
+        ->not->toContain('${{ secrets.NPM_TOKEN }}');
+
+    $registryGuard = (string) file_get_contents(
+        repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'),
+    );
+
+    expect(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh'))
+        ->toBeFile()
+        ->and(is_executable(repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh')))
+        ->toBeTrue()
+        ->and($registryGuard)
+        ->toContain('already exists on the registry; bootstrap is one-time only')
+        ->toContain('non-E404 error; bootstrap refuses to proceed')
+        ->toContain('code E404');
+
+    // Release publish step must not inject a long-lived monorepo token.
+    expect($publishWorkflow)
+        ->toMatch(
+            '/Publish release via OIDC Trusted Publisher[\s\S]*?if: github\.event_name == \'release\'[\s\S]*?run: npm publish --provenance --access public/',
+        );
+
+    $rootWorkflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($rootWorkflow)
+        ->not->toContain('publish_sdk_typescript_npm')
+        ->not->toContain('npm publish --access public --provenance')
+        ->not->toContain('NPM_BOOTSTRAP_TOKEN')
+        ->not->toContain('NPM_TOKEN');
+});
+
+it('executes npm bootstrap registry absence checks with fail-closed E404 semantics', function (): void {
+    $script = repo_path('packages/sdk-typescript/scripts/npm-bootstrap-registry-absent.sh');
+    $mockRoot = sys_get_temp_dir().'/orbit-npm-bootstrap-mock-'.bin2hex(random_bytes(6));
+    $mockBin = $mockRoot.'/bin';
+
+    mkdir($mockBin, 0755, true);
+
+    $npmStub = <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        mode="${ORBIT_NPM_VIEW_MODE:-}"
+        spec="${2:-}"
+
+        case "$mode" in
+          e404)
+            echo "npm error code E404" >&2
+            echo "npm error 404 Not Found - GET https://registry.npmjs.org/${spec} - Not found" >&2
+            exit 1
+            ;;
+          exists)
+            echo "0.1.0"
+            exit 0
+            ;;
+          network)
+            echo "npm error code ENOTFOUND" >&2
+            echo "npm error network request failed" >&2
+            exit 1
+            ;;
+          auth)
+            echo "npm error code E401" >&2
+            echo "npm error 401 Unauthorized" >&2
+            exit 1
+            ;;
+          *)
+            echo "unknown ORBIT_NPM_VIEW_MODE [$mode]" >&2
+            exit 2
+            ;;
+        esac
+        BASH;
+
+    file_put_contents($mockBin.'/npm', $npmStub);
+    chmod($mockBin.'/npm', 0755);
+
+    $run = static function (string $mode, string $spec) use ($script, $mockBin): Process {
+        $process = new Process(
+            ['bash', $script, $spec],
+            null,
+            [
+                'PATH' => $mockBin.PATH_SEPARATOR.getenv('PATH'),
+                'ORBIT_NPM_VIEW_MODE' => $mode,
+            ],
+        );
+        $process->run();
+
+        return $process;
+    };
+
+    try {
+        $absent = $run('e404', '@hardimpactdev/orbit-sdk-typescript');
+        expect($absent->getExitCode())
+            ->toBe(0, $absent->getErrorOutput().$absent->getOutput());
+
+        $absentVersion = $run('e404', '@hardimpactdev/orbit-sdk-typescript@0.1.0');
+        expect($absentVersion->getExitCode())
+            ->toBe(0, $absentVersion->getErrorOutput().$absentVersion->getOutput());
+
+        $exists = $run('exists', '@hardimpactdev/orbit-sdk-typescript');
+        expect($exists->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($exists->getErrorOutput())
+            ->toContain('already exists on the registry; bootstrap is one-time only');
+
+        $network = $run('network', '@hardimpactdev/orbit-sdk-typescript');
+        expect($network->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($network->getErrorOutput())
+            ->toContain('non-E404 error; bootstrap refuses to proceed')
+            ->toContain('ENOTFOUND');
+
+        $auth = $run('auth', '@hardimpactdev/orbit-sdk-typescript@0.1.0');
+        expect($auth->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($auth->getErrorOutput())
+            ->toContain('non-E404 error; bootstrap refuses to proceed')
+            ->toContain('E401');
+    } finally {
+        File::deleteDirectory($mockRoot);
+    }
+});
+
+it('prepares a local durable sdk-typescript package with independent package.json version', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
+    $output = sys_get_temp_dir().'/orbit-sdk-typescript-prepare-'.uniqid('', true);
+
+    prepareReleaseWorkflowPackage('sdk-typescript', $packageVersion, $output);
+
+    expect($output.'/package.json')
+        ->toBeFile()
+        ->and($output.'/README.md')
+        ->toBeFile()
+        ->and($output.'/openapi/public-gateway-openapi.json')
+        ->toBeFile()
+        ->and($output.'/package-lock.json')
+        ->toBeFile()
+        ->and($output.'/.github/workflows/publish.yml')
+        ->toBeFile()
+        ->and(is_dir($output.'/node_modules'))
+        ->toBeFalse();
+
+    /** @var array<string, mixed> $packageJson */
+    $packageJson = json_decode((string) file_get_contents($output.'/package.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($packageJson['name'] ?? null)
+        ->toBe('@hardimpactdev/orbit-sdk-typescript')
+        ->and($packageJson['version'] ?? null)
+        ->toBe($packageVersion)
+        ->and($packageJson['version'] ?? null)
+        ->not->toBe($rootVersion)->and($packageJson['private'] ?? true)->toBeFalse()->and(
+            $packageJson['license'] ?? null,
+        )->toBe('MIT')->and($packageJson['publishConfig'] ?? null)->toMatchArray([
+            'access' => 'public',
+            'registry' => 'https://registry.npmjs.org/',
+        ])->and(data_get($packageJson, 'repository.url'))->toBe(
+            'https://github.com/hardimpactdev/orbit-sdk-typescript.git',
+        )->and(data_get($packageJson, 'repository.directory'))->toBeNull()->and($packageJson['homepage'] ?? null)->toBe(
+            'https://github.com/hardimpactdev/orbit-sdk-typescript',
+        )->and($packageJson['files'] ?? null)->toBe([
+            'dist',
+            'openapi/public-gateway-openapi.json',
+            'README.md',
+        ])->and($packageJson['scripts'] ?? null)->toBe([
+            'build' => 'tsc -p tsconfig.build.json',
+            'typecheck' => 'tsc --noEmit',
+            'test' => 'npm run typecheck',
+        ])->and(json_encode($packageJson))
+        ->not->toContain('@orbit/sdk-typescript');
+
+    $sourcePackageJson = (string) file_get_contents(repo_path('packages/sdk-typescript/package.json'));
+    $helper = (string) file_get_contents(repo_path('bin/orbit-prepare-release-package'));
+
+    expect($sourcePackageJson)
+        ->toContain('"name": "@hardimpactdev/orbit-sdk-typescript"')
+        ->toContain('"private": true')
+        ->not->toContain('@orbit/sdk-typescript')->and($helper)->toContain(
+            "'sdk-typescript' => 'packages/sdk-typescript'",
+        )->toContain('@hardimpactdev/orbit-sdk-typescript')->toContain('rewrite_npm_package_json')->toContain(
+            'rewrite_npm_package_lock',
+        )->toContain('read_npm_package_version')
+        ->not->toContain('@orbit/sdk-typescript');
+
+    File::deleteDirectory($output);
+});
+
+it('stamps prepared sdk-typescript package-lock identity to the package version not root VERSION', function (): void {
+    $rootVersion = trim((string) file_get_contents(repo_path('VERSION')));
+    /** @var array<string, mixed> $sourcePackage */
+    $sourcePackage = json_decode(
+        (string) file_get_contents(repo_path('packages/sdk-typescript/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $packageVersion = is_string($sourcePackage['version'] ?? null) ? $sourcePackage['version'] : '';
+    $output = sys_get_temp_dir().'/orbit-sdk-typescript-lock-'.uniqid('', true);
+
+    prepareReleaseWorkflowPackage('sdk-typescript', $packageVersion, $output);
+
+    /** @var array<string, mixed> $packageLock */
+    $packageLock = json_decode(
+        (string) file_get_contents($output.'/package-lock.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $lockRoot = is_array($packageLock['packages'][''] ?? null) ? $packageLock['packages'][''] : [];
+
+    expect($packageLock['name'] ?? null)
+        ->toBe('@hardimpactdev/orbit-sdk-typescript')
+        ->and($packageLock['version'] ?? null)
+        ->toBe($packageVersion)
+        ->and($packageLock['version'] ?? null)
+        ->not
+        ->toBe($rootVersion)
+        ->and($lockRoot['name'] ?? null)
+        ->toBe('@hardimpactdev/orbit-sdk-typescript')
+        ->and($lockRoot['version'] ?? null)
+        ->toBe($packageVersion);
+
+    File::deleteDirectory($output);
+});
+
+it('rejects preparing sdk-typescript with a version that is not package.json', function (): void {
+    $output = sys_get_temp_dir().'/orbit-sdk-typescript-bad-version-'.uniqid('', true);
+    $process = new Process([
+        PHP_BINARY,
+        repo_path('bin/orbit-prepare-release-package'),
+        '--package=sdk-typescript',
+        '--version=9.9.9',
+        "--output={$output}",
+    ], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())
+        ->not
+        ->toBe(0)
+        ->and($process->getErrorOutput())
+        ->toContain('must match packages/sdk-typescript/package.json version');
+
+    if (is_dir($output)) {
+        File::deleteDirectory($output);
+    }
 });
 
 it('builds cli binary workflows through the shared no-dev compressed phar helper', function (): void {
@@ -214,14 +529,14 @@ it('does not descend into skipped gateway runtime directories while packaging', 
     );
 
     try {
-        mkdir($skippedDirectory, 0000, true);
+        mkdir($skippedDirectory, 0o000, true);
 
         prepareReleaseWorkflowPackage('gateway', '1.2.3', "{$root}/gateway");
 
         expect("{$root}/gateway/storage/framework/testing")->not->toBeDirectory();
     } finally {
         if (is_dir($skippedDirectory)) {
-            chmod($skippedDirectory, 0700);
+            chmod($skippedDirectory, 0o700);
             File::deleteDirectory($skippedDirectory);
         }
 

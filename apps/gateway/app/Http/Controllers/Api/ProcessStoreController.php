@@ -78,6 +78,7 @@ final class ProcessStoreController implements Loggable
                 replaceContainers: $input['replace_containers'],
                 binds: $input['binds'],
                 consumer: $caller,
+                label: $input['label'],
             );
         } catch (GatewayApiException $e) {
             return $this->error(
@@ -101,7 +102,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, instance: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, binds: list<string>|null, start: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, name: string, label: string|null, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, binds: list<string>|null, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -109,7 +110,12 @@ final class ProcessStoreController implements Loggable
         $app = $this->optionalString($request, 'instance');
         $workspace = $this->optionalString($request, 'workspace');
         $name = $this->optionalString($request, 'name');
+        $label = $this->validatedLabel($request);
         $command = $this->optionalString($request, 'command');
+
+        if ($label instanceof JsonResponse) {
+            return $label;
+        }
         $restartPolicyInput = $this->optionalString($request, 'restart_policy') ?? ProcessRestartPolicy::Never->value;
         $crashNotificationInput =
             $this->optionalString($request, 'crash_notification') ?? ProcessCrashNotification::None->value;
@@ -350,19 +356,6 @@ final class ProcessStoreController implements Loggable
                 );
             }
 
-            if ($runtime === ProcessRuntime::Launchd && $crashNotification === ProcessCrashNotification::AgentIde) {
-                return $this->error(
-                    'validation_failed',
-                    'Crash notification via agent_ide is deferred for launchd runtime.',
-                    [
-                        'field' => 'crash_notification',
-                        'value' => $crashNotificationInput,
-                        'reason' => 'launchd_crash_notification_deferred',
-                    ],
-                    422,
-                );
-            }
-
             if ($image !== null && $runtime === ProcessRuntime::Systemd) {
                 return $this->error(
                     'validation_failed',
@@ -408,6 +401,7 @@ final class ProcessStoreController implements Loggable
             'instance' => $app,
             'workspace' => $workspace,
             'name' => $name,
+            'label' => $label,
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,
@@ -421,6 +415,50 @@ final class ProcessStoreController implements Loggable
             'binds' => $binds,
             'start' => $start,
         ];
+    }
+
+    /**
+     * Optional process display label: omitted returns null (default to key on create).
+     * Present but empty/whitespace or over 255 fails validation.
+     */
+    private function validatedLabel(Request $request): string|JsonResponse|null
+    {
+        if (! $request->exists('label')) {
+            return null;
+        }
+
+        $value = $request->input('label');
+
+        if (! is_string($value)) {
+            return $this->error(
+                'validation_failed',
+                'The process label must be a non-empty string.',
+                ['field' => 'label'],
+                422,
+            );
+        }
+
+        $label = trim($value);
+
+        if ($label === '') {
+            return $this->error(
+                'validation_failed',
+                'The process label must be a non-empty string.',
+                ['field' => 'label'],
+                422,
+            );
+        }
+
+        if (mb_strlen($label) > 255) {
+            return $this->error(
+                'validation_failed',
+                'The process label may not be greater than 255 characters.',
+                ['field' => 'label', 'max' => 255],
+                422,
+            );
+        }
+
+        return $label;
     }
 
     private function authorizeProcessAccess(Node $caller, Node $node, string $permission): ?JsonResponse

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -21,11 +21,11 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function makeProcessRendererApp(array $overrides = []): Project
+function makeProcessRendererApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'beast']);
 
-    return Project::factory()->for($node, 'node')->create(array_merge([
+    return App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
@@ -34,7 +34,7 @@ function makeProcessRendererApp(array $overrides = []): Project
     ], $overrides));
 }
 
-function makeProcessRendererProcess(Project $app, array $overrides = []): Process
+function makeProcessRendererProcess(App $app, array $overrides = []): Process
 {
     return Process::factory()
         ->forOwner($app)
@@ -163,7 +163,7 @@ it('maps the process restart policy to the matching docker restart policy', func
 
 it('keeps always-restart docker processes persistent on app-prod nodes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',

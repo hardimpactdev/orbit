@@ -114,10 +114,14 @@ product authority and are not linted as product docs.
 ## PHP And Laravel
 
 - Use `declare(strict_types=1)` in PHP files.
-- Tests use Pest.
+- Tests use Pest. Monorepo default is Pest 5 / PHPUnit 13 for
+  `apps/gateway`, `apps/docs`, `apps/e2e`, `packages/core`, and `packages/sdk`.
+  `apps/cli` remains on Pest 4 / plugin-laravel 4 while Laravel Zero 12
+  conflicts with Pest 5's Symfony Process ^8.1 requirement; see
+  `apps/docs/content/testing/README.md#pest-versions`.
 - Style, linting, and static analysis use Mago.
 - Refactoring uses Rector.
-- Follow the project-local Boost and Spatie skills in `.agents/skills/`.
+- Follow the app-local Boost and Spatie skills in `.agents/skills/`.
 
 ## Verification
 
@@ -195,8 +199,8 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/boost (BOOST) - v2
 - laravel/mcp (MCP) - v0
 - laravel/pail (PAIL) - v1
-- pestphp/pest (PEST) - v4
-- phpunit/phpunit (PHPUNIT) - v12
+- pestphp/pest (PEST) - v5
+- phpunit/phpunit (PHPUNIT) - v13
 - rector/rector (RECTOR) - v2
 
 ## Skills Activation
@@ -261,7 +265,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
 - Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
 - Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
-- To check environment variables, read the `.env` file directly.
 
 ## Tinker
 
@@ -285,13 +288,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 # Deployment
 
 - Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
-
-=== tests rules ===
-
-# Test Enforcement
-
-- Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
 
 === laravel/core rules ===
 
@@ -336,12 +332,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Librarian
 
-Librarian gives Laravel projects a strict documentation structure for keeping
+Librarian gives Laravel apps a strict documentation structure for keeping
 product intent, code, and tests aligned.
 
 ## Documentation Spine
 
-Projects using Librarian should maintain this docs structure:
+Apps using Librarian should maintain this docs structure:
 
 ```text
 docs/
@@ -380,7 +376,7 @@ Use `librarian:build` after changing docs that affect generated indexes. Use
   tests.
 - Use lowercase kebab-case domain slugs.
 - Prefer local markdown links that resolve inside the docs tree.
-- Remove scaffold prompt text once the project has real content.
+- Remove scaffold prompt text once the app has real content.
 
 === spatie/guidelines-skills rules ===
 

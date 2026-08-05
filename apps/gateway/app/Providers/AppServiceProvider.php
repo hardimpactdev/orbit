@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Contracts\AgentIdeMessageAdapter;
-use App\Contracts\AgentIdeWorkspacePathResolver;
-use App\Contracts\OpenCodeClientFactory;
+use App\Contracts\ConvergesAppRuntimeContainers;
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
@@ -14,16 +12,12 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\ToolDefinition;
 use App\Contracts\UpdateAllGatewayStream;
-use App\Contracts\WorkspaceSourceDrivers;
-use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\Project;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
-use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
-use App\Services\AgentIde\SdkOpenCodeClientFactory;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
@@ -46,6 +40,15 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\Php\AgentPushPhpRuntimeArtifactConverger;
+use App\Services\Processes\PhpProcessStreamConnection;
+use App\Services\Processes\ProcessRuntimeWakeConcurrentRunner;
+use App\Services\Processes\ProcessStreamClock;
+use App\Services\Processes\ProcessStreamConnection;
+use App\Services\Processes\ProcessStreamRuntimeConfig;
+use App\Services\Processes\ProcessStreamSleeper;
+use App\Services\Processes\RuntimeWakeConcurrentRunner;
+use App\Services\Processes\SystemProcessStreamClock;
+use App\Services\Processes\UsleepProcessStreamSleeper;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
@@ -66,10 +69,7 @@ use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Vpn\WgEasyVpnBackend;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
-use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
-use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
-use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\OpenApi\GatewayOpenApi;
 use App\Support\Streaming\NullProgressReporter;
@@ -89,12 +89,9 @@ use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
 use App\Tools\NodeExporterTool;
-use App\Tools\OpenClawTool;
-use App\Tools\OpenCodeCliTool;
 use App\Tools\OrbStackTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
-use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Contracts\Foundation\Application;
@@ -124,7 +121,7 @@ class AppServiceProvider extends ServiceProvider
         $_SERVER['PAO_DISABLE'] ??= '1';
 
         Relation::morphMap([
-            'App\\Models\\App' => Project::class,
+            \App\Models\App::class => App::class,
         ]);
 
         $this->app->scoped(ActivityLogCorrelation::class);
@@ -132,8 +129,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(OperationResultRegistry::class);
         $this->app->afterResolving(DataConfig::class, function (DataConfig $config): void {
             $config->enforceMorphMap([
-                'orbit_app_instance_driver_config' => OrbitAppInstanceDriverConfigData::class,
-                'laravel_cloud_app_instance_driver_config' => LaravelCloudAppInstanceDriverConfigData::class,
+                'orbit_instance_driver_config' => OrbitInstanceDriverConfigData::class,
+                'laravel_cloud_instance_driver_config' => LaravelCloudInstanceDriverConfigData::class,
             ]);
         });
 
@@ -163,12 +160,17 @@ class AppServiceProvider extends ServiceProvider
         });
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
+        $this->app->singleton(ProcessStreamRuntimeConfig::class);
+        $this->app->bind(ProcessStreamSleeper::class, UsleepProcessStreamSleeper::class);
+        $this->app->bind(ProcessStreamClock::class, SystemProcessStreamClock::class);
+        $this->app->bind(ProcessStreamConnection::class, PhpProcessStreamConnection::class);
+        $this->app->bind(
+            RuntimeWakeConcurrentRunner::class,
+            fn (Application $app): RuntimeWakeConcurrentRunner => new ProcessRuntimeWakeConcurrentRunner(
+                forceSequential: $app->runningUnitTests(),
+            ),
+        );
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
-        $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
-        $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
-        $this->app->bind(AgentIdeWorkspacePathResolver::class, fn (Application $app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
-            localExecutor: $app->make(RemoteLocalExecutor::class),
-        ));
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
@@ -199,6 +201,7 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
+        $this->app->bind(ConvergesAppRuntimeContainers::class, AppRuntimeContainerManager::class);
         $this->app->bind(WorkspaceRuntimeContainerManager::class, function (Application $app): WorkspaceRuntimeContainerManager {
             $commands = $app->make(DockerCommandBuilder::class);
             $ca = $app->make(OrbitCaService::class);
@@ -214,14 +217,9 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
-        $this->app->bind(PolyscopeWorkspaceDriver::class, fn (Application $app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
-            branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),
-            localExecutor: $app->make(RemoteLocalExecutor::class),
-        ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(SoloUpstreamClient::class, HttpSoloUpstreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
-        $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(
             ToolDefinitionRegistry::class,
             static function (Application $app): ToolDefinitionRegistry {
@@ -240,10 +238,7 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(MailpitTool::class),
                     $app->make(SeaweedfsTool::class),
                     $app->make(NodeExporterTool::class),
-                    $app->make(PolyscopeServerTool::class),
-                    $app->make(OpenCodeCliTool::class),
                     $app->make(OrbStackTool::class),
-                    $app->make(OpenClawTool::class),
                     $app->make(HermesTool::class),
                     $app->make(LaravelInstallerTool::class),
                     $app->make(CodexAppTool::class),

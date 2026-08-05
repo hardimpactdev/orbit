@@ -77,15 +77,15 @@ it('registers an existing app path from a operator caller through the gateway ap
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $project = $payload['success']['data']['project'] ?? null;
+        $app = $payload['success']['data']['app'] ?? null;
         $instance = $payload['success']['data']['instance'] ?? null;
-        expect($project)
+        expect($app)
             ->toBeArray()
             ->and($instance)
             ->toBeArray()
             ->and($payload['success']['data']['result']['action'])
             ->toBe('adopted')
-            ->and($project['name'])
+            ->and($app['name'])
             ->toBe($name)
             ->and($instance['node'])
             ->toBe('app-dev-1')
@@ -98,8 +98,8 @@ it('registers an existing app path from a operator caller through the gateway ap
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'project' => \\App\\Models\\Project::query()->where('name', '{$name}')->exists(),
-                'instance' => \\App\\Models\\AppInstance::query()
+                'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
+                'instance' => \\App\\Models\\Instance::query()
                     ->whereHas('project', fn (\$query) => \$query->where('name', '{$name}'))
                     ->where('adopted', true)
                     ->exists(),
@@ -109,7 +109,7 @@ it('registers an existing app path from a operator caller through the gateway ap
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'project' => true,
+            'app' => true,
             'instance' => true,
         ]);
     } finally {

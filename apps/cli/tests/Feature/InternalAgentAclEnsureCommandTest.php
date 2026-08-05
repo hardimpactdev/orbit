@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Nodes\LocalAgentAclEnsure;
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -9,6 +10,15 @@ use Orbit\Core\Security\OperationTokenSigner;
 describe('internal agent acl ensure command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        // Host workstations rarely have production agent paths; control
+        // path existence while still executing real setfacl argv via PATH fakes.
+        app()->instance(LocalAgentAclEnsure::class, new LocalAgentAclEnsure(
+            directoryExists: static fn (string $path): bool => ! str_starts_with($path, '/home/orbit/orbit'),
+            pathExists: static fn (string $path): bool => match ($path) {
+                '/home/orbit/.config/orbit/config.json', '/home/orbit/.local/bin/orbit' => true,
+                default => false,
+            },
+        ));
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
@@ -18,6 +28,7 @@ describe('internal agent acl ensure command', function (): void {
 
     afterEach(function (): void {
         putenv('PATH='.($_ENV['ORBIT_AGENT_ACL_ORIGINAL_PATH'] ?? ''));
+        app()->forgetInstance(LocalAgentAclEnsure::class);
 
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-agent-acl-bin-*');
 
@@ -64,13 +75,20 @@ describe('internal agent acl ensure command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('setfacl --version')
             ->toContain(
-                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
             )
             ->toContain(
-                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json',
             )
             ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit')
-            ->not->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit-agent')
+            // install.json is optional and applied only when present.
+            ->not->toContain(
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+            )
+            // Optional checkout paths are not bulk-applied with the required set.
+            ->not->toContain(
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin',
+            )
             ->not->toContain('apt-get update');
     });
 
@@ -94,13 +112,54 @@ describe('internal agent acl ensure command', function (): void {
             ->toContain('sudo apt-get update')
             ->toContain('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y acl')
             ->toContain(
-                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
             )
             ->toContain(
-                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json',
             )
+            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit');
+    });
+
+    it('skips optional checkout paths when they are absent without failing', function (): void {
+        $bin = install_agent_acl_fake_bin(setfaclExitCode: 0, sudoExitCode: 0);
+
+        $exitCode = Artisan::call('internal:agent-acl:ensure', [
+            '--operation-token' => agent_acl_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $data = agent_acl_success_data();
+        $log = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data['optional_directory_paths_skipped'] ?? null)
+            ->toBeArray()
+            // Required installed CLI path is always protected.
+            ->and($log)
             ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit')
-            ->not->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit-agent');
+            // Absent optional checkout paths must not appear as bulk required targets.
+            ->and($log)
+            ->not->toContain(
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config',
+            );
+    });
+
+    it('fails closed when required installed-path ACL application fails', function (): void {
+        install_agent_acl_fake_bin(setfaclExitCode: 0, sudoExitCode: 1);
+
+        $exitCode = Artisan::call('internal:agent-acl:ensure', [
+            '--operation-token' => agent_acl_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->not->toBeNull()->and(
+                (string) ($payload['error']['message'] ?? $payload['error']['code'] ?? ''),
+            )->toContain('stage=directory_acl')->and((string) json_encode($payload))
+            ->not->toContain('optional_directory_acl');
     });
 });
 

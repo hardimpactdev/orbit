@@ -20,14 +20,14 @@ These rules cover who owns process configuration and how process definitions are
 - `process:update --name=<new-slug>` is the public rename path when the selected
   runtime/backend can safely replace derived unit identity.
 - Process definitions may be scoped to a node, concrete instance, or
-  workspace. An instance-scoped definition belongs to the `AppInstance`, never only
-  to the project. A workspace-scoped definition belongs to a workspace
+  workspace. An instance-scoped definition belongs to the `Instance`, never only
+  to the app. A workspace-scoped definition belongs to a workspace
   that already identifies its instance. The scope selects the serving node
   and default runtime context.
-- Canonical instance identity stores and returns both the logical `project` slug
+- Canonical instance identity stores and returns both the logical `app` slug
   and the concrete `instance` slug. Public commands prefer
-  `--instance=<project.instance>`. A bare project slug is shorthand only when that
-  project has exactly one instance; otherwise commands fail with
+  `--instance=<app.instance>`. A bare app slug is shorthand only when that
+  app has exactly one instance; otherwise commands fail with
   `error.code=validation_failed`, `error.meta.field=instance`, and
   `error.meta.reason=instance_required`.
 - Process definitions have a stable order inside their owning scope.
@@ -64,12 +64,15 @@ These rules describe how runtime units are derived from process definitions.
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
-  rendering context supplies per-instance fields such as node/project/instance/workspace
+  rendering context supplies per-instance fields such as node/app/instance/workspace
   identity, path, URL, environment, ports, and volumes.
-- Runtime unit names use Orbit-owned backend-safe names such as
-  `orbit_<scope>_<process>`. Instance/workspace identities include both project
-  and instance slugs so two instances of one project cannot collide. When process identity is renamed, Orbit replaces
-  derived runtime units and removes names from the previous identity instead of leaving
+- Runtime unit names for instance and workspace units use the five-part form
+  `orbit_<app>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_docs_development_main_vite`). Node-owned units use the bare process
+  slug as the unit name. Including both app and instance slugs prevents two
+  instances of one app from colliding. When process identity is renamed,
+  Orbit replaces derived runtime units and removes names from the previous
+  identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
@@ -83,33 +86,28 @@ Restart policy is process configuration. Each derived main-instance or workspace
 
 ### Crash notification policy
 
-Process definitions may opt in to crash notification. When the policy is enabled, a `crashed` event resolves the effective agent IDE and notifies the active session when one is available. Crash notification delivery is best-effort and must not prevent the event from being recorded.
+Process definitions store a crash-notification policy. The only supported
+value is `none`. Orbit does not deliver crash notifications through an agent
+IDE or other external adapter. Rows that still store a removed `agent_ide`
+policy are cleared to `none` by the Release A storage cleanup migration.
 
-Launchd-backed units reject `crash_notification=agent_ide` in this slice with
-the validation reason `launchd_crash_notification_deferred`. Launchd can
-restart jobs, but Orbit needs an owned wrapper or equivalent hook before it can
-emit stable gateway-authenticated `crashed` events for macOS host-command
-units.
+### Crash event history
 
-### Crash event intake
-
-These rules describe the narrow internal path that delivers crash events from nodes to the gateway.
-
-- Crash events come from a narrow internal app-host-to-gateway intake path
-  emitted by Orbit-managed runtime hooks.
-- Crash intake accepts only authenticated active app-host identities and only
-  `crashed` events.
-- The intake is idempotent by event id.
-- The intake path is not a CLI command contract.
+Process lifecycle history may still record start/stop/crash observations that
+operators inspect through process list and show surfaces. Crash history is not
+an operator command for posting events and is not tied to external notification delivery.
 
 ### Lifecycle events
 
 These rules describe the durable history that records process state transitions.
 
 - Process lifecycle events are durable history, not process-unit configuration.
-  Orbit records `started`, `stopped`, and `crashed` events for SSE consumers,
-  CLI streams, and automation.
-- `started` and `stopped` events are recorded by successful gateway service lifecycle actions.
+  Orbit records transitional `starting`/`stopping`/`restarting`, terminal
+  `started`/`stopped`/`crashed`, and `failed` (status `unknown`) for gateway
+  SSE consumers, list surfaces, and automation.
+- Gateway start/stop/restart and normal creation/convergence start paths record
+  the transitional event before the runtime call and the terminal event after
+  success or failure (including thrown driver errors).
 - `crashed` events are recorded when the runtime hook on the node reports an exit.
 
 ### Read commands
@@ -118,7 +116,10 @@ These rules describe what default process read commands cover and where live dat
 
 - Default process read commands report gateway configuration and the latest durable process events.
 - They do not SSH to nodes or run live process manager probes.
-- Live runtime verification belongs to [`doctor --family=process`](process-doctor.md). Live event delivery belongs to the internal event stream.
+- Live runtime verification belongs to [`doctor --family=process`](process-doctor.md).
+  Live toolbar delivery is gateway SSE
+  [`GET /api/processes/stream`](internal/1_process-event-stream/process-event-stream.md)
+  (not client polling).
 
 ### Runtime lifecycle commands
 
@@ -273,7 +274,7 @@ units do not receive `ORBIT_*` lifecycle variables by contract.
 | `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path visible to the process | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
 
 Laravel Vite's `detectTls` option probes Herd/Valet certificate locations. Orbit
-does not require per-project cert copies in those layouts. Instead, Orbit
+does not require per-app cert copies in those layouts. Instead, Orbit
 exposes canonical `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, and
 `VITE_DEV_SERVER_KEY` / `VITE_DEV_SERVER_CERT` so standard Laravel Vite config
 can use the env-provided certificate bridge while remaining compatible with
@@ -291,13 +292,13 @@ Equivalent package-manager or framework adapter commands are valid when they pro
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
 
-## Crash Event Delivery
+## Crash Event History
 
-The crash hooks that Orbit manages on nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
-
-When the runtime unit name resolves to active process configuration, the event is linked to the process, project, concrete instance, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
-
-Agent IDE crash notification is a consumer of the recorded crash event. For `agent_ide`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
+With `crash_notification=none`, Orbit does not install external crash hooks or
+post crash notifications to third-party tools. Operators still use process list,
+logs, and doctor to observe unit health. Crash rows that remain in
+storage after Release A cleanup are inspection-only; there is no active product
+command that ingests or fans out crash notifications.
 
 ## Commands
 

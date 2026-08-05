@@ -1,0 +1,2 @@
+=== tool:show opencode-cli --node=agent services1 beast mini NMBP main1 database1 gateway ingress1 --live ===
+=== tool:show polyscope-server --node=agent services1 beast mini NMBP main1 database1 gateway ingress1 --live ===

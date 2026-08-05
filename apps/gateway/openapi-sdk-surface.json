@@ -72,56 +72,56 @@
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
-      "operation": "GET /projects/{project}/instances",
+      "operation": "GET /apps/{app}/instances",
       "operation_id": "appInstance.index",
       "classification": "public_sdk",
-      "group": "app_instances",
+      "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
       "follow_up": "Add a dedicated PHP SDK request class for listing app instances."
     },
     {
-      "operation": "POST /projects/{project}/instances",
+      "operation": "POST /apps/{app}/instances",
       "operation_id": "appInstance.store",
       "classification": "public_sdk",
-      "group": "app_instances",
+      "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
       "follow_up": "Add a dedicated PHP SDK request class for creating app instances."
     },
     {
-      "operation": "GET /projects/{project}/instances/{instance}",
+      "operation": "GET /apps/{app}/instances/{instance}",
       "operation_id": "appInstance.show",
       "classification": "public_sdk",
-      "group": "app_instances",
+      "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
       "follow_up": "Add a dedicated PHP SDK request class for showing an app instance."
     },
     {
-      "operation": "DELETE /projects/{project}/instances/{instance}",
+      "operation": "DELETE /apps/{app}/instances/{instance}",
       "operation_id": "appInstance.destroy",
       "classification": "public_sdk",
-      "group": "app_instances",
+      "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
       "follow_up": "Add a dedicated PHP SDK request class for deleting an app instance."
     },
     {
-      "operation": "GET /projects/{project}/instances/{instance}/env",
+      "operation": "GET /apps/{app}/instances/{instance}/env",
       "operation_id": "appInstanceEnv.index",
       "classification": "deferred_optional",
-      "group": "app_instance_env",
+      "group": "instance_env",
       "reason": "Instance env inspection is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
-      "operation": "POST /projects/{project}/instances/{instance}/env",
+      "operation": "POST /apps/{app}/instances/{instance}/env",
       "operation_id": "appInstanceEnv.store",
       "classification": "deferred_optional",
-      "group": "app_instance_env",
+      "group": "instance_env",
       "reason": "Instance env mutation is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
-      "operation": "GET /projects/{project}/instances/{instance}/env/render",
+      "operation": "GET /apps/{app}/instances/{instance}/env/render",
       "operation_id": "appInstanceEnv.render",
       "classification": "deferred_optional",
-      "group": "app_instance_env",
+      "group": "instance_env",
       "reason": "Rendered env output is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
@@ -240,14 +240,14 @@
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
-      "operation": "POST /cloudflare/cache-rules/{project}",
+      "operation": "POST /cloudflare/cache-rules/{app}",
       "operation_id": "cloudflare.addCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
-      "operation": "DELETE /cloudflare/cache-rules/{project}",
+      "operation": "DELETE /cloudflare/cache-rules/{app}",
       "operation_id": "cloudflare.removeCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
@@ -435,13 +435,6 @@
       "reason": "Frame publishing is target-agent to gateway protocol traffic, not operator or dashboard SDK surface."
     },
     {
-      "operation": "POST /events/process",
-      "operation_id": "processEventIngest",
-      "classification": "internal_only",
-      "group": "process_event_ingest",
-      "reason": "Process event ingestion is node/runtime-to-gateway telemetry, not public SDK surface."
-    },
-    {
       "operation": "GET /runtime-activations/{type}/{id}",
       "operation_id": "runtime-activations.show",
       "classification": "internal_only",
@@ -455,6 +448,14 @@
       "group": "process_logs",
       "reason": "Process log-stream start is a public lifecycle endpoint for CLI and dashboard clients to initiate operation WebSocket log tails.",
       "follow_up": "Add a dedicated PHP SDK request class for starting process log operation streams."
+    },
+    {
+      "operation": "GET /processes/stream",
+      "operation_id": "processesStream",
+      "classification": "public_sdk",
+      "group": "process_stream",
+      "reason": "Browser toolbar process lifecycle SSE is public SDK surface with app-only selector, durable DB cursor, and native EventSource subscription.",
+      "follow_up": "TypeScript SDK exposes subscribeProcessStream; a dedicated PHP SDK stream client remains optional."
     },
     {
       "operation": "GET /s3/credentials",

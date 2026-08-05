@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -32,13 +32,13 @@ This command follows the shared
 | `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `all` | `--all` | Never. | `--node`, `--self`, `--instance`, `--workspace`, `--fix`, `--restore`, or `--adopt` is present. | `false`. | Selects verify-only fleet mode across eligible active role-bearing nodes. This is the only fleet mode. |
-| `instance` | `--instance` | Never. | A selected family contract forbids instance scoping. | Instances selected by each family contract after authorization and node/workspace filters. | Gateway-known `<project.instance>` selector; a bare project is accepted only when it resolves unambiguously to one concrete instance. |
+| `instance` | `--instance` | Never. | A selected family contract forbids instance scoping. | Instances selected by each family contract after authorization and node/workspace filters. | Gateway-known `<app.instance>` selector; a bare app is accepted only when it resolves unambiguously to one concrete instance. |
 | `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/instance filters. | Gateway-known workspace name, resolved inside instance scope when applicable. |
 | `fix` | `--fix` | Never. | `--restore` or `--adopt` is present. | `false`. | Selects interactive resolution mode. Every attempted action must be declared safe by its family doctor contract. |
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `dry_run` | `--dry-run` | Never. | No `--restore` or `--adopt` flag is present. | `false`. | Returns planned bulk actions without invoking family fixers or adopters. |
-| `json` | `--json` | Optional. | `--stream-json` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `json` | `--json` | Optional. | `--stream-json` or `--fix` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. Mutually exclusive with `--fix` and `--stream-json`. |
 | `stream_json` | `--stream-json` | Optional. | `--json` or `--fix` is present. | `false`. | Selects the stream JSON renderer and non-interactive input mode. |
 
 ## Target Eligibility and Category Set
@@ -158,13 +158,47 @@ an authorization concern, not repairable drift in that record.
 
 ### Result Classification Rules
 
-- After the selected mode completes with no remaining drift or probe errors, return healthy success.
+- After the selected mode completes with no remaining issues or probe errors, return healthy success.
 - After the mode completes with remaining issues, return a drift failure.
 - In verify mode, do not change gateway configuration or node reality.
 - In resolution modes (`interactive`, `restore`, `adopt`), record every attempted, completed, skipped, failed, or conflicted action.
-- In dry-run mode, record planned actions with `status=planned`, leave issues unresolved, and return command success because no mutation was attempted.
-- A family probe error prevents a healthy result.
+- For node-scoped `restore`, Orbit runs a bounded multi-pass loop: after each
+  apply pass, re-probe the same selected node/families/key/instance/workspace
+  fence and apply any newly restorable genuine drift. Stop when no restorable
+  genuine drift remains, when the restorable set is unchanged after a pass
+  (`stop_reason=no_progress`), or when `max_passes` is reached.
+- That final fresh observation is authoritative. An earlier action receipt with
+  `status=completed`, `created`, or `updated` must not remove freshly observed
+  remaining findings or allow `healthy=true` while issues remain.
+- Restore may attach richer per-family action annotations (for example proxy,
+  WebSocket, or DNS verification summaries) that mark matching actions as
+  failed when drift remains. Those annotations never hide fresh issues.
+- In dry-run mode, record planned actions with `status=planned`, leave issues unresolved, and return command success because no mutation was attempted. Dry-run and verify must not apply fixers/adopters or re-probe for resolution verification.
+- A family probe error prevents a healthy result. Remote-shell failures and
+  agent-push or local-executor transport exceptions both count: the failed
+  family emits an Unverifiable `*.probe_failed` issue (or a family-specific
+  equivalent) with disposition `blocked_inspection`, and later families continue for the same target.
 - Exception: a family contract may define more specific recoverable behavior for that family's probe errors.
+- Every emitted issue code must be registered in the family-owned Doctor issue
+  catalog with disposition and family ownership. Genuine drift must declare a
+  restore action. Unknown codes fail closed and never invent classification
+  from name or substring heuristics.
+
+### Issue Dispositions
+
+Public issue disposition is independent of generic `kind`. Automation uses
+disposition and `restore_action`, not summary prose.
+
+| Disposition | Value | Restore behavior |
+| --- | --- | --- |
+| Genuine drift | `genuine_drift` | Safe deterministic restore is declared; node-scoped `--restore` may apply it across multi-pass convergence. |
+| Blocked inspection/control | `blocked_inspection` | Report the blocker/prerequisite; do not invent a repair. |
+| Invalid gateway intent | `invalid_intent` | Report only; never auto-repair by guessing intent. |
+| Runtime incident | `runtime_incident` | Report only when no safe deterministic Doctor recovery path exists. |
+
+Generic issue kinds remain:
+
+- `missing`, `extra`, `divergent`, `unverifiable`
 
 ### Scope Boundaries
 
@@ -172,10 +206,11 @@ an authorization concern, not repairable drift in that record.
 - Invent a state family outside the stable family keys.
 - Treat backend names such as Caddy, systemd, UFW, or package
   managers as public doctor families.
-- Create new fleet membership, projects, instances, workspaces, processes, schedules, tools,
+- Create new fleet membership, apps, instances, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.
-- Hide remaining drift after a failed restore/adopt action.
+- Hide remaining drift after a restore/adopt action receipt, including when the
+  action reports completed, created, or updated.
 
 Successful update commands are not doctor convergence; `doctor` must run its own selected family probes before reporting a healthy result.
 
@@ -213,6 +248,8 @@ Generic doctor issue kinds describe the relationship between gateway configurati
 - `unverifiable`: doctor cannot determine reality because a prerequisite is unavailable.
 
 Family doctor contracts define the family-specific cases that produce these kinds.
+Disposition (above) is the public outcome classification; kinds alone do not
+decide restore eligibility.
 
 ## Renderer Contracts
 
@@ -233,6 +270,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
 | Dry-run mode invalid | `--dry-run` is supplied without `--restore` or `--adopt`. | Failure before probes |
 | Ambiguous JSON renderer | `--json` and `--stream-json` are supplied together. | Failure before gateway I/O |
+| Interactive JSON invalid | `--json` and `--fix` are supplied together. | `validation_failed` before gateway I/O |
 | Interactive stream invalid | `--fix` and `--stream-json` are supplied together. | Failure before gateway I/O |
 
 The shared exit status policy applies: `0` for healthy success, `1` for
@@ -256,12 +294,12 @@ Converted family doctor contracts:
 - [`node-doctor.md`](../../../1_node/node-doctor.md)
 - [`tool-doctor.md`](../../../3_tool/tool-doctor.md)
 - [`firewall-doctor.md`](../../../4_firewall/firewall-doctor.md)
-- [`instance-doctor.md`](../../../5_project/instance-doctor.md)
+- [`instance-doctor.md`](../../../5_app/instance-doctor.md)
 - [`workspace-doctor.md`](../../../6_workspace/workspace-doctor.md)
 - [`process-doctor.md`](../../../7_process/process-doctor.md)
 - [`proxy-doctor.md`](../../../8_proxy/proxy-doctor.md)
 - [`schedule-doctor.md`](../../../9_schedule/schedule-doctor.md)
-- [`database-doctor.md`](../../../18_database/database-doctor.md)
+- [`database-doctor.md`](../../../17_database/database-doctor.md)
 
 ## Test Mapping
 
@@ -273,8 +311,11 @@ Required contract tests:
 | `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI default-node payload resolution, caller fallback payload, `--all` payload, `--node=all` validation, renderer compatibility for `--json`, `--stream-json`, ambiguous renderer rejection, and `--fix --stream-json` rejection. |
 | `apps/cli/tests/Feature/Commands/Operation/DoctorFixCommandTest.php` | CLI interactive `--fix` prompt flow, cancellation, selected issue forwarding, and `--json --fix` rejection. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for instance/workspace/proxy families. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorCompleteRolesReportingTest.php` | Additive `roles` arrays on single-node scope and fleet node summaries while preserving primary `role` and fleet `scope.role=fleet`. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, multi-pass restore convergence with precise action counts, and family dispatch through the in-process runner. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorIssueCatalogInventoryTest.php` | Family-owned issue catalog inventory: every family-doctor doc code is classified, genuine drift has a restore action, unknown codes fail closed, and no name-heuristic fallback remains. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorRestoreConvergenceTest.php` | Bounded multi-pass restore loop: continues until clean, stops on no-progress, and respects max passes. |
 
 Test mapping for each family lives in its family doctor contract, such as
 [`node-doctor.md`](../../../1_node/node-doctor.md#test-mapping).

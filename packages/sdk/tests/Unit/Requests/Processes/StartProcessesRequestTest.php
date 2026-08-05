@@ -29,6 +29,15 @@ it('targets the process start gateway endpoint with optional filters', function 
         ]);
 });
 
+it('serializes the app hostname selector on start', function (): void {
+    $request = new StartProcessesRequest(app: 'test.app.example', name: 'vite');
+
+    expect($request->body()->all())->toBe([
+        'app' => 'test.app.example',
+        'name' => 'vite',
+    ]);
+});
+
 it('omits null request body values', function (): void {
     $request = new StartProcessesRequest(instance: 'docs', workspace: null, name: null);
 

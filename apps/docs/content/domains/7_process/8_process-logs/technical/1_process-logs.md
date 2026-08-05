@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:logs [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -26,8 +26,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
 | `node` | `--node` | Required when reading logs for a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:logs`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:logs`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:logs`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:logs`; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Log Streaming Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the process definition. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the process definition. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
 4. Open a typed `internal:process-logs` local-executor request through the
@@ -70,7 +70,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | The named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
 | Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
+| Instance required | A bare app selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Log read failed | The gateway cannot read logs from the resolved node or instance serving node process manager. | Failure (`error.code=process.log_read_failed`). |
 
 ## Doctor Relationship
@@ -88,7 +88,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:GET /processes/{name}/log` for bounded reads; `api:POST /processes/{name}/log-stream` for follow operation creation |
 | Effect | `read` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Subject | Resolved `Node` for node-owned processes or `Instance` for instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node` (string or null), `instance` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
 | Description | derived |
 

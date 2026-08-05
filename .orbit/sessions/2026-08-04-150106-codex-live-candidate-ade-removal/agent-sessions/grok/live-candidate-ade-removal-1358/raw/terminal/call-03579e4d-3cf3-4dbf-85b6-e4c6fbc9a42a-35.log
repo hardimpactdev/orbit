@@ -1,0 +1,16 @@
+
+added 35 packages, and audited 36 packages in 548ms
+
+6 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+Version 5.9.3
+> Composer\Config::disableProcessTimeout
+Pest profiles: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates/profiles/2026-08-04T12-41-54Z-a9fb5932d4b7
+QUALITY_CHECK_EXIT=0

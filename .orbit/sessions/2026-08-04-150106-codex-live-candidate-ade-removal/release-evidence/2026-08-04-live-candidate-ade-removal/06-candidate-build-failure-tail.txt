@@ -1,0 +1,40 @@
+#9 CACHED
+
+#10 [application  4/17] COPY apps/gateway/database /srv/orbit/apps/gateway/database
+#10 CACHED
+
+#11 [application  5/17] COPY apps/gateway/public /srv/orbit/apps/gateway/public
+#11 CACHED
+
+#12 [application  3/17] COPY apps/gateway/config /srv/orbit/apps/gateway/config
+#12 CACHED
+
+#13 [base 2/2] RUN apt-get update     && apt-get install -y --no-install-recommends         bash         ca-certificates         curl         git         iputils-ping         openssh-client         procps         sudo         tini         unzip         zip         gnupg     && install -m 0755 -d /etc/apt/keyrings     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc     && chmod a+r /etc/apt/keyrings/docker.asc     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends         docker-ce-cli         docker-compose-plugin     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/bin/composer     && chmod 755 /usr/bin/composer     && install-php-extensions bcmath curl intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip     && groupadd --system orbit     && useradd --system --gid orbit --create-home --home-dir /home/orbit --shell /bin/bash orbit     && printf '%s\n' 'max_execution_time=0' > /usr/local/etc/php/conf.d/orbit-gateway.ini     && install -d -m 700 -o orbit -g orbit /home/orbit/.config/orbit     && rm -rf /var/lib/apt/lists/*
+#13 CACHED
+
+#14 [application  6/17] COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+#14 CACHED
+
+#15 [application  1/17] COPY apps/gateway/app /srv/orbit/apps/gateway/app
+#15 CACHED
+
+#16 [application  2/17] COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+#16 CACHED
+
+#17 [application  8/17] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+#17 ERROR: failed to calculate checksum of ref lbd1inkwmo32mk02j0l7xffv0::6ux96omf782ghgzmnia9xvevw: "/apps/gateway/resources/node-scripts": not found
+
+#18 [dependencies 1/5] WORKDIR /srv/orbit/apps/gateway
+#18 CANCELED
+------
+ > [application  8/17] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts:
+------
+Dockerfile:64
+--------------------
+  62 |     COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+  63 |     COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+  64 | >>> COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+  65 |     COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+  66 |     COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+--------------------
+ERROR: failed to build: failed to solve: failed to compute cache key: failed to calculate checksum of ref lbd1inkwmo32mk02j0l7xffv0::6ux96omf782ghgzmnia9xvevw: "/apps/gateway/resources/node-scripts": not found

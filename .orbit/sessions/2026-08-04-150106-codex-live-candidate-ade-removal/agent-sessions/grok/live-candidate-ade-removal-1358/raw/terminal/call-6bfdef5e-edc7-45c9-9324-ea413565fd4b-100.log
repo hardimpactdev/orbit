@@ -1,0 +1,2 @@
+bin/orbit-e2e-artisan
+apps/e2e/composer.json:3:    "name": "hardimpactdev/orbit-e2e",

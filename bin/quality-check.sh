@@ -153,6 +153,7 @@ REVERB_COMPONENT_DEMAND=1
 CARGO_COMPONENT_DEMAND=3
 CORE_COMPONENT_DEMAND=1
 SDK_COMPONENT_DEMAND=1
+SDK_TYPESCRIPT_COMPONENT_DEMAND=1
 
 GATEWAY_STATIC_MAGO_THREADS=$(((GATEWAY_COMPONENT_DEMAND - 1) / 3))
 [ "$GATEWAY_STATIC_MAGO_THREADS" -lt 1 ] && GATEWAY_STATIC_MAGO_THREADS=1
@@ -183,6 +184,7 @@ QUALITY_CHECK_COMPONENT_SPECS=(
     'apps/agent|CARGO_COMPONENT_DEMAND|agent'
     'apps/macos|CARGO_COMPONENT_DEMAND|macos'
     'packages/sdk|SDK_COMPONENT_DEMAND|sdk'
+    'packages/sdk-typescript|SDK_TYPESCRIPT_COMPONENT_DEMAND|sdk_typescript'
     'packages/core|CORE_COMPONENT_DEMAND|core'
 )
 
@@ -280,6 +282,7 @@ PROGRESS_AREAS=(
     apps/macos
     packages/core
     packages/sdk
+    packages/sdk-typescript
 )
 
 PROGRESS_DIM=$'\e[38;5;242m'
@@ -341,6 +344,9 @@ quality_check_label_area() {
             ;;
         core_*)
             echo packages/core
+            ;;
+        sdk_typescript_*)
+            echo packages/sdk-typescript
             ;;
         sdk_*)
             echo packages/sdk
@@ -811,6 +817,8 @@ PACKAGE_BACKGROUND_CHECK_LABELS=(
     core_mago_format
     sdk_mago_format
     sdk_pest
+    sdk_typescript_typecheck
+    sdk_typescript_build
 )
 
 BACKGROUND_CHECK_LABELS=(
@@ -856,6 +864,8 @@ BACKGROUND_CHECK_LABELS=(
     sdk_rector
     sdk_mago_format
     sdk_pest
+    sdk_typescript_typecheck
+    sdk_typescript_build
 )
 
 CHECK_LABELS=(
@@ -902,6 +912,8 @@ CHECK_LABELS=(
     docs_pest
     core_pest
     sdk_pest
+    sdk_typescript_typecheck
+    sdk_typescript_build
 )
 
 if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
@@ -1292,6 +1304,11 @@ sdk_component() {
     run_subgate sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --profile --compact'
 }
 
+sdk_typescript_component() {
+    run_subgate sdk_typescript_typecheck bash -lc 'cd packages/sdk-typescript && npm run typecheck'
+    run_subgate sdk_typescript_build bash -lc 'cd packages/sdk-typescript && npm run build'
+}
+
 core_component() {
     run_subgate core_mago_analyze env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
     run_subgate core_mago_lint env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
@@ -1310,7 +1327,7 @@ quality_check_progress_start_ticker
 
 admit_components "${QUALITY_CHECK_COMPONENT_SPECS[@]}"
 
-wait_for_component_labels gateway cli docs e2e reverb agent macos sdk core
+wait_for_component_labels gateway cli docs e2e reverb agent macos sdk sdk_typescript core
 
 quality_check_progress_render_final
 

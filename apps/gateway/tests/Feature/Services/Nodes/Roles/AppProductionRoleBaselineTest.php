@@ -37,7 +37,7 @@ function appProdBaselineAssignment(Node $node): NodeRoleAssignment
 }
 
 describe('AppProductionRoleBaseline host toolchain', function (): void {
-    it('converges php-cli with expected_state installed', function (): void {
+    it('converges php-cli with expected_state installed and standard variant', function (): void {
         $node = appProdBaselineNode();
         $assignment = appProdBaselineAssignment($node);
 
@@ -54,7 +54,9 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->not
             ->toBeNull()
             ->and($tool->expected_state)
-            ->toBe('installed');
+            ->toBe('installed')
+            ->and($tool->config['variant'] ?? null)
+            ->toBe('standard');
     });
 
     it('converges composer with expected_state installed', function (): void {

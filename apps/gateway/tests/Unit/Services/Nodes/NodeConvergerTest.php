@@ -82,9 +82,11 @@ describe('NodeConverger', function (): void {
             ])
             ->and(implode("\n", $shell->scripts))
             ->not->toContain('doctor --restore')->and(implode("\n", $shell->scripts))
-            ->not->toContain(' orbit doctor ')->and($shell->probeScripts())->toHaveCount(2)->and(
-                $shell->repairScripts(),
-            )->toHaveCount(7);
+            ->not->toContain(' orbit doctor ')
+            // Capability batch probes plus dedicated php-cli runtime probes.
+            ->and($shell->probeScripts())->toHaveCount(4)
+            // One install/repair path per app-dev baseline tool (7 tools).
+            ->and($shell->repairScripts())->toHaveCount(7);
     });
 
     it('keeps setup drift visible when repair fails', function (): void {
@@ -177,6 +179,10 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+
+        if ($this->isPhpCliRuntimeProbe($script)) {
+            return $this->phpCliRuntimeProbeResult();
+        }
 
         if ($this->isProbeScript($script)) {
             return $this->probeResult($node, $options);
@@ -353,7 +359,31 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
 
     private function isProbeScript(string $script): bool
     {
-        return str_contains($script, '# orbit-tool-probe:capability');
+        return str_contains($script, '# orbit-tool-probe:capability') || $this->isPhpCliRuntimeProbe($script);
+    }
+
+    private function isPhpCliRuntimeProbe(string $script): bool
+    {
+        return str_contains($script, 'probe_minor') && str_contains($script, 'expected_variant=');
+    }
+
+    private function phpCliRuntimeProbeResult(): RemoteShellResult
+    {
+        if (! ($this->installed['php-cli'] ?? false)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "8.5|8.5.8|0||0|0|0|0\n8.4|8.4.21|0||0|0|0|0\n8.3|8.3.31|0||0|0|0|0\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: "8.5|8.5.8|1|8.5.8|0|0|0|0\n8.4|8.4.21|1|8.4.21|0|0|0|0\n8.3|8.3.31|1|8.3.31|0|0|0|0\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 
     private function toolForRepairScript(string $script): ?string
@@ -428,7 +458,13 @@ final class NodeConvergerFailingRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        if (str_contains($script, '# orbit-tool-probe:capability')) {
+        // Probe scripts (including dedicated php-cli runtime probes) report missing;
+        // install/repair scripts still fail so setup drift stays visible.
+        if (
+            str_contains($script, '# orbit-tool-probe:capability')
+            || str_contains($script, 'probe_minor')
+            && str_contains($script, 'expected_variant=')
+        ) {
             return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
         }
 

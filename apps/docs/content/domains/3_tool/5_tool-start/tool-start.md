@@ -1,13 +1,15 @@
 # `orbit tool:start`
 
-Start a lifecycle-capable tool on a target node.
+[Back to Tool commands.](../README.md)
+
+Start a lifecycle-capable tool on a target node. Only tools whose catalog
+definition declares `start` accept this verb (today: `orbstack` on macOS).
 
 ## Usage
 
 ```bash
 orbit tool:start <tool> --node=<node>
 orbit tool:start orbstack --node=<mac-node>
-orbit tool:start opencode-cli --instance=<project.instance>
 orbit tool:start orbstack --node=<mac-node> --json
 ```
 
@@ -25,7 +27,7 @@ fallback.
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--instance=<project.instance>` resolves the target node from an instance selector.
+- `--instance=<app.instance>` resolves the target node from an instance selector.
 - `--json` returns a single JSON envelope.
 - `--stream-json` streams progress frames.
 

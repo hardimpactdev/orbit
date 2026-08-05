@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +68,130 @@ it('streams doctor verify progress from the gateway', function (): void {
         ->toContain('Checking node')
         ->and($content)
         ->toContain('event: complete');
+});
+
+it('omits full doctor aggregates from intermediate compact_progress frames', function (): void {
+    createDoctorRunStreamCallerNode();
+
+    $full = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'self' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    )->streamedContent();
+
+    $compact = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'self' => true,
+            'compact_progress' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    )->streamedContent();
+
+    $compactFrames = doctorRunStreamFrames($compact);
+    $stepFrames = array_values(array_filter(
+        $compactFrames,
+        static fn (array $frame): bool => $frame['event'] === 'step',
+    ));
+    $terminalFrame = collect($compactFrames)->last();
+    $terminalDoctor = doctorRunStreamTerminalDoctor($terminalFrame);
+
+    expect($compact)
+        ->toContain('"compact_progress":true')
+        ->and($compact)
+        ->toContain('event: complete')
+        ->and(strlen($compact))
+        ->toBeLessThan(strlen($full))
+        ->and(collect($stepFrames)->every(
+            static fn (array $frame): bool => ($frame['data']['compact_progress'] ?? null) === true
+            && ! array_key_exists('doctor', $frame['data']),
+        ))
+        ->toBeTrue()
+        ->and($terminalFrame['event'] ?? null)
+        ->toBe('complete')
+        ->and($terminalDoctor)
+        ->toBeArray()
+        ->and($terminalDoctor)
+        ->toHaveKeys(['issues', 'summary'])
+        ->and($terminalDoctor['issues'])
+        ->toBeArray()
+        ->and($terminalDoctor['summary'])
+        ->toBeArray();
+});
+
+it('includes full doctor aggregate on compact_progress error terminal frames', function (): void {
+    createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
+    createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+    createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+
+    app()->instance(RemoteShell::class, new FleetDoctorRemoteShell(failingNodeName: 'app-prod-1'));
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['proxy'],
+            'mode' => 'verify',
+            'all' => true,
+            'compact_progress' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $content = $response->streamedContent();
+    $frames = doctorRunStreamFrames($content);
+    $stepFrames = array_values(array_filter(
+        $frames,
+        static fn (array $frame): bool => $frame['event'] === 'step',
+    ));
+    $terminalFrame = collect($frames)->last();
+    $terminalDoctor = doctorRunStreamTerminalDoctor($terminalFrame);
+
+    expect($content)
+        ->toContain('"compact_progress":true')
+        ->and(collect($stepFrames)->every(
+            static fn (array $frame): bool => ($frame['data']['compact_progress'] ?? null) === true
+            && ! array_key_exists('doctor', $frame['data']),
+        ))
+        ->toBeTrue()
+        ->and($terminalFrame['event'] ?? null)
+        ->toBe('error')
+        ->and($terminalFrame['data']['data']['code'] ?? null)
+        ->toBe('drift_detected')
+        ->and($terminalDoctor)
+        ->toBeArray()
+        ->and($terminalDoctor)
+        ->toHaveKeys(['issues', 'summary'])
+        ->and($terminalDoctor['issues'])
+        ->not
+        ->toBeEmpty()
+        ->and(collect($terminalDoctor['issues'])->pluck('key')->all())
+        ->toContain('proxy.node_probe_failed');
 });
 
 it('streams doctor panel snapshots before and during node-scoped probes', function (): void {
@@ -168,7 +292,7 @@ it('streams partial fleet doctor snapshots with completed-node issues on node do
 it('streams fleet per-node completed and total progress while a node is running', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -404,15 +528,15 @@ it('streams node family completed and total for opaque composite checks', functi
 it('streams instance family totals that include instance and runtime-config inventory scans', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
     ]);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $appNode->id,
             node: $appNode->name,
             path: '/home/orbit/apps/docs',
@@ -469,7 +593,7 @@ it('streams instance family totals that include instance and runtime-config inve
 it('streams per-family completed and total check counts when workspace inventory is knowable', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -606,6 +730,35 @@ function doctorRunStreamStepEvents(string $content): array
     }
 
     return $events;
+}
+
+/**
+ * Terminal SSE payload nesting:
+ * - complete: data.data.doctor (emitter wraps complete payload under data)
+ * - error: data.data.data.doctor (error payload has data.doctor, then emitter wraps)
+ * Intermediate compact step frames omit doctor entirely.
+ *
+ * @param  array{event?: string, data?: array<string, mixed>}|null  $frame
+ * @return array<string, mixed>|null
+ */
+function doctorRunStreamTerminalDoctor(?array $frame): ?array
+{
+    if ($frame === null || ! is_array($frame['data'] ?? null)) {
+        return null;
+    }
+
+    $payload = $frame['data'];
+    $event = $frame['event'] ?? null;
+
+    if ($event === 'complete' && is_array($payload['data']['doctor'] ?? null)) {
+        return $payload['data']['doctor'];
+    }
+
+    if ($event === 'error' && is_array($payload['data']['data']['doctor'] ?? null)) {
+        return $payload['data']['data']['doctor'];
+    }
+
+    return null;
 }
 
 /**

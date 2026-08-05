@@ -1,0 +1,1 @@
+{"error":{"code":"tool.not_found","message":"Tool 'polyscope-server' not found on node 'database1'.","meta":{"tool":"polyscope-server","node":"database1"}}}

@@ -9,18 +9,18 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
-- **Route owner:** The domain that owns route lifecycle. One of `project`,
+- **Route owner:** The domain that owns route lifecycle. One of `app`,
   `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
   `tool`, or `custom`. The `owner` value classifies which domain's convergence
   edits the route record; it is not necessarily the role that owns the hostname
   or artifact.
-- **Route kind:** Route behavior at ingress. One of `project`, `instance`, `workspace`,
+- **Route kind:** Route behavior at ingress. One of `app`, `instance`, `workspace`,
   `internal`, `proxy`, or `redirect`.
-- **Project route:** Proxy route whose owner is the project and whose kind is
+- **App route:** Proxy route whose owner is the app and whose kind is
   `instance`, and whose target is always one concrete instance. The route stores
-  the project slug as `owner.name`, the dotted instance selector as
+  the app slug as `owner.name`, the dotted instance selector as
   `target.value`, and that instance's serving node as `node`. Edited through
-  project and instance commands.
+  app and instance commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
   `workspace`. Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired
@@ -37,11 +37,12 @@ These terms define the types of routes that the proxy family owns and manages.
   `websocket` and whose kind is `proxy`. It is created from an instance
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
-- **Project analytics route:** Public analytics tracking route whose public owner is
-  `analytics` and whose kind is `proxy`. It is created from a project
-  analytics binding, rendered on an `ingress` node, forwards to `router`, and
-  proxies only Plausible script and event-ingest paths. It must not expose the
-  Plausible dashboard or target a concrete analytics node.
+- **App analytics route:** Public analytics tracking route whose public
+  owner is `analytics` and whose kind is `proxy`. It is created from an
+  instance analytics binding (instance-owned placement), rendered on an
+  `ingress` node, forwards to `router`, and proxies only Plausible script and
+  event-ingest paths. It must not expose the Plausible dashboard or target a
+  concrete analytics node.
 - **Analytics service route:** Private router route for `analytics.orbit`,
   owned by `router`. It exists while at least one active `analytics` role
   assignment exists in the topology and targets the analytics backend pool
@@ -50,7 +51,7 @@ These terms define the types of routes that the proxy family owns and manages.
   owned by `router`. It exists while at least one active `websocket` role
   assignment exists in the topology and is removed when none remains. It
   targets the websocket backend pool owned by the router and is the stable
-  private publishing endpoint projects and instances use.
+  private publishing endpoint apps and instances use.
 - **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
   `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
   S3 request metadata needed for uploads, and must not target a concrete s3
@@ -58,7 +59,7 @@ These terms define the types of routes that the proxy family owns and manages.
 - **S3 service route:** Private router route for `s3.orbit`, owned by
   `router`. It exists while at least one active `s3` role assignment exists in
   the topology and is removed when none remains. It targets the S3 backend
-  pool owned by the router and is the stable private S3 endpoint projects and
+  pool owned by the router and is the stable private S3 endpoint apps and
   VPN clients use.
 - **Metrics service route:** Private router route for `metrics.orbit`, owned by
   `router`. It exists while an active `metrics` role assignment has converged
@@ -84,12 +85,15 @@ These terms define the types of routes that the proxy family owns and manages.
   routes are an `app-dev`-only surface and never receive an `app-prod` backend
   artifact.
 - **Route enactment state:** Persisted operation evidence attached to route
-  intent. `pending` means no operation has completed, `partial` means some
-  operations completed before a named failure, `failed` means the first
-  operation failed, and `converged` means every planned operation completed.
-  `intent_only` is custom intent deferred to doctor; `unknown` is an existing
-  row without enactment evidence.
-- **Production enactment order:** Project production artifacts are applied backend
+  intent. For one-step custom add, the normal path is `pending` then
+  `converged` on success, or `failed`/`partial` when backend/TLS apply fails
+  (Doctor repairs that partial state). `pending` means no operation has
+  completed, `partial` means some operations completed before a named failure,
+  `failed` means the first operation failed, and `converged` means every planned
+  operation completed. `intent_only` remains only for older custom rows that
+  never recorded one-step enactment evidence; new custom adds do not use it as
+  the happy path. `unknown` is an existing row without enactment evidence.
+- **Production enactment order:** App production artifacts are applied backend
   first, router second, and ingress last. Orbit never reports convergence if
   any layer fails and records the exact layer, node, and operation for repair.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
@@ -136,7 +140,7 @@ These terms define certificate authority, leaf certificate scope, and hostname c
 
 These terms define the ingress behavior applied to app and workspace routes.
 
-- **Project ingress baseline:** Standard browser ingress contract applied to project and instance
+- **App ingress baseline:** Standard browser ingress contract applied to app and instance
   and workspace routes: TLS termination, dynamic routing to the resolved
   FrankenPHP runtime container,
   static file serving from the configured document root, baseline security
@@ -144,7 +148,7 @@ These terms define the ingress behavior applied to app and workspace routes.
   caching for `/build/*`.
 - **Document-root policy:** Route-level policy that determines how aggressively
   ingress blocks adjacent sensitive files. Public-document-root instances and
-  workspaces use the lighter policy; project-root instances and workspaces use the
+  workspaces use the lighter policy; app-root instances and workspaces use the
   stronger blocking policy.
 - **Development runtime wake gate:** App-instance and workspace routes rendered
   on `app-dev` use only standard Caddy directives. A node-local awake marker
@@ -152,22 +156,39 @@ These terms define the ingress behavior applied to app and workspace routes.
   gateway. An absent marker after a Caddy or host restart causes a bounded
   `forward_auth` request to the private gateway activation endpoint before the
   original browser request continues. The endpoint accepts only the exact
-  serving node's WireGuard identity, serializes against idle shutdown, and
-  returns success only after the owning process group starts. The following
-  reverse-proxy handoff retries failed upstream connections for up to 15
-  seconds so the original request can span container warm-up without requiring
-  a custom Caddy module. When the scope is cold, the same pre-check starts or
-  follows its serialized restore-and-wake operation and returns a minimal
-  no-store HTML response immediately. That response auto-refreshes the original
-  URL until the pre-check succeeds. It presents the Orbit mark and one aggregate
-  progress bar derived from the planned dependency restores and the scope's
-  actual configured processes. The bar smoothly advances when a refresh reports
-  a new completion value; the response exposes no commands, filesystem paths,
-  environment values, raw logs, or individual step rows. Failed activation
-  retains the cold gate and presents a retry action; a later request replaces a
-  detached activation runner only after its progress heartbeat expires and both
-  its source dependency fence and scope activation fence are available. One
-  sibling scope never clears another sibling's cold gate.
+  serving node's WireGuard identity and serializes against idle shutdown. When
+  the scope is already awake, it returns success immediately so the original
+  request continues. When soft (recent-idle) or cold (dependency rebuild) wake
+  work is required, the pre-check starts or follows one serialized wake
+  operation for that scope and returns a minimal no-store HTML response
+  immediately, without starting processes or restoring dependencies inline.
+  That response stays mounted and, after one second, probes the original
+  same-origin path and query with non-overlapping background fetches
+  (credentials same-origin, cache no-store, redirect manual so application
+  redirects including cross-origin login/OAuth do not trap fetch without an
+  Orbit pending header). Pending and failed Orbit responses set
+  `X-Orbit-Runtime-Activation-State` so application status codes alone
+  (including application 503) are not treated as Orbit pending. Pending keeps
+  the page; network errors retry after one second; failed is terminal with
+  the existing retry action; a response without the header (or an opaque
+  redirect) means handoff to the application and triggers one browser
+  navigation to the original URI. It
+  presents one indeterminate animated Orbit mark only: no soft/cold
+  distinction, aggregate progress bar, step rows, diagnostics, commands,
+  filesystem paths, environment values, or raw logs. Soft and cold share the
+  same page and operation machinery; the plan records the mode. Soft runners
+  fence process activation and start every configured lifecycle process
+  concurrently, then mark awake only after a bounded aggregate readiness
+  observation of every expected runtime unit. Cold runners restore and verify
+  dependencies first, then use the same concurrent start phase and readiness
+  gate, and clear that scope's cold marker only after ready.
+  After the pre-check succeeds, the reverse-proxy handoff retries failed
+  upstream connections for up to 15 seconds so the original request can span
+  container warm-up without requiring a custom Caddy module. Failed activation
+  retains the cold or asleep gate and presents a retry action; a later request
+  replaces a detached activation runner only after its progress heartbeat
+  expires and both its source dependency fence and scope activation fence are
+  available. One sibling scope never clears another sibling's cold gate.
 - **Development runtime activity:** Every app-development instance or workspace
   route writes a dedicated access log whose modification time is the last HTTP
   activity for that scope. Activity logs remain in Caddy's persistent data
@@ -187,10 +208,10 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that projection changes. It does not own project, instance WebSocket binding, project
+  and restart path when that appion changes. It does not own app, instance WebSocket binding, instance
   analytics binding, workspace, gateway, websocket service, S3 service,
-  analytics service, or tool identity, do not create or remove owner-side
-  records, and do not manage TCP tool service endpoints or firewall policy.
+  analytics service, or tool identity, does not create or remove owner-side
+  records, and does not manage TCP tool service endpoints or firewall policy.
 
   Public WebSocket hosts are ingress routes that forward to router. Router owns
   `websocket.orbit`, websocket backend pools, and private router-to-websocket

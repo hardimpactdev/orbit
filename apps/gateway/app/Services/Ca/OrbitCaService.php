@@ -103,6 +103,17 @@ readonly class OrbitCaService
     }
 
     /**
+     * Absolute path to the Orbit root CA certificate for TLS verification
+     * (gateway/container trust path). Returns null when the CA is not present.
+     */
+    public function rootCertificatePath(): ?string
+    {
+        $path = $this->caDir().'/root.crt';
+
+        return File::exists($path) ? $path : null;
+    }
+
+    /**
      * @param  list<string>  $sans
      */
     private function signLeaf(string $host, array $sans, string $certPath, string $keyPath): void

@@ -44,7 +44,6 @@ final class E2EArtifactBuildFingerprint
             'apps/gateway/public',
             'apps/gateway/resources/css',
             'apps/gateway/resources/js',
-            'apps/gateway/resources/node-scripts',
             'apps/gateway/resources/views',
             'apps/gateway/routes',
             'packages/core/composer.json',

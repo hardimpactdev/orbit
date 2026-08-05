@@ -26,9 +26,11 @@ These terms describe the update workflow and its components.
 - **Source-dev local update:** Local update path that changes the mounted source
   checkout.
 - **Fleet update:** `update:all` sequence that checks the target release and
-  fleet versions, skips finalized GitHub releases when all selected
-  installations are current, and reapplies topology-candidate assets for live
-  release testing.
+  fleet versions and skips any manifest — finalized `github-release` or
+  `topology-candidate` — when every selected installation already matches the
+  desired artifact identity. A topology-candidate with the same semantic
+  version still applies when its CLI hash or image digest differs, or when
+  tracked state is missing.
 - **Fleet update source:** Topology-candidate assets are resolved from the
   release manifest URL selected by the gateway, or from a stable candidate
   channel.
@@ -49,20 +51,24 @@ These terms describe the update workflow and its components.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such
   as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
-- **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, containerized dependency installation, or migration execution.
+- **Update step:** One ordered local installation action. It updates the native
+  CLI artifact or refreshes a source-mounted checkout. It then verifies the
+  launcher and runs doctor verify. Local `update` does not install dependencies
+  or run gateway migrations.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
 Fleet update runs through gateway-owned authority. The CLI starts a gateway
-operation, replays its event journal by cursor, follows live frames through the
-private operations WebSocket/Reverb plane, and updates the caller-local CLI
-after the gateway phase succeeds. The gateway persists the immutable update
-plan, starts a one-shot runner from the target `orbit-gateway` image, and the
-runner owns the read-only fleet-version probe, finalized-release all-current
-short-circuit, candidate reapply path, gateway replacement, scheduled service
-recovery, workload fan-out, and final verification. Clients are never remote
-update targets. A target succeeds only when all required update steps succeed;
-target results include both successful and failed targets when a fleet update
-partially fails.
+operation, replays its event journal by cursor, and follows live frames through
+the private operations WebSocket/Reverb plane. After the gateway phase succeeds,
+the CLI updates the caller-local binary.
+
+The gateway persists the immutable update plan and starts a one-shot runner from
+the target `orbit-gateway` image. The runner owns the fleet-version probe, the
+all-current short-circuit, candidate artifact-identity compare, gateway
+replacement, scheduled service recovery, workload fan-out, and final
+verification. Clients are never remote update targets. A target succeeds only
+when all required update steps succeed. Target results include both successful
+and failed targets when a fleet update partially fails.
 
 The update plan selects both the Orbit CLI artifact and the matching
 platform/architecture Orbit Agent artifact for supported Agent-eligible nodes.
@@ -101,10 +107,20 @@ These terms describe family-owned doctor contracts and the actions they produce.
   `proxy.dns_mapping_mismatch` for `20-proxy-records.conf`; and tool owns
   `tool.dns_base_config_mismatch` plus container, listener, client-DNS, and
   forwarding codes. There is no DNS doctor family or separate DNS row.
-- **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`.
-- **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract.
+- **Doctor issue kind:** Compatibility-only relationship vocabulary between
+  gateway configuration and observed reality: `missing`, `extra`, `divergent`,
+  or `unverifiable`. Public automation should prefer the stable disposition
+  classification carried on findings (`genuine_drift`, `blocked_inspection`,
+  `invalid_intent`, or `runtime_incident`) together with `restore_action`
+  rather than kind alone. See architecture's doctor disposition table.
+- **Doctor action:** Recorded restore or adopt attempt owned by a family doctor
+  contract. Restore attempts expose machine-stable convergence metadata that
+  describes whether restore completed, stopped, or left residual drift,
+  including `restore_action` when a deterministic restorer exists.
 
-Families own the concrete issue codes that produce doctor kinds. Doctor actions may complete, skip, fail, or conflict; remaining drift must stay visible after action execution.
+Families own the concrete issue codes that produce dispositions (and
+compatibility kinds). Doctor actions may complete, skip, fail, or conflict;
+remaining drift must stay visible after action execution.
 
 ### Doctor permissions
 
@@ -129,7 +145,7 @@ These terms describe how doctor modes map to scoped node-access permissions.
 
 ## Activity
 
-Activity logging and history reads live in the activity family. See [`docs/domains/17_activity/activity-concepts.md`](../17_activity/activity-concepts.md).
+Activity logging and history reads live in the activity family. See [`docs/domains/16_activity/activity-concepts.md`](../16_activity/activity-concepts.md).
 
 ## Profiling
 

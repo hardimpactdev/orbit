@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Nodes\Roles;
 
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +78,7 @@ class NodeRoleDependencyInspector
     private function appRoleDependentSummaries(Node $node, string $role): array
     {
         $environment = self::AppRoleEnvironments[$role];
-        $count = Project::query()
+        $count = App::query()
             ->where('node_id', $node->id)
             ->where('environment', $environment)
             ->count();
@@ -112,7 +112,7 @@ class NodeRoleDependencyInspector
         $environment = self::AppRoleEnvironments[$role];
 
         DB::transaction(function () use ($node, $environment): void {
-            $appIds = Project::query()
+            $appIds = App::query()
                 ->where('node_id', $node->id)
                 ->where('environment', $environment)
                 ->pluck('id')
@@ -126,7 +126,7 @@ class NodeRoleDependencyInspector
                 ->whereIn('app_id', $appIds)
                 ->delete();
 
-            Project::query()
+            App::query()
                 ->whereIn('id', $appIds)
                 ->delete();
         });

@@ -27,7 +27,7 @@ count = 1
 [[issues]]
 file = "app/Actions/Apps/EnactAppRuntime.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 1
 
 [[issues]]
@@ -1075,36 +1075,6 @@ message = 'A value of a less specific type `Illuminate\Database\Eloquent\Model|n
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
-
-[[issues]]
-file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
-code = "redundant-logical-operation"
-message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
-code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/AnalyticsUpdateController.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Http\Controllers\Api\AnalyticsUpdateController::resolveAnalyticsNode`: expected `App\Models\Node|null`, but found `null|stdClass`.'
@@ -1141,12 +1111,6 @@ message = "Redundant type assertion: `$process->runtime_config` is already `arra
 count = 2
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "invalid-type-cast"
-message = "Cannot reliably cast generic `object` to `string`."
-count = 2
-
-[[issues]]
 file = "app/Http/Controllers/Api/AppAnalyticsController.php"
 code = "invalid-type-cast"
 message = "Cannot reliably cast generic `object` to `string`."
@@ -1165,45 +1129,33 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "avoid-catching-error"
 message = "Avoid catching 'Error' class instances."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Http\Controllers\Api\AppInstanceController::phpExtensions`: expected `list<string>`, but found `list<lowercase-string|null>`.'
+message = 'Invalid return type for function `App\Http\Controllers\Api\InstanceController::phpExtensions`: expected `list<string>`, but found `list<lowercase-string|null>`.'
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 6
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceEnvController.php"
+file = "app/Http/Controllers/Api/InstanceEnvController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppPruneController.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppPruneController.php"
-code = "mixed-operand"
-message = "Casting `mixed` to `bool`."
 count = 1
 
 [[issues]]
@@ -1655,12 +1607,6 @@ file = "app/Http/Controllers/Api/MetricsStatusController.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeAgentIdeController.php"
-code = "invalid-type-cast"
-message = "Cannot reliably cast generic `object` to `string`."
-count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeBootstrapCompleteController.php"
@@ -2359,12 +2305,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 4
 
 [[issues]]
-file = "app/Http/Requests/Api/SendAgentIdeMessageApiRequest.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
 file = "app/Http/Requests/Api/UpdateNodeApiRequest.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -2377,9 +2317,9 @@ message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 1
 
 [[issues]]
-file = "app/Models/AppInstance.php"
+file = "app/Models/Instance.php"
 code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\AppInstance::envVariables`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppInstanceEnvVariable, app\models\appinstance&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
+message = 'Invalid return type for function `App\Models\Instance::envVariables`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\InstanceEnvVariable, app\models\instance&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
 count = 1
 
 [[issues]]
@@ -2551,7 +2491,7 @@ message = 'Too few template arguments for `Illuminate\Database\Eloquent\Factorie
 count = 1
 
 [[issues]]
-file = "app/Models/Project.php"
+file = "app/Models/App.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -2683,7 +2623,7 @@ message = 'Possible argument type mismatch for argument #1 of `App\Services\Acti
 count = 1
 
 [[issues]]
-file = "app/Services/Activity/ActivityPayloadCompatibility.php"
+file = "app/Services/Activity/ActivityPayloadFormatter.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -2692,102 +2632,6 @@ count = 1
 file = "app/Services/ActivityLogTargets.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
-code = "redundant-logical-operation"
-message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
-code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "impossible-type-comparison"
-message = "Impossible type assertion: `$workspaceId` of type `null` can never be `string`."
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "impossible-type-comparison"
-message = "Impossible type assertion: `$workspacePath` of type `null` can never be `string`."
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "invalid-property-access"
-message = "Attempting to access a property on a non-object type (`never`)."
-count = 2
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\AgentIde\CoreAgentIdeMessageAdapter::workspaces`: expected `list<string>`, but found `array<array-key, mixed>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "redundant-comparison"
-message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
-count = 2
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
-count = 2
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeMessageAdapter.php"
-code = "redundant-logical-operation"
-message = "Redundant `||` operation: left operand is always true and right operand is not evaluated."
-count = 3
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver::successPayload`.'
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
-file = "app/Services/AgentIde/OpenCodeServerConfigResolver.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\AgentIde\OpenCodeServerConfigResolver::urlFromCredentialFields`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/AgentIde/OpenCodeServerConfigResolver.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
-
-[[issues]]
-file = "app/Services/AgentIde/OpenCodeServerConfigResolver.php"
-code = "redundant-type-comparison"
-message = "Redundant condition: variable `$parts['host']` (type `non-empty-string`) is already known to be `string`."
 count = 1
 
 [[issues]]
@@ -2877,17 +2721,11 @@ count = 2
 [[issues]]
 file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
 count = 3
 
 [[issues]]
 file = "app/Services/Analytics/PlausibleRuntimeConfig.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Apps/AppAgentIdeDefaults.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -2899,63 +2737,63 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "invalid-iterator"
 message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
 count = 2
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "less-specific-return-statement"
-message = '''Returned type `array<array-key, array{'secret': bool, 'source': string, 'value': mixed}>` is less specific than the declared return type `array<string, array{'secret': bool, 'source': string, 'value': null|string}>` for function `App\Services\Apps\AppInstanceEnvRenderer::render`.'''
+message = '''Returned type `array<array-key, array{'secret': bool, 'source': string, 'value': mixed}>` is less specific than the declared return type `array<string, array{'secret': bool, 'source': string, 'value': null|string}>` for function `App\Services\Apps\InstanceEnvRenderer::render`.'''
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Apps\AppInstanceEnvRenderer::databaseVariables`: expected `string`, but found `mixed`.'
+message = 'Invalid argument type for argument #2 of `App\Services\Apps\InstanceEnvRenderer::databaseVariables`: expected `string`, but found `mixed`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 4
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 3
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-operand"
 message = "Casting `mixed` to `bool`."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-property-access"
 message = "Attempting to access a property on a non-object type (`mixed`)."
 count = 5
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Services\Apps\AppInstanceEnvRenderer::variables`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Services\Apps\InstanceEnvRenderer::variables`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $databaseConnectionTargets on class `App\Models\AppInstance`.'
+message = 'Ambiguous property access: $databaseConnectionTargets on class `App\Models\Instance`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $envVariables on class `App\Models\AppInstance`.'
+message = 'Ambiguous property access: $envVariables on class `App\Models\Instance`.'
 count = 2
 
 [[issues]]
@@ -3741,7 +3579,7 @@ count = 1
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionTargetResolver.php"
 code = "less-specific-return-statement"
-message = '''Returned type `('TRelatedModel.illuminate\database\eloquent\relations\relation extends Illuminate\Database\Eloquent\Model)|null|stdClass` is less specific than the declared return type `App\Models\AppInstance|null` for function `App\Services\DatabaseConnections\DatabaseConnectionTargetResolver::resolveAppInstance`.'''
+message = '''Returned type `('TRelatedModel.illuminate\database\eloquent\relations\relation extends Illuminate\Database\Eloquent\Model)|null|stdClass` is less specific than the declared return type `App\Models\Instance|null` for function `App\Services\DatabaseConnections\DatabaseConnectionTargetResolver::resolveInstance`.'''
 count = 1
 
 [[issues]]
@@ -3889,13 +3727,13 @@ message = "Redundant null coalesce: left-hand side is always `null`."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "unused-property"
 message = "Property `$authorizer` is never used."
 count = 1
@@ -4053,7 +3891,7 @@ count = 1
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$process->owner->appInstance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$process->owner->instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 2
 
 [[issues]]
@@ -4444,12 +4282,6 @@ count = 1
 file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$option` is already `string`."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/NodeAgentIdeDefaults.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -4979,12 +4811,6 @@ file = "app/Services/Operations/FleetUpdateAgentVerifier.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
-
-[[issues]]
-file = "app/Services/Operations/FleetUpdateInstallResultInspector.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
 
 [[issues]]
 file = "app/Services/Operations/FleetUpdateTargetSelector.php"
@@ -7029,7 +6855,7 @@ count = 2
 [[issues]]
 file = "app/Services/WebSockets/WebSocketRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
 count = 2
 
 [[issues]]
@@ -7153,48 +6979,6 @@ message = '''Possible argument type mismatch for argument #4 of `App\Services\Wo
 count = 1
 
 [[issues]]
-file = "app/Services/Workspaces/OpenCodeWorkspaceDriver.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/OpenCodeWorkspaceDriver.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/Workspaces/PolyscopeWorkspaceDriver.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Services\Workspaces\PolyscopeWorkspaceDriver::configLookupEnvelope`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/PolyscopeWorkspaceDriver.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Services\Workspaces\PolyscopeWorkspaceDriver::configLookupPayload`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/PolyscopeWorkspaceDriver.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/PolyscopeWorkspaceDriver.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `Polyscope\Laravel\Actions\ManagesWorkspaces::deleteWorkspace` is possibly `null`, but parameter type `string` does not accept it.'
-count = 1
-
-[[issues]]
 file = "app/Services/Workspaces/WorkspaceHistoryPayload.php"
 code = "docblock-type-mismatch"
 message = "Docblock type mismatch for variable `$runs`."
@@ -7305,7 +7089,7 @@ count = 1
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 1
 
 [[issues]]
@@ -7476,29 +7260,6 @@ code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 2
 
-[[issues]]
-file = "app/Tools/OpenClawTool.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Tools/OpenCodeCliTool.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Tools/OpenCodeCliTool.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 4
-
-[[issues]]
-file = "app/Tools/PolyscopeServerTool.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
 
 [[issues]]
 file = "config/app.php"

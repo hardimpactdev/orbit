@@ -172,7 +172,7 @@ it('linux x64 binary boots on the real container and --version reports the expec
             env: ['HOME' => '/tmp/orbit-acceptance-home'],
         );
 
-        // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
+        // Note: Pest's toContain() is variadic — do not pass a failure message as a
         // second argument; it would be interpreted as a second needle and fail.
         expect($result['exit_code'])
             ->toBe(
@@ -283,7 +283,7 @@ it(
                     "gateway:status --help exited {$result['exit_code']} on container.\n{$combined}",
                 );
 
-            // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
+            // Note: Pest's toContain() is variadic — do not pass a failure message as a
             // second argument; it would be interpreted as a second needle and fail.
             expect($combined)->not->toContain('extension');
             expect($combined)->not->toContain('Class not found');

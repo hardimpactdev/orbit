@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use InvalidArgumentException;
@@ -28,12 +28,12 @@ final readonly class WorkspaceRoleGuard
         private WorkspacePlacement $placement,
     ) {}
 
-    public function ensureNodeSupportsWorkspaces(Project $project, ?Node $node): void
+    public function ensureNodeSupportsWorkspaces(App $app, ?Node $node): void
     {
-        $this->ensureNodeIsWorkspaceEligible($node, $project->name);
+        $this->ensureNodeIsWorkspaceEligible($node, $app->name);
     }
 
-    public function ensureNodeIsWorkspaceEligible(?Node $node, ?string $project = null): void
+    public function ensureNodeIsWorkspaceEligible(?Node $node, ?string $app = null): void
     {
         if (! $node instanceof Node) {
             return;
@@ -50,8 +50,8 @@ final readonly class WorkspaceRoleGuard
                 : 'app-dev-required',
         ];
 
-        if ($project !== null) {
-            $meta = ['project' => $project, ...$meta];
+        if ($app !== null) {
+            $meta = ['app' => $app, ...$meta];
         }
 
         throw new WorkspaceUnsupportedForProduction($meta);
@@ -126,16 +126,16 @@ final readonly class WorkspaceRoleGuard
 
     public function ensureWorkspaceSupported(Workspace $workspace): void
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $app = $workspace->app;
         $instance = $this->placement->instanceForWorkspace($workspace);
         $node = $this->placement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof Project || ! $instance instanceof AppInstance || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $instance instanceof Instance || ! $node instanceof Node) {
             throw new WorkspaceUnsupportedForProduction(array_filter(
                 [
                     'workspace' => $workspace->name,
-                    'project' => $app?->name,
+                    'app' => $app?->name,
                     'instance' => $instance?->name,
                     'role' => 'app-dev-required',
                     'reason' => 'serving_node_unresolved',
@@ -150,7 +150,7 @@ final readonly class WorkspaceRoleGuard
     public function ensureNodeOwnsNoWorkspaces(Node $node): void
     {
         $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->get()
             ->first(
                 fn (Workspace $workspace): bool => $this->placement->nodeForWorkspace($workspace)?->id === $node->id,
@@ -174,7 +174,7 @@ final readonly class WorkspaceRoleGuard
             return false;
         }
 
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $servingNode = $this->placement->nodeForWorkspace($workspace);
 
         return $this->nodeSupportsWorkspaces($servingNode);

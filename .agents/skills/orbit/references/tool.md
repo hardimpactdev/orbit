@@ -26,9 +26,7 @@ and the node-exporter host binary on metrics/workload nodes. The
 - `mailpit`  -  local SMTP capture (Docker)
 - `reverb`  -  compatibility WebSocket service; prefer the `websocket` role for fleet realtime
 - `claude-code`  -  Anthropic Claude Code CLI runtime; no required node role; installs for the node default user and optional extra OS users via repeatable `--user`
-- `polyscope-server`  -  Polyscope headless coding-agent server
-- `opencode-server`  -  OpenCode HTTP server for programmatic LLM interaction
-- `openclaw`, `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
+- `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
 - `orbstack`  -  macOS-only Docker-compatible provider; supports explicit start/stop/restart through `orbctl`
 
 HTTP/WS tool endpoints surface as tool-owned proxy routes. TCP service
@@ -78,7 +76,6 @@ orbit tool:install <tool> [--instance=<name>] [--node=<name>]
 Examples:
 
 ```bash
-orbit tool:install opencode-server --node=beast --status=running
 orbit tool:install php --tool-version=8.4 --node=beast
 orbit tool:install claude-code --node=app-1 --user=agent
 ```
@@ -112,7 +109,6 @@ tools do not use a second parallel lifecycle implementation.
 
 ```bash
 orbit tool:logs dns --node=<node> [--lines=100] [--json]
-orbit tool:logs opencode-cli --instance=<project.instance> [--lines=200] [--json]
 ```
 
 ## `orbit tool:remove <tool>`
@@ -137,8 +133,6 @@ use `--json` when only the final result envelope is needed.
 
 Examples:
 
-- `orbit tool:reconfigure opencode-server --password='...'`  -  rotate basic-auth password.
-- `orbit tool:reconfigure polyscope-server`  -  rotate Polyscope auth and restart.
 
 ## `orbit tool:credentials [tool]`
 
@@ -153,6 +147,4 @@ Without `<tool>`, returns credentials for every credential-bearing tool on the r
 Examples:
 
 ```bash
-orbit tool:credentials opencode-server --node=beast --json
-orbit tool:credentials opencode-server --node=beast --json
 ```

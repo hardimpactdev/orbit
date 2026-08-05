@@ -7,7 +7,7 @@ require_once __DIR__.'/orbit-feedback-events.php';
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-secret-rules.php';
 
-const ORBIT_FEATURE_ACCEPTANCE_USAGE = 'Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]';
+const ORBIT_FEATURE_ACCEPTANCE_USAGE = 'Usage: bin/orbit-feature-acceptance route|ready|accept|reprove|invalidate|show [options]';
 
 try {
     $command = $argv[1] ?? null;
@@ -19,6 +19,11 @@ try {
 
     $options = acceptanceOptions(array_slice($argv, 2));
     $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
+
+    if ($command === 'route') {
+        acceptanceRoute($cwd, $options);
+    }
+
     $loopPath = (string) ($options['loop'] ?? "{$cwd}/.orbit/loop.md");
 
     if (! is_file($loopPath) || is_link($loopPath)) {
@@ -59,6 +64,32 @@ function acceptanceOptions(array $arguments): array
 }
 
 /** @param array<string, string|bool> $options */
+function acceptanceRoute(string $cwd, array $options): never
+{
+    $base = is_string($options['base'] ?? null) && trim((string) $options['base']) !== ''
+        ? trim((string) $options['base'])
+        : 'main';
+    $route = orbitLoopExactProofRoute($cwd, $base);
+
+    fwrite(
+        STDOUT,
+        json_encode(
+            [
+                'candidate' => $route['candidate'],
+                'base' => $route['base'],
+                'base_tip' => $route['base_tip'],
+                'merge_base' => $route['merge_base'],
+                'changed_files' => $route['changed_files'],
+                'venue' => $route['venue'],
+            ],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+        )
+            .PHP_EOL,
+    );
+    exit(0);
+}
+
+/** @param array<string, string|bool> $options */
 function acceptanceReady(string $cwd, string $loopPath, array $options): never
 {
     acceptanceRequireClean($cwd);
@@ -80,14 +111,15 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
 
     acceptanceRequireCurrentMainIncluded($cwd, $featureTip);
 
-    $changedFiles = orbitLoopChangedFiles($cwd);
+    $route = orbitLoopExactProofRoute($cwd);
+    $changedFiles = $route['changed_files'];
     $blastRadiusProblem = orbitLoopBlastRadiusProblem($loop, $changedFiles);
 
     if ($blastRadiusProblem !== null) {
         throw new RuntimeException($blastRadiusProblem);
     }
 
-    $minimum = orbitLoopAcceptanceVenue($changedFiles);
+    $minimum = $route['venue'];
     $venue = (string) ($options['venue'] ?? $minimum);
 
     if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
@@ -98,10 +130,10 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
-        throw new RuntimeException($runtimeProblem);
+        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
     }
 
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
@@ -145,24 +177,25 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException('acceptance actor must be user or automated');
     }
 
-    $changedFiles = orbitLoopChangedFiles($cwd);
+    $route = orbitLoopExactProofRoute($cwd);
+    $changedFiles = $route['changed_files'];
     $blastRadiusProblem = orbitLoopBlastRadiusProblem($loop, $changedFiles);
 
     if ($blastRadiusProblem !== null) {
         throw new RuntimeException($blastRadiusProblem);
     }
 
-    $minimum = orbitLoopAcceptanceVenue($changedFiles);
+    $minimum = $route['venue'];
     $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
 
     if (! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
-        throw new RuntimeException($runtimeProblem);
+        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
     }
 
     if ($actor === 'automated' && ! orbitLoopReviewSaysNoHumanJudgment($review)) {
@@ -283,6 +316,49 @@ function acceptanceLoop(string $path): string
     }
 
     return $loop;
+}
+
+/**
+ * Normalize acceptance arming back to PROVE when terminal runtime proof is
+ * unresolved. Preserves Review and Reviewed feature tip so a same-candidate
+ * re-proof does not force another review. Never writes through a symlink loop
+ * file or a symlinked parent (including a symlinked `.orbit` root).
+ */
+function acceptanceRefuseUnresolvedRuntime(string $loopPath, string $loop, string $runtimeProblem): never
+{
+    $normalized = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'pending');
+    $normalized = orbitLoopSetLabel($normalized, 'Proof', 'Accepted feature tip', 'none');
+    $normalized = orbitLoopSetLabel($normalized, 'Proof', 'Accepted main tip', 'none');
+    $normalized = orbitLoopSetLabel($normalized, 'Status', 'State', 'prove');
+
+    if ($normalized !== $loop && acceptanceLoopPathAllowsNormalizeWrite($loopPath)) {
+        acceptanceWriteLoop($loopPath, $normalized);
+    }
+
+    throw new RuntimeException(
+        rtrim($runtimeProblem, " \t.").'. Next: FIX -> BUILD -> PROVE before ACCEPT',
+    );
+}
+
+/**
+ * Allow normalize writes only for a regular loop file whose immediate parent is
+ * not a symlink. `is_file` follows parent symlinks, so a `.orbit` root symlink
+ * would otherwise write outside the worktree while the leaf loop path itself is
+ * not a symlink. Legitimate `--loop` paths under real directories still write.
+ */
+function acceptanceLoopPathAllowsNormalizeWrite(string $loopPath): bool
+{
+    if (! is_file($loopPath) || is_link($loopPath)) {
+        return false;
+    }
+
+    $parent = dirname($loopPath);
+
+    if ($parent === '' || $parent === '.' || $parent === $loopPath) {
+        return false;
+    }
+
+    return ! is_link($parent);
 }
 
 function acceptanceRequireClean(string $cwd): void

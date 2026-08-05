@@ -81,8 +81,30 @@ class AgentRoleBaseline implements RoleBaseline
         );
 
         if (! $aclResult->successful()) {
-            throw new RuntimeException('Could not ensure Orbit agent runtime ACLs.');
+            $stage = $this->agentAclFailureStage($aclResult->stderr !== '' ? $aclResult->stderr : $aclResult->stdout);
+
+            throw new RuntimeException(
+                $stage === null
+                    ? 'Could not ensure Orbit agent runtime ACLs.'
+                    : "Could not ensure Orbit agent runtime ACLs ({$stage}).",
+            );
         }
+    }
+
+    private function agentAclFailureStage(string $output): ?string
+    {
+        if (preg_match('/stage=([a-z0-9_]+)/', $output, $matches) !== 1) {
+            return null;
+        }
+
+        $stage = $matches[1];
+
+        // Only forward fatal stages emitted by LocalAgentAclEnsure; optional ACL
+        // skips are non-fatal metadata and never surface here.
+        return match ($stage) {
+            'package_index', 'acl_package_install', 'directory_acl', 'config_acl', 'binary_acl' => 'stage='.$stage,
+            default => null,
+        };
     }
 
     private function localExecutor(): RunsInternalCommands

@@ -11,16 +11,16 @@ credential repair, missing config files, or setup reruns.
 ## Usage
 
 ```bash
-orbit tool:reconfigure [tool] [--instance=<project.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]
+orbit tool:reconfigure [tool] [--instance=<app.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Examples
 
 ```bash
-orbit tool:reconfigure opencode-cli --node=agent-1
-orbit tool:reconfigure opencode-cli --instance=docs --password=<new-password>
-orbit tool:reconfigure opencode-cli --node=agent-1 --json
-orbit tool:reconfigure opencode-cli --node=agent-1 --stream-json
+orbit tool:reconfigure hermes --node=agent-1
+orbit tool:reconfigure hermes --instance=docs --password=<new-password>
+orbit tool:reconfigure hermes --node=agent-1 --json
+orbit tool:reconfigure hermes --node=agent-1 --stream-json
 ```
 
 ## Arguments and options
@@ -28,7 +28,8 @@ orbit tool:reconfigure opencode-cli --node=agent-1 --stream-json
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from reconfigurable tools visible on the resolved node.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--instance`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--password`: Optional new authentication password when the tool definition
   supports password reconfiguration.
 - `--json`: Output JSON.
@@ -49,8 +50,23 @@ Target context is required when neither `--node`, `--instance`, nor local
    says reconfiguration owns those values.
 5. Updates service endpoint configuration owned by the tool only when the tool definition
    owns that endpoint.
-6. Preserves the expected tool version.
-7. Reports the reconfiguration result.
+6. When the catalog provides a `credentialsScript` for the tool, runs that script
+   with action `credentials`, parses a JSON object from stdout, and replaces the
+   stored `NodeTool` credential fields with those values. Tools without a
+   credentials script skip this step. Transport failure, unsuccessful script
+   exit, or malformed/non-object JSON fails the reconfigure and does not claim
+   success. Credential values never appear in reconfigure success output or logs;
+   use [`tool:credentials`](../10_tool-credentials/tool-credentials.md) to read
+   them.
+7. When the tool declares a `relatedProcess()` and that process row exists
+   (matched by process `name` and `tool`), restarts the process so file/env
+   changes take effect in the running unit (for example Hermes
+   `HERMES_DASHBOARD_PUBLIC_URL`). Credential refresh runs before this restart so
+   a failed credentials step does not restart the unit under a claimed-success
+   reconfigure.
+8. Preserves the expected tool version.
+9. Reports the reconfiguration result, including related process restart when
+   performed. The success payload does not include credential field values.
 
 Gateway-owned configuration changes stay gateway-local. Target-node
 setup/configuration uses Agent push; `tool:reconfigure` exposes no node
@@ -73,7 +89,7 @@ Use `--json` for the machine-readable tool and action result.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app.
+  or instance.
 - The tool is registered for the resolved node and supports reconfiguration.
 - The gateway can reach the target node through Orbit's node execution
   primitive.

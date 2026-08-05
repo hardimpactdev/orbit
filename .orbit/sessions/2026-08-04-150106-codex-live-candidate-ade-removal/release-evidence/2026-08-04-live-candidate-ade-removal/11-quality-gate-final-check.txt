@@ -1,0 +1,69 @@
+Quality gate final check
+Artifact directory: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates
+
+Analyzer report:
+Quality gate analyzer
+Artifact directory: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates
+
+recent run: gate=quality-check duration=76.0s exit=0 mode=check branch=codex/live-candidate-ade-removal commit=d749df13d939dcfafae664b030c2e3114811d580 ended_at=2026-08-04T12:50:14Z
+subgate duration: agent_cargo_check=0.2s
+subgate duration: agent_cargo_clippy=0.2s
+subgate duration: agent_cargo_fmt=0.3s
+subgate duration: agent_cargo_test=2.9s
+subgate duration: cli_mago_analyze=2.1s
+subgate duration: cli_mago_format=0.3s
+subgate duration: cli_mago_lint=0.3s
+subgate duration: cli_pest=48.5s
+subgate duration: cli_rector=1.5s
+subgate duration: core_mago_analyze=0.7s
+subgate duration: core_mago_format=0.1s
+subgate duration: core_mago_lint=0.4s
+subgate duration: core_pest=1.0s
+subgate duration: core_rector=0.5s
+subgate duration: docs_lint=6.1s
+subgate duration: docs_mago_analyze=2.0s
+subgate duration: docs_mago_format=0.2s
+subgate duration: docs_mago_lint=0.2s
+subgate duration: docs_pest=16.6s
+subgate duration: docs_rector=0.6s
+subgate duration: docs_references=1.9s
+subgate duration: docs_testing=6.9s
+subgate duration: e2e_mago_analyze=1.9s
+subgate duration: e2e_mago_format=0.2s
+subgate duration: e2e_mago_lint=0.2s
+subgate duration: e2e_rector=3.6s
+subgate duration: gateway_mago_analyze=2.8s
+subgate duration: gateway_mago_format=0.6s
+subgate duration: gateway_mago_lint=0.3s
+subgate duration: gateway_pest=74.7s
+subgate duration: gateway_rector=9.2s
+subgate duration: macos_cargo_check=1.1s
+subgate duration: macos_cargo_clippy=1.2s
+subgate duration: macos_cargo_fmt=0.1s
+subgate duration: macos_cargo_test=2.6s
+subgate duration: reverb_mago_analyze=2.4s
+subgate duration: reverb_mago_format=0.1s
+subgate duration: reverb_mago_lint=0.1s
+subgate duration: sdk_mago_analyze=0.8s
+subgate duration: sdk_mago_format=0.2s
+subgate duration: sdk_mago_lint=0.1s
+subgate duration: sdk_pest=0.4s
+subgate duration: sdk_rector=0.5s
+subgate duration: sdk_typescript_build=0.6s
+subgate duration: sdk_typescript_typecheck=1.0s
+warning: gate [quality-check] duration 76.0s exceeds local baseline 26.0s (warning-only)
+warning: subgate [quality-check:cli_pest] duration 48.5s exceeds local baseline 23.1s (warning-only)
+warning: subgate [quality-check:docs_pest] duration 16.6s exceeds local baseline 6.4s (warning-only)
+warning: subgate [quality-check:gateway_pest] duration 74.7s exceeds local baseline 19.2s (warning-only)
+timing triage: .agents/skills/quality-gate-triage/SKILL.md
+
+Analyzer did not rerun quality-check or E2E lanes.
+
+Final-check warnings:
+- warning: gate [quality-check] duration 76.0s exceeds local baseline 26.0s (warning-only)
+- warning: subgate [quality-check:cli_pest] duration 48.5s exceeds local baseline 23.1s (warning-only)
+- warning: subgate [quality-check:docs_pest] duration 16.6s exceeds local baseline 6.4s (warning-only)
+- warning: subgate [quality-check:gateway_pest] duration 74.7s exceeds local baseline 19.2s (warning-only)
+
+Final check did not rerun quality-check or E2E lanes.
+FINAL_CHECK_EXIT=0

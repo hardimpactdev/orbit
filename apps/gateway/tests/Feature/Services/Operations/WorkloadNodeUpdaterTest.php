@@ -136,7 +136,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->updatedNodes())
+        ->and(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe([
@@ -160,8 +160,10 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBeFalse()
         ->and($shell->calls[0]['options']['bind_input'] ?? null)
         ->toBeTrue()
-        ->and($shell->scriptsFor('agent-1'))
-        ->toBe([$shell->scriptFor('agent-1')])
+        ->and($shell->updateScriptCallsFor('agent-1'))
+        ->toBe(2)
+        ->and($shell->updateScriptCallsFor('database-1'))
+        ->toBe(2)
         ->and($shell->activeLeases)
         ->toBe([
             'agent-1' => ['node:agent-1'],
@@ -173,7 +175,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 
-    expect(workload_updater_install_payload($shell, node: 'agent-1'))
+    expect(workload_updater_full_install_payload($shell, node: 'agent-1'))
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
             'sha256' => str_repeat('e', times: 64),
@@ -182,7 +184,15 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'shared_binary_path' => null,
             'role_images' => ['caddy:2.9-alpine'],
         ])
-        ->and(workload_updater_install_payload($shell, node: 'app-dev-1'))
+        ->and(workload_updater_install_payload($shell, node: 'agent-1'))
+        ->toMatchArray([
+            'agent_artifact' => null,
+            'agent_service' => null,
+            'role_images' => [],
+            'role_image_artifacts' => [],
+            'role_image_aliases' => [],
+        ])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-dev-1'))
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
             'sha256' => str_repeat('e', times: 64),
@@ -191,13 +201,13 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
                 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
             ],
         ])
-        ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_images'])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-prod-1')['role_images'])
         ->toBe([
             'caddy:2.9-alpine',
             'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
             'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         ])
-        ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_image_artifacts'])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-prod-1')['role_image_artifacts'])
         ->toBe([
             [
                 'image' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
@@ -207,7 +217,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ])
         ->and(workload_updater_install_payload($shell, node: 'database-1')['role_images'])
         ->toBe([])
-        ->and(workload_updater_install_payload($shell, node: 'ingress-1')['role_images'])
+        ->and(workload_updater_full_install_payload($shell, node: 'ingress-1')['role_images'])
         ->toBe(['caddy:2.9-alpine']);
 
     $installedCli = $appDev->fresh()->installed_cli;
@@ -254,13 +264,13 @@ it('installs and records agent artifacts for Agent-eligible workload nodes', fun
 
     expect($results[0]['status'])
         ->toBe('completed')
-        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_artifact'])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-dev-1')['agent_artifact'])
         ->toBe([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=fake",
             'sha256' => str_repeat('9', times: 64),
             'bin_path' => '/home/orbit/.local/bin/orbit-agent',
         ])
-        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_service'])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-dev-1')['agent_service'])
         ->toMatchArray([
             'ca_path' => '/home/orbit/.config/orbit/ca/root.crt',
             'ca_pem' => "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n",
@@ -271,6 +281,124 @@ it('installs and records agent artifacts for Agent-eligible workload nodes', fun
         ->toBe(str_repeat('9', times: 64))
         ->and($node->fresh()->installed_agent?->artifactUrl)
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-linux-x64');
+});
+
+it('bootstraps the candidate CLI before full Agent and role-image install on Services1-like nodes', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'services1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.91',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'websocket',
+        'status' => 'active',
+    ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+            roleImages: [
+                'orbit-websocket' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payloads = workload_updater_install_payloads($shell, node: 'services1');
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and($payloads)
+        ->toHaveCount(2)
+        ->and($payloads[0])
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
+            'sha256' => str_repeat('b', times: 64),
+            'install_root' => '/home/orbit/orbit',
+            'bin_path' => '/home/orbit/.local/bin/orbit',
+            'shared_binary_path' => null,
+            'agent_artifact' => null,
+            'agent_service' => null,
+            'role_images' => [],
+            'role_image_artifacts' => [],
+            'role_image_aliases' => [],
+        ])
+        ->and($payloads[1]['agent_artifact'])
+        ->toBe([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=fake",
+            'sha256' => str_repeat('9', times: 64),
+            'bin_path' => '/home/orbit/.local/bin/orbit-agent',
+        ])
+        ->and($payloads[1]['agent_service'])
+        ->toBeArray()
+        ->and($payloads[1]['role_images'])
+        ->toBe([
+            'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.services1', 'running', 'Installing Orbit Agent artifact'])
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('2.0.0')
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('9', times: 64));
+});
+
+it('preserves a failed installer result before checking Agent artifact confirmation', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteShellResult(
+            exitCode: 12,
+            stdout: '',
+            stderr: 'required image load failed',
+            durationMs: 20,
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0])
+        ->toMatchArray([
+            'status' => 'failed',
+            'failed_step' => 'remote_update',
+            'output' => 'required image load failed',
+        ])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.app-dev-1', 'fail', 'required image load failed']);
 });
 
 it('installs macos agent artifacts into the user local agent binary path', function (): void {
@@ -318,7 +446,7 @@ it('installs macos agent artifacts into the user local agent binary path', funct
 
     expect($results[0]['status'])
         ->toBe('completed')
-        ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
+        ->and(workload_updater_full_install_payload($shell, node: 'mini')['agent_artifact'])
         ->toBe([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/darwin-arm64?token=fake",
             'sha256' => str_repeat('7', times: 64),
@@ -333,23 +461,7 @@ it('installs macos agent artifacts into the user local agent binary path', funct
 });
 
 it('retries Agent artifact installs through the canonical macos launcher', function (): void {
-    $oldInstallerResult = new RemoteShellResult(
-        exitCode: 0,
-        stdout: json_encode([
-            'success' => [
-                'data' => [
-                    'installed' => true,
-                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
-                ],
-                'meta' => [],
-            ],
-        ], JSON_THROW_ON_ERROR),
-        stderr: '',
-        durationMs: 15,
-    );
-    $shell = new WorkloadUpdaterFakeShell(failures: [
-        'mini' => [$oldInstallerResult],
-    ]);
+    $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
@@ -381,14 +493,17 @@ it('retries Agent artifact installs through the canonical macos launcher', funct
     );
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payloads = workload_updater_install_payloads($shell, node: 'mini');
 
     expect($results[0]['status'])
         ->toBe('completed')
         ->and($shell->updateScriptCallsFor('mini'))
         ->toBe(2)
+        ->and($payloads[0]['agent_artifact'])
+        ->toBeNull()
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
-        ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
+        ->and(workload_updater_full_install_payload($shell, node: 'mini')['agent_artifact'])
         ->toBe([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/darwin-arm64?token=fake",
             'sha256' => str_repeat('7', times: 64),
@@ -398,24 +513,23 @@ it('retries Agent artifact installs through the canonical macos launcher', funct
         ->toBe(str_repeat('7', times: 64));
 });
 
-it('records agent artifact installs when the retry disconnects during agent restart', function (): void {
-    $oldInstallerResult = new RemoteShellResult(
-        exitCode: 0,
-        stdout: json_encode([
-            'success' => [
-                'data' => [
-                    'installed' => true,
-                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
-                ],
-                'meta' => [],
-            ],
-        ], JSON_THROW_ON_ERROR),
-        stderr: '',
-        durationMs: 15,
-    );
+it('records agent artifact installs when the full-stage disconnects during agent restart', function (): void {
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'mini' => [
-            $oldInstallerResult,
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'installed' => true,
+                            'bin_path' => '/Users/nckrtl/.local/bin/orbit',
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 15,
+            ),
             new RemoteLocalExecutorTransportFailed(
                 'Remote local executor transport failed: cURL error 52: Empty reply from server',
             ),
@@ -531,7 +645,7 @@ it('skips a workload node already on the target version and runs no remote updat
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->updatedNodes())
+        ->and(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['app-prod-1'])
         ->and($shell->scriptsFor('app-dev-1'))
         ->toBe([])
@@ -569,7 +683,7 @@ it('runs workload installs through the typed Agent-push local executor', functio
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->updatedNodes())
+        ->and(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['app-dev-1'])
         ->and($shell->calls[0]['script'])
         ->toBe('internal:fleet-update:install-cli')
@@ -578,6 +692,8 @@ it('runs workload installs through the typed Agent-push local executor', functio
         ->toHaveKey('transport')
         ->and($shell->calls[0]['options']['cwd'] ?? null)
         ->toBe('/home/orbit')
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(2)
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
 });
@@ -602,6 +718,7 @@ it('retries workload CLI installs when the previous launcher exits during self u
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payloads = workload_updater_install_payloads($shell, node: 'app-dev-1');
 
     expect($results)
         ->toMatchArray([
@@ -614,9 +731,16 @@ it('retries workload CLI installs when the previous launcher exits during self u
             ],
         ])
         ->and($shell->updateScriptCallsFor('app-dev-1'))
-        ->toBe(2)
+        ->toBe(3)
+        ->and($payloads[0]['role_images'])
+        ->toBeEmpty()
+        ->and($payloads[0]['agent_artifact'])
+        ->toBeNull()
         ->and($shell->calls[0]['options']['input'])
         ->toBe($shell->calls[1]['options']['input'])
+        ->and($payloads[2]['role_images'])
+        ->not
+        ->toBeEmpty()
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
 });
@@ -663,7 +787,7 @@ it('records workload CLI installs when the Agent transport disconnects during se
             ],
         ])
         ->and($shell->updateScriptCallsFor('app-dev-1'))
-        ->toBe(1)
+        ->toBe(2)
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0')
         ->and($node->fresh()->installed_agent?->sha256)
@@ -807,13 +931,13 @@ it('updates topology candidate artifacts with the same version when the CLI hash
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->updatedNodes())
+        ->and(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['app-dev-1'])
-        ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1')])
-        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['artifact_url'])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(2)
+        ->and(workload_updater_full_install_payload($shell, node: 'app-dev-1')['artifact_url'])
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
-        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['role_image_aliases'])
+        ->and(workload_updater_full_install_payload($shell, node: 'app-dev-1')['role_image_aliases'])
         ->toBe([
             [
                 'source' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-candidate-build@sha256:'
@@ -917,8 +1041,8 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         ->toBe(2)
         ->and($results[1]['doctor_issues'])
         ->toBe(0)
-        ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1')])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(2)
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
@@ -957,8 +1081,8 @@ it('keeps a workload update completed when advisory node doctor fails', function
                 'doctor_issues' => null,
             ],
         ])
-        ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1')])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(2)
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
@@ -1082,12 +1206,12 @@ it('continues updating later workload nodes when one remote update fails', funct
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->updatedNodes())
+        ->and(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['app-dev-1', 'app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))
-        ->toHaveCount(1)
-        ->and($shell->scriptsFor('app-prod-1'))
-        ->toBe([$shell->scriptFor('app-prod-1')])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(1)
+        ->and($shell->updateScriptCallsFor('app-prod-1'))
+        ->toBe(2)
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 });
@@ -1285,12 +1409,12 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
 
     app(UpdateRunner::class)->run($run->id);
 
-    expect($shell->updatedNodes())
+    expect(array_values(array_unique($shell->updatedNodes())))
         ->toBe(['app-dev-1'])
         ->and($shell->versionProbeCallsFor('app-dev-1'))
         ->toBe(0)
         ->and($shell->updateScriptCallsFor('app-dev-1'))
-        ->toBe(1)
+        ->toBe(2)
         ->and($shell->activeLeases)
         ->toBe([
             'app-dev-1' => ['fleet:update-all', 'node:app-dev-1'],
@@ -1623,6 +1747,20 @@ function workload_updater_install_payload(WorkloadUpdaterFakeShell $shell, strin
 
     /** @var array<string, mixed> $payload */
     return $payload;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function workload_updater_full_install_payload(WorkloadUpdaterFakeShell $shell, string $node): array
+{
+    $payloads = workload_updater_install_payloads($shell, node: $node);
+
+    if ($payloads === []) {
+        return [];
+    }
+
+    return $payloads[array_key_last($payloads)] ?? [];
 }
 
 /**

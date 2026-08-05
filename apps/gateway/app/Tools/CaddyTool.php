@@ -59,6 +59,16 @@ final class CaddyTool extends BaseTool
         );
     }
 
+    /**
+     * Restart the orbit-caddy container so newly installed file-backed TLS leaves
+     * are served. Caddy `reload` alone keeps in-memory certificate material when
+     * only cert/key files change and the Caddyfile text is unchanged.
+     */
+    public static function restartCommand(string $container = 'orbit-caddy'): string
+    {
+        return 'docker restart '.escapeshellarg($container);
+    }
+
     public static function reloadWithRetryCommand(string $container = 'orbit-caddy', int $attempts = 20): string
     {
         $attempts = max(1, $attempts);

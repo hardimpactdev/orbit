@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
@@ -35,7 +35,7 @@ function createAppRemoveCallerNode(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = ['project:remove']): void
+function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = ['app:remove']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -67,7 +67,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $developmentNode);
 
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->create([
                 'name' => 'docs',
@@ -75,10 +75,10 @@ describe('AppRemoveController', function (): void {
                 'repository' => 'git@github.com:orbit/docs.git',
                 'adopted' => true,
             ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
             'adopted' => false,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $developmentNode->id,
                 node: $developmentNode->name,
                 path: '/srv/docs-development',
@@ -86,10 +86,10 @@ describe('AppRemoveController', function (): void {
                 domain: 'docs-development.test',
             ),
         ]);
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
             'adopted' => true,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $productionNode->id,
                 node: $productionNode->name,
                 path: '/srv/docs-production',
@@ -104,26 +104,26 @@ describe('AppRemoveController', function (): void {
 
             ProxyRoute::query()->create([
                 'node_id' => $node->id,
-                'domain' => $config instanceof OrbitAppInstanceDriverConfigData ? (string) $config->domain : '',
+                'domain' => $config instanceof OrbitInstanceDriverConfigData ? (string) $config->domain : '',
                 'app_id' => $app->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'source_hash' => str_repeat('a', times: 64),
             ]);
-            Schedule::factory()->forAppInstance($instance)->create();
+            Schedule::factory()->forInstance($instance)->create();
             $workspace = Workspace::factory()->for($app)->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
             ]);
             OrbitProcess::factory()
                 ->forOwner($app, $node)
                 ->create([
-                    'app_instance_id' => $instance->id,
+                    'instance_id' => $instance->id,
                     'name' => "{$instance->name}-project",
                 ]);
             OrbitProcess::factory()
                 ->forOwner($workspace, $node)
                 ->create([
-                    'app_instance_id' => $instance->id,
+                    'instance_id' => $instance->id,
                     'name' => "{$instance->name}-workspace",
                 ]);
         }
@@ -134,7 +134,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -143,14 +143,14 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.name', 'docs')
-            ->assertJsonPath('success.data.project.repository', 'git@github.com:orbit/docs.git')
-            ->assertJsonMissingPath('success.data.project.node')
-            ->assertJsonMissingPath('success.data.project.url')
-            ->assertJsonMissingPath('success.data.project.path')
-            ->assertJsonMissingPath('success.data.project.root')
-            ->assertJsonMissingPath('success.data.project.adopted')
-            ->assertJsonPath('success.data.instances.0.project', 'docs')
+            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.app.repository', 'git@github.com:orbit/docs.git')
+            ->assertJsonMissingPath('success.data.app.node')
+            ->assertJsonMissingPath('success.data.app.url')
+            ->assertJsonMissingPath('success.data.app.path')
+            ->assertJsonMissingPath('success.data.app.root')
+            ->assertJsonMissingPath('success.data.app.adopted')
+            ->assertJsonPath('success.data.instances.0.app', 'docs')
             ->assertJsonPath('success.data.instances.0.name', 'development')
             ->assertJsonPath('success.data.instances.0.adopted', false)
             ->assertJsonPath('success.data.instances.1.name', 'production')
@@ -180,7 +180,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -229,7 +229,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -240,11 +240,11 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 1);
 
-        expect(Project::query()->where('name', 'docs')->exists())
+        expect(App::query()->where('name', 'docs')->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -267,7 +267,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -289,7 +289,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -300,12 +300,12 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 1)
             ->assertJsonMissingPath('success.meta.warnings');
 
-        expect(Project::query()->whereKey($app->id)->exists())
+        expect(App::query()->whereKey($app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -321,17 +321,17 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->create([
                 'name' => 'docs',
                 'node_id' => $legacyNode->id,
                 'path' => '/legacy/apps/docs',
             ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver' => AppInstanceDriver::LaravelCloud,
-            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::LaravelCloud,
+            'driver_config' => new LaravelCloudInstanceDriverConfigData(
                 application_id: 'app_123',
                 environment_id: 'env_123',
             ),
@@ -343,7 +343,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -365,17 +365,17 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->create([
                 'name' => 'docs',
                 'node_id' => $legacyNode->id,
                 'path' => '/legacy/apps/docs',
             ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node: 'missing-app-node',
                 path: '/srv/apps/docs',
             ),
@@ -387,7 +387,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -416,34 +416,34 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->create([
                 'name' => 'docs',
                 'node_id' => $legacyNode->id,
                 'path' => '/legacy/apps/docs',
             ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $resolvedNode->id,
                 node: $resolvedNode->name,
                 path: '/srv/apps/docs-development',
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node: 'missing-app-node',
                 path: '/srv/apps/docs-production',
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'staging',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node: 'missing-staging-node',
                 path: '/srv/apps/docs-staging',
             ),
@@ -455,7 +455,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -498,15 +498,15 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $developmentNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $developmentNode->id,
             'runtime' => 'static',
         ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $developmentNode->id,
                 node: $developmentNode->name,
                 path: '/srv/docs-development',
@@ -514,10 +514,10 @@ describe('AppRemoveController', function (): void {
                 domain: 'docs-development.test',
             ),
         ]);
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $productionNode->id,
                 node: $productionNode->name,
                 path: '/srv/docs-production',
@@ -529,14 +529,14 @@ describe('AppRemoveController', function (): void {
         OrbitProcess::factory()
             ->forOwner($app, $developmentNode)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'queue',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
         OrbitProcess::factory()
             ->forOwner($app, $productionNode)
             ->create([
-                'app_instance_id' => $production->id,
+                'instance_id' => $production->id,
                 'name' => 'queue',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
@@ -547,7 +547,7 @@ describe('AppRemoveController', function (): void {
 
         $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -587,38 +587,38 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $developmentNode);
 
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->create([
                 'name' => 'docs',
                 'node_id' => $developmentNode->id,
                 'path' => '/legacy/docs',
             ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $developmentNode->id,
                 node: $developmentNode->name,
                 path: '/srv/docs-development',
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node: $productionNode->name,
                 path: '/srv/shared-production',
             ),
         ]);
 
-        $otherApp = Project::factory()
+        $otherApp = App::factory()
             ->static()
             ->create([
                 'name' => 'admin',
                 'path' => '/legacy/admin',
             ]);
-        AppInstance::factory()->for($otherApp)->create([
+        Instance::factory()->for($otherApp)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $productionNode->id,
                 node: $productionNode->name,
                 path: '/srv/shared-production',
@@ -631,7 +631,7 @@ describe('AppRemoveController', function (): void {
 
         $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -663,7 +663,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -690,7 +690,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -720,32 +720,32 @@ describe('AppRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantAppRemoveAccess($caller, $targetNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/projects/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
         $response
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force');
 
-        expect(Project::query()->whereKey($app->id)->exists())->toBeTrue();
+        expect(App::query()->whereKey($app->id)->exists())->toBeTrue();
     });
 
-    it('rejects app removal when the caller lacks project:remove on the app node', function (): void {
+    it('rejects app removal when the caller lacks app:remove on the app node', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'status' => 'active',
         ]);
-        grantAppRemoveAccess($caller, $targetNode, ['project:read']);
+        grantAppRemoveAccess($caller, $targetNode, ['app:read']);
 
-        Project::factory()->create([
+        App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -754,7 +754,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/projects/docs',
+            '/api/apps/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -766,10 +766,10 @@ describe('AppRemoveController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'project:remove')
+            ->assertJsonPath('error.meta.missing_permission', 'app:remove')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(Project::query()->where('name', 'docs')->exists())->toBeTrue();
+        expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
     });
 });
 

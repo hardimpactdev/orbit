@@ -25,7 +25,11 @@ interface RunsInternalCommands
      *     redact_command_options?: list<string>,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      * }  $transportOptions
+     *
+     * `environment` is filtered through the operation-token allowlist; arbitrary
+     * keys are not token-bound or Agent-envelope-bound.
      */
     public function runInternal(
         Node $node,

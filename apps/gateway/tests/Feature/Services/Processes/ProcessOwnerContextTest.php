@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessOwnerContext;
@@ -22,15 +22,15 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
         'tld' => 'test',
     ]);
 
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'domain' => 'docs.test',
     ]);
 
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -40,14 +40,14 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
     ]);
 
     $workspace = Workspace::factory()->for($app, 'app')->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-docs',
     ]);
 
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'frankenphp-docs',
             'runtime' => ProcessRuntime::Docker,
             'sort_order' => 0,
@@ -55,7 +55,7 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'queue',
             'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 10,
@@ -63,7 +63,7 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
             'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 20,
@@ -76,7 +76,7 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
         app: $app,
         workspace: $workspace,
         owner: $workspace,
-        appInstance: $instance,
+        instance: $instance,
     );
 
     $processes = $context->lifecycleProcesses(null);

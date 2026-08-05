@@ -62,6 +62,11 @@ final readonly class RemoteDockerSwarmService
         return $this->run($node, 'stop', $service)->successful();
     }
 
+    public function isActive(Node $node, string $service): bool
+    {
+        return $this->run($node, 'is-active', $service)->successful();
+    }
+
     private function run(
         Node $node,
         string $action,

@@ -70,6 +70,61 @@ describe('internal app source path probe command', function (): void {
                 'exists' => true,
             ]));
     });
+
+    it('resolves symlinks and reports whether they stay inside an absolute boundary', function (): void {
+        $boundary = sys_get_temp_dir().'/orbit-app-source-boundary-'.bin2hex(random_bytes(8));
+        $release = "{$boundary}/releases/20260729_100713_219";
+        $outside = sys_get_temp_dir().'/orbit-app-source-outside-'.bin2hex(random_bytes(8));
+        mkdir($release, recursive: true);
+        mkdir($outside);
+        symlink($release, "{$boundary}/live");
+        symlink($outside, "{$boundary}/escaped");
+        $resolvedRelease = realpath($release);
+        $resolvedOutside = realpath($outside);
+        assert(is_string($resolvedRelease));
+        assert(is_string($resolvedOutside));
+
+        try {
+            [$insideExitCode, $insideOutput] = run_internal_app_source_path_probe_command([
+                'path' => "{$boundary}/live",
+                '--boundary' => $boundary,
+                '--operation-token' => app_source_path_probe_signed_operation_token(),
+                '--json' => true,
+            ]);
+            [$outsideExitCode, $outsideOutput] = run_internal_app_source_path_probe_command([
+                'path' => "{$boundary}/escaped",
+                '--boundary' => $boundary,
+                '--operation-token' => app_source_path_probe_signed_operation_token(),
+                '--json' => true,
+            ]);
+        } finally {
+            unlink("{$boundary}/live");
+            unlink("{$boundary}/escaped");
+            rmdir($release);
+            rmdir("{$boundary}/releases");
+            rmdir($boundary);
+            rmdir($outside);
+        }
+
+        expect($insideExitCode)
+            ->toBe(0)
+            ->and(json_decode($insideOutput, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::success([
+                'path' => "{$boundary}/live",
+                'exists' => true,
+                'resolved_path' => $resolvedRelease,
+                'within_boundary' => true,
+            ]))
+            ->and($outsideExitCode)
+            ->toBe(0)
+            ->and(json_decode($outsideOutput, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::success([
+                'path' => "{$boundary}/escaped",
+                'exists' => true,
+                'resolved_path' => $resolvedOutside,
+                'within_boundary' => false,
+            ]));
+    });
 });
 
 function app_source_path_probe_signed_operation_token(

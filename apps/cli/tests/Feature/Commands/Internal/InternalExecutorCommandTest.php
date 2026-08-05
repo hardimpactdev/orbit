@@ -10,6 +10,8 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * Minimal concrete command for testing the InternalExecutorCommand base.
@@ -27,6 +29,28 @@ class TestInternalExecutorCommand extends InternalExecutorCommand
         }
 
         return $this->emitInternalSuccess(['verified' => true, 'command' => 'test:internal-executor-command']);
+    }
+}
+
+/**
+ * Echoes buffered stdin after token verification for payload-binding regression coverage.
+ */
+class TestInternalExecutorStdinCommand extends InternalExecutorCommand
+{
+    protected $signature = 'test:internal-executor-stdin {--operation-token=} {--json}';
+
+    protected $description = 'Test InternalExecutorCommand stdin buffer binding';
+
+    public function handle(): int
+    {
+        if (! $this->verifyOperationToken('test:internal-executor-stdin')) {
+            return self::FAILURE;
+        }
+
+        return $this->emitInternalSuccess([
+            'stdin' => $this->stdin(),
+            'stdin_again' => $this->stdin(),
+        ]);
     }
 }
 
@@ -120,6 +144,60 @@ describe('InternalExecutorCommand base', function (): void {
             ->toBe(1)
             ->and($decoded)
             ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
+    });
+
+    it('propagates recognized gateway denial reasons into the CLI failure code', function (string $reason): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+            'reason' => $reason,
+            'operation_id' => 'op-safe-reason',
+        ]));
+
+        [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+            '--operation-token' => signInternalExecutorToken(id: 'op-safe-reason'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure($reason, 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('operation_id')->and($output)
+            ->not->toContain('op-safe-reason');
+    })->with([
+        'invalid_token',
+        'arguments_mismatch',
+        'target_node_mismatch',
+        'command_mismatch',
+        'operation.already_dispatched',
+        'operation.not_found',
+    ]);
+
+    it('keeps unknown gateway denial reasons generic and redacted in JSON failures', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+            'reason' => 'secret_path_/etc/orbit/key.pem',
+            'operation_id' => 'op-unsafe-reason',
+        ]));
+
+        [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+            '--operation-token' => signInternalExecutorToken(id: 'op-unsafe-reason'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('secret_path')->and($output)
+            ->not->toContain('/etc/orbit/key.pem')->and($output)
+            ->not->toContain('op-unsafe-reason');
     });
 
     it('posts the compact token and expected command to the gateway verifier', function (): void {
@@ -386,4 +464,68 @@ describe('InternalExecutorCommand base', function (): void {
 
         Http::assertNothingSent();
     });
+
+    it('binds the same stdin payload for token verification and the handler after capture', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
+        $boundInput = json_encode([
+            'container' => 'orbit-caddy',
+            'action' => 'apply',
+            'marker' => 'post-verify-payload',
+        ], JSON_THROW_ON_ERROR);
+
+        $token = signInternalExecutorToken(command: 'test:internal-executor-stdin');
+
+        [$exitCode, $output] = run_test_internal_executor_stdin_command([
+            '--operation-token' => $token,
+            '--json' => true,
+        ], $boundInput);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['stdin'] ?? null)
+            ->toBe($boundInput)
+            ->and($decoded['success']['data']['stdin_again'] ?? null)
+            ->toBe($boundInput);
+
+        Http::assertSent(static function (Request $request) use ($token, $boundInput): bool {
+            $operationToken = $request['operation_token'] ?? null;
+            $input = $request['input'] ?? null;
+
+            return (
+                $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+                && is_string($operationToken)
+                && hash_equals($token, $operationToken)
+                && ($request['command'] ?? null) === 'test:internal-executor-stdin'
+                && is_string($input)
+                && hash_equals($boundInput, $input)
+            );
+        });
+    });
 });
+
+/**
+ * @param  array<string, mixed>  $parameters
+ * @return array{int, string}
+ */
+function run_test_internal_executor_stdin_command(array $parameters = [], string $stdin = ''): array
+{
+    $command = new TestInternalExecutorStdinCommand;
+    app(Kernel::class)->registerCommand($command);
+
+    $stream = fopen(filename: 'php://temp', mode: 'r+');
+    fwrite($stream, $stdin);
+    rewind($stream);
+
+    $input = new ArrayInput($parameters);
+    $input->setStream($stream);
+
+    $output = new BufferedOutput;
+    $exitCode = $command->run($input, $output);
+
+    return [$exitCode, trim($output->fetch())];
+}

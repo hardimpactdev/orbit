@@ -11,7 +11,7 @@ final class AppMountCommand extends AppGatewayCommand
     #[\Override]
     protected $signature = 'instance:mount
         {action? : Action to perform (list|add|remove)}
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {source? : Host source path for add}
         {target? : Container target path}
         {--read-only : Mount read-only (default)}

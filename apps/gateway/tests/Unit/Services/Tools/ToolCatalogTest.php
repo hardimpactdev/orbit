@@ -13,9 +13,7 @@ use App\Tools\DockerTool;
 use App\Tools\GhTool;
 use App\Tools\GitTool;
 use App\Tools\HermesTool;
-use App\Tools\OpenCodeCliTool;
 use App\Tools\OrbStackTool;
-use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Tests\TestCase;
@@ -45,8 +43,12 @@ describe('tool catalog definitions', function (): void {
             ->toHaveCount(count($catalog->names()))
             ->each->toBeInstanceOf(ToolDefinition::class);
 
-        expect($catalog->definition('polyscope-server'))
-            ->toBeInstanceOf(PolyscopeServerTool::class);
+        expect($catalog->supports('opencode-cli'))
+            ->toBeFalse()
+            ->and($catalog->supports('polyscope-server'))
+            ->toBeFalse()
+            ->and($catalog->definition('hermes'))
+            ->toBeInstanceOf(HermesTool::class);
     });
 
     it('catalogs OrbStack as a macOS infrastructure runtime-provider tool', function (): void {
@@ -317,58 +319,23 @@ describe('tool catalog definitions', function (): void {
             ->toBeNull();
     });
 
-    it('catalogs agent IDE servers as installed capabilities with process-owned lifecycle', function (
-        string $tool,
-        string $binary,
-        string $definition,
-    ): void {
-        $catalog = app(ToolCatalog::class);
-        $metadata = $catalog->probeMetadata($tool);
-        $repairCommands = is_array($metadata['repair_commands'] ?? null)
-            ? $metadata['repair_commands']
-            : [];
-
-        expect($catalog->definition($tool))
-            ->toBeInstanceOf($definition)
-            ->and($metadata)
-            ->toMatchArray([
-                'binary' => $binary,
-            ])
-            ->and($metadata)
-            ->not->toHaveKey('supervisor_program')->and($metadata)
-            ->not->toHaveKey('supervisor_log')->and($repairCommands)->toBe([])->and($catalog->logCommand(
-                $tool,
-                50,
-            ))->toBeNull()->and($catalog->logCommand($tool, 50, follow: true))->toBeNull();
-
-        foreach ([
-            $catalog->installScript($tool),
-            $catalog->removeScript($tool),
-            $catalog->reconfigureScript($tool),
-            $catalog->updateScript($tool),
-        ] as $script) {
-            expect((string) $script)
-                ->not->toContain('supervisorctl')
-                ->not->toContain('/etc/supervisor')
-                ->not->toContain('systemctl')
-                ->not->toContain('loginctl')
-                ->not->toContain('.config/systemd/user');
-        }
-    })->with([
-        'opencode cli' => ['opencode-cli', 'opencode', OpenCodeCliTool::class],
-        'polyscope server' => ['polyscope-server', 'polyscope-server', PolyscopeServerTool::class],
-    ]);
-
-    it('does not catalog opencode-server as the canonical managed tool slug', function (): void {
+    it('does not catalog removed OpenCode or PolyScope tools as active capabilities', function (string $tool): void {
         $catalog = app(ToolCatalog::class);
 
-        expect($catalog->supports('opencode-server'))
+        expect($catalog->supports($tool))
             ->toBeFalse()
-            ->and($catalog->definition('opencode-server'))
+            ->and($catalog->definition($tool))
             ->toBeNull()
-            ->and($catalog->installScript('opencode-server'))
-            ->toBeNull();
-    });
+            ->and($catalog->installScript($tool))
+            ->toBeNull()
+            ->and($catalog->capabilities($tool))
+            ->toBe([]);
+    })->with([
+        'opencode-cli',
+        'opencode',
+        'opencode-server',
+        'polyscope-server',
+    ]);
 
     it('catalogs Docker as the Linux and macOS Docker-compatible provider capability', function (): void {
         $catalog = app(ToolCatalog::class);
@@ -678,10 +645,10 @@ describe('tool catalog definitions', function (): void {
             ->toContain('start', 'stop', 'restart')
             ->and($catalog->lifecycleScript('caddy', 'reload'))
             ->toContain('caddy reload')
-            ->and($catalog->capabilities('opencode-cli'))
-            ->toContain('start', 'stop', 'restart', 'logs')
-            ->and($catalog->capabilities('polyscope-server'))
-            ->toContain('start', 'stop', 'restart', 'logs');
+            ->and($catalog->supports('opencode-cli'))
+            ->toBeFalse()
+            ->and($catalog->supports('polyscope-server'))
+            ->toBeFalse();
     });
 
     it('probes Hermes through the system wrapper that delegates to the agent user', function (): void {

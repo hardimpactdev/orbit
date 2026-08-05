@@ -3,16 +3,16 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteEnactment;
@@ -47,7 +47,7 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
@@ -61,9 +61,9 @@ describe('ProxyRouteFixer', function (): void {
             key: 'proxy.agent_tool_route_missing',
             kind: DriftKind::Missing,
             summary: 'missing agent tool route',
-            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+            detail: ['tool' => 'hermes', 'domain' => 'hermes.agent'],
         ));
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->firstOrFail();
 
         expect($action)
             ->toMatchArray([
@@ -73,8 +73,8 @@ describe('ProxyRouteFixer', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
                 'details' => [
-                    'route' => 'openclaw.agent',
-                    'tool' => 'openclaw',
+                    'route' => 'hermes.agent',
+                    'tool' => 'hermes',
                 ],
             ])
             ->and($route->owner_type)
@@ -85,7 +85,7 @@ describe('ProxyRouteFixer', function (): void {
             ->toMatchArray([
                 'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
                 'upstream' => 'http://host.docker.internal:8080',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ])
             ->and($route->source_hash)
             ->toBe(new ProxyRouteRenderer()->sourceHash($route))
@@ -108,19 +108,19 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => str_repeat(string: 'a', times: 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
                 'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ],
         ]);
         new ProxyFixerRecordingRemoteShell;
@@ -134,9 +134,9 @@ describe('ProxyRouteFixer', function (): void {
             key: 'proxy.agent_tool_route_mismatch',
             kind: DriftKind::Divergent,
             summary: 'mismatched agent tool route',
-            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+            detail: ['tool' => 'hermes', 'domain' => 'hermes.agent'],
         ));
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->firstOrFail();
 
         expect($action['status'])
             ->toBe('completed')
@@ -357,7 +357,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -423,7 +423,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -487,14 +487,14 @@ describe('ProxyRouteFixer', function (): void {
     it('retries the complete app route enactment before clearing partial state', function (): void {
         $defaultNode = createTestAppHostNode(['name' => 'app-1', 'tld' => 'test']);
         $nmbpNode = createTestAppHostNode(['name' => 'nmbp', 'tld' => 'nmbp']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $defaultNode->id,
             'name' => 'docs',
             'domain' => 'docs.test',
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $defaultNode->id,
                 node: $defaultNode->name,
                 path: '/srv/docs',
@@ -502,9 +502,9 @@ describe('ProxyRouteFixer', function (): void {
                 domain: 'docs.test',
             ),
         ]);
-        $nmbp = AppInstance::factory()->for($app)->create([
+        $nmbp = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $nmbpNode->id,
                 node: $nmbpNode->name,
                 path: '/Users/nckrtl/apps/docs',
@@ -519,7 +519,7 @@ describe('ProxyRouteFixer', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'id' => $nmbp->id,
                     'name' => 'nmbp',
                     'selector' => 'docs.nmbp',
@@ -545,7 +545,7 @@ describe('ProxyRouteFixer', function (): void {
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
-            appRouteEnactor: function (Project $target, ?AppInstance $instance) use ($route, &$reenacted): void {
+            appRouteEnactor: function (App $target, ?Instance $instance) use ($route, &$reenacted): void {
                 $reenacted[] = [
                     'app' => $target->name,
                     'domain' => $target->domain,
@@ -693,7 +693,7 @@ describe('ProxyRouteFixer', function (): void {
         $backend = Node::factory()->create(['name' => 'web-1']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -759,7 +759,7 @@ describe('ProxyRouteFixer', function (): void {
             'role' => 'app-prod',
             'status' => 'active',
         ]);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -924,7 +924,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('re-applies app proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'document_root' => 'public',
@@ -984,17 +984,17 @@ describe('ProxyRouteFixer', function (): void {
 
     it('re-applies canonical app instance routes from concrete app instance intent', function (): void {
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'happie',
             'domain' => 'happie.test',
             'path' => '/Users/nckrtl/apps/happie',
             'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: 'nmbp',
                 path: '/Users/nckrtl/apps/happie',
@@ -1053,9 +1053,9 @@ describe('ProxyRouteFixer', function (): void {
             ->toContain('tls_server_name happie.nmbp')
             ->not->toContain('reverse_proxy https://orbit-app-happie:8443')
             ->not->toContain('tls_server_name happie.test')->and($config['target'])->toBe([
-                'type' => 'app_instance',
+                'type' => 'instance',
                 'value' => 'happie.nmbp',
-            ])->and($config['app_instance'])->toMatchArray([
+            ])->and($config['instance'])->toMatchArray([
                 'name' => 'nmbp',
                 'selector' => 'happie.nmbp',
                 'domain' => 'happie.nmbp',
@@ -1066,7 +1066,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('repairs app route TLS through the site certificate installer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'document_root' => 'public',
@@ -1129,7 +1129,7 @@ describe('ProxyRouteFixer', function (): void {
         'restores a legacy app route persisted with only php_socket by deriving the FrankenPHP runtime upstream from the app identity (instead of throwing)',
         function (): void {
             $node = createTestAppHostNode(['name' => 'app-1']);
-            $app = Project::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
                 ->for($app, 'app')
@@ -1215,6 +1215,7 @@ describe('ProxyRouteFixer', function (): void {
                 'node' => 'app-1',
                 'key' => 'proxy.caddy_container_down',
                 'status' => 'completed',
+                'summary' => 'Restored orbit-caddy container on app-1.',
             ])
             ->and($shell->nodes[0]->is($node))
             ->toBeTrue()
@@ -1223,7 +1224,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])
             ->toContain('expected_hash=')
             ->and($shell->scripts[0])
-            ->toContain('docker start')
+            ->toContain('apply-container')
             ->and($shell->scripts[0])
             ->not->toContain('systemctl')->and($shell->scripts[0])
             ->not->toContain('caddy.service');
@@ -1395,6 +1396,106 @@ describe('ProxyRouteFixer', function (): void {
             ->toBeTrue();
     });
 
+    it('rewrites the obsolete intermediate_lifetime 3599d global option without touching PEM paths', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'mini',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.30')->spec()],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell(<<<'CADDY'
+            {
+                local_certs
+                admin localhost:2019
+                pki {
+                    ca local {
+                        intermediate_lifetime 3599d
+                    }
+                }
+            }
+
+            custom.mini {
+                respond ok
+            }
+            CADDY);
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixGlobalConfig($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.global_config_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'legacy intermediate_lifetime 3599d',
+            detail: ['node' => 'mini'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'mini',
+                'key' => 'proxy.global_config_mismatch',
+                'status' => 'completed',
+            ])
+            ->and($shell->globalConfig)
+            ->not->toContain('intermediate_lifetime 3599d')
+            ->not->toContain('intermediate_lifetime')->toContain('custom.mini')->toContain(
+                'local_certs',
+            )->and(proxy_fixer_scripts_contain(
+                $shell,
+                needle: "internal:caddy-config 'write-global'",
+            ))->toBeTrue()->and(implode("\n", $shell->scripts))
+            ->not->toContain('root.crt')
+            ->not->toContain('intermediate.crt')
+            ->not->toContain('/var/lib/orbit/caddy/data/pki');
+    });
+
+    it('restores missing global config through apply-container when a managed caddy spec exists', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'mini',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.30')->spec()],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixGlobalConfig($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.global_config_missing',
+            kind: DriftKind::Missing,
+            summary: 'global config missing',
+            detail: ['node' => 'mini'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'mini',
+                'key' => 'proxy.global_config_missing',
+                'status' => 'completed',
+                'summary' => 'Restored host global orbit-caddy config and container on mini.',
+            ])
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'apply-container'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeFalse()
+            ->and($shell->scripts[0])
+            ->toContain('global_config');
+    });
+
     it('reloads the e2e caddy container scoped to the serving node', function (): void {
         $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
         $nodeContainer = getenv('ORBIT_NODE_CONTAINER');
@@ -1512,7 +1613,7 @@ describe('ProxyRouteFixer', function (): void {
                 'role' => 'app-prod',
                 'status' => 'active',
             ]);
-            $app = Project::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($edge, 'node')
                 ->for($app, 'app')

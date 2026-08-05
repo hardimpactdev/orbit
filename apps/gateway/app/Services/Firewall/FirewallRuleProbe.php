@@ -377,14 +377,23 @@ final readonly class FirewallRuleProbe
      */
     private function expectedShape(FirewallRule $rule): array
     {
+        $source = $this->normalizeEndpoint($this->normalizeAnyEndpoint($rule->source));
+        $destination = $rule->destination === null
+            ? null
+            : $this->normalizeEndpoint($this->normalizeAnyEndpoint($rule->destination));
+
         return [
             'direction' => $rule->direction,
             'action' => $rule->action,
-            'source' => $this->normalizeAnyEndpoint($rule->source),
-            'destination' => $rule->destination === null ? null : $this->normalizeAnyEndpoint($rule->destination),
+            'source' => $source,
+            'destination' => $destination,
             'port' => $rule->port,
             'protocol' => $rule->protocol,
-            'address_family' => $rule->address_family,
+            'address_family' => FirewallRuleShapeCanonicalizer::effectiveAddressFamily(
+                $rule->address_family,
+                $source,
+                $destination,
+            ),
             'interface' => $rule->interface,
         ];
     }
@@ -522,18 +531,22 @@ final readonly class FirewallRuleProbe
 
     private function normalizeEndpoint(string $value): string
     {
-        return match ($value) {
+        $value = match ($value) {
             'Anywhere' => 'any',
             default => $value,
         };
+
+        return FirewallRuleShapeCanonicalizer::canonicalizeHostCidr($value);
     }
 
     private function normalizeAnyEndpoint(string $value): string
     {
-        return match ($value) {
+        $value = match ($value) {
             '0.0.0.0/0', '::/0' => 'any',
             default => $value,
         };
+
+        return FirewallRuleShapeCanonicalizer::canonicalizeHostCidr($value);
     }
 
     private function normalizeInterface(string $interface): string

@@ -16,7 +16,7 @@ trust material, and gateway API access policy.
 
 The gateway root CA is the trust anchor for Orbit-managed HTTPS inside the
 Orbit network. The gateway owns root CA private material and route certificate
-issuance. Project, instance, workspace, proxy, gateway, and tool route domains may receive
+issuance. App, instance, workspace, proxy, gateway, and tool route domains may receive
 leaf certificate material that the gateway issues on their serving nodes, but route
 applying and route doctor families own those artifacts. Gateway commands only
 install or repair caller-local trust for the public root.
@@ -44,6 +44,12 @@ Gateway exposure has two modes:
 - `gateway-direct`: `orbit-gateway` publishes gateway HTTPS directly. The leaf
   certificate chains to the Orbit root CA, and firewall rules restrict access
   for TCP/443 and UDP/443 to the Orbit/WireGuard path.
+
+In both modes the gateway leaf SANs cover the short host `gateway`, the
+configured browser Gateway hostname (default `gateway.orbit` for Toolbar /
+TypeScript SDK / EventSource), and the gateway WireGuard API IP. Fresh install
+and convergence reissue the leaf when that SAN set is incomplete; complete
+leaves stay idempotent. TLS verification is never weakened.
 
 ## Streaming under Docker runtime
 

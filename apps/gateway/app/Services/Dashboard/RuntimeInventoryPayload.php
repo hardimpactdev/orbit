@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Dashboard;
 
 use App\Enums\Nodes\NodeStatus;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
-use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppShowVisibility;
+use App\Services\Apps\InstancePayloads;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -32,7 +32,7 @@ final readonly class RuntimeInventoryPayload
     /**
      * @return array{
      *     nodes: list<array<string, mixed>>,
-     *     projects: list<array<string, mixed>>,
+     *     apps: list<array<string, mixed>>,
      *     processes: list<array<string, mixed>>,
      *     tools: list<array<string, mixed>>,
      * }
@@ -41,7 +41,7 @@ final readonly class RuntimeInventoryPayload
     {
         return [
             'nodes' => $this->nodePayloads($this->fetchNodes()),
-            'projects' => $this->projectPayloads($caller),
+            'apps' => $this->projectPayloads($caller),
             'processes' => $this->processPayloads($this->fetchProcesses($caller)),
             'tools' => array_values(
                 $this
@@ -71,22 +71,22 @@ final readonly class RuntimeInventoryPayload
     }
 
     /**
-     * @return Collection<int, Project>
+     * @return Collection<int, App>
      */
     private function fetchApps(Node $caller): Collection
     {
-        /** @var Collection<int, Project> $apps */
-        $apps = Project::query()
+        /** @var Collection<int, App> $apps */
+        $apps = App::query()
             ->with(['instances', 'dependencyAuditSummaries'])
             ->get();
 
         /** @mago-expect lint:inline-variable-return */
         $visibleApps = $apps
-            ->filter(fn (Project $app): bool => $this->appVisibility->visibleInstances($app, $caller) !== [])
-            ->sortBy(static fn (Project $app): string => mb_strtolower($app->name))
+            ->filter(fn (App $app): bool => $this->appVisibility->visibleInstances($app, $caller) !== [])
+            ->sortBy(static fn (App $app): string => mb_strtolower($app->name))
             ->values();
 
-        /** @var Collection<int, Project> $visibleApps */
+        /** @var Collection<int, App> $visibleApps */
         return $visibleApps;
     }
 
@@ -95,10 +95,10 @@ final readonly class RuntimeInventoryPayload
      */
     private function projectPayloads(Node $caller): array
     {
-        $instancePayloads = app(AppInstancePayloads::class);
+        $instancePayloads = app(InstancePayloads::class);
 
         return array_values(
-            $this->fetchApps($caller)->map(function (Project $app) use ($caller, $instancePayloads): array {
+            $this->fetchApps($caller)->map(function (App $app) use ($caller, $instancePayloads): array {
                 $instances = array_map(
                     $instancePayloads->placement(...),
                     $this->appVisibility->visibleInstances($app, $caller),
@@ -232,7 +232,7 @@ final readonly class RuntimeInventoryPayload
 
                 return [
                     'node' => $process->node?->name,
-                    'project' => $app?->name,
+                    'app' => $app?->name,
                     'workspace' => $workspace?->name,
                     'name' => $process->name,
                     'command' => $process->command,

@@ -10,14 +10,14 @@ Choose one action and identify the workspace by name or run the command from
 inside its registered path.
 
 ```bash
-orbit workspace:env list [name] [--instance=<project.instance>] [--json]
-orbit workspace:env set [name] [--instance=<project.instance>] --key=<KEY> --value=<value> [--apply] [--json]
-orbit workspace:env render [name] [--instance=<project.instance>] [--json]
+orbit workspace:env list [name] [--instance=<app.instance>] [--json]
+orbit workspace:env set [name] [--instance=<app.instance>] --key=<KEY> --value=<value> [--apply] [--json]
+orbit workspace:env render [name] [--instance=<app.instance>] [--json]
 ```
 
 When `[name]` is omitted, Orbit resolves a registered workspace from the
 caller's absolute current directory. `--instance` disambiguates workspace names that
-exist under more than one project or instance.
+exist under more than one app or instance.
 
 ## What Happens
 
@@ -28,14 +28,18 @@ production-like URLs or environment labels; Orbit does not reject them based
 on their content.
 
 `set` stores gateway intent only. `set --apply` writes the effective map only to
-the selected workspace's `.env`, clears Laravel config and generated bootstrap
-cache files at the workspace path as its runtime user, and reapplies that
-workspace runtime when it uses PHP. It never writes the parent instance or a
-sibling workspace.
+the selected registered workspace's `.env` (including Orbit-managed
+`.worktrees/<workspace>` paths), preserves unrelated variables and the existing
+file mode, publishes the file atomically, clears Laravel config and generated
+bootstrap cache files at the workspace path as its runtime user, and restarts
+that workspace runtime when it uses PHP—even when the container is already
+matching and running. It never writes the parent instance or a sibling
+workspace.
 
-Every response identifies `scope=workspace`, `project`, `instance`, `workspace`,
+Every response identifies `scope=workspace`, `app`, `instance`, `workspace`,
 the concrete `.env` `path`, and `stored`, `applied`, and
-`runtime_restarted` outcomes.
+`runtime_restarted` outcomes. Apply failures distinguish registry-only storage
+from post-write runtime failures.
 
 ## Requirements
 

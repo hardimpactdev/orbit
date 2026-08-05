@@ -8,6 +8,7 @@ use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
@@ -81,6 +82,11 @@ final readonly class RemoteSystemdService
         return $this->run($node, 'restart', $service)->successful();
     }
 
+    public function isActive(Node $node, string $service): bool
+    {
+        return $this->run($node, 'is-active', $service)->successful();
+    }
+
     public function remove(Node $node, string $service, string $unitPath): bool
     {
         return $this->run($node, 'remove', $service, $unitPath)->successful();
@@ -106,6 +112,9 @@ final readonly class RemoteSystemdService
             'metadata' => [
                 'ORBIT_OPERATION_ID' => "process.systemd.{$action}",
             ],
+            // systemd units live on the host; leave the container only when the
+            // target is the gateway node.
+            'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
             'timeout' => 60,
         ];
 

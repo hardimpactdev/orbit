@@ -55,10 +55,9 @@ $tld = suggest(
 
 ## Reference Implementations
 
-No node commands use `suggest` at plan time.
-
-- None in the node domain at plan time. Add a row here when a node command
-  adopts `suggest`.
+No public command currently uses `suggest` as its interactive primitive. Prefer
+`select` for closed enums and `search` / `datatable` for dynamic registries.
+Add a row here when a command adopts `suggest`.
 
 ## Cross References
 

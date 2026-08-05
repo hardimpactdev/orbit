@@ -7,10 +7,10 @@ namespace App\Http\Controllers\Api\DatabaseConnections;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
@@ -104,11 +104,11 @@ abstract class DatabaseConnectionApiController implements Loggable
 
     protected function authorizeListScope(
         Node $caller,
-        ?AppInstance $instance,
+        ?Instance $instance,
         ?Workspace $workspace,
         ?Node $node,
     ): ?JsonResponse {
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return $this->authorizeNodePermission($caller, $this->ownerNode($instance), 'database:read');
         }
 
@@ -216,7 +216,7 @@ abstract class DatabaseConnectionApiController implements Loggable
     {
         $connection->loadMissing([
             'node',
-            'targets.appInstance.app.node',
+            'targets.instance.app.node',
             'targets.workspace.app.node',
         ]);
 
@@ -227,8 +227,8 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         foreach ($connection->targets as $target) {
-            $instanceNode = $target->appInstance instanceof AppInstance
-                ? $this->workspacePlacement->nodeForInstance($target->appInstance)
+            $instanceNode = $target->instance instanceof Instance
+                ? $this->workspacePlacement->nodeForInstance($target->instance)
                 : null;
 
             if ($instanceNode instanceof Node) {
@@ -255,9 +255,9 @@ abstract class DatabaseConnectionApiController implements Loggable
 
     protected function targetOwnerNode(string $target): ?Node
     {
-        $instance = $this->resolver->resolveAppInstanceSelector($target);
+        $instance = $this->resolver->resolveInstanceSelector($target);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return $this->ownerNode($instance);
         }
 
@@ -270,13 +270,13 @@ abstract class DatabaseConnectionApiController implements Loggable
         return null;
     }
 
-    protected function ownerNode(Project|Workspace|AppInstance $owner): ?Node
+    protected function ownerNode(App|Workspace|Instance $owner): ?Node
     {
-        if ($owner instanceof AppInstance) {
+        if ($owner instanceof Instance) {
             return $this->workspacePlacement->nodeForInstance($owner);
         }
 
-        if ($owner instanceof Project) {
+        if ($owner instanceof App) {
             $owner->loadMissing('node');
 
             return $owner->node;
@@ -365,7 +365,7 @@ abstract class DatabaseConnectionApiController implements Loggable
     }
 
     /**
-     * @return array{0: 'app_instance', 1: AppInstance}|array{0: 'workspace', 1: Workspace}|JsonResponse
+     * @return array{0: 'instance', 1: Instance}|array{0: 'workspace', 1: Workspace}|JsonResponse
      */
     protected function resolveTargetScope(Request $request, string $envPrefix, Node $caller): array|JsonResponse
     {
@@ -408,9 +408,9 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         if ($instanceSelector !== null) {
-            $instanceModel = $this->resolver->resolveAppInstanceSelector($instanceSelector);
+            $instanceModel = $this->resolver->resolveInstanceSelector($instanceSelector);
 
-            if (! $instanceModel instanceof AppInstance) {
+            if (! $instanceModel instanceof Instance) {
                 return $this->validationFailed(
                     'instance',
                     "Invalid value for --instance: '{$instanceSelector}'.",
@@ -422,7 +422,7 @@ abstract class DatabaseConnectionApiController implements Loggable
                 );
             }
 
-            return ['app_instance', $instanceModel];
+            return ['instance', $instanceModel];
         }
 
         if ($workspaceModel === null) {
@@ -599,7 +599,7 @@ abstract class DatabaseConnectionApiController implements Loggable
 
     protected function ensureWorkspaceTargetSupported(string $target, Node $caller): ?JsonResponse
     {
-        if ($this->resolver->resolveAppInstanceSelector($target) instanceof AppInstance) {
+        if ($this->resolver->resolveInstanceSelector($target) instanceof Instance) {
             return null;
         }
 

@@ -18,8 +18,8 @@ label/value renderer is named [`property-list`](property-list.md).
 Use `data-list` in the following situations.
 
 - The operator should scan several columns and select one row.
-- Selecting a logical entity opens its detail view, such as `project:list`
-  selecting an app and continuing to `project:show`.
+- Selecting a logical entity opens its detail view, such as `app:list`
+  selecting an app and continuing to `app:show`.
 - The finite registry list benefits from keyboard navigation and `/` search.
 
 ## Avoid When
@@ -66,8 +66,9 @@ $selected = datatable(
 
 ## Reference Implementation
 
-- `orbit project:list` — renders the Name, Repository, Instances, and Workspaces
-  columns and opens the selected app's `project:show` drill-down.
+- `orbit app:list` — renders the Name, Repository, Instances, and Workspaces
+  columns and opens the selected app's `app:show` drill-down. The
+  prompt label is `Select an app`.
 
 ## Cross References
 

@@ -13,7 +13,7 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'instance-setup-step:remove
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {--step= : Setup step id}
         {--force : Skip confirmation}
         {--json : Output JSON}';

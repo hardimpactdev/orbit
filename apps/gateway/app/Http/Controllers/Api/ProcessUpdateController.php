@@ -99,7 +99,7 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, instance: string|null, workspace: string|null, changes: array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}, restart: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, changes: array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -107,6 +107,7 @@ final class ProcessUpdateController implements Loggable
         $app = $this->optionalString($request, 'instance');
         $workspace = $this->optionalString($request, 'workspace');
         $newName = $this->optionalString($request, 'name');
+        $label = $this->validatedLabel($request);
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy');
         $crashNotificationInput = $this->optionalString($request, 'crash_notification');
@@ -115,6 +116,10 @@ final class ProcessUpdateController implements Loggable
 
         if ($binds instanceof JsonResponse) {
             return $binds;
+        }
+
+        if ($label instanceof JsonResponse) {
+            return $label;
         }
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
@@ -142,6 +147,7 @@ final class ProcessUpdateController implements Loggable
 
         if (
             $newName === null
+            && $label === null
             && $command === null
             && $restartPolicyInput === null
             && $crashNotificationInput === null
@@ -172,6 +178,10 @@ final class ProcessUpdateController implements Loggable
             }
 
             $changes['name'] = $newName;
+        }
+
+        if ($label !== null) {
+            $changes['label'] = $label;
         }
 
         if ($command !== null) {
@@ -249,21 +259,6 @@ final class ProcessUpdateController implements Loggable
             $changes['runtime'] = $runtime;
         }
 
-        if (
-            ($changes['runtime'] ?? null) === ProcessRuntime::Launchd
-            && ($changes['crash_notification'] ?? null) === ProcessCrashNotification::AgentIde
-        ) {
-            return $this->error(
-                'validation_failed',
-                'Crash notification via agent_ide is deferred for launchd runtime.',
-                [
-                    'field' => 'crash_notification',
-                    'reason' => 'launchd_crash_notification_deferred',
-                ],
-                422,
-            );
-        }
-
         if ($binds !== null) {
             $changes['binds'] = $binds;
         }
@@ -335,6 +330,50 @@ final class ProcessUpdateController implements Loggable
         $value = $request->input($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * Optional process display label for updates. Omitted returns null.
+     * Present but empty/whitespace or over 255 fails validation.
+     */
+    private function validatedLabel(Request $request): string|JsonResponse|null
+    {
+        if (! $request->exists('label')) {
+            return null;
+        }
+
+        $value = $request->input('label');
+
+        if (! is_string($value)) {
+            return $this->error(
+                'validation_failed',
+                'The process label must be a non-empty string.',
+                ['field' => 'label'],
+                422,
+            );
+        }
+
+        $label = trim($value);
+
+        if ($label === '') {
+            return $this->error(
+                'validation_failed',
+                'The process label must be a non-empty string.',
+                ['field' => 'label'],
+                422,
+            );
+        }
+
+        if (mb_strlen($label) > 255) {
+            return $this->error(
+                'validation_failed',
+                'The process label may not be greater than 255 characters.',
+                ['field' => 'label', 'max' => 255],
+                422,
+            );
+        }
+
+        return $label;
     }
 
     /**

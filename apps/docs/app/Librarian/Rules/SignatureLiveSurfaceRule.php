@@ -200,8 +200,14 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
      */
     private function publicOptionsFor(CliCommand $command): array
     {
+        // Map internal Symfony option names to the public launcher spellings only
+        // where the documented contract is the public form (see NativeCommandNormalizer).
+        // analytics:update documents `--requested-version` because that is the
+        // command signature and `orbit analytics:update --help` surface; the
+        // launcher may rewrite `--version=` for convenience, but docs must not
+        // pretend `--version` is the command option (global `-V|--version` is
+        // framework version display).
         $optionAliases = match ($command->name) {
-            'analytics:update' => ['requested-version' => 'version'],
             'process:add' => ['service-version' => 'version'],
             default => [],
         };

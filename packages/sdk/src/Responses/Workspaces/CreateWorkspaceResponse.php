@@ -8,15 +8,13 @@ final readonly class CreateWorkspaceResponse
 {
     public function __construct(
         public string $name,
-        public string $project,
+        public string $app,
         public string $instance,
         public ?string $node,
         public ?string $path,
         public ?string $url,
         public ?string $phpVersion,
         public bool $phpInherited,
-        /** @var array<string, mixed> */
-        public array $agentIde,
         public bool $adopted,
         public string $lifecycleStatus,
         public string $base,

@@ -7,10 +7,10 @@ namespace App\Services\Processes;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -30,24 +30,24 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         private WorkspacePlacement $placement,
     ) {}
 
-    public function forApp(Project $app, ?AppInstance $appInstance = null): Process
+    public function forApp(App $app, ?Instance $instance = null): Process
     {
         $app->loadMissing('instances');
-        $appInstance ??= $this->soleInstance($app);
-        $node = $this->placement->nodeForInstance($appInstance);
+        $instance ??= $this->soleInstance($app);
+        $node = $this->placement->nodeForInstance($instance);
 
-        if (! $node instanceof Node || $appInstance->app_id !== $app->id) {
+        if (! $node instanceof Node || $instance->app_id !== $app->id) {
             throw new InvalidArgumentException(
-                "Instance '{$app->name}.{$appInstance->name}' has no valid app owner placement.",
+                "Instance '{$app->name}.{$instance->name}' has no valid app owner placement.",
             );
         }
 
-        $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $appInstance);
-        $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $appInstance);
+        $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
+        $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
 
         return $app->processes()->updateOrCreate(
             [
-                'app_instance_id' => $appInstance->id,
+                'instance_id' => $instance->id,
                 'name' => $this->appProcessName($app),
             ],
             [
@@ -64,7 +64,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
                     'document_root' => $runtimeApp->document_root,
                     'php_ini_path' => $this->appRuntimeContainerRenderer->phpIniHostPathForInstance(
                         $app,
-                        $appInstance,
+                        $instance,
                     ),
                     'php_version' => $runtimeApp->php_version,
                     'source_path' => $runtimeApp->path,
@@ -79,7 +79,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             throw new InvalidArgumentException(
                 "Workspace '{$workspace->name}' has no owning app; cannot ensure FrankenPHP runtime process.",
             );
@@ -90,7 +90,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
 
         return $workspace->processes()->updateOrCreate(
             [
-                'app_instance_id' => $workspace->app_instance_id,
+                'instance_id' => $workspace->instance_id,
                 'name' => $this->workspaceProcessName($workspace),
             ],
             [
@@ -114,7 +114,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         );
     }
 
-    public function appProcessName(Project $app): string
+    public function appProcessName(App $app): string
     {
         return "frankenphp-{$app->name}";
     }
@@ -123,7 +123,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
     {
         $workspace->loadMissing('app');
 
-        if (! $workspace->app instanceof Project) {
+        if (! $workspace->app instanceof App) {
             throw new InvalidArgumentException(
                 "Workspace '{$workspace->name}' has no owning app; cannot name FrankenPHP runtime process.",
             );
@@ -132,12 +132,12 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         return "frankenphp-{$workspace->app->name}-{$workspace->name}";
     }
 
-    private function soleInstance(Project $app): AppInstance
+    private function soleInstance(App $app): Instance
     {
         $instances = $app->instances->values();
         $instance = $instances->first();
 
-        if ($instances->count() === 1 && $instance instanceof AppInstance) {
+        if ($instances->count() === 1 && $instance instanceof Instance) {
             return $instance;
         }
 

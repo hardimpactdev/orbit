@@ -13,6 +13,7 @@ use App\Http\Authorization\ServingNode;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Workspaces\WorkspaceEnvApplier;
+use App\Services\Workspaces\WorkspaceEnvApplyException;
 use App\Services\Workspaces\WorkspaceEnvRenderer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -92,15 +93,10 @@ final class WorkspaceEnvController implements Loggable
 
         if ($request->boolean('apply')) {
             try {
-                $payload['apply'] = $this->applier
-                    ->apply($resolved, $this->env->applicableValues($resolved))
-                    ->toArray();
+                $applyResult = $this->applier->apply($resolved, $this->env->applicableValues($resolved));
+                $payload['apply'] = $applyResult->toArray();
                 $payload['applied'] = true;
-                $payload['runtime_restarted'] = in_array(
-                    $payload['apply']['runtime_outcome'],
-                    ['created', 'recreated', 'started'],
-                    strict: true,
-                );
+                $payload['runtime_restarted'] = $applyResult->runtimeRestarted();
             } catch (Throwable $exception) {
                 return $this->applyFailed($resolved, $key, $exception);
             }
@@ -162,11 +158,11 @@ final class WorkspaceEnvController implements Loggable
         }
 
         $this->activitySubject = $workspace;
-        $workspace->loadMissing(['app', 'appInstance']);
+        $workspace->loadMissing(['app', 'instance']);
 
         return $this->success([
-            'project' => $workspace->app?->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $workspace->app?->name,
+            'instance' => $workspace->instance->name,
             'workspace' => $workspace->name,
         ]);
     }
@@ -234,13 +230,13 @@ final class WorkspaceEnvController implements Loggable
     private function queryForSelection(?AppSelection $selection): Builder
     {
         /** @var Builder<Workspace> $query */
-        $query = Workspace::query()->with(['app', 'appInstance']);
+        $query = Workspace::query()->with(['app', 'instance']);
 
         if ($selection instanceof AppSelection) {
             $query->where('app_id', $selection->app->id);
 
             if ($selection->instance !== null) {
-                $query->where('app_instance_id', $selection->instance->id);
+                $query->where('instance_id', $selection->instance->id);
             }
         }
 
@@ -250,7 +246,7 @@ final class WorkspaceEnvController implements Loggable
     /**
      * @return array{
      *     scope: string,
-     *     project: string|null,
+     *     app: string|null,
      *     instance: string,
      *     workspace: string,
      *     path: string,
@@ -261,12 +257,12 @@ final class WorkspaceEnvController implements Loggable
      */
     private function targetPayload(Workspace $workspace, bool $stored = false): array
     {
-        $workspace->loadMissing(['app', 'appInstance']);
+        $workspace->loadMissing(['app', 'instance']);
 
         return [
             'scope' => 'workspace',
-            'project' => $workspace->app?->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $workspace->app?->name,
+            'instance' => $workspace->instance->name,
             'workspace' => $workspace->name,
             'path' => $this->applier->envPath($workspace),
             'stored' => $stored,
@@ -310,14 +306,31 @@ final class WorkspaceEnvController implements Loggable
 
     private function applyFailed(Workspace $workspace, string $key, Throwable $exception): JsonResponse
     {
+        $envWritten = $exception instanceof WorkspaceEnvApplyException
+            ? $exception->envWritten
+            : false;
+        $phase = $exception instanceof WorkspaceEnvApplyException
+            ? $exception->phase
+            : 'env_write';
+        $reason = $exception->getMessage();
+
+        $message = $envWritten
+            ? "Saved '{$key}' and wrote the workspace env file for '{$workspace->name}', but cache clear or runtime restart failed."
+            : "Saved '{$key}' for workspace '{$workspace->name}' in the Orbit registry, but the workspace env file was not written.";
+
         return response()->json([
             'error' => [
                 'code' => 'workspace.env_apply_failed',
-                'message' => "Saved '{$key}' for workspace '{$workspace->name}', but applying it failed.",
+                'message' => $message,
                 'meta' => [
                     'workspace' => $workspace->name,
                     'key' => $key,
-                    'reason' => $exception->getMessage(),
+                    'phase' => $phase,
+                    'stored' => true,
+                    'env_written' => $envWritten,
+                    'applied' => false,
+                    'runtime_restarted' => false,
+                    'reason' => $reason,
                 ],
             ],
         ], 500);

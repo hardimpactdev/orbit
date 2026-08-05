@@ -9,5 +9,6 @@ enum WorkspaceRuntimeContainerApplyOutcome: string
     case Created = 'created';
     case Recreated = 'recreated';
     case Started = 'started';
+    case Restarted = 'restarted';
     case Unchanged = 'unchanged';
 }

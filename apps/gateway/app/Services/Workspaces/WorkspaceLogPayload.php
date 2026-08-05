@@ -21,7 +21,7 @@ class WorkspaceLogPayload
      */
     public function forRun(WorkspaceRun $run): array
     {
-        $run->loadMissing(['workspace.app.node', 'workspace.app.instances', 'workspace.appInstance', 'runSteps.step']);
+        $run->loadMissing(['workspace.app.node', 'workspace.app.instances', 'workspace.instance', 'runSteps.step']);
         $workspace = $run->workspace;
         $app = $workspace?->app;
         $node = $workspace instanceof Workspace
@@ -31,7 +31,7 @@ class WorkspaceLogPayload
         return [
             'id' => $run->id,
             'workspace' => $workspace?->name,
-            'project' => $app?->name,
+            'app' => $app?->name,
             'node' => $node?->name,
             'type' => $run->phase->value,
             'status' => $run->status,

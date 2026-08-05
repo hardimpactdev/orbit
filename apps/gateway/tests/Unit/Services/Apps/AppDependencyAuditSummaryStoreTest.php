@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Data\Apps\DependencyAuditParsedResult;
 use App\Enums\Apps\DependencyAuditManager;
 use App\Enums\Apps\DependencyAuditStatus;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditSummaryStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -17,7 +17,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('stores parsed summaries and aggregates app dependency audit posture', function (): void {
-    $app = Project::factory()
+    $app = App::factory()
         ->for(Node::factory(), 'node')
         ->create(['name' => 'docs']);
 
@@ -87,7 +87,7 @@ it('stores parsed summaries and aggregates app dependency audit posture', functi
 });
 
 it('stores failed and not applicable summaries distinctly from clean audits', function (): void {
-    $app = Project::factory()
+    $app = App::factory()
         ->for(Node::factory(), 'node')
         ->create(['name' => 'docs']);
 

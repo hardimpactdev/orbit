@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Nodes\NodeHostPaths;
@@ -23,7 +23,7 @@ final readonly class LaunchdPlistRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function unitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -65,7 +65,7 @@ final readonly class LaunchdPlistRenderer
         return $this->homeDirectory($node)."/Library/Logs/Orbit/processes/{$runtimeUnit}.err.log";
     }
 
-    public function render(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $label = $this->label($runtimeUnit);
@@ -78,7 +78,7 @@ final readonly class LaunchdPlistRenderer
             ? '<true/>'
             : '<false/>';
 
-        $envLines = $this->environmentEntries($app, $node, $workspace, $home);
+        $envLines = $this->environmentEntries($process, $app, $node, $workspace, $home);
 
         $xml = [
             '<?xml version="1.0" encoding="UTF-8"?>',
@@ -113,7 +113,7 @@ final readonly class LaunchdPlistRenderer
 
     private function workingDirectory(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
     ): string {
@@ -135,13 +135,25 @@ final readonly class LaunchdPlistRenderer
     /**
      * @return list<string>
      */
-    private function environmentEntries(Project $app, Node $node, ?Workspace $workspace, string $home): array
-    {
-        $environment =
-            [
-                'PATH' => "{$home}/.local/bin:{$home}/.vite-plus/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
-                'HOME' => $home,
-            ] + $this->vite->shellVariables($app, $node, $workspace);
+    private function environmentEntries(
+        Process $process,
+        App $app,
+        Node $node,
+        ?Workspace $workspace,
+        string $home,
+    ): array {
+        $environment = [
+            'PATH' => "{$home}/.local/bin:{$home}/.vite-plus/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+            'HOME' => $home,
+        ];
+
+        $process->loadMissing('owner');
+
+        // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
+        // TLS variables belong to instance/workspace process contexts.
+        if (! $process->owner instanceof Node) {
+            $environment += $this->vite->shellVariables($app, $node, $workspace);
+        }
 
         $entries = [
             '    <key>EnvironmentVariables</key>',
@@ -162,13 +174,7 @@ final readonly class LaunchdPlistRenderer
 
     private function homeDirectory(Node $node): string
     {
-        $user = is_string($node->user) && $node->user !== '' ? $node->user : 'orbit';
-
-        if (NodeHostPaths::isMacosPlatform($node->platform)) {
-            return $user === 'root' ? '/var/root' : "/Users/{$user}";
-        }
-
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 
     private function xml(string $value): string
@@ -178,7 +184,9 @@ final readonly class LaunchdPlistRenderer
 
     private function assertUnitName(string $name): string
     {
-        if (! preg_match('/^[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9])?$/', $name)) {
+        // ProcessRuntimeUnitName already bounds identity; re-assert the shared
+        // launchd contract so render/probe/restore never diverge.
+        if (! ProcessRuntimeUnitName::isValid($name)) {
             throw new InvalidArgumentException("Invalid launchd runtime unit name: {$name}");
         }
 

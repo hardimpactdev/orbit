@@ -16,7 +16,7 @@ final readonly class ProductCodeNamespaceRule implements GroupedRule
      */
     private const array PLURAL_PREFIXES = [
         'instances' => 'instance',
-        'projects' => 'project',
+        'apps' => 'app',
         'firewall_rules' => 'firewall_rule',
         'nodes' => 'node',
         'processes' => 'process',

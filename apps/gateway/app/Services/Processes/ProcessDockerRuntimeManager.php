@@ -80,6 +80,11 @@ final readonly class ProcessDockerRuntimeManager
         return $this->runAction($node, 'restart', $containerName)->successful();
     }
 
+    public function isRunning(Node $node, string $containerName): bool
+    {
+        return $this->runAction($node, 'is-active', $containerName)->successful();
+    }
+
     /**
      * @param  array<string, mixed>  $extraPayload
      */

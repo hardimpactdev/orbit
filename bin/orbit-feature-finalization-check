@@ -15,18 +15,28 @@ Usage:
   Required before merge-back:
     bin/orbit-feature-finalization-check git merge <feature-branch>
 
-  Required after a compact session archive exists:
+  Required after a compact session archive exists and is committed with index:
     bin/orbit-feature-finalization-check git worktree remove <worktree-path>
     bin/orbit-feature-finalization-check git branch -d <feature-branch>
 
+  Solo cleanup (exact numeric ids; no chains; no --confirm-stop-running):
+    bin/orbit-feature-finalization-check <solo-cli> processes stop <id>
+    bin/orbit-feature-finalization-check <solo-cli> projects delete <id>
+
 Explicit invocations print FINALIZATION: PASS or FINALIZATION: BLOCKED and
-exit 64 when the arguments cannot be classified as a merge/cleanup boundary,
-instead of silently passing.
+exit 64 when the arguments cannot be classified as a merge/cleanup/Solo
+boundary, instead of silently passing.
+
+Prefer bin/orbit-feature-land on primary main to coordinate resume-safe LAND.
+Every destructive mutation still validates here first, then executes separately.
 
 Merge requires diff-derived green proof, one independent reviewer PASS,
 accepted feature HEAD, the actual accepted main tip, a clean worktree including
 nonignored untracked files, and a conflict-free preview. Cleanup additionally
-requires a compact receipt or compatible historical/full archive.
+requires a compact receipt or compatible historical/full archive whose matching
+archive directory and .orbit/sessions/index.json are tracked and committed.
+Solo process-stop/project-delete require ownership of a linked feature worktree,
+landed tip, and that same committed archive/index gate.
 
 This applies the same boundary gate as the Codex PreToolUse hook without
 relying on hook interception.

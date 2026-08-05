@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -20,7 +20,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function makePhpApp(array $overrides = []): Project
+function makePhpApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
@@ -36,10 +36,10 @@ function makePhpApp(array $overrides = []): Project
 /**
  * @param  array<string, mixed>  $attributes
  */
-function makeRuntimeRendererApp(Node $node, array $attributes): Project
+function makeRuntimeRendererApp(Node $node, array $attributes): App
 {
-    $app = Project::factory()->for($node, 'node')->create($attributes);
-    assert($app instanceof Project);
+    $app = App::factory()->for($node, 'node')->create($attributes);
+    assert($app instanceof App);
 
     return $app;
 }
@@ -55,14 +55,14 @@ function rendererForTest(): AppRuntimeContainerRenderer
 /**
  * @param  array<string, mixed>  $overrides
  */
-function workerRuntimeInstance(Project $app, array $overrides = []): AppInstance
+function workerRuntimeInstance(App $app, array $overrides = []): Instance
 {
     $app->loadMissing('node');
 
-    return AppInstance::factory()->for($app)->create(array_merge([
+    return Instance::factory()->for($app)->create(array_merge([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             node: $app->node?->name,
             path: $app->path,
@@ -167,10 +167,10 @@ it('uses only runtime mounts owned by the matching app instance for app containe
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: 'beast',
             path: '/home/nckrtl/apps/hauser',
@@ -179,20 +179,20 @@ it('uses only runtime mounts owned by the matching app instance for app containe
         ),
     ]);
     assert(
-        $instance instanceof AppInstance,
+        $instance instanceof Instance,
         description: 'Factory must return an app instance for runtime mount preference coverage.',
     );
     $instance
         ->runtimeMounts()
         ->create([
-            'source' => '/home/nckrtl/volumes/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/volumes/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
-    $otherInstance = AppInstance::factory()->for($app)->create([
+    $otherInstance = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: 'beast',
             path: '/home/nckrtl/apps/hauser-preview',
@@ -200,12 +200,12 @@ it('uses only runtime mounts owned by the matching app instance for app containe
             domain: 'hauser.preview',
         ),
     ]);
-    assert($otherInstance instanceof AppInstance);
+    assert($otherInstance instanceof Instance);
     $otherInstance
         ->runtimeMounts()
         ->create([
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
 
@@ -219,14 +219,14 @@ it('uses only runtime mounts owned by the matching app instance for app containe
         ])
         ->and($mounts)
         ->toContain([
-            'source' => '/home/nckrtl/volumes/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/volumes/apps',
+            'target' => '/apps',
             'read_only' => true,
         ])
         ->and($mounts)
         ->not->toContain([
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
 });
@@ -241,10 +241,10 @@ it('renders concrete app instance runtime containers with instance identity and 
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'nmbp',
             path: '/Users/nckrtl/apps/hauser',
@@ -255,8 +255,8 @@ it('renders concrete app instance runtime containers with instance identity and 
     $instance
         ->runtimeMounts()
         ->create([
-            'source' => '/Users/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/Users/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
 
@@ -278,8 +278,8 @@ it('renders concrete app instance runtime containers with instance identity and 
         ])
         ->and($container->mounts())
         ->toContain([
-            'source' => '/Users/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/Users/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ])
         ->and(rendererForTest()->phpIniHostPathForInstance($app, $instance))
@@ -295,10 +295,10 @@ it('does not use runtime mounts from another app instance when the matching inst
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: 'beast',
             path: '/home/nckrtl/apps/hauser',
@@ -306,10 +306,10 @@ it('does not use runtime mounts from another app instance when the matching inst
             domain: 'hauser.development',
         ),
     ]);
-    $otherInstance = AppInstance::factory()->for($app)->create([
+    $otherInstance = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: 'beast',
             path: '/home/nckrtl/apps/hauser-preview',
@@ -317,20 +317,20 @@ it('does not use runtime mounts from another app instance when the matching inst
             domain: 'hauser.preview',
         ),
     ]);
-    assert($otherInstance instanceof AppInstance);
+    assert($otherInstance instanceof Instance);
     $otherInstance
         ->runtimeMounts()
         ->create([
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
 
     $mounts = rendererForTest()->render($app)->mounts();
 
     expect($mounts)->not->toContain([
-        'source' => '/home/nckrtl/projects',
-        'target' => '/projects',
+        'source' => '/home/nckrtl/apps',
+        'target' => '/apps',
         'read_only' => true,
     ]);
 });
@@ -344,10 +344,10 @@ it('renders configured app instance runtime mounts after built-in mounts', funct
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -355,7 +355,7 @@ it('renders configured app instance runtime mounts after built-in mounts', funct
             domain: 'nckrtl.test',
         ),
     ]);
-    assert($instance instanceof AppInstance);
+    assert($instance instanceof Instance);
     $instance
         ->runtimeMounts()
         ->create([
@@ -488,27 +488,27 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
 it('does not change the spec hash when another app instance runtime mount changes', function (): void {
     $renderer = rendererForTest();
     $app = makePhpApp(['name' => 'docs-dev']);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
             domain: 'docs-dev.test',
         ),
     ]);
-    $otherInstance = AppInstance::factory()->for($app)->create([
+    $otherInstance = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: '/home/orbit/apps/docs-preview',
             document_root: $app->document_root,
             domain: 'docs-dev.preview',
         ),
     ]);
-    assert($otherInstance instanceof AppInstance);
+    assert($otherInstance instanceof Instance);
 
     $withoutConfiguredMount = $renderer->render($app)->specHash();
 
@@ -535,10 +535,10 @@ it('changes the spec hash when matching app instance runtime mounts change', fun
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: 'beast',
             path: '/home/nckrtl/apps/hauser',
@@ -547,7 +547,7 @@ it('changes the spec hash when matching app instance runtime mounts change', fun
         ),
     ]);
     assert(
-        $instance instanceof AppInstance,
+        $instance instanceof Instance,
         description: 'Factory must return an app instance for runtime mount hash coverage.',
     );
 
@@ -556,8 +556,8 @@ it('changes the spec hash when matching app instance runtime mounts change', fun
     $instance
         ->runtimeMounts()
         ->create([
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ]);
     $instance->unsetRelation('runtimeMounts');
@@ -675,7 +675,7 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
 });
 
 it('does not render runtime client trust for app-prod PHP runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $node = createTestAppHostNode(['user' => 'orbit'], role: 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',
@@ -837,6 +837,40 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod classic
     $container = rendererForTest()->render($app);
 
     expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse();
+});
+
+it('runs a release-aware production runtime from the active live application root', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = workerRuntimeInstance($app, [
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/docs/app',
+            document_root: 'live/public',
+            domain: 'docs.example.com',
+        ),
+    ]);
+
+    $container = rendererForTest()->renderForInstance($app, $instance);
+
+    expect($container->workingDirectory())
+        ->toBe('/app/live')
+        ->and($container->environment())
+        ->toMatchArray([
+            'APP_BASE_PATH' => '/app/live',
+            'SERVER_ROOT' => '/app/live/public',
+        ])
+        ->and($container->spec()['working_directory'] ?? null)
+        ->toBe('/app/live');
 });
 
 it('renders the FrankenPHP worker block against public/frankenphp-worker.php with workers=auto', function (): void {

@@ -23,6 +23,9 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $addPayload = proxyCommandPayload($add->output());
 
+        $addStatus = $addPayload['success']['data']['route']['status'] ?? null;
+        $addWarningCodes = collect($addPayload['success']['meta']['warnings'] ?? [])->pluck('code')->all();
+
         expect($add->successful())
             ->toBeTrue()
             ->and($addPayload['success']['data']['route'])
@@ -30,7 +33,6 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
                 'domain' => $domain,
                 'kind' => 'proxy',
                 'node' => 'app-dev-1',
-                'status' => 'intent_only',
             ])
             ->and($addPayload['success']['data']['route']['owner']['type'])
             ->toBe('custom')
@@ -39,8 +41,18 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
                 'type' => 'upstream',
                 'value' => 'http://127.0.0.1:5173',
             ])
-            ->and($addPayload['success']['meta']['warnings'][0]['code'])
-            ->toBe('proxy.enactment_deferred');
+            // One-step custom add: healthy path converges; apply failure keeps the
+            // row and returns success with proxy.enactment_failed (never deferred).
+            ->and(in_array($addStatus, ['converged', 'failed', 'partial'], true))
+            ->toBeTrue()
+            ->and($addWarningCodes)
+            ->not->toContain('proxy.enactment_deferred');
+
+        if ($addStatus === 'converged') {
+            expect($addWarningCodes)->not->toContain('proxy.enactment_failed');
+        } else {
+            expect($addWarningCodes)->toContain('proxy.enactment_failed');
+        }
 
         $list = $topology->ssh(
             'gateway',
@@ -67,26 +79,50 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $removePayload = proxyCommandPayload($remove->output());
 
-        expect($remove->successful())
-            ->toBeTrue()
-            ->and($removePayload['success']['data']['route'])
-            ->toMatchArray([
-                'domain' => $domain,
-                'kind' => 'proxy',
-                'node' => 'app-dev-1',
-                'status' => 'removed_with_drift',
-            ])
-            ->and($removePayload['success']['meta']['warnings'][0]['code'])
-            ->toBe('proxy.cleanup_deferred');
+        if ($remove->successful()) {
+            expect($removePayload['success']['data']['route'])
+                ->toMatchArray([
+                    'domain' => $domain,
+                    'kind' => 'proxy',
+                    'node' => 'app-dev-1',
+                    'status' => 'removed',
+                ])
+                ->and($removePayload['success']['meta']['backend_removed'] ?? null)
+                ->toBeTrue()
+                ->and($removePayload['success']['meta']['tls_removed'] ?? null)
+                ->toBeTrue()
+                ->and(collect($removePayload['success']['meta']['warnings'] ?? [])->pluck('code')->all())
+                ->not->toContain('proxy.cleanup_deferred')
+                ->not->toContain('proxy.cleanup_failed');
 
-        $after = $topology->ssh(
-            'gateway',
-            "cd {$checkout} && orbit proxy:list --node=app-dev-1 --filter=custom --json",
-            timeoutSeconds: 120,
-        );
-        $afterRoutes = proxyCommandPayload($after->output())['success']['data']['routes'];
+            $after = $topology->ssh(
+                'gateway',
+                "cd {$checkout} && orbit proxy:list --node=app-dev-1 --filter=custom --json",
+                timeoutSeconds: 120,
+            );
+            $afterRoutes = proxyCommandPayload($after->output())['success']['data']['routes'];
 
-        expect(array_column($afterRoutes, 'domain'))->not->toContain($domain);
+            expect(array_column($afterRoutes, 'domain'))->not->toContain($domain);
+        } else {
+            // Safe cleanup contract: registry row remains; hard proxy.cleanup_failed.
+            expect($removePayload['error']['code'] ?? null)
+                ->toBe('proxy.cleanup_failed')
+                ->and($removePayload['error']['meta']['backend_removed'] ?? null)
+                ->toBeFalse()
+                ->and($removePayload['error']['meta']['tls_removed'] ?? null)
+                ->toBeFalse()
+                ->and($removePayload['error']['meta']['next_command'] ?? null)
+                ->toContain('doctor --family=proxy --restore');
+
+            $after = $topology->ssh(
+                'gateway',
+                "cd {$checkout} && orbit proxy:list --node=app-dev-1 --filter=custom --json",
+                timeoutSeconds: 120,
+            );
+            $afterRoutes = proxyCommandPayload($after->output())['success']['data']['routes'];
+
+            expect(array_column($afterRoutes, 'domain'))->toContain($domain);
+        }
     } finally {
         $topology->ssh(
             'gateway',

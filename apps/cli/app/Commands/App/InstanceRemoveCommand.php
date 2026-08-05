@@ -12,12 +12,12 @@ final class InstanceRemoveCommand extends InstanceCommand
 {
     #[\Override]
     protected $signature = 'instance:remove
-        {instance? : project.instance selector}
+        {instance? : app.instance selector}
         {--force : Confirm destructive remove}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove an instance from a project.';
+    protected $description = 'Remove an instance from an app.';
 
     public function handle(): int
     {
@@ -33,7 +33,7 @@ final class InstanceRemoveCommand extends InstanceCommand
             }
 
             $confirmed = confirm(
-                label: "Remove instance '{$selector['project']}.{$selector['instance']}'? The project and sibling instances will remain.",
+                label: "Remove instance '{$selector['app']}.{$selector['instance']}'? The app and sibling instances will remain.",
                 default: false,
             );
 
@@ -47,7 +47,7 @@ final class InstanceRemoveCommand extends InstanceCommand
 
         try {
             $response = $this->gatewayDelete($this->apiProjectPath(
-                $selector['project'],
+                $selector['app'],
                 '/instances/'.rawurlencode($selector['instance']),
             ), [
                 'destructive_consent' => true,

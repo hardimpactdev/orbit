@@ -19,18 +19,16 @@ use Override;
 /**
  * @property int $id
  * @property int $app_id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property string $name
  * @property string $path
  * @property string|null $php_version
- * @property string|null $agent_ide
- * @property string|null $agent_ide_workspace_id
  * @property WorkspaceLifecycleStatus $lifecycle_status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Project|null $project
- * @property-read Project|null $app
- * @property-read AppInstance $appInstance
+ * @property-read App|null $app
+ * @property-read App|null $app
+ * @property-read Instance $instance
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, WorkspaceEnvVariable> $envVariables
@@ -45,12 +43,10 @@ class Workspace extends Model
     #[Override]
     protected $fillable = [
         'app_id',
-        'app_instance_id',
+        'instance_id',
         'name',
         'path',
         'php_version',
-        'agent_ide',
-        'agent_ide_workspace_id',
         'lifecycle_status',
     ];
 
@@ -63,29 +59,19 @@ class Workspace extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * Private compatibility relation for app-named persistence identifiers.
-     *
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class, 'app_instance_id');
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /**
@@ -153,9 +139,9 @@ class Workspace extends Model
             return $this->php_version;
         }
 
-        $this->loadMissing('project');
+        $this->loadMissing('app');
 
-        return $this->project?->php_version;
+        return $this->app?->php_version;
     }
 
     public function url(): string

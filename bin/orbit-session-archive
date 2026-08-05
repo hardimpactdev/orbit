@@ -65,19 +65,27 @@ if (array_key_exists('help', $options)) {
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
           --full                       Preserve the complete active .orbit state and provider captures.
                                        The default archive is compact: loop.md, feedback.jsonl when present,
-                                       evidence/quality-gate files cited as exact inline-code paths, and a
-                                       versioned archive receipt.
+                                       evidence/quality-gate/release-evidence files cited as exact
+                                       inline-code paths, and a versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
           --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
           --max-start-distance, --only-ok.
 
-        The active <source-orbit-dir>/loop.md is required. When the newest archive
-        for the same slug already contains a byte-identical loop.md, that archive is
-        refreshed in place instead of minting a near-duplicate directory. Compact
-        loop.md files stay byte-stable; the versioned receipt records the archive.
-        Historical loop packets retain their Evidence Links write-back behavior.
+        The active <source-orbit-dir>/loop.md is required. When an existing compact
+        schema-v2/v3 archive already has matching content identity (byte-identical
+        loop.md and/or matching receipt entry_digests for loop.md), that archive is
+        refreshed in place instead of minting a near-duplicate directory — including
+        when the caller's slug differs from the archive basename. The existing valid
+        archive path is never renamed or removed until the replacement payload has
+        fully validated and swapped. Cleanup discoverability for branch-derived
+        slugs is preserved via receipt branch/compatible_slugs metadata, not by
+        pre-success rename. Compact loop.md files stay byte-stable; the versioned
+        receipt records the archive. Newly written compact receipts use schema_version
+        3 (release-evidence roots included). Historical schema-v2 receipts remain
+        valid with evidence/quality-gates proof roots only. Historical loop packets
+        retain their Evidence Links write-back behavior.
 
         In --full mode, if no explicit provider process context is supplied, this command scans
         <source-orbit-dir>/loop.md for Solo process ids and passes them as a
@@ -243,9 +251,16 @@ try {
     $entryDigests = archiveEntryDigests($temporaryArchiveDir, $copiedEntries);
     $branch = archiveGitValue($cwd, ['branch', '--show-current']) ?? 'unknown';
     $candidateCommit = archiveGitValue($cwd, ['rev-parse', 'HEAD']) ?? 'unknown';
+    $requestedSlug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
+    $basenameSlug = preg_match(
+        '/^\d{4}-\d{2}-\d{2}-\d{6}-([a-z0-9-]+)$/',
+        basename($archiveDir),
+        $basenameParts,
+    ) === 1 ? $basenameParts[1] : $requestedSlug;
+    $compatibleSlugs = archiveCompatibleSlugs($options, $cwd, $archiveDir, $mode);
 
     $summary = [
-        'schema_version' => 2,
+        'schema_version' => $archiveMode === 'compact' ? 3 : 2,
         'generated_at' => gmdate('c'),
         'mode' => $mode,
         'archive_mode' => $archiveMode,
@@ -254,6 +269,9 @@ try {
         'agent_sessions_dir' => $archiveMode === 'full' ? "{$archiveDir}/agent-sessions" : null,
         'copied_entries' => $copiedEntries,
         'entry_digests' => $entryDigests,
+        'slug' => $basenameSlug,
+        'requested_slug' => $requestedSlug,
+        'compatible_slugs' => $compatibleSlugs,
         'branch' => $branch,
         'candidate_commit' => $candidateCommit,
         'accepted_feature_tip' => orbitLoopLabel($updatedLoop, 'Proof', 'Accepted feature tip'),
@@ -659,8 +677,18 @@ function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbi
     $slug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
     $existingArchiveDir = newestArchiveForSlug($archiveRoot, $slug);
 
-    if ($existingArchiveDir !== null && archiveLoopMatchesActive($existingArchiveDir, $activeLoopPath)) {
+    // Same-slug refresh: any archive with matching content (including full/legacy
+    // by loop.md) may refresh under its existing path.
+    if ($existingArchiveDir !== null && archiveContentMatchesActive($existingArchiveDir, $activeLoopPath)) {
         return ["{$visibleArchiveRoot}/".basename($existingArchiveDir), $archiveRoot, 'refreshed'];
+    }
+
+    // Cross-slug reuse: only versioned compact archives, refreshed in place.
+    // Never rename here — a failed later validation must leave the original intact.
+    $contentMatchDir = newestCompactArchiveMatchingContent($archiveRoot, $activeLoopPath);
+
+    if ($contentMatchDir !== null) {
+        return ["{$visibleArchiveRoot}/".basename($contentMatchDir), $archiveRoot, 'refreshed'];
     }
 
     $timestamp = archiveTimestamp($options);
@@ -773,6 +801,52 @@ function newestArchiveForSlug(string $archiveRoot, string $slug): ?string
     return "{$archiveRoot}/{$matches[0]}";
 }
 
+/**
+ * Newest versioned compact archive under any slug whose content identity matches
+ * the active loop. Compatible slug variants reuse one archive in place; full and
+ * legacy archives are never selected for cross-slug reuse.
+ */
+function newestCompactArchiveMatchingContent(string $archiveRoot, string $activeLoopPath): ?string
+{
+    if (! is_dir($archiveRoot)) {
+        return null;
+    }
+
+    $matches = [];
+
+    foreach (new FilesystemIterator($archiveRoot, FilesystemIterator::SKIP_DOTS) as $entry) {
+        if ($entry->isLink() || ! $entry->isDir()) {
+            continue;
+        }
+
+        $name = $entry->getFilename();
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9-]+$/', $name) !== 1) {
+            continue;
+        }
+
+        $path = $entry->getPathname();
+
+        if (! isVersionedCompactArchive($path)) {
+            continue;
+        }
+
+        if (! archiveContentMatchesActive($path, $activeLoopPath)) {
+            continue;
+        }
+
+        $matches[] = $name;
+    }
+
+    if ($matches === []) {
+        return null;
+    }
+
+    rsort($matches, SORT_STRING);
+
+    return "{$archiveRoot}/{$matches[0]}";
+}
+
 function archiveLoopMatchesActive(string $archiveDir, string $activeLoopPath): bool
 {
     $archivedLoopPath = "{$archiveDir}/loop.md";
@@ -782,6 +856,133 @@ function archiveLoopMatchesActive(string $archiveDir, string $activeLoopPath): b
     }
 
     return file_get_contents($archivedLoopPath) === file_get_contents($activeLoopPath);
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function readArchiveReceipt(string $archiveDir): ?array
+{
+    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+
+    if (! is_file($receiptPath) || is_link($receiptPath)) {
+        return null;
+    }
+
+    try {
+        /** @var mixed $receipt */
+        $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return null;
+    }
+
+    return is_array($receipt) ? $receipt : null;
+}
+
+function isVersionedCompactArchive(string $archiveDir): bool
+{
+    $receipt = readArchiveReceipt($archiveDir);
+
+    if ($receipt === null) {
+        return false;
+    }
+
+    $schemaVersion = $receipt['schema_version'] ?? null;
+
+    return in_array($schemaVersion, [2, 3], true)
+        && ($receipt['archive_mode'] ?? null) === 'compact';
+}
+
+/**
+ * Content identity: byte-identical loop.md, or compact receipt entry_digests
+ * whose loop.md digest matches the active loop file.
+ */
+function archiveContentMatchesActive(string $archiveDir, string $activeLoopPath): bool
+{
+    if (archiveLoopMatchesActive($archiveDir, $activeLoopPath)) {
+        return true;
+    }
+
+    if (! is_file($activeLoopPath) || is_link($activeLoopPath)) {
+        return false;
+    }
+
+    $activeLoopDigest = hash_file('sha256', $activeLoopPath);
+
+    if ($activeLoopDigest === false) {
+        return false;
+    }
+
+    $receipt = readArchiveReceipt($archiveDir);
+
+    if ($receipt === null) {
+        return false;
+    }
+
+    $digests = $receipt['entry_digests'] ?? null;
+
+    if (! is_array($digests)) {
+        return false;
+    }
+
+    $loopDigest = $digests['loop.md'] ?? null;
+
+    return is_string($loopDigest) && hash_equals($loopDigest, $activeLoopDigest);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ * @return list<string>
+ */
+function archiveCompatibleSlugs(
+    array $options,
+    string $cwd,
+    string $archiveDir,
+    string $mode,
+): array {
+    $requestedSlug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
+    $basename = basename($archiveDir);
+    $basenameSlug = preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-([a-z0-9-]+)$/', $basename, $parts) === 1
+        ? $parts[1]
+        : $requestedSlug;
+    $slugs = [$basenameSlug, $requestedSlug];
+
+    if ($mode === 'refreshed') {
+        $previous = readArchiveReceipt($archiveDir);
+        $previousSlugs = is_array($previous) ? ($previous['compatible_slugs'] ?? null) : null;
+
+        if (is_array($previousSlugs)) {
+            foreach ($previousSlugs as $previousSlug) {
+                if (is_string($previousSlug) && $previousSlug !== '') {
+                    $slugs[] = slugify($previousSlug);
+                }
+            }
+        }
+
+        $previousSlug = is_array($previous) ? ($previous['slug'] ?? null) : null;
+
+        if (is_string($previousSlug) && $previousSlug !== '') {
+            $slugs[] = slugify($previousSlug);
+        }
+
+        $previousRequested = is_array($previous) ? ($previous['requested_slug'] ?? null) : null;
+
+        if (is_string($previousRequested) && $previousRequested !== '') {
+            $slugs[] = slugify($previousRequested);
+        }
+    }
+
+    $unique = [];
+
+    foreach ($slugs as $slug) {
+        if ($slug !== '' && ! in_array($slug, $unique, true)) {
+            $unique[] = $slug;
+        }
+    }
+
+    sort($unique, SORT_STRING);
+
+    return $unique;
 }
 
 function sessionArchiveLinkedLoopContent(string $loopPath, string $archiveBasename): string
@@ -961,7 +1162,7 @@ function compactOrbitProofSource(string $sourceOrbitDir, string $relative, strin
     $segments = explode('/', $relative);
 
     if (
-        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates'], true)
+        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates', 'release-evidence'], true)
         || count($segments) < 2
         || in_array('', $segments, true)
         || in_array('.', $segments, true)

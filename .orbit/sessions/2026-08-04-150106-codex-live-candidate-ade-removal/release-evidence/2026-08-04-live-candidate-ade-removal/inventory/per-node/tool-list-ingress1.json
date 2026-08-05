@@ -1,0 +1,1 @@
+{"success":{"data":{"tools":[{"name":"caddy","node":"ingress1","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]},{"name":"node-exporter","node":"ingress1","expected_state":"installed","observed_state":null,"observed_version":null,"version":null,"managed":true,"endpoints":[]}]},"meta":[]}}

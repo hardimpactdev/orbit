@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--bind=<wireguard|loopback>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
+orbit process:add [name] [process_command] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--label=<label>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--bind=<wireguard|loopback>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -23,11 +23,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
+| `name` | `[name]` | Always. | Never. | None. | Process identity slug (`key`): lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
+| `label` | `--label` / body `label` | Optional. | Never. | The process identity key (`name`) when omitted. | Trimmed non-empty string; max 255 characters. |
 | `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
-| `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:add`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
+| `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:add`; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
 | `service` | `--service` | Optional. | When `tool` is present or when owner scope is instance/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
 | `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
@@ -37,11 +38,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `binds` | repeated `--bind` | Optional for node-owned Docker managed services. | Host-command processes; instance/workspace ownership; `runtime=docker-swarm`; when `service` is absent. | `["wireguard"]` when omitted. | Each value must be exactly `wireguard` or `loopback`. Empty strings and unsupported values fail with `validation_failed` (`field=bind`). Duplicates normalize. Explicit selectors replace the WireGuard-only default. Arbitrary IP addresses or interface names are never accepted. |
 | `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. A PostgreSQL override must expose a tag whose major matches the selected version family; an override cannot represent a different major while retaining stale metadata. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
-| `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
+| `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `none`. |
 | `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for Linux node-, app-, and workspace-owned host command processes; `launchd` for macOS node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. Host-command processes use `systemd` on Linux and `launchd` on macOS. Managed services accept `docker`, and accept `docker-swarm` only when their catalog entry and Linux node platform admit it. |
 | `replace_containers` | repeated `--replace-container` | Optional migration cleanup for node-owned Docker managed services. | When `service` is absent, `node` is absent, or runtime is not `docker`. | Empty list. | Each value must be an explicit Docker container name. Non-interactive mode requires `--force`. The gateway removes only these named containers before writing new process configuration. |
 | `force` | `--force` | Non-interactive `replace_containers`. | Never. | `false`. | Confirms destructive replacement-container cleanup without prompting. Ignored when no replacement containers are supplied. |
-| `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
+| `no_start` | `--no-start` | Optional. | Never. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 `process_command` is positional here because it is required to create a process definition. The sibling `process:update` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
@@ -55,7 +56,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Definition Creation Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
 3. Resolve typed managed-service options and normalized publish binds
    (`wireguard` and/or `loopback`), then validate every selected host and
@@ -72,12 +73,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    Linux nodes and `launchd` on macOS nodes. Managed services default to
    `docker` unless their catalog entry and node platform admit another service
    runtime.
-6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
-7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both project and instance slugs.
+6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, policy fields, and durable display `label` (defaulting to the identity key when omitted).
+7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both app and instance slugs.
 8. Render the derived runtime units on the resolved node or instance serving node through the selected runtime backend.
-9. Start rendered runtime units by default unless `--no-start` is present.
-10. Record `started` events for units that start successfully.
-11. Render the selected output.
+9. Start rendered runtime units by default unless `--no-start` is present. When
+   starting, record and publish a durable transitional `starting` event before
+   each runtime call, then a terminal `started` event on success or `failed`
+   when the backend returns false or throws (same starting→started/failed
+   pattern as `process:start`).
+10. Render the selected output.
 
 If process configuration is written but runtime-unit apply or optional start fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
 
@@ -102,10 +106,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
 | Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
+| Instance required | A bare app selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
 | Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
-| Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
 | Version without managed service | `--version` is supplied without `--service`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_version_requires_service`). |
 | Missing or invalid PostgreSQL option | `service=postgres` omits or supplies an invalid database, username, or published port. | Failure (`error.code=validation_failed`; `error.meta.field=service_options.<field>`). No runtime or configuration effect occurs. |
 | PostgreSQL options for another service | PostgreSQL initialization options are supplied when `service` is absent or not `postgres`. | Failure (`error.code=validation_failed`; `error.meta.field=service_options`; `error.meta.reason=process_service_options_unsupported`). |
@@ -132,7 +135,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Subject | Resolved `Node` for node-owned processes or `Instance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node`, `instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
 | Description | derived |
 

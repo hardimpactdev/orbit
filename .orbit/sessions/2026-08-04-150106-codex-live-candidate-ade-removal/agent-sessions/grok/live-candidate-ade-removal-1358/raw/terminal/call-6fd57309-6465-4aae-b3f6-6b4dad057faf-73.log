@@ -1,0 +1,18 @@
+ WARN Failed to walk `/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php`: IO error for operation on /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php: No such file or directory (os error 2). Entry will be skipped.
+ INFO All files are already formatted.
+ WARN Failed to walk `/Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php`: IO error for operation on /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/apps/gateway/apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php: No such file or directory (os error 2). Entry will be skipped.
+ INFO No files found to lint.
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m6 passed[39;22m[90m (118 assertions)[39m
+  [90mDuration:[39m [39m0.16s[39m
+
+## codex/live-candidate-ade-removal
+ M apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php
+ M docker/orbit-gateway/Dockerfile
+ M docker/orbit-gateway/Dockerfile.dockerignore
+ apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php | 74 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ docker/orbit-gateway/Dockerfile                                      |  1 -
+ docker/orbit-gateway/Dockerfile.dockerignore                         |  2 --
+ 3 files changed, 72 insertions(+), 5 deletions(-)

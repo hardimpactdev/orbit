@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Contracts\AppRuntimeUserResolver;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 
 final readonly class AppCommandRouter
@@ -22,7 +22,7 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function route(Project $app, string $command, array $environment = []): string
+    public function route(App $app, string $command, array $environment = []): string
     {
         return $this->routeForPath($app, $command, $app->path, $environment);
     }
@@ -34,7 +34,7 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function routeForPath(Project $app, string $command, string $path, array $environment = []): string
+    public function routeForPath(App $app, string $command, string $path, array $environment = []): string
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
@@ -61,7 +61,7 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function routeLifecycleForPath(Project $app, string $command, string $path, array $environment = []): string
+    public function routeLifecycleForPath(App $app, string $command, string $path, array $environment = []): string
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
@@ -85,7 +85,7 @@ final readonly class AppCommandRouter
      * @param array<string, string> $environment
      */
     public function routeLifecycleForNodePath(
-        Project $app,
+        App $app,
         Node $node,
         string $command,
         string $path,
@@ -157,7 +157,7 @@ final readonly class AppCommandRouter
         return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
-    private function managedToolPathAssignment(Project $app, string $runtimeUser, ?Node $node = null): string
+    private function managedToolPathAssignment(App $app, string $runtimeUser, ?Node $node = null): string
     {
         $home = $node instanceof Node
             ? NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser)
@@ -178,7 +178,7 @@ final readonly class AppCommandRouter
         return 'PATH='.escapeshellarg($pathPrefix).':$PATH ';
     }
 
-    private function homeDirectory(Project $app, string $runtimeUser): string
+    private function homeDirectory(App $app, string $runtimeUser): string
     {
         $app->loadMissing('node');
         $node = $app->node;

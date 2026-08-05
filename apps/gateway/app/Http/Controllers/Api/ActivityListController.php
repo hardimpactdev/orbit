@@ -21,10 +21,10 @@ final class ActivityListController implements Loggable
     private const array VALID_EFFECTS = ['read', 'write', 'destructive'];
 
     /**
-     * @var array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}
+     * @var array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}
      */
     private array $filters = [
-        'project' => null,
+        'app' => null,
         'node' => null,
         'effect' => null,
         'correlation' => null,
@@ -37,7 +37,7 @@ final class ActivityListController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'The canonical activity inventory.',
-        type: 'array{success: array{data: array{activities: list<array{id: int, occurred_at: string, correlation_id: string|null, type: string, effect: string, subject: array{type: string, name: string}|null, actor: array{node: string}|null, command: string|null, description: string|null, properties: array<string, mixed>, channel: string}>}, meta: array{filters: array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool}, limit: int, count: int, has_more: bool}}}',
+        type: 'array{success: array{data: array{activities: list<array{id: int, occurred_at: string, correlation_id: string|null, type: string, effect: string, subject: array{type: string, name: string}|null, actor: array{node: string}|null, command: string|null, description: string|null, properties: array<string, mixed>, channel: string}>}, meta: array{filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool}, limit: int, count: int, has_more: bool}}}',
     )]
     public function __invoke(Request $request, ActivityHistory $history): JsonResponse
     {
@@ -63,13 +63,13 @@ final class ActivityListController implements Loggable
     }
 
     /**
-     * @return array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}|JsonResponse
+     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}|JsonResponse
      */
     private function validatedFilters(Request $request): array|JsonResponse
     {
-        $project = $request->query('project');
-        if ($project !== null && (! is_string($project) || $project === '')) {
-            return $this->validationFailed('project', 'invalid');
+        $app = $request->query('app');
+        if ($app !== null && (! is_string($app) || $app === '')) {
+            return $this->validationFailed('app', 'invalid');
         }
 
         $node = $request->query('node');
@@ -106,7 +106,7 @@ final class ActivityListController implements Loggable
         }
 
         return [
-            'project' => is_string($project) ? $project : null,
+            'app' => is_string($app) ? $app : null,
             'node' => is_string($node) ? $node : null,
             'effect' => is_string($effect) ? $effect : null,
             'correlation' => is_string($correlation) ? $correlation : null,
@@ -165,7 +165,7 @@ final class ActivityListController implements Loggable
     public function properties(): array
     {
         return [
-            'filter_project' => $this->filters['project'],
+            'filter_app' => $this->filters['app'],
             'filter_node' => $this->filters['node'],
             'filter_effect' => $this->filters['effect'],
             'filter_correlation' => $this->filters['correlation'],

@@ -602,11 +602,11 @@ describe('agent tool fixes', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
-            'source_hash' => toolsFixerAgentRouteSourceHash($node, 'openclaw'),
-            'config' => toolsFixerAgentRouteConfig('openclaw'),
+            'source_hash' => toolsFixerAgentRouteSourceHash($node, tool: 'hermes'),
+            'config' => toolsFixerAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $fixer = new ToolsFixer(
@@ -622,7 +622,7 @@ describe('agent tool fixes', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'config' => ['owner_name' => 'hermes'],
@@ -641,10 +641,10 @@ describe('agent tool fixes', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => toolsFixerAgentRouteConfig('openclaw'),
+            'config' => toolsFixerAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $fixer = new ToolsFixer(
@@ -666,7 +666,7 @@ describe('agent tool fixes', function (): void {
 
         expect($result)
             ->toBeNull()
-            ->and(ProxyRoute::query()->where('domain', 'openclaw.agent')->exists())
+            ->and(ProxyRoute::query()->where('domain', 'hermes.agent')->exists())
             ->toBeFalse();
     });
 
@@ -674,11 +674,11 @@ describe('agent tool fixes', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'upstream',
             'source_hash' => str_repeat(string: 'a', times: 64),
-            'config' => ['owner_name' => 'openclaw'],
+            'config' => ['owner_name' => 'hermes'],
         ]);
         $fixer = new ToolsFixer(
             catalog: makeToolsFixerAgentToolCatalog(),
@@ -686,14 +686,14 @@ describe('agent tool fixes', function (): void {
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_route_missing'));
 
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->first();
+        $route = ProxyRoute::query()->where('domain', 'hermes.agent')->first();
 
         expect($result)
             ->toBeNull()
             ->and($route->kind)
             ->toBe('upstream')
             ->and($route->config)
-            ->toBe(['owner_name' => 'openclaw'])
+            ->toBe(['owner_name' => 'hermes'])
             ->and($route->source_hash)
             ->toBe(str_repeat(string: 'a', times: 64));
     });
@@ -831,7 +831,7 @@ function createAgentToolForFixer(array $nodeOverrides = []): array
     ]);
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
-        'name' => 'openclaw',
+        'name' => 'hermes',
         'expected_state' => 'installed',
     ]);
 
@@ -845,7 +845,7 @@ function agentToolDriftEntry(string $key): DriftEntry
         key: $key,
         kind: DriftKind::Missing,
         summary: 'Agent tool drift',
-        detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+        detail: ['tool' => 'hermes', 'domain' => 'hermes.agent'],
     );
 }
 
@@ -854,7 +854,8 @@ function agentToolDriftEntry(string $key): DriftEntry
  */
 function toolsFixerAgentRouteConfig(string $tool): array
 {
-    $upstream = 'http://host.docker.internal:8080';
+    $port = 8080;
+    $upstream = "http://host.docker.internal:{$port}";
 
     return [
         'target' => ['type' => 'upstream', 'value' => $upstream],
@@ -1132,7 +1133,7 @@ function tools_fixer_synthetic_script(string $script, array $payload): string
 final class ToolsFixerAgentToolDefinition implements ToolDefinition
 {
     public function __construct(
-        private readonly string $slugName = 'openclaw',
+        private readonly string $slugName = 'hermes',
         private readonly string $categoryName = 'agent',
         private readonly bool $hasCredentialsCapability = true,
         private readonly ?string $credentialsScript = "echo '[\"user\",\"pass\"]'",

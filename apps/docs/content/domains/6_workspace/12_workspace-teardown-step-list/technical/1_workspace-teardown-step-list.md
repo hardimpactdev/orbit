@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:list [--instance=<project.instance>] [--json]
+orbit workspace-teardown-step:list [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -36,20 +36,20 @@ to read.
 
 - An authorized caller for an app with no configured teardown steps
   receives an empty list (`success.data.steps=[]` in JSON,
-  `No teardown steps defined for [project.instance].` in human output) with exit zero.
+  `No teardown steps defined for [app.instance].` in human output) with exit zero.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
 - Explicitly requested instances that do not exist receive
-  `error.code=workspace.instance_not_found`.
+  `error.code=instance.not_found`.
 
 ## Input Resolution
 
 1. **Resolve instance.** Apply the precedence chain in order:
-   1. `--instance=<project.instance>` flag, using a dotted instance selector such
+   1. `--instance=<app.instance>` flag, using a dotted instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
-      `project:new` / `instance:register` and any workspace-installed marker) that
-      names the owning project slug.
+      `app:new` / `instance:register` and any workspace-installed marker) that
+      names the owning app slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.
    4. Resolution failure: in non-interactive mode, fail with
@@ -61,7 +61,7 @@ to read.
      `workspace:new` and `workspace-teardown-step:add` contracts and the
      `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
-   Unknown instances fail with `error.code=workspace.instance_not_found` before any
+   Unknown instances fail with `error.code=instance.not_found` before any
    read.
 3. **Select renderer.** Use the shared invocation model to select the output
    renderer.
@@ -85,8 +85,8 @@ to read.
    names the first teardown step that runs during
    [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), not
    a symmetric inverse of any setup ordering.
-3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, project, instance, phase, order, command, timeout_seconds }` already
+3. **Step record shape.** Every returned record uses the shared
+   step shape `{ id, app, instance, phase, order, command, timeout_seconds }` already
    published by `workspace-teardown-step:add`. `phase` is always
    `"teardown"`. There is no `name`, no per-step `working_directory`, no
    `env_overrides`, and no per-step `on_failure` field.
@@ -114,7 +114,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | The resolved instance selector does not exist in gateway configuration (`error.code=workspace.instance_not_found`, `error.meta.instance`). | Failure |
+| Instance not found | The resolved instance selector does not exist in gateway configuration (`error.code=instance.not_found`, `error.meta.instance`). | Failure |
 | Instance required | The selector does not resolve a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.reason=instance_required`) |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's teardown-step policy (`error.code=authorization_failed`). | Failure |

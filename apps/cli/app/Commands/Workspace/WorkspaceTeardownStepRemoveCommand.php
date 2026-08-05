@@ -9,7 +9,7 @@ final class WorkspaceTeardownStepRemoveCommand extends AbstractWorkspaceStepRemo
     #[\Override]
     protected $signature = 'workspace-teardown-step:remove
         {--step= : Step ID to remove}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--force : Skip interactive confirmation}
         {--json : Output JSON}';
 

@@ -46,7 +46,7 @@ function doctorVerifyReport(
             'node' => 'beast',
             'role' => 'app-dev',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -78,7 +78,7 @@ function doctorFleetReport(): array
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -99,6 +99,7 @@ function doctorFleetReport(): array
             [
                 'node' => 'app-1',
                 'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'healthy' => true,
                 'families' => ['node'],
                 'summary' => ['issues' => 0],
@@ -106,6 +107,7 @@ function doctorFleetReport(): array
             [
                 'node' => 'gateway-1',
                 'role' => 'gateway',
+                'roles' => ['gateway'],
                 'healthy' => true,
                 'families' => ['node'],
                 'summary' => ['issues' => 0],
@@ -259,7 +261,7 @@ function doctorPartialFleetProgressReport(
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -315,7 +317,7 @@ describe('doctor human panel', function (): void {
             'code' => 'instance.runtime_container_missing',
             'kind' => 'missing',
             'summary' => 'Runtime container for nckrtl is missing.',
-            'detail' => ['project' => 'nckrtl'],
+            'detail' => ['app' => 'nckrtl'],
             'restorable' => true,
             'adoptable' => false,
         ];
@@ -735,6 +737,34 @@ describe('doctor human panel', function (): void {
             ->toContain('+ 1 more issue')
             ->and($plain)
             ->not->toContain("\n│  - Issue 11");
+    });
+
+    it('renders complete active roles on fleet node rows without breaking the bordered panel', function (): void {
+        $report = doctorFleetReport();
+        $report['nodes'] = [
+            [
+                'node' => 'multi-1',
+                'role' => 'agent',
+                'roles' => ['agent', 'app-dev'],
+                'healthy' => true,
+                'families' => ['node', 'tool'],
+                'summary' => ['issues' => 0],
+            ],
+        ];
+        $report['scope']['targets'] = ['multi-1'];
+        $report['scope']['role'] = 'fleet';
+
+        $plain = stripAnsi(implode("\n", app(DoctorPanelRenderer::class)->lines($report)));
+
+        expect($plain)
+            ->toContain('multi-1')
+            ->and($plain)
+            ->toContain('OK · agent, app-dev')
+            ->and($plain)
+            ->toContain('D O C T O R - R E S U L T')
+            ->and($report['scope']['role'])
+            ->toBe('fleet');
+        assertDoctorPanelLinesWithinWidth($plain);
     });
 
     it('renders fleet in-progress panel with DOCTOR title and no summary', function (): void {
@@ -1253,7 +1283,7 @@ describe('doctor human panel', function (): void {
         expect($exitCode)->toBe(1)->and($issues)->toHaveCount(11)->and($output)->not->toContain('+ 1 more issue');
     });
 
-    it('keeps complete partial fleet doctor payloads in --stream-json when human bullets are truncated', function (): void {
+    it('keeps complete terminal fleet issues in --stream-json when human bullets are truncated', function (): void {
         $issues = doctorIssuesForFamily('proxy', 11, 'app-dev-1');
         $partialReport = doctorPartialFleetProgressReport(issues: $issues, progressNodes: [
             ['node' => 'app-dev-1', 'status' => 'done'],
@@ -1297,15 +1327,13 @@ describe('doctor human panel', function (): void {
         $frames = decodeDoctorNdjson($output);
         $partialFrame = $frames[1] ?? null;
         $terminal = end($frames);
-        $partialIssues = $partialFrame['data']['doctor']['issues'] ?? [];
         $terminalIssues = $terminal['error']['data']['doctor']['issues'] ?? [];
 
         expect($exitCode)
             ->toBe(1)
             ->and($partialFrame['event'] ?? null)
             ->toBe('step')
-            ->and($partialIssues)
-            ->toHaveCount(11)
+            // Intermediate machine frames may be compact; terminal stays full.
             ->and($terminalIssues)
             ->toHaveCount(11)
             ->and($output)
@@ -1397,7 +1425,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'instance.http_error',
                 'kind' => 'divergent',
                 'summary' => 'https://nckrtl.test returned a 500 error response',
-                'detail' => ['project' => 'nckrtl'],
+                'detail' => ['app' => 'nckrtl'],
                 'restorable' => false,
                 'adoptable' => false,
             ],
@@ -1408,7 +1436,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.missing',
                 'kind' => 'missing',
                 'summary' => 'Workspace should exist on node but is missing',
-                'detail' => ['workspace' => 'abc123.nckrtl.test', 'project' => 'nckrtl'],
+                'detail' => ['workspace' => 'abc123.nckrtl.test', 'app' => 'nckrtl'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1419,7 +1447,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.extra',
                 'kind' => 'extra',
                 'summary' => 'Workspace exists on node but is not expected',
-                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'project' => 'hauser'],
+                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'app' => 'hauser'],
                 'restorable' => false,
                 'adoptable' => true,
             ],
@@ -1430,7 +1458,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'process.runtime_unit_missing',
                 'kind' => 'missing',
                 'summary' => 'process.runtime_unit_missing',
-                'detail' => ['project' => 'nckrtl', 'process' => 'queue-worker'],
+                'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1452,7 +1480,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'database_connection.env_mismatch',
                 'kind' => 'divergent',
                 'summary' => 'database_connection.env_mismatch',
-                'detail' => ['target_type' => 'project', 'project' => 'nckrtl', 'env_prefix' => 'REPORTING'],
+                'detail' => ['target_type' => 'project', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
                 'restorable' => true,
                 'adoptable' => true,
             ],
@@ -1522,7 +1550,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain("\n●  Processes     1 issue detected:")
             ->and($plain)
-            ->toContain('- Process queue-worker for project nckrtl: Runtime unit missing.')
+            ->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
             ->and($plain)
             ->toContain("\n●  Scheduling    1 issue detected:")
             ->and($plain)
@@ -1532,7 +1560,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain('- Database connection ditis_hr: Environment mismatch.')
             ->and($plain)
-            ->toContain('- Database connection REPORTING for project nckrtl: Environment')
+            ->toContain('- Database connection REPORTING for app nckrtl: Environment')
             // Categories with no issues render OK.
             ->and($plain)
             ->toContain('OK')
@@ -2020,6 +2048,7 @@ describe('doctor human panel', function (): void {
                     'mode' => $mode,
                     'families' => ['node'],
                     'node' => 'beast',
+                    'compact_progress' => true,
                 ]
             ),
         );
@@ -2185,6 +2214,7 @@ describe('doctor human panel', function (): void {
                     'mode' => 'verify',
                     'families' => ['node'],
                     'all' => true,
+                    'compact_progress' => true,
                 ]
             ),
         );

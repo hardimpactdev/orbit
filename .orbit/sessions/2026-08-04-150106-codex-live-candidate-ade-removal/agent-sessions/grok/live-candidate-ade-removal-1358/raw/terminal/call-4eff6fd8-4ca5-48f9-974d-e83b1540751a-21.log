@@ -1,0 +1,19 @@
+> Composer\Config::disableProcessTimeout
+─── sdk_typescript_typecheck (exit=127) ───
+
+> @hardimpactdev/orbit-sdk-typescript@0.1.0 typecheck
+> tsc --noEmit
+
+sh: tsc: command not found
+
+─── sdk_typescript_build (exit=127) ───
+
+> @hardimpactdev/orbit-sdk-typescript@0.1.0 build
+> tsc -p tsconfig.build.json
+
+sh: tsc: command not found
+
+Pest profiles: /Users/nckrtl/orbit/.worktrees/codex-live-candidate-ade-removal/.orbit/quality-gates/profiles/2026-08-04T12-37-54Z-a9fb5932d4b7
+Quality gate FAILED (gateway_pest=0 docs_lint=0 docs_testing=0 docs_references=0 gateway_mago_analyze=0 cli_mago_analyze=0 docs_mago_analyze=0 reverb_mago_analyze=0 core_mago_analyze=0 sdk_mago_analyze=0 e2e_mago_analyze=0 gateway_mago_lint=0 cli_mago_lint=0 docs_mago_lint=0 reverb_mago_lint=0 core_mago_lint=0 sdk_mago_lint=0 e2e_mago_lint=0 gateway_rector=0 cli_rector=0 docs_rector=0 core_rector=0 sdk_rector=0 e2e_rector=0 gateway_mago_format=0 cli_mago_format=0 docs_mago_format=0 reverb_mago_format=0 core_mago_format=0 sdk_mago_format=0 e2e_mago_format=0 agent_cargo_test=0 agent_cargo_fmt=0 agent_cargo_check=0 agent_cargo_clippy=0 macos_cargo_test=0 macos_cargo_fmt=0 macos_cargo_check=0 macos_cargo_clippy=0 cli_pest=0 docs_pest=0 core_pest=0 sdk_pest=0 sdk_typescript_typecheck=127 sdk_typescript_build=127)
+Script bin/quality-check.sh handling the quality-check event returned with error code 127
+QUALITY_CHECK_EXIT=0

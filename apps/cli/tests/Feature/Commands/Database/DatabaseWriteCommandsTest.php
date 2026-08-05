@@ -174,7 +174,7 @@ describe('database write commands', function (): void {
     });
 
     it('passes bare instance selectors through for gateway validation', function (): void {
-        fakeGateway(fakeErrorEnvelope('validation_failed', 'Use a project.instance selector.', [
+        fakeGateway(fakeErrorEnvelope('validation_failed', 'Use a app.instance selector.', [
             'field' => 'instance',
         ]), 422);
 
@@ -202,7 +202,7 @@ describe('database write commands', function (): void {
                 'slug' => 'primary-db',
                 'targets' => [[
                     'type' => 'instance',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'production',
                     'env_prefix' => 'DB',
                 ]],
@@ -582,7 +582,7 @@ describe('database write commands', function (): void {
                 'slug' => 'primary-db',
                 'targets' => [[
                     'type' => 'instance',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'env_prefix' => 'DB',
                 ]],
@@ -611,7 +611,7 @@ describe('database write commands', function (): void {
                 'slug' => 'primary-db',
                 'targets' => [[
                     'type' => 'instance',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'production',
                     'env_prefix' => 'DB',
                 ]],

@@ -6,8 +6,10 @@ namespace App\Commands\Internal;
 
 use App\Commands\Concerns\EmitsCanonicalEnvelopes;
 use App\Exceptions\OperationTokenGuardException;
+use App\Services\Executor\OperationStdinBuffer;
 use App\Services\Executor\OperationTokenGuard;
 use LaravelZero\Framework\Commands\Command;
+use Symfony\Component\Console\Input\StreamableInputInterface;
 
 /**
  * Abstract base for hidden internal executor commands.
@@ -50,6 +52,13 @@ abstract class InternalExecutorCommand extends Command
      */
     protected function verifyOperationToken(string $expectedCommand): bool
     {
+        // Fresh capture per command invocation so token binding and the handler
+        // share the same operation payload after process STDIN is drained.
+        // Reset first: tests (and rare multi-command processes) must not reuse
+        // a prior command's buffered payload.
+        app(OperationStdinBuffer::class)->reset();
+        $this->captureOperationStdin();
+
         $compactToken = $this->option('operation-token');
 
         if (! is_string($compactToken) || trim($compactToken) === '') {
@@ -62,13 +71,49 @@ abstract class InternalExecutorCommand extends Command
             /** @var OperationTokenGuard $guard */
             $guard = app(OperationTokenGuard::class);
             $guard->verify($compactToken, $expectedCommand);
-        } catch (OperationTokenGuardException) {
-            $this->renderFailure('invalid_token', 'Operation token is invalid.', []);
+        } catch (OperationTokenGuardException $exception) {
+            $this->renderFailure($exception->reason(), 'Operation token is invalid.', []);
 
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * Canonical internal operation-payload stdin boundary.
+     *
+     * Reads only from OperationStdinBuffer (populated before token verification).
+     * Callers that historically trimmed must keep trim() at the call site.
+     */
+    protected function stdin(): string
+    {
+        $this->captureOperationStdin();
+
+        return app(OperationStdinBuffer::class)->take();
+    }
+
+    /**
+     * Capture the operation payload once into OperationStdinBuffer.
+     * Prefers the Symfony stream (tests / wired input), else process STDIN.
+     */
+    private function captureOperationStdin(): void
+    {
+        $buffer = app(OperationStdinBuffer::class);
+
+        if ($buffer->hasCaptured()) {
+            return;
+        }
+
+        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
+
+        if (is_resource($stream)) {
+            $buffer->captureFromStream($stream);
+
+            return;
+        }
+
+        $buffer->captureFromProcessStdin();
     }
 
     /**

@@ -91,7 +91,7 @@ final class NodePermissionPresets
     private function appDevelopmentSelf(): array
     {
         return [
-            'project:read',
+            'app:read',
             'instance:read',
             'instance:register',
             'process:add',
@@ -107,7 +107,7 @@ final class NodePermissionPresets
      */
     private function appProductionSelf(): array
     {
-        return ['project:read', 'instance:read'];
+        return ['app:read', 'instance:read'];
     }
 
     /**
@@ -127,7 +127,7 @@ final class NodePermissionPresets
     private function operator(): array
     {
         return [
-            'project:read',
+            'app:read',
             'instance:read',
             'database:read',
             'doctor:verify',
@@ -146,7 +146,7 @@ final class NodePermissionPresets
     {
         return [
             'activity:read',
-            'project:read',
+            'app:read',
             'instance:read',
             'cf:dns:list',
             'cf:zone:list',
@@ -176,15 +176,13 @@ final class NodePermissionPresets
     private function developer(): array
     {
         return [
-            'project:read',
-            'project:write',
-            'project:remove',
-            'project:new',
+            'app:read',
+            'app:write',
+            'app:remove',
+            'app:new',
             'instance:read',
             'instance:write',
             'instance:register',
-            'instance:prune',
-            'instance:agent',
             'instance:root',
             'instance:update',
             'instance:worker',
@@ -228,7 +226,6 @@ final class NodePermissionPresets
             'tool:restart',
             'tool:reload',
             'tool:reconfigure',
-            'agent-ide:message',
             'node:read',
             'doctor:verify',
             'dns:list',
@@ -252,14 +249,11 @@ final class NodePermissionPresets
             'activity:list',
             'activity:show',
 
-            // Agent IDE
-            'agent-ide:message',
-
-            // Project
-            'project:read',
-            'project:write',
-            'project:remove',
-            'project:new',
+            // App
+            'app:read',
+            'app:write',
+            'app:remove',
+            'app:new',
 
             // Instance
             'instance:credentials',
@@ -267,8 +261,6 @@ final class NodePermissionPresets
             'instance:write',
             'instance:register',
             'instance:remove',
-            'instance:prune',
-            'instance:agent',
             'instance:root',
             'instance:update',
             'instance:worker',

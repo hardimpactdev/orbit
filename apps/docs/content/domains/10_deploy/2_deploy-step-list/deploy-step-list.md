@@ -22,7 +22,7 @@ orbit deploy:step-list docs.production --json
 
 ## Arguments and options
 
-- `instance`: dotted production instance selector. A bare project name or domain is
+- `instance`: dotted production instance selector. A bare app name or domain is
   valid only when the app has exactly one instance.
 - `--json`: Output JSON.
 

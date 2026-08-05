@@ -19,7 +19,7 @@ final class WorkspaceHistoryCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:history
         {name? : Workspace name}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--limit= : Maximum number of runs to return}
         {--since= : ISO 8601 lower started_at bound}
         {--until= : ISO 8601 exclusive upper started_at bound}
@@ -122,7 +122,7 @@ final class WorkspaceHistoryCommand extends GatewayCommand
     private function historyHeader(array $runs): string
     {
         $first = $runs[0];
-        $app = $this->runString($first, 'project');
+        $app = $this->runString($first, 'app');
         $workspace = $this->runString($first, 'workspace');
 
         return "{$app}/{$workspace}";

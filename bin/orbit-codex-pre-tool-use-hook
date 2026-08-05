@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-feedback-events.php';
+require_once __DIR__.'/orbit-finalization-solo-land.php';
 
 const BLOCK_EXIT_CODE = 2;
 
@@ -58,6 +59,8 @@ const QUALITY_CHECK_EXPECTED_SUBGATES = [
     'sdk_mago_lint',
     'sdk_pest',
     'sdk_rector',
+    'sdk_typescript_build',
+    'sdk_typescript_typecheck',
 ];
 
 if (($argv[1] ?? null) === '--lint') {
@@ -90,7 +93,7 @@ $action = classify_command($command);
 
 if ($action === null) {
     exit(unclassifiable_exit(
-        "could not classify command as a merge, worktree-remove, or branch-delete boundary: {$command}",
+        'could not classify command as a merge, worktree-remove, branch-delete, solo-process-stop, or solo-project-delete boundary: '.$command,
     ));
 }
 
@@ -104,6 +107,8 @@ $check = match ($action['type']) {
     'merge' => check_merge($root, $action['targets']),
     'worktree-remove' => check_worktree_remove($root, $action['path']),
     'branch-delete' => check_branch_delete($root, $action['branch']),
+    'solo-process-stop' => check_solo_process_stop($root, $action),
+    'solo-project-delete' => check_solo_project_delete($root, $action),
     'invalid' => block_result($action['subject'], $action['reason']),
 };
 
@@ -138,7 +143,7 @@ function unclassifiable_exit(string $message): int
 }
 
 /**
- * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'invalid', subject: string, reason: string}  $action
+ * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}  $action
  */
 function action_summary(array $action): string
 {
@@ -146,6 +151,8 @@ function action_summary(array $action): string
         'merge' => 'git merge '.($action['targets'] === [] ? '(missing)' : implode(' ', $action['targets'])),
         'worktree-remove' => "git worktree remove {$action['path']}",
         'branch-delete' => "git branch delete {$action['branch']}",
+        'solo-process-stop' => "solo processes stop {$action['process_id']}",
+        'solo-project-delete' => "solo projects delete {$action['project_id']}",
         'invalid' => $action['subject'],
     };
 }
@@ -218,7 +225,7 @@ function find_command_value(array $value): ?string
 }
 
 /**
- * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_command(string $command): ?array
 {
@@ -229,10 +236,12 @@ function classify_command(string $command): ?array
             ! isset($arguments[0]) || ! in_array($arguments[0], ['--abort', '--continue', '--quit', '--skip'], true)
         ),
     ));
+    $soloActions = solo_boundary_actions($command);
     $destructiveActionCount =
         count($actionableMergeCommands)
         + worktree_remove_command_count($command)
-        + branch_delete_command_count($command);
+        + branch_delete_command_count($command)
+        + count($soloActions);
 
     if ($destructiveActionCount > 1) {
         return [
@@ -305,10 +314,13 @@ function classify_command(string $command): ?array
         return ['type' => 'branch-delete', 'branch' => $targets[0]];
     }
 
+    if (count($soloActions) === 1) {
+        return $soloActions[0];
+    }
+
     return null;
 }
 
-/** @param list<string> $arguments */
 function unsafe_merge_option_problem(array $arguments): ?string
 {
     foreach ($arguments as $argument) {
@@ -758,6 +770,12 @@ function check_worktree_remove(string $root, string $path): array
         return block_result($branch, $archiveProblem, $check['warnings']);
     }
 
+    $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+    if ($trackedProblem !== null) {
+        return block_result($branch, $trackedProblem, $check['warnings']);
+    }
+
     return $check;
 }
 
@@ -787,7 +805,13 @@ function check_branch_delete(string $root, string $branch): array
 
         $archiveProblem = session_archive_problem($root, $branch);
 
-        return $archiveProblem === null ? ok() : block_result($branch, $archiveProblem);
+        if ($archiveProblem !== null) {
+            return block_result($branch, $archiveProblem);
+        }
+
+        $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+        return $trackedProblem === null ? ok() : block_result($branch, $trackedProblem);
     }
 
     $cleanlinessProblem = worktree_cleanliness_problem($worktree);
@@ -812,6 +836,12 @@ function check_branch_delete(string $root, string $branch): array
 
     if ($archiveProblem !== null) {
         return block_result($branch, $archiveProblem, $check['warnings']);
+    }
+
+    $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+    if ($trackedProblem !== null) {
+        return block_result($branch, $trackedProblem, $check['warnings']);
     }
 
     return $check;
@@ -903,6 +933,199 @@ function session_archive_problem(string $root, string $branch): ?string
     return "session archive for `{$slug}` under {$sessionsDirectory} needs loop.md plus a valid compact receipt or legacy/full agent session manifests; re-{$hint}";
 }
 
+/**
+ * Cleanup also requires the matching archive directory and sessions index to be
+ * tracked and committed on the primary checkout — presence alone is not enough.
+ */
+function session_archive_tracked_problem(string $root, string $branch): ?string
+{
+    $candidates = matching_session_archive_dirs($root, $branch);
+
+    if ($candidates === []) {
+        return 'no session archive matching slug `'.archive_slug($branch).'` is tracked for cleanup; commit the archive directory and .orbit/sessions/index.json on main first';
+    }
+
+    $archiveDir = null;
+
+    foreach (array_reverse($candidates) as $candidate) {
+        $receiptMode = archive_receipt_mode($candidate);
+
+        if ($receiptMode === 'compact' && compact_archive_receipt_is_valid($candidate, $root, $branch)) {
+            $archiveDir = $candidate;
+
+            break;
+        }
+
+        if (
+            is_file($candidate.'/loop.md')
+            && ! is_link($candidate.'/loop.md')
+            && agent_session_manifest_paths($candidate.'/agent-sessions') !== []
+        ) {
+            $archiveDir = $candidate;
+
+            break;
+        }
+    }
+
+    if ($archiveDir === null) {
+        return 'matching session archive bytes are not ready to commit for cleanup; re-run bin/orbit-session-archive then commit the archive and index';
+    }
+
+    $relativeArchive = relative_repo_path($root, $archiveDir);
+
+    if ($relativeArchive === null) {
+        return "session archive {$archiveDir} is outside the primary checkout and cannot be committed for cleanup";
+    }
+
+    $trackedFiles = tracked_files_under($root, $relativeArchive);
+
+    if ($trackedFiles === []) {
+        return "session archive `{$relativeArchive}` exists on disk but is not tracked/committed; commit the exact archive directory plus .orbit/sessions/index.json before cleanup";
+    }
+
+    // Inspect the whole archive tree, not only the tracked subset, so untracked
+    // required loop/evidence entries cannot slip past a tracked receipt.
+    $archiveDirt = path_has_uncommitted_changes($root, $relativeArchive);
+
+    if ($archiveDirt !== null) {
+        return $archiveDirt;
+    }
+
+    $requiredEntries = session_archive_required_relative_entries($archiveDir, $relativeArchive);
+
+    foreach ($requiredEntries as $requiredEntry) {
+        $entryTracked = run_git($root, ['ls-files', '--error-unmatch', $requiredEntry]);
+
+        if ($entryTracked['exit_code'] !== 0) {
+            return "required archive entry `{$requiredEntry}` is present on disk but not tracked/committed; commit the exact archive directory before cleanup";
+        }
+    }
+
+    $indexRelative = '.orbit/sessions/index.json';
+    $indexPath = $root.'/'.$indexRelative;
+
+    if (! is_file($indexPath) || is_link($indexPath)) {
+        return 'cleanup requires tracked/committed `.orbit/sessions/index.json` matching the archive set; run `bin/orbit-session-index --write` and commit it';
+    }
+
+    $indexTracked = run_git($root, ['ls-files', '--error-unmatch', $indexRelative]);
+
+    if ($indexTracked['exit_code'] !== 0) {
+        return '`.orbit/sessions/index.json` exists but is not tracked/committed; commit it with the archive before cleanup';
+    }
+
+    $indexDirty = path_has_uncommitted_changes($root, $indexRelative);
+
+    if ($indexDirty !== null) {
+        return $indexDirty;
+    }
+
+    $archiveBasename = basename($archiveDir);
+    $indexContents = (string) file_get_contents($indexPath);
+
+    if (! str_contains($indexContents, $archiveBasename)) {
+        return "`.orbit/sessions/index.json` does not reference archive `{$archiveBasename}`; regenerate with `bin/orbit-session-index --write` and commit before cleanup";
+    }
+
+    return null;
+}
+
+function relative_repo_path(string $root, string $absolutePath): ?string
+{
+    $rootReal = realpath($root) ?: $root;
+    $pathReal = realpath($absolutePath) ?: $absolutePath;
+    $prefix = rtrim($rootReal, '/').'/';
+
+    if ($pathReal === $rootReal) {
+        return '.';
+    }
+
+    if (! str_starts_with($pathReal, $prefix)) {
+        return null;
+    }
+
+    return substr($pathReal, strlen($prefix));
+}
+
+/**
+ * @return list<string>
+ */
+function tracked_files_under(string $root, string $relativeDirectory): array
+{
+    $result = run_git($root, ['ls-files', '-z', '--', $relativeDirectory]);
+
+    if ($result['exit_code'] !== 0 || $result['stdout'] === '') {
+        return [];
+    }
+
+    $files = array_values(array_filter(explode("\0", $result['stdout']), static fn (string $path): bool => $path !== ''));
+
+    sort($files);
+
+    return $files;
+}
+
+/**
+ * Required archive paths that must be tracked for cleanup.
+ * Compact receipts: receipt path (when present) plus copied_entries.
+ * Legacy/full (no receipt): loop.md and agent-session manifests only.
+ *
+ * @return list<string>
+ */
+function session_archive_required_relative_entries(string $archiveDir, string $relativeArchive): array
+{
+    $receiptPath = $archiveDir.'/orbit-session-archive.json';
+    $entries = [];
+
+    if (is_file($receiptPath) && ! is_link($receiptPath)) {
+        $entries[] = $relativeArchive.'/orbit-session-archive.json';
+        $receipt = json_decode((string) file_get_contents($receiptPath), true);
+        $copied = is_array($receipt) ? ($receipt['copied_entries'] ?? null) : null;
+
+        if (is_array($copied)) {
+            foreach ($copied as $entry) {
+                if (is_string($entry) && $entry !== '') {
+                    $entries[] = $relativeArchive.'/'.$entry;
+                }
+            }
+        }
+    }
+
+    if (is_file($archiveDir.'/loop.md') && ! is_link($archiveDir.'/loop.md')) {
+        $entries[] = $relativeArchive.'/loop.md';
+    }
+
+    foreach (agent_session_manifest_paths($archiveDir.'/agent-sessions') as $manifestPath) {
+        if (str_starts_with($manifestPath, $archiveDir.'/')) {
+            $entries[] = $relativeArchive.'/'.substr($manifestPath, strlen($archiveDir) + 1);
+        }
+    }
+
+    $entries = array_values(array_unique($entries));
+    sort($entries);
+
+    return $entries;
+}
+
+function path_has_uncommitted_changes(string $root, string $relativePath): ?string
+{
+    $status = run_git($root, ['status', '--porcelain', '--untracked-files=all', '--', $relativePath]);
+
+    if ($status['exit_code'] !== 0) {
+        return "unable to inspect commit state for `{$relativePath}` before cleanup";
+    }
+
+    $porcelain = trim($status['stdout']);
+
+    if ($porcelain === '') {
+        return null;
+    }
+
+    $first = trim((string) strtok($porcelain, "\n"));
+
+    return "cleanup requires committed archive/index bytes; `{$relativePath}` still has uncommitted changes ({$first})";
+}
+
 function archive_receipt_mode(string $archiveDir): ?string
 {
     $receiptPath = $archiveDir.'/orbit-session-archive.json';
@@ -930,10 +1153,11 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     }
 
     $receipt = json_decode((string) file_get_contents($receiptPath), true);
+    $schemaVersion = is_array($receipt) ? ($receipt['schema_version'] ?? null) : null;
 
     if (
         ! is_array($receipt)
-        || ($receipt['schema_version'] ?? null) !== 2
+        || ! in_array($schemaVersion, [2, 3], true)
         || ($receipt['archive_mode'] ?? null) !== 'compact'
         || ($receipt['branch'] ?? null) !== $branch
     ) {
@@ -1007,32 +1231,28 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     }
 
     try {
-        $loopProofEntries = array_map(
-            static fn (string $reference): string => substr($reference, strlen('.orbit/')),
-            orbitLoopProofReferences($loop),
-        );
+        $loopProofEntries = compact_archive_loop_proof_entries_for_schema($loop, $schemaVersion);
     } catch (RuntimeException) {
         return false;
     }
 
     $receiptProofEntries = array_values(array_filter(
         $copiedEntries,
-        static fn (string $entry): bool => str_starts_with($entry, 'evidence/')
-            || str_starts_with($entry, 'quality-gates/'),
+        static fn (string $entry): bool => compact_archive_entry_is_proof_root($entry, $schemaVersion),
     ));
 
     if ($receiptProofEntries !== $loopProofEntries) {
         return false;
     }
 
-    $actualEntries = compact_archive_actual_entries($archiveDir);
+    $actualEntries = compact_archive_actual_entries($archiveDir, $schemaVersion);
 
     if ($actualEntries === null || $actualEntries !== $copiedEntries) {
         return false;
     }
 
     foreach ($copiedEntries as $entry) {
-        if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry)) {
+        if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry, $schemaVersion)) {
             return false;
         }
 
@@ -1057,6 +1277,48 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     return true;
 }
 
+/**
+ * @return list<string>
+ */
+function compact_archive_loop_proof_entries_for_schema(string $loop, int $schemaVersion): array
+{
+    $entries = array_map(
+        static fn (string $reference): string => substr($reference, strlen('.orbit/')),
+        orbitLoopProofReferences($loop),
+    );
+
+    $entries = array_values(array_filter(
+        $entries,
+        static fn (string $entry): bool => compact_archive_entry_is_proof_root($entry, $schemaVersion),
+    ));
+    sort($entries, SORT_STRING);
+
+    return $entries;
+}
+
+function compact_archive_entry_is_proof_root(string $entry, int $schemaVersion): bool
+{
+    foreach (compact_archive_proof_root_prefixes($schemaVersion) as $prefix) {
+        if (str_starts_with($entry, $prefix.'/')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @return list<string>
+ */
+function compact_archive_proof_root_prefixes(int $schemaVersion): array
+{
+    return match ($schemaVersion) {
+        2 => ['evidence', 'quality-gates'],
+        3 => ['evidence', 'quality-gates', 'release-evidence'],
+        default => [],
+    };
+}
+
 function compact_archive_entry_digest(string $path): ?string
 {
     if (is_link($path) || ! is_file($path)) {
@@ -1066,14 +1328,23 @@ function compact_archive_entry_digest(string $path): ?string
     return hash_file('sha256', $path) ?: null;
 }
 
-function compact_archive_entry_path_is_allowed(string $entry): bool
+function compact_archive_entry_path_is_allowed(string $entry, int $schemaVersion): bool
 {
     if (in_array($entry, ['feedback.jsonl', 'loop.md'], true)) {
         return true;
     }
 
+    $roots = implode('|', array_map(
+        static fn (string $root): string => preg_quote($root, '~'),
+        compact_archive_proof_root_prefixes($schemaVersion),
+    ));
+
+    if ($roots === '') {
+        return false;
+    }
+
     return preg_match(
-        '~^(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
+        '~^(?:'.$roots.')/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
         $entry,
     ) === 1
         && ! in_array('.', explode('/', $entry), true)
@@ -1081,13 +1352,21 @@ function compact_archive_entry_path_is_allowed(string $entry): bool
 }
 
 /** @return list<string>|null */
-function compact_archive_actual_entries(string $archiveDir): ?array
+function compact_archive_actual_entries(string $archiveDir, int $schemaVersion): ?array
 {
     $entries = [];
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($archiveDir, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST,
     );
+    $roots = implode('|', array_map(
+        static fn (string $root): string => preg_quote($root, '~'),
+        compact_archive_proof_root_prefixes($schemaVersion),
+    ));
+
+    if ($roots === '') {
+        return null;
+    }
 
     foreach ($iterator as $entry) {
         $relative = ltrim(substr($entry->getPathname(), strlen(rtrim($archiveDir, '/'))), '/');
@@ -1102,7 +1381,7 @@ function compact_archive_actual_entries(string $archiveDir): ?array
 
         if ($entry->isDir()) {
             if (
-                preg_match('~^(?:evidence|quality-gates)(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
+                preg_match('~^(?:'.$roots.')(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
                 || in_array('.', explode('/', $relative), true)
                 || in_array('..', explode('/', $relative), true)
             ) {
@@ -1112,7 +1391,7 @@ function compact_archive_actual_entries(string $archiveDir): ?array
             continue;
         }
 
-        if (! $entry->isFile() || ! compact_archive_entry_path_is_allowed($relative)) {
+        if (! $entry->isFile() || ! compact_archive_entry_path_is_allowed($relative, $schemaVersion)) {
             return null;
         }
 
@@ -1211,13 +1490,26 @@ function matching_session_archive_dirs(string $root, string $branch): array
     }
 
     foreach (new DirectoryIterator($sessionsDirectory) as $entry) {
-        if ($entry->isDot() || ! $entry->isDir()) {
+        if ($entry->isDot() || $entry->isLink() || ! $entry->isDir()) {
             continue;
         }
 
         $name = $entry->getFilename();
 
+        if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9-]+$/', $name) !== 1) {
+            continue;
+        }
+
         if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-'.preg_quote($slug, '/').'$/', $name) === 1) {
+            $candidates[] = $entry->getPathname();
+
+            continue;
+        }
+
+        // Versioned compact receipts may list compatible slugs / branch so a
+        // content-identical archive created under a short feature slug still
+        // satisfies branch-derived cleanup without a pre-success rename.
+        if (session_archive_receipt_matches_branch_slug($entry->getPathname(), $branch, $slug)) {
             $candidates[] = $entry->getPathname();
         }
     }
@@ -1225,6 +1517,57 @@ function matching_session_archive_dirs(string $root, string $branch): array
     sort($candidates);
 
     return $candidates;
+}
+
+function session_archive_receipt_matches_branch_slug(string $archiveDir, string $branch, string $slug): bool
+{
+    $receiptPath = $archiveDir.'/orbit-session-archive.json';
+
+    if (! is_file($receiptPath) || is_link($receiptPath)) {
+        return false;
+    }
+
+    $receipt = json_decode((string) file_get_contents($receiptPath), true);
+
+    if (! is_array($receipt)) {
+        return false;
+    }
+
+    $schemaVersion = $receipt['schema_version'] ?? null;
+
+    if (! in_array($schemaVersion, [2, 3], true) || ($receipt['archive_mode'] ?? null) !== 'compact') {
+        return false;
+    }
+
+    $receiptBranch = $receipt['branch'] ?? null;
+
+    if (is_string($receiptBranch) && $receiptBranch !== '') {
+        if ($receiptBranch === $branch || archive_slug($receiptBranch) === $slug) {
+            return true;
+        }
+    }
+
+    $candidates = [];
+
+    foreach (['slug', 'requested_slug'] as $key) {
+        $value = $receipt[$key] ?? null;
+
+        if (is_string($value) && $value !== '') {
+            $candidates[] = archive_slug($value);
+        }
+    }
+
+    $compatible = $receipt['compatible_slugs'] ?? null;
+
+    if (is_array($compatible)) {
+        foreach ($compatible as $value) {
+            if (is_string($value) && $value !== '') {
+                $candidates[] = archive_slug($value);
+            }
+        }
+    }
+
+    return in_array($slug, $candidates, true);
 }
 
 function healthy_agent_session_count(string $agentSessionsDir): int
@@ -1307,10 +1650,7 @@ function agent_session_manifest_paths(string $agentSessionsDir): array
 
 function archive_slug(string $value): string
 {
-    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
-    $slug = trim($slug, '-');
-
-    return $slug === '' ? 'session' : $slug;
+    return orbit_land_archive_slug($value);
 }
 
 /**
@@ -1523,7 +1863,7 @@ function compact_acceptance_provenance_problem(
         return "acceptance venue {$venue} does not satisfy the diff-routed {$minimumVenue} venue";
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue, $featureTip, $worktree);
 
     if ($runtimeProblem !== null) {
         return $runtimeProblem;
@@ -1603,6 +1943,12 @@ function compact_loop_problems(string $contents): array
         if (orbitLoopSection($contents, $section) === null) {
             $problems[] = "is missing `{$section}`";
         }
+    }
+
+    $scopeFramingProblem = orbitLoopScopeFramingProblem($contents);
+
+    if ($scopeFramingProblem !== null) {
+        $problems[] = $scopeFramingProblem;
     }
 
     if (preg_match('/<[^>\n]+>/', $contents, $placeholder) === 1) {
@@ -2790,7 +3136,7 @@ function block_message(string $subject, string $reason): string
         and acceptance.
 
         Before cleanup, run `bin/orbit-session-archive`. A compact archive requires
-        `loop.md` plus its schema-v2 receipt; historical/full archives retain their
+        `loop.md` plus its schema-v2 or schema-v3 receipt; historical/full archives retain their
         manifest compatibility.
 
         Dry-run the packet shape first with:

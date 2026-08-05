@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T14:23:02+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fleet-agent-install-error/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-162301-codex-fleet-agent-install-error",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fleet-agent-install-error-retained-topology.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-29T141454Z-66fcc75b5877.json"
+    ],
+    "entry_digests": {
+        "evidence/fleet-agent-install-error-retained-topology.txt": "b52a1f09ece5121a6e710f5b2fdaa008534cfaf37a87a927f23811774601f018",
+        "loop.md": "1b686b26d543e0a740b7317ad918bfffc0e086592e59ca654acf76f345aa3732",
+        "quality-gates/quality-check-2026-07-29T141454Z-66fcc75b5877.json": "effe469d0d34ced1c4d80f746bf0aa2fa5f511413c53f10c4e88cc1cf52383e2"
+    },
+    "branch": "codex/fleet-agent-install-error",
+    "candidate_commit": "49f01bd81923e1769905d0b86993ee07061d2164",
+    "accepted_feature_tip": "49f01bd81923e1769905d0b86993ee07061d2164",
+    "accepted_main_tip": "33409d2d3b221c71be197e98a8f3522f0ac3ed43",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

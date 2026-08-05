@@ -1,0 +1,10 @@
+--- a/config/source.json
++++ b/config/source.json
+@@ -1036,6 +1036,7 @@
+     "pcov": {
+         "type": "url",
+         "url": "https://pecl.php.net/get/pcov",
++        "path": "php-src/ext/pcov",
+         "filename": "pcov.tgz",
+         "license": {
+             "type": "file",

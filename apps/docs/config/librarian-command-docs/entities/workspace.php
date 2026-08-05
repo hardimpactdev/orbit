@@ -5,14 +5,13 @@ declare(strict_types=1);
 return [
     'required' => [
         'name' => 'string',
-        'project' => 'string',
+        'app' => 'string',
         'instance' => 'string',
         'node' => 'string|object',
         'url' => 'string',
     ],
     'optional' => [
         'adopted' => 'bool',
-        'agent_ide' => 'object',
         'base' => 'string',
         'branch' => 'string|null',
         'inherited_processes' => 'array',

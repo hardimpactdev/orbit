@@ -19,9 +19,11 @@ final class StopProcessesRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        public readonly ?string $instance,
-        public readonly ?string $workspace,
-        public readonly ?string $name,
+        public readonly ?string $instance = null,
+        public readonly ?string $workspace = null,
+        public readonly ?string $name = null,
+        public readonly ?string $app = null,
+        public readonly ?string $node = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -36,6 +38,8 @@ final class StopProcessesRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
+                'app' => $this->app,
+                'node' => $this->node,
                 'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'name' => $this->name,

@@ -2,31 +2,38 @@
 
 [Back to Process commands.](../README.md)
 
-Start one process, or all processes, in a node, instance, or workspace runtime
-context.
+Start one process, or all processes, in a node, instance, workspace, or app
+hostname runtime context.
 
 `process:start` starts derived runtime units through the gateway on the owning
-node and records durable `started` events.
+node and records durable lifecycle events (`starting` before the runtime call,
+then `started` on success or `failed` on backend failure).
 
 ## Usage
 
 ```bash
 orbit process:start vite --instance=docs.production
 orbit process:start vite --instance=docs.development --workspace=feature-docs
-orbit process:start opencode-server --node=app-dev-1
+orbit process:start vite --app=test.app.example
+orbit process:start orbit-hermes-dashboard --node=app-dev-1
 orbit process:start vite --instance=docs.production --json
 orbit process:start --instance=docs.development --workspace=feature-docs
 ```
 
 ## Behavior Summary
 
-Use this command to start one process or all processes for a resolved node, instance, or workspace context.
+Use this command to start one process or all processes for a resolved node, instance, workspace, or app hostname context.
 
-- **Context Resolution**: Resolves the node, instance, or workspace runtime context. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
-- **Placement**: Instance and workspace runtime units are started on the instance's serving node.
+- **Context Resolution**: Resolves the node, instance, workspace, or `--app`
+  hostname runtime context. Prefer `<app.instance>`; a bare app slug is
+  accepted only when that app has exactly one instance. `--app` is mutually
+  exclusive with `--node`, `--instance`, and `--workspace`.
+- **Placement**: Instance, workspace, and app-hostname runtime units are started on the instance's serving node.
 - **Single Process**: When `[name]` is supplied, starts that process only.
 - **All Processes**: Omitting `[name]` starts every process definition for the selected context in process order.
-- **Event Recording**: Records and publishes a `started` process event after each successful start.
+- **Event Recording**: Records and publishes a transitional `starting` process
+  event before each runtime call, then a terminal `started` event on success or
+  `failed` when the backend returns false or throws.
 - **Configuration Unchanged**: Does not change process configuration.
 
 ## Related

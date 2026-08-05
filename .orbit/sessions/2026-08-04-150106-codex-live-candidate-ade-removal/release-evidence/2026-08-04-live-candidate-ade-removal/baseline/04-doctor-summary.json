@@ -1,0 +1,618 @@
+{
+  "event": "error",
+  "error": {
+    "code": "drift_detected",
+    "message": "Doctor detected drift.",
+    "meta": [],
+    "data": {
+      "doctor": {
+        "healthy": false,
+        "mode": "verify",
+        "scope": {
+          "families": [
+            "node",
+            "instance",
+            "workspace",
+            "process",
+            "proxy",
+            "tool",
+            "database_connection",
+            "schedule",
+            "firewall_rule"
+          ],
+          "node": null,
+          "role": "fleet",
+          "self": false,
+          "project": null,
+          "workspace": null,
+          "key": null,
+          "targets": [
+            "NMBP",
+            "agent",
+            "beast",
+            "database1",
+            "gateway",
+            "ingress1",
+            "main1",
+            "mini",
+            "services1"
+          ]
+        },
+        "summary": {
+          "issues": 13,
+          "fixed": 0,
+          "adopted": 0,
+          "skipped": 0,
+          "conflicts": 0,
+          "failed": 0,
+          "planned": 0
+        },
+        "issues": [
+          {
+            "family": "process",
+            "node": "NMBP",
+            "key": "process.remote_shell_probe_failed",
+            "kind": "unverifiable",
+            "summary": "Doctor process probe failed on node 'NMBP': Remote local executor transport failed: cURL error 52: Empty reply from server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands",
+            "detail": {
+              "error": "Remote local executor transport failed: cURL error 52: Empty reply from server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+            },
+            "code": "process.remote_shell_probe_failed",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "proxy",
+            "node": "NMBP",
+            "key": "proxy.node_probe_failed",
+            "kind": "unverifiable",
+            "summary": "Doctor proxy probe failed on node 'NMBP': Remote local executor transport failed: cURL error 7: Failed to connect to 10.6.0.3 port 9477 after 15 ms: Couldn't connect to server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands",
+            "detail": {
+              "error": "Remote local executor transport failed: cURL error 7: Failed to connect to 10.6.0.3 port 9477 after 15 ms: Couldn't connect to server (see https://curl.se/libcurl/c/libcurl-errors.html) for http://10.6.0.3:9477/v1/commands"
+            },
+            "code": "proxy.node_probe_failed",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.wireguard_self_route_unavailable",
+            "kind": "unverifiable",
+            "summary": "Process prometheus endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy.",
+            "detail": {
+              "process": "prometheus",
+              "node": "gateway",
+              "endpoint": "prometheus",
+              "host": "10.6.0.2",
+              "port": 9090,
+              "wireguard_address": "10.6.0.2",
+              "platform": "debian_12",
+              "supported": true,
+              "reason": "route_unverifiable",
+              "message": "WireGuard self-route could not be inspected with ip route get.",
+              "command": "ip route get '10.6.0.2'",
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.wireguard_self_route_unavailable",
+            "disposition": "runtime_incident",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.runtime_backend_unavailable",
+            "kind": "unverifiable",
+            "summary": "Docker runtime backend is unavailable for process prometheus on node gateway.",
+            "detail": {
+              "process": "prometheus",
+              "node": "gateway",
+              "runtime": "docker-swarm",
+              "service": "prometheus",
+              "version_family": "3",
+              "version": "v3.12.0",
+              "service_name": "orbit-prometheus",
+              "endpoint": {
+                "name": "prometheus",
+                "host": "10.6.0.2",
+                "port": 9090
+              },
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.runtime_backend_unavailable",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.wireguard_self_route_unavailable",
+            "kind": "unverifiable",
+            "summary": "Process grafana endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy.",
+            "detail": {
+              "process": "grafana",
+              "node": "gateway",
+              "endpoint": "grafana",
+              "host": "10.6.0.2",
+              "port": 3000,
+              "wireguard_address": "10.6.0.2",
+              "platform": "debian_12",
+              "supported": true,
+              "reason": "route_unverifiable",
+              "message": "WireGuard self-route could not be inspected with ip route get.",
+              "command": "ip route get '10.6.0.2'",
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.wireguard_self_route_unavailable",
+            "disposition": "runtime_incident",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.runtime_backend_unavailable",
+            "kind": "unverifiable",
+            "summary": "Docker runtime backend is unavailable for process grafana on node gateway.",
+            "detail": {
+              "process": "grafana",
+              "node": "gateway",
+              "runtime": "docker-swarm",
+              "service": "grafana",
+              "version_family": "13",
+              "version": "13.0.2",
+              "service_name": "orbit-grafana",
+              "endpoint": {
+                "name": "grafana",
+                "host": "10.6.0.2",
+                "port": 3000
+              },
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.runtime_backend_unavailable",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.wireguard_self_route_unavailable",
+            "kind": "unverifiable",
+            "summary": "Process node-exporter endpoint points at node gateway's own WireGuard address, but local self-route diagnostics are not healthy.",
+            "detail": {
+              "process": "node-exporter",
+              "node": "gateway",
+              "endpoint": "node-exporter",
+              "host": "10.6.0.2",
+              "port": 9100,
+              "wireguard_address": "10.6.0.2",
+              "platform": "debian_12",
+              "supported": true,
+              "reason": "route_unverifiable",
+              "message": "WireGuard self-route could not be inspected with ip route get.",
+              "command": "ip route get '10.6.0.2'",
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.wireguard_self_route_unavailable",
+            "disposition": "runtime_incident",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.runtime_backend_unavailable",
+            "kind": "unverifiable",
+            "summary": "systemd runtime backend is unavailable for process node-exporter on node gateway.",
+            "detail": {
+              "process": "node-exporter",
+              "node": "gateway",
+              "runtime": "systemd",
+              "service": "node-exporter",
+              "version_family": "1",
+              "version": "1.11.1",
+              "service_name": "orbit-node-exporter",
+              "endpoint": {
+                "name": "node-exporter",
+                "host": "10.6.0.2",
+                "port": 9100
+              },
+              "exit_code": 1,
+              "output": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "code": "process.runtime_backend_unavailable",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "process",
+            "node": "gateway",
+            "key": "process.runtime_backend_unavailable",
+            "code": "process.runtime_backend_unavailable",
+            "kind": "unverifiable",
+            "summary": "Managed process runtime inventory could not be scanned on node gateway.",
+            "detail": {
+              "backend": "docker",
+              "reason": "runtime_inventory_probe_failed",
+              "error": "{\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}"
+            },
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "proxy",
+            "node": "gateway",
+            "key": "proxy.node_probe_failed",
+            "kind": "unverifiable",
+            "summary": "Doctor proxy probe failed on node 'gateway': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}",
+            "detail": {
+              "error": "RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}",
+              "exit_code": 1
+            },
+            "code": "proxy.node_probe_failed",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          },
+          {
+            "family": "tool",
+            "node": "gateway",
+            "key": "tool.capability_missing",
+            "kind": "missing",
+            "summary": "Tool docker is missing on the target node.",
+            "detail": {
+              "tool": "docker"
+            },
+            "code": "tool.capability_missing",
+            "disposition": "genuine_drift",
+            "restore_action": "restore_tool_capability_missing",
+            "restorable": true,
+            "adoptable": false
+          },
+          {
+            "family": "tool",
+            "node": "gateway",
+            "key": "tool.capability_missing",
+            "kind": "missing",
+            "summary": "Tool node-exporter is missing on the target node.",
+            "detail": {
+              "tool": "node-exporter"
+            },
+            "code": "tool.capability_missing",
+            "disposition": "genuine_drift",
+            "restore_action": "restore_tool_capability_missing",
+            "restorable": true,
+            "adoptable": false
+          },
+          {
+            "family": "proxy",
+            "node": "ingress1",
+            "key": "proxy.node_probe_failed",
+            "kind": "unverifiable",
+            "summary": "Doctor proxy probe failed on node 'ingress1': RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}",
+            "detail": {
+              "error": "RemoteShell failed on gateway (exit 1): {\"error\":{\"code\":\"invalid_token\",\"message\":\"Operation token is invalid.\",\"meta\":[]}}",
+              "exit_code": 1
+            },
+            "code": "proxy.node_probe_failed",
+            "disposition": "blocked_inspection",
+            "restore_action": null,
+            "restorable": false,
+            "adoptable": false
+          }
+        ],
+        "actions": [],
+        "nodes": [
+          {
+            "node": "NMBP",
+            "role": "app-dev",
+            "roles": [
+              "app-dev"
+            ],
+            "healthy": false,
+            "families": [
+              "node",
+              "instance",
+              "workspace",
+              "process",
+              "proxy",
+              "tool",
+              "database_connection",
+              "schedule"
+            ],
+            "summary": {
+              "issues": 2,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 2,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "agent",
+            "role": "agent",
+            "roles": [
+              "agent"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "tool",
+              "proxy",
+              "process",
+              "firewall_rule"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "beast",
+            "role": "app-dev",
+            "roles": [
+              "app-dev",
+              "database"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "instance",
+              "workspace",
+              "process",
+              "proxy",
+              "tool",
+              "database_connection",
+              "firewall_rule"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "database1",
+            "role": "database",
+            "roles": [
+              "database"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "tool",
+              "process",
+              "firewall_rule"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "gateway",
+            "role": "gateway",
+            "roles": [
+              "gateway",
+              "metrics",
+              "router",
+              "vpn"
+            ],
+            "healthy": false,
+            "families": [
+              "node",
+              "schedule",
+              "proxy",
+              "tool",
+              "process"
+            ],
+            "summary": {
+              "issues": 10,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 2,
+                "blocked_inspection": 5,
+                "invalid_intent": 0,
+                "runtime_incident": 3
+              }
+            }
+          },
+          {
+            "node": "ingress1",
+            "role": "ingress",
+            "roles": [
+              "ingress"
+            ],
+            "healthy": false,
+            "families": [
+              "node",
+              "proxy",
+              "tool",
+              "process",
+              "firewall_rule"
+            ],
+            "summary": {
+              "issues": 1,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 1,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "main1",
+            "role": "app-prod",
+            "roles": [
+              "app-prod"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "instance",
+              "process",
+              "proxy",
+              "tool",
+              "database_connection",
+              "firewall_rule",
+              "schedule"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "mini",
+            "role": "app-dev",
+            "roles": [
+              "app-dev"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "instance",
+              "workspace",
+              "process",
+              "proxy",
+              "tool",
+              "database_connection"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          },
+          {
+            "node": "services1",
+            "role": "analytics",
+            "roles": [
+              "analytics",
+              "s3",
+              "websocket"
+            ],
+            "healthy": true,
+            "families": [
+              "node",
+              "tool",
+              "proxy",
+              "process",
+              "firewall_rule"
+            ],
+            "summary": {
+              "issues": 0,
+              "fixed": 0,
+              "adopted": 0,
+              "skipped": 0,
+              "conflicts": 0,
+              "failed": 0,
+              "planned": 0,
+              "dispositions": {
+                "genuine_drift": 0,
+                "blocked_inspection": 0,
+                "invalid_intent": 0,
+                "runtime_incident": 0
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

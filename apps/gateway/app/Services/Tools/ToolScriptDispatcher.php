@@ -7,10 +7,13 @@ namespace App\Services\Tools;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
+use InvalidArgumentException;
 use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Tools\ToolRunScriptAction;
 
 final readonly class ToolScriptDispatcher
 {
@@ -29,6 +32,10 @@ final readonly class ToolScriptDispatcher
         string $script,
         bool $throw = false,
     ): RemoteShellResult {
+        if (! ToolRunScriptAction::isAllowed($action)) {
+            throw new InvalidArgumentException("Tool run payload action '{$action}' is invalid.");
+        }
+
         $result = $this->localExecutor->runInternal(
             node: $node,
             commandName: InternalCommand::ToolRunScript->value,
@@ -41,6 +48,10 @@ final readonly class ToolScriptDispatcher
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => "tool.{$action}",
                 ],
+                // Host-owned tool scripts leave the containerized gateway only
+                // when the target is the gateway node. Agent-push targets must
+                // not mint force_remote_host token context (invalid_token).
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'strict' => false,
                 'timeout' => self::DEFAULT_TIMEOUT + self::TIMEOUT_PADDING,
                 'bind_input' => true,

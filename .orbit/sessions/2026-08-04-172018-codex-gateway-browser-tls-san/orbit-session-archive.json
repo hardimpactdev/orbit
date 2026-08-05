@@ -1,0 +1,32 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T15:20:18+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-browser-tls-san/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-172018-codex-gateway-browser-tls-san",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/quality-check-b7fd55c45-receipt.json",
+        "evidence/retained-incus-gateway-browser-tls-san-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T150002Z-9d7e5818686d.json"
+    ],
+    "entry_digests": {
+        "evidence/quality-check-b7fd55c45-receipt.json": "d55b3344ab5436a9ce04e80557cef20d5f6ea118512a47ca10c79134585affc8",
+        "evidence/retained-incus-gateway-browser-tls-san-proof.txt": "abb8c304e7a039852fe4214a2d7d9ea345aadcc58cc89966f6a488487db7ceb9",
+        "loop.md": "4a4ca0f267d4b6b6f635425e720769284c9067758c6e6c07efed8e0591cf1551",
+        "quality-gates/quality-check-2026-08-04T150002Z-9d7e5818686d.json": "d55b3344ab5436a9ce04e80557cef20d5f6ea118512a47ca10c79134585affc8"
+    },
+    "slug": "codex-gateway-browser-tls-san",
+    "requested_slug": "codex-gateway-browser-tls-san",
+    "compatible_slugs": [
+        "codex-gateway-browser-tls-san"
+    ],
+    "branch": "codex/gateway-browser-tls-san",
+    "candidate_commit": "b7fd55c450a3a70631d0b79691595fa5bdbd6749",
+    "accepted_feature_tip": "b7fd55c450a3a70631d0b79691595fa5bdbd6749",
+    "accepted_main_tip": "72260bca3f93f6864ec043d7a2397257eb32c40f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

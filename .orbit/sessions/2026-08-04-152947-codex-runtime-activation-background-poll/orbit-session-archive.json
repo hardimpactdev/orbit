@@ -1,0 +1,34 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T13:29:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-runtime-activation-background-poll/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-152947-codex-runtime-activation-background-poll",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-activation-background-poll-browser.md",
+        "evidence/runtime-activation-post-main-merge-blobs.txt",
+        "evidence/runtime-activation-post-main-merge-suite.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T132436Z-1724ad1c053c.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-activation-background-poll-browser.md": "732cc46c14f651d0b8498972548d3903f4eef682e70a0261e8f5c4a088af06df",
+        "evidence/runtime-activation-post-main-merge-blobs.txt": "8703259873d912f2cfbb8aabb1915e593001f933109fd55b17856b8c9eff0148",
+        "evidence/runtime-activation-post-main-merge-suite.txt": "6a096d563d996cc16ee8b38ad0c4ae0875c78e697a32dcdd309e9ca72a832ba2",
+        "loop.md": "8f338c2d23705f603fe292dec8a9bdec2ffb9d8bcff12c8c12c371d872869660",
+        "quality-gates/quality-check-2026-08-04T132436Z-1724ad1c053c.json": "7600e40b7e9f5152645f230ff0300ee4e849b89a7bfc6f27f9d8e78071667771"
+    },
+    "slug": "codex-runtime-activation-background-poll",
+    "requested_slug": "codex-runtime-activation-background-poll",
+    "compatible_slugs": [
+        "codex-runtime-activation-background-poll"
+    ],
+    "branch": "codex/runtime-activation-background-poll",
+    "candidate_commit": "eb30aa9ce5dfc2bd00c9cb783b9f241d26a3b7f1",
+    "accepted_feature_tip": "eb30aa9ce5dfc2bd00c9cb783b9f241d26a3b7f1",
+    "accepted_main_tip": "eec2d757646f73c112fada2cf4ca363deb50aac3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

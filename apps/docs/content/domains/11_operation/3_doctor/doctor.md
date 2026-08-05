@@ -75,7 +75,7 @@ Doctor does not create a separate DNS row or DNS state family.
 ## Usage
 
 ```bash
-orbit doctor [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Examples
@@ -106,7 +106,7 @@ orbit doctor --all --stream-json
   only fleet mode and is mutually exclusive with `--node`, `--self`, `--instance`,
   and `--workspace`. Use `--all`; `--node=all` is rejected as
   `validation_failed` before probes.
-- `--instance`: Limit the run to one concrete `<project.instance>` and its owned family facts.
+- `--instance`: Limit the run to one concrete `<app.instance>` and its owned family facts.
 - `--workspace`: Limit the run to one workspace and its owned facts.
 
 **Resolution modes:**
@@ -136,6 +136,24 @@ The command supports four modes. Verify mode (no flag) compares only and does no
 The gateway authorizes each run against the resolved target node. Verify mode
 requires `doctor:verify`; resolution actions require `doctor:restore` or
 `doctor:adopt` for the selected direction.
+
+Node-scoped `--restore` is convergence-complete for supported genuine drift.
+It applies family-declared restore actions, re-probes the same selected node,
+families, key, instance, and workspace fence, and continues multi-pass repair
+while new restorable genuine drift appears. It stops when the scope is clean,
+when the restorable set makes no progress (repeated findings), or when the
+bounded pass cap is reached. Structured `convergence` / `summary` metadata
+records passes and stop reason. Action receipts never hide remaining findings;
+the final fresh observation is authoritative.
+
+Every issue carries an explicit catalog `disposition`
+(`genuine_drift`, `blocked_inspection`, `invalid_intent`, `runtime_incident`)
+and, for genuine drift, a declared `restore_action`. Unknown issue codes fail
+closed. Generic `kind` remains for compatibility. Probe errors are
+`blocked_inspection` / Unverifiable findings and prevent healthy. Dry-run and
+verify do not apply mutations or re-probe for resolution verification.
+`--all` stays verify-only. `--adopt` remains explicit disaster-recovery and is
+not widened. Invalid gateway intent is never repaired by guessing.
 
 On supported macOS Agent-eligible nodes, a restore or adopt action that needs
 protected local work may trigger the OS privilege prompt through the
@@ -176,14 +194,14 @@ own concrete issue codes and action maps:
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)
 - [`doctor --family=firewall_rule`](../../4_firewall/firewall-doctor.md)
 
-**Project runtime families:**
+**App runtime families:**
 
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=process`](../../7_process/process-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [`doctor --family=schedule`](../../9_schedule/schedule-doctor.md)
-- [`doctor --family=database_connection`](../../18_database/database-doctor.md)
+- [`doctor --family=database_connection`](../../17_database/database-doctor.md)
 
 ## Related Commands
 

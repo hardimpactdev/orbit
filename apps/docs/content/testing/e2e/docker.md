@@ -214,8 +214,8 @@ Docker may test systemd process command contracts, registry behavior, and
 validation against seeded gateway state, but real systemd lifecycle assertions
 belong in Incus. Docker tests that seed tool or process drift must restore only
 the drift they create; broad `--family=tool --restore` coverage is not a Docker
-systemd lifecycle substitute and must not pick up unrelated OpenCode or
-PolyScope systemd process drift.
+systemd lifecycle substitute and must not pick up unrelated residual systemd
+process drift from removed tools.
 
 DNS alias mode is the only supported Docker prepared-topology mode. Parallel
 test isolation comes from per-run container names, Docker bridge networks, and

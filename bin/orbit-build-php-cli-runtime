@@ -2,13 +2,15 @@
 
 set -Eeuo pipefail
 
-STATIC_PHP_CLI_VERSION=2.8.5
-SQLITE_VERSION=3.44.6
-SQLITE_SOURCE_ID=863c171b76cd36e0c71662d4a50d84da531cc7fbead893d02459577febdf6396
-SQLITE_ARCHIVE_SHA256=c25cd42f803d5fb0af5f1a2863c9f529a8fd35177cb24b0f6e970b1cc96f00f0
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CATALOG_PATH="${ORBIT_PHP_CLI_CATALOG:-${ROOT_DIR}/packages/core/resources/php-cli/artifact-catalog.build.json}"
+SPC_PCOV_STATIC_PATCH="${ROOT_DIR}/packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-static.patch"
+SPC_PCOV_SOURCE_PATH_PATCH="${ROOT_DIR}/packages/core/resources/php-cli/static-php-cli-2.8.5-pcov-source-path.patch"
+PCOV_CONFIG_M4_PHP_VERSION_PATCH="${ROOT_DIR}/packages/core/resources/php-cli/pcov-1.0.12-config-m4-php-version.patch"
 
 usage() {
-    echo "Usage: bin/orbit-build-php-cli-runtime <php-version> <output-directory>" >&2
+    echo "Usage: bin/orbit-build-php-cli-runtime --php-version <patch> --variant <coverage|standard> --output-directory <dir> [--platform <os-arch>]" >&2
+    echo "   or: bin/orbit-build-php-cli-runtime <php-version> <output-directory>  (legacy: standard variant)" >&2
     exit 64
 }
 
@@ -17,10 +19,138 @@ fail() {
     exit 1
 }
 
-php_version="${1:-}"
-output_directory="${2:-}"
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "required build command not found: ${1}"
+}
+
+json_get() {
+    local query="$1"
+    # Resolve dotted paths where map keys may themselves contain dots
+    # (e.g. php_source_sha256.8.5.8 → ["php_source_sha256"]["8.5.8"]).
+    # At each level pick the longest existing key that is a prefix of the
+    # remaining query; never naively explode(".", $query).
+    php -r '
+        $path = $argv[1];
+        $query = $argv[2];
+        $document = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($document)) {
+            fwrite(STDERR, "catalog must be a JSON object\n");
+            exit(1);
+        }
+
+        $value = $document;
+        $remaining = $query;
+        while ($remaining !== "") {
+            if (! is_array($value)) {
+                fwrite(STDERR, "missing catalog key: {$query}\n");
+                exit(1);
+            }
+
+            $bestKey = null;
+            foreach (array_keys($value) as $key) {
+                if (! is_string($key) && ! is_int($key)) {
+                    continue;
+                }
+                $key = (string) $key;
+                if ($remaining === $key || str_starts_with($remaining, $key . ".")) {
+                    if ($bestKey === null || strlen($key) > strlen($bestKey)) {
+                        $bestKey = $key;
+                    }
+                }
+            }
+
+            if ($bestKey === null || ! array_key_exists($bestKey, $value)) {
+                fwrite(STDERR, "missing catalog key: {$query}\n");
+                exit(1);
+            }
+
+            $value = $value[$bestKey];
+            if ($remaining === $bestKey) {
+                $remaining = "";
+            } else {
+                $remaining = substr($remaining, strlen($bestKey) + 1);
+            }
+        }
+
+        if (is_array($value) || is_object($value)) {
+            echo json_encode($value, JSON_THROW_ON_ERROR);
+            exit(0);
+        }
+        if ($value === null) {
+            echo "";
+            exit(0);
+        }
+        if (is_bool($value)) {
+            echo $value ? "true" : "false";
+            exit(0);
+        }
+        echo $value;
+    ' "$CATALOG_PATH" "$query"
+}
+
+php_version=""
+variant="standard"
+output_directory=""
+platform_override=""
+
+if [ "$#" -ge 1 ] && [[ "${1}" != --* ]]; then
+    # Legacy positional form used by existing tests/docs: <php-version> <output-directory>
+    php_version="${1:-}"
+    output_directory="${2:-}"
+    variant="standard"
+else
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --php-version)
+                php_version="${2:-}"
+                shift 2
+                ;;
+            --variant)
+                variant="${2:-}"
+                shift 2
+                ;;
+            --output-directory)
+                output_directory="${2:-}"
+                shift 2
+                ;;
+            --platform)
+                platform_override="${2:-}"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                ;;
+            *)
+                fail "unknown argument: $1"
+                ;;
+        esac
+    done
+fi
 
 [ -n "$php_version" ] && [ -n "$output_directory" ] || usage
+[ -f "$CATALOG_PATH" ] || fail "catalog not found: ${CATALOG_PATH}"
+
+case "$variant" in
+    coverage|standard) ;;
+    *) fail "unsupported variant: ${variant} (expected coverage|standard)" ;;
+esac
+
+STATIC_PHP_CLI_VERSION="$(json_get static_php_cli_version)"
+SQLITE_VERSION="$(json_get sqlite_version)"
+SQLITE_SOURCE_ID="$(json_get sqlite_source_id)"
+SQLITE_ARCHIVE_SHA256="$(json_get sqlite_archive_sha256)"
+SPC_EXT_JSON_SHA256="$(json_get static_php_cli_ext_json_sha256)"
+SPC_SOURCE_JSON_SHA256="$(json_get static_php_cli_source_json_sha256)"
+supported_patch="$(
+    php -r '
+        $document = json_decode((string) file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
+        $pins = $document["patch_pins"] ?? [];
+        echo in_array($argv[2], array_values($pins), true) ? "1" : "0";
+    ' "$CATALOG_PATH" "$php_version"
+)"
+[ "$supported_patch" = 1 ] || fail "unsupported PHP version: ${php_version}"
+php_sha256="$(json_get "php_source_sha256.${php_version}")"
+[ -n "$php_sha256" ] || fail "unsupported PHP version: ${php_version}"
 
 if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
     bison_prefix="$(brew --prefix bison 2>/dev/null || true)"
@@ -30,7 +160,7 @@ if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
     fi
 fi
 
-required_commands=(autoconf automake bison cmake curl flex git gzip make pkg-config re2c shasum tar tclsh unzip xz)
+required_commands=(autoconf automake bison cmake curl flex git gzip make patch pkg-config re2c shasum tar tclsh unzip xz php)
 
 if [ "$(uname -s)" = Darwin ]; then
     required_commands+=(glibtoolize libtool)
@@ -39,24 +169,15 @@ else
 fi
 
 for command in "${required_commands[@]}"; do
-    command -v "$command" >/dev/null 2>&1 || fail "required build command not found: ${command}"
+    require_command "$command"
 done
-
-case "$php_version" in
-    8.5.8)
-        php_sha256=58910198d19e873048fe87cdfe16bc790025417ede3d1651bfa1c4b533d573f2
-        ;;
-    *)
-        fail "unsupported PHP version: ${php_version}"
-        ;;
-esac
 
 case "$(uname -s)" in
     Linux)
-        platform=linux
+        platform_os=linux
         ;;
     Darwin)
-        platform=macos
+        platform_os=macos
         ;;
     *)
         fail "unsupported operating system: $(uname -s)"
@@ -75,17 +196,38 @@ case "$(uname -m)" in
         ;;
 esac
 
-case "${platform}-${architecture}" in
-    linux-x86_64)
-        spc_sha256=523ba4279c54c7a377156c0dd3a36adf92ee64b01e9a7f5e9e2ec084b8e458e5
-        ;;
-    macos-aarch64)
-        spc_sha256=acf2f25d56d0cbf8e65aa82e5054fef555f7be7c5c38046c6e0819f266d83225
-        ;;
-    *)
-        fail "unsupported build platform: ${platform}-${architecture}"
-        ;;
+detected_platform="${platform_os}-${architecture}"
+
+if [ -n "$platform_override" ]; then
+    platform="$platform_override"
+else
+    platform="$detected_platform"
+fi
+
+case "$platform" in
+    linux-x86_64|linux-aarch64|macos-aarch64|macos-x86_64) ;;
+    *) fail "unsupported build platform: ${platform}" ;;
 esac
+
+if [ "$platform" != "$detected_platform" ]; then
+    fail "requested platform ${platform} does not match host ${detected_platform}"
+fi
+
+spc_sha256="$(json_get "spc_archive_sha256.${platform}")"
+[ -n "$spc_sha256" ] || fail "missing SPC checksum for ${platform}"
+
+base_extensions="$(
+    php -r '
+        $document = json_decode((string) file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
+        echo implode(",", $document["extensions"]["base"]);
+    ' "$CATALOG_PATH"
+)"
+
+if [ "$variant" = coverage ]; then
+    extensions="${base_extensions},pcov"
+else
+    extensions="$base_extensions"
+fi
 
 work_directory="$(mktemp -d)"
 
@@ -104,9 +246,13 @@ trap cleanup EXIT
 spc_archive="${work_directory}/spc.tar.gz"
 php_source="${work_directory}/php-${php_version}.tar.xz"
 sqlite_source="${work_directory}/sqlite-${SQLITE_VERSION}.tar.gz"
+spc_ext_json="${work_directory}/config/ext.json"
+spc_source_json="${work_directory}/config/source.json"
+pcov_source=""
+pcov_custom_url_args=()
 
 curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
-    "https://github.com/crazywhalecc/static-php-cli/releases/download/${STATIC_PHP_CLI_VERSION}/spc-${platform}-${architecture}.tar.gz" \
+    "https://github.com/crazywhalecc/static-php-cli/releases/download/${STATIC_PHP_CLI_VERSION}/spc-${platform}.tar.gz" \
     -o "$spc_archive"
 printf '%s  %s\n' "$spc_sha256" "$spc_archive" | shasum -a 256 -c -
 tar -xzf "$spc_archive" -C "$work_directory"
@@ -125,8 +271,159 @@ sqlite_manifest="$(
 )"
 [ "$sqlite_manifest" = "$SQLITE_SOURCE_ID" ] || fail "SQLite source identity mismatch"
 
-extensions=apcu,bcmath,bz2,calendar,ctype,curl,dba,dom,zlib,openssl,sockets,event,exif,fileinfo,filter,ftp,gd,gmp,iconv,imagick,imap,intl,mbstring,mbregex,mysqlnd,mysqli,opcache,opentelemetry,pcntl,pdo,pdo_mysql,pgsql,phar,posix,protobuf,readline,session,redis,shmop,simplexml,xml,libxml,soap,sodium,sqlite3,swoole-hook-pgsql,swoole-hook-mysql,swoole-hook-sqlite,swoole,sysvmsg,sysvsem,sysvshm,tokenizer,xmlreader,xmlwriter,xsl,zip
+# WORKING_DIR/config/{ext,source}.json are preferred by static-php-cli over embedded config.
+mkdir -p "${work_directory}/config"
+curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://raw.githubusercontent.com/crazywhalecc/static-php-cli/${STATIC_PHP_CLI_VERSION}/config/ext.json" \
+    -o "$spc_ext_json"
+printf '%s  %s\n' "$SPC_EXT_JSON_SHA256" "$spc_ext_json" | shasum -a 256 -c -
+
+curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://raw.githubusercontent.com/crazywhalecc/static-php-cli/${STATIC_PHP_CLI_VERSION}/config/source.json" \
+    -o "$spc_source_json"
+printf '%s  %s\n' "$SPC_SOURCE_JSON_SHA256" "$spc_source_json" | shasum -a 256 -c -
+
+if [ "$variant" = coverage ]; then
+    PCOV_VERSION="$(json_get pcov.version)"
+    PCOV_URL="$(json_get pcov.url)"
+    PCOV_FILENAME="$(json_get pcov.filename)"
+    PCOV_ARCHIVE_SHA256="$(json_get pcov.archive_sha256)"
+    PCOV_SPC_SOURCE_NAME="$(json_get pcov.spc_source_name)"
+    [ -n "$PCOV_VERSION" ] && [ -n "$PCOV_URL" ] && [ -n "$PCOV_ARCHIVE_SHA256" ] \
+        || fail "coverage builds require a pinned pcov entry in the catalog"
+
+    # Never use the moving pecl.php.net/get/pcov URL from SPC's source.json.
+    if [ "$PCOV_URL" = "https://pecl.php.net/get/pcov" ] || [ "$PCOV_URL" = "https://pecl.php.net/get/pcov/" ]; then
+        fail "pcov.url must be a version-pinned archive, not the moving pecl.php.net/get/pcov URL"
+    fi
+
+    # Upstream archive is verified first and left unmodified. SPC's download step only
+    # stages archives; source/ does not exist until spc build. Patch config.m4 by
+    # extracting → patching → repacking a separate archive for --custom-url.
+    pcov_upstream="${work_directory}/${PCOV_FILENAME}"
+    curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+        "$PCOV_URL" \
+        -o "$pcov_upstream"
+    printf '%s  %s\n' "$PCOV_ARCHIVE_SHA256" "$pcov_upstream" | shasum -a 256 -c -
+    # Materialize the listing fully before matching so pipefail cannot SIGPIPE tar.
+    pcov_listing="$(tar -tzf "$pcov_upstream")" \
+        || fail "pinned PCOV archive is not a readable tarball: ${pcov_upstream}"
+    if ! printf '%s\n' "$pcov_listing" | grep -Eq "pcov-${PCOV_VERSION}(/|$)"; then
+        fail "pinned PCOV archive does not contain pcov-${PCOV_VERSION}"
+    fi
+
+    [ -f "$PCOV_CONFIG_M4_PHP_VERSION_PATCH" ] \
+        || fail "PCOV config.m4 PHP_VERSION patch missing: ${PCOV_CONFIG_M4_PHP_VERSION_PATCH}"
+    expected_patch_sha="$(json_get pcov.config_m4_php_version_patch_sha256 2>/dev/null || true)"
+    if [ -n "$expected_patch_sha" ]; then
+        printf '%s  %s\n' "$expected_patch_sha" "$PCOV_CONFIG_M4_PHP_VERSION_PATCH" | shasum -a 256 -c - \
+            || fail "PCOV config.m4 PHP_VERSION patch digest mismatch"
+    fi
+
+    pcov_extract="${work_directory}/pcov-upstream-extract"
+    pcov_patched_archive="${work_directory}/pcov-${PCOV_VERSION}-orbit-config-m4-patched.tgz"
+    mkdir -p "$pcov_extract"
+    tar -xzf "$pcov_upstream" -C "$pcov_extract"
+    pcov_config_m4="${pcov_extract}/pcov-${PCOV_VERSION}/config.m4"
+    [ -f "$pcov_config_m4" ] \
+        || fail "PCOV config.m4 missing in upstream archive (expected ${pcov_config_m4})"
+
+    # Stock PCOV 1.0.12 does PHP_VERSION=$($PHP_CONFIG --vernum); empty PHP_CONFIG in
+    # static in-tree builds clobbers PHP's global PHP_VERSION and breaks Swoole.
+    patch -p1 -d "$(dirname "$pcov_config_m4")" < "$PCOV_CONFIG_M4_PHP_VERSION_PATCH"
+    if grep -Eq '^[[:space:]]*PHP_VERSION=\$\(\$PHP_CONFIG --vernum\)' "$pcov_config_m4"; then
+        fail "PCOV config.m4 still clobbers PHP_VERSION via PHP_CONFIG after patch"
+    fi
+    if ! grep -Eq '^[[:space:]]*PCOV_PHP_VERSION=\$\(\$PHP_CONFIG --vernum\)' "$pcov_config_m4"; then
+        fail "PCOV config.m4 patch missing PCOV_PHP_VERSION=\$(\$PHP_CONFIG --vernum)"
+    fi
+    if ! grep -Eq '^[[:space:]]*PCOV_PHP_VERSION=\$PHP_VERSION_ID' "$pcov_config_m4"; then
+        fail "PCOV config.m4 patch missing PCOV_PHP_VERSION=\$PHP_VERSION_ID fallback"
+    fi
+    if ! grep -Eq 'if test -n "\$PHP_CONFIG"' "$pcov_config_m4"; then
+        fail "PCOV config.m4 patch missing PHP_CONFIG emptiness guard"
+    fi
+    if ! grep -Eq 'test \$PCOV_PHP_VERSION -gt 80099' "$pcov_config_m4"; then
+        fail "PCOV config.m4 patch did not rewrite comparisons to PCOV_PHP_VERSION"
+    fi
+    if grep -Eq 'test \$PHP_VERSION -gt 80099|test \$PHP_VERSION -lt 70' "$pcov_config_m4"; then
+        fail "PCOV config.m4 still uses bare PHP_VERSION in comparisons after patch"
+    fi
+
+    # Repack only the extension directory (not "."). Archiving "." produces members like
+    # ./pcov-1.0.12/...; SPC strip/extract then nests the tree so buildconf misses config.m4.
+    # Proven layout: members start with pcov-${PCOV_VERSION}/ (no leading ./).
+    tar -czf "$pcov_patched_archive" -C "$pcov_extract" "pcov-${PCOV_VERSION}"
+    patched_listing="$(tar -tzf "$pcov_patched_archive")" \
+        || fail "patched PCOV archive is not a readable tarball: ${pcov_patched_archive}"
+    if printf '%s\n' "$patched_listing" | grep -Eq '^\./'; then
+        fail "patched PCOV archive members must not start with ./ (SPC nests extract incorrectly)"
+    fi
+    if ! printf '%s\n' "$patched_listing" | grep -Eq "^pcov-${PCOV_VERSION}/config\.m4$"; then
+        fail "patched PCOV archive missing exact member pcov-${PCOV_VERSION}/config.m4"
+    fi
+    first_member="$(printf '%s\n' "$patched_listing" | head -n 1)"
+    case "$first_member" in
+        "./"*|".")
+            fail "patched PCOV archive first member must not start with ./ (got ${first_member})"
+            ;;
+        "pcov-${PCOV_VERSION}"|"pcov-${PCOV_VERSION}/"*)
+            ;;
+        *)
+            fail "patched PCOV archive first member must be under pcov-${PCOV_VERSION}/ (got ${first_member})"
+            ;;
+    esac
+    upstream_sha="$(shasum -a 256 "$pcov_upstream" | awk '{print $1}')"
+    patched_sha="$(shasum -a 256 "$pcov_patched_archive" | awk '{print $1}')"
+    [ "$upstream_sha" != "$patched_sha" ] \
+        || fail "patched PCOV archive unexpectedly identical to upstream (patch may not have applied)"
+    # Upstream identity remains the catalog pin; custom-url consumes the patched archive only.
+    [ "$upstream_sha" = "$PCOV_ARCHIVE_SHA256" ] \
+        || fail "upstream PCOV archive digest drifted after staging"
+
+    pcov_custom_url_args+=(--custom-url="${PCOV_SPC_SOURCE_NAME}:file://${pcov_patched_archive}")
+    echo "PCOV config.m4 PHP_VERSION clobber patch validated; custom-url uses ${pcov_patched_archive}"
+
+    # SPC 2.8.5 pcov is external/shared and lacks source.json path (unlike apcu).
+    # Without path=php-src/ext/pcov, extract lands in source/pcov and buildconf
+    # ignores config.m4 → --enable-pcov is unrecognized.
+    [ -f "$SPC_PCOV_STATIC_PATCH" ] || fail "PCOV static patch missing: ${SPC_PCOV_STATIC_PATCH}"
+    [ -f "$SPC_PCOV_SOURCE_PATH_PATCH" ] || fail "PCOV source path patch missing: ${SPC_PCOV_SOURCE_PATH_PATCH}"
+    patch -p1 -d "$work_directory" < "$SPC_PCOV_STATIC_PATCH"
+    patch -p1 -d "$work_directory" < "$SPC_PCOV_SOURCE_PATH_PATCH"
+    php -r '
+        $ext = json_decode((string) file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
+        $source = json_decode((string) file_get_contents($argv[2]), true, flags: JSON_THROW_ON_ERROR);
+        $target = $ext["pcov"]["target"] ?? null;
+        $path = $source["pcov"]["path"] ?? null;
+        if ($target !== ["static"]) {
+            fwrite(STDERR, "PCOV ext.json static target patch did not apply; target=".json_encode($target)."\n");
+            exit(1);
+        }
+        if ($path !== "php-src/ext/pcov") {
+            fwrite(STDERR, "PCOV source.json path patch did not apply; path=".json_encode($path)."\n");
+            exit(1);
+        }
+        // Fail closed if path is still missing the way stock SPC 2.8.5 ships it.
+        if (! array_key_exists("path", $source["pcov"] ?? [])) {
+            fwrite(STDERR, "PCOV source.json still lacks path after patch\n");
+            exit(1);
+        }
+        fwrite(STDOUT, "PCOV patches validated: ext.json target=static, source.json path=php-src/ext/pcov\n");
+    ' "$spc_ext_json" "$spc_source_json"
+fi
+
 php_minor="${php_version%.*}"
+build_args=(
+    ./spc build "$extensions"
+    --build-cli
+    --no-motd
+    --no-interaction
+)
+
+if [ "$variant" = coverage ]; then
+    build_args+=(--with-hardcoded-ini=pcov.enabled=1)
+fi
 
 (
     cd "$work_directory"
@@ -136,27 +433,32 @@ php_minor="${php_version%.*}"
     export PKG_CONFIG_LIBDIR="${work_directory}/buildroot/lib/pkgconfig:${work_directory}/buildroot/share/pkgconfig"
     export PKG_CONFIG_PATH=
 
-    ./spc download \
-        --with-php="$php_minor" \
-        --for-extensions="$extensions" \
-        --custom-url="php-src:file://${php_source}" \
-        --custom-url="sqlite:file://${sqlite_source}" \
-        --prefer-pre-built \
-        --retry=5 \
-        --no-motd \
+    download_args=(
+        ./spc download
+        --with-php="$php_minor"
+        --for-extensions="$extensions"
+        --custom-url="php-src:file://${php_source}"
+        --custom-url="sqlite:file://${sqlite_source}"
+        --prefer-pre-built
+        --retry=5
+        --no-motd
         --no-interaction
+    )
+    if [ "${#pcov_custom_url_args[@]}" -gt 0 ]; then
+        download_args+=("${pcov_custom_url_args[@]}")
+    fi
+    # spc download only stages archives; source/ is created during spc build.
+    # PCOV config.m4 is already patched into the custom-url archive above.
+    "${download_args[@]}"
 
-    if [ "$platform" = linux ]; then
+    if [ "$platform_os" = linux ]; then
         ./spc doctor \
             --auto-fix \
             --no-motd \
             --no-interaction
     fi
 
-    ./spc build "$extensions" \
-        --build-cli \
-        --no-motd \
-        --no-interaction
+    "${build_args[@]}"
 )
 
 runtime="${work_directory}/buildroot/bin/php"
@@ -173,12 +475,74 @@ sqlite_query_version="$(
 [ "$sqlite_extension_version" = "$SQLITE_VERSION" ] || fail "SQLite3 extension reports ${sqlite_extension_version}"
 [ "$sqlite_query_version" = "$SQLITE_VERSION" ] || fail "SQLite query reports ${sqlite_query_version}"
 
+if [ "$variant" = coverage ]; then
+    "$runtime" -r 'exit(extension_loaded("pcov") ? 0 : 1);' \
+        || fail "coverage variant missing extension_loaded('pcov')"
+    "$runtime" -r 'exit(function_exists("pcov\\start") ? 0 : 1);' \
+        || fail "coverage variant missing function_exists('pcov\\\\start')"
+    enabled="$("$runtime" -r 'echo (string) (int) (bool) ini_get("pcov.enabled");')"
+    [ "$enabled" = 1 ] || fail "coverage variant expected pcov.enabled=1, got ${enabled}"
+    "$runtime" --ri pcov >/dev/null \
+        || fail "coverage variant php --ri pcov failed"
+    if "$runtime" -r 'echo PHP_SHLIB_SUFFIX;' >/dev/null 2>&1; then
+        # Ensure we did not ship a shared object contract.
+        if find "${work_directory}/buildroot" -name 'pcov.so' | grep -q .; then
+            fail "coverage variant must not distribute pcov.so"
+        fi
+    fi
+else
+    "$runtime" -r 'exit(extension_loaded("pcov") ? 1 : 0);' \
+        || fail "standard variant must not load pcov"
+    if "$runtime" --ri pcov >/dev/null 2>&1; then
+        fail "standard variant must not expose php --ri pcov"
+    fi
+fi
+
+if [ "$platform_os" = linux ]; then
+    require_command ldd
+    ldd_output="$(ldd "$runtime" 2>&1 || true)"
+    printf '%s\n' "$ldd_output" > "${work_directory}/ldd.txt"
+
+    if printf '%s\n' "$ldd_output" | grep -Eqi 'not a dynamic|statically linked'; then
+        :
+    elif printf '%s\n' "$ldd_output" | grep -Eq '=>|libc\.so|ld-linux|libm\.so|libpthread'; then
+        fail "Linux PHP CLI must be fully static; ldd reported dynamic linkage:\n${ldd_output}"
+    else
+        # Some static binaries make ldd exit non-zero with a non-dynamic message.
+        printf '%s\n' "$ldd_output" | grep -Eqi 'not a dynamic|statically linked|static' \
+            || fail "Linux PHP CLI static linkage could not be verified from ldd output:\n${ldd_output}"
+    fi
+fi
+
 mkdir -p "$output_directory"
-artifact="${output_directory}/php-${php_version}-cli-${platform}-${architecture}.tar.gz"
+artifact="${output_directory}/php-${php_version}-cli-${variant}-${platform}.tar.gz"
 tar -czf "$artifact" -C "${work_directory}/buildroot/bin" php
+artifact_sha="$(shasum -a 256 "$artifact" | awk '{print $1}')"
+
+manifest="${output_directory}/php-${php_version}-cli-${variant}-${platform}.manifest.json"
+php -r '
+    $payload = [
+        "tool" => "php-cli",
+        "php_version" => $argv[1],
+        "variant" => $argv[2],
+        "platform" => $argv[3],
+        "filename" => basename($argv[4]),
+        "sha256" => $argv[5],
+        "static_php_cli_version" => $argv[6],
+        "sqlite_version" => $argv[7],
+        "sqlite_source_id" => $argv[8],
+        "pcov" => $argv[2] === "coverage",
+        "built_at" => gmdate("c"),
+    ];
+    file_put_contents($argv[9], json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+' "$php_version" "$variant" "$platform" "$artifact" "$artifact_sha" \
+    "$STATIC_PHP_CLI_VERSION" "$SQLITE_VERSION" "$SQLITE_SOURCE_ID" "$manifest"
 
 echo "Built ${artifact}"
 echo "PHP ${actual_php_version}"
+echo "variant ${variant}"
+echo "platform ${platform}"
 echo "SQLite3::version() ${sqlite_extension_version}"
 echo "select sqlite_version() ${sqlite_query_version}"
-echo "sha256 $(shasum -a 256 "$artifact" | awk '{print $1}')"
+echo "sha256 ${artifact_sha}"
+echo "manifest ${manifest}"

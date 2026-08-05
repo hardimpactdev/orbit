@@ -343,61 +343,6 @@ describe('managed Agent intent', function (): void {
     });
 });
 
-describe('agent IDE default', function (): void {
-    it('passes when no config is set', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $agentIde = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.agent_ide_default_invalid');
-
-        expect($agentIde)->toHaveCount(0);
-    });
-
-    it('detects unsupported adapter', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-
-        $node->forceFill(['agent_ide_config' => ['adapter' => 'unsupported']]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $agentIde = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.agent_ide_default_invalid');
-
-        expect($agentIde)->toHaveCount(1);
-        expect($agentIde[array_key_first($agentIde)]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('passes for supported adapter', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-
-        $node->forceFill(['agent_ide_config' => ['adapter' => 'opencode']]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $agentIde = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.agent_ide_default_invalid');
-
-        expect($agentIde)->toHaveCount(0);
-    });
-});
-
 describe('access grants', function (): void {
     it('passes when no grants exist', function (): void {
         $node = nodes_probe_node([
@@ -1919,7 +1864,7 @@ describe('access permission validity', function (): void {
         expect($permission)->toHaveCount(0);
     });
 
-    it('ignores retained app permission tokens on migrated grants', function (): void {
+    it('accepts canonical app and instance permission tokens on grants', function (): void {
         $consumer = nodes_probe_node([
             'name' => 'consumer',
             'host' => '10.0.0.1',
@@ -1941,7 +1886,7 @@ describe('access permission validity', function (): void {
         NodeAccess::create([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $serving->id,
-            'permissions' => ['app:read', 'project:read', 'instance:read'],
+            'permissions' => ['app:read', 'instance:read'],
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));

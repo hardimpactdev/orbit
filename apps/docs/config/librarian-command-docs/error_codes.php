@@ -15,7 +15,7 @@ return [
         'validation_failed',
     ],
     'products' => [
-        'project' => [
+        'app' => [
             'not_found',
         ],
         'instance' => [

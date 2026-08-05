@@ -12,12 +12,13 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
     protected $signature = 'process:update
         {name? : Existing process name}
         {--name= : New process name}
+        {--label= : Human display label}
         {--node= : Owning node name}
         {--instance= : Instance selector}
         {--workspace= : Workspace name}
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
-        {--crash-notification= : Crash notification policy (none|agent_ide)}
+        {--crash-notification= : Crash notification policy (none)}
         {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd)}
         {--bind=* : Publish host for node-owned Docker managed services (wireguard|loopback); repeatable}
         {--restart : Restart affected runtime units after update}
@@ -29,12 +30,19 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
     public function handle(): int
     {
         $node = $this->nodeContext();
+        $label = $this->resolveProcessLabelOption();
+
+        if (is_int($label)) {
+            return $label;
+        }
+
         $input = ProcessUpdateInput::fromValues([
             'node' => $node,
             'instance' => $node === null ? $this->appContext() : $this->stringOption('instance'),
             'workspace' => $this->workspaceContext(),
             'name' => $this->stringArgument('name'),
             'new_name' => $this->stringOption('name'),
+            'label' => $label,
             'command' => $this->stringOption('command'),
             'restart_policy' => $this->stringOption('restart-policy'),
             'crash_notification' => $this->stringOption('crash-notification'),

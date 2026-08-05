@@ -5,29 +5,32 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
+use App\Actions\Processes\RecordProcessEvent;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
+use App\Enums\DoctorIssueDisposition;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Enums\ProcessEventType;
+use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
@@ -54,9 +57,9 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessesProbe;
-use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -85,7 +88,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use JsonException;
 use LogicException;
-use Orbit\Core\Enums\InternalCommand;
 use RuntimeException;
 use Throwable;
 
@@ -209,6 +211,7 @@ final readonly class DoctorReportRunner
         private DnsmasqReconciler $dnsmasqReconciler,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private RecordProcessEvent $recordProcessEvent = new RecordProcessEvent,
     ) {}
 
     /**
@@ -225,7 +228,7 @@ final readonly class DoctorReportRunner
     private function workspacesForNode(Node $node): Collection
     {
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->get()
             ->filter(
                 fn (Workspace $workspace): bool => (
@@ -241,30 +244,86 @@ final readonly class DoctorReportRunner
     /**
      * @return Collection<int, Process>
      */
+    /**
+     * @return Collection<int, Process>
+     */
     private function processesForNode(Node $node): Collection
     {
-        /** @var Collection<int, Process> $processes */
-        $processes = $this
-            ->processQueryForNode($node)
-            ->with(['owner', 'appInstance'])
+        $placement = app(WorkspacePlacement::class);
+        /** @var list<int> $placedInstanceIds */
+        $placedInstanceIds = [];
+
+        foreach (Instance::query()->with('app')->get() as $instance) {
+            if ($placement->nodeForInstance($instance)?->is($node) !== true) {
+                continue;
+            }
+
+            $placedInstanceIds[] = $instance->id;
+        }
+
+        /** @var Collection<int, Process> $candidates */
+        $candidates = $this
+            ->processQueryForNode($node, $placedInstanceIds)
+            ->with(['owner', 'instance', 'node'])
             ->get();
 
-        return $processes;
+        /** @var Collection<int, Process> $filtered */
+        $filtered = $candidates
+            ->filter(fn (Process $process): bool => $this->processBelongsToNode($process, $node, $placement))
+            ->values();
+
+        return $filtered;
     }
 
     /**
+     * @param  list<int>  $placedInstanceIds
      * @return Builder<Process>
      */
-    private function processQueryForNode(Node $node): Builder
+    private function processQueryForNode(Node $node, array $placedInstanceIds = []): Builder
     {
+        // Candidate set: denormalized node_id match, or current instance
+        // placement. Final membership is decided by processBelongsToNode().
         /** @var Builder<Process> $query */
-        $query = Process::query()->where('node_id', $node->id);
+        $query = Process::query()->where(function (Builder $builder) use ($node, $placedInstanceIds): void {
+            $builder->where('node_id', $node->id);
+
+            if ($placedInstanceIds !== []) {
+                $builder->orWhereIn('instance_id', $placedInstanceIds);
+            }
+        });
 
         if ($this->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
         }
 
         return $query;
+    }
+
+    private function processBelongsToNode(
+        Process $process,
+        Node $node,
+        ?WorkspacePlacement $placement = null,
+    ): bool {
+        $process->loadMissing(['owner', 'instance']);
+        $placement ??= app(WorkspacePlacement::class);
+
+        if ($process->owner instanceof Node) {
+            return $process->owner->is($node);
+        }
+
+        if ($process->owner instanceof Workspace) {
+            $placed = $placement->nodeForWorkspace($process->owner);
+
+            return $placed instanceof Node && $placed->is($node);
+        }
+
+        if ($process->instance instanceof Instance) {
+            $placed = $placement->nodeForInstance($process->instance);
+
+            return $placed instanceof Node && $placed->is($node);
+        }
+
+        return $process->node_id === $node->id;
     }
 
     /**
@@ -677,6 +736,7 @@ final readonly class DoctorReportRunner
         return [
             'node' => $node->name,
             'role' => $node->displayRole(),
+            'roles' => $this->nodeRoles($node),
             'healthy' => ($report['healthy'] ?? false) === true,
             'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
             'summary' => $reportSummary,
@@ -1104,6 +1164,7 @@ final readonly class DoctorReportRunner
             $nodes[] = $completedByName[$target->name] ?? [
                 'node' => $target->name,
                 'role' => $target->displayRole(),
+                'roles' => $this->nodeRoles($target),
                 'healthy' => true,
                 'families' => $fleetFamilies,
                 'summary' => ['issues' => 0],
@@ -1137,6 +1198,15 @@ final readonly class DoctorReportRunner
             return $this->finalize($probe, $mode, $this->plannedActions($mode, $probe['issues'] ?? []), dryRun: true);
         }
 
+        if ($mode === 'restore') {
+            return $this->runRestoreConvergence(
+                $node,
+                $probe,
+                $families,
+                new DoctorRunRequest($key, dryRun: false, scope: $scope),
+            );
+        }
+
         $actions = $mode === 'adopt'
             ? (
                 $key === 'node.updates'
@@ -1156,80 +1226,197 @@ final readonly class DoctorReportRunner
             ];
         }
 
-        if ($this->restoreRequiresVerification($mode, $key, $probe)) {
-            return $this->finalizeRestore($node, $families, $key, $scope, $actions);
+        if ($mode === 'adopt') {
+            // No mutation receipts: the first probe is already current. Re-probe only
+            // when adopt produced any action (including skipped/unsupported).
+            if ($actions === []) {
+                return $this->finalize($probe, $mode, $actions);
+            }
+
+            return $this->finalizeResolution(
+                $node,
+                $mode,
+                $actions,
+                $families,
+                new DoctorRunRequest($key, dryRun: false, scope: $scope),
+            );
         }
 
         return $this->finalize($probe, $mode, $actions);
     }
 
     /**
+     * Bounded multi-pass restore: re-apply genuine drift until clean, no progress,
+     * or max passes. Scope fences (families/key/instance/workspace) are preserved
+     * on every probe and apply.
+     *
+     * @param  array<string, mixed>  $initialProbe
      * @param  list<string>  $families
-     * @param  list<array<string, mixed>>  $actions
      * @return array<string, mixed>
      */
-    public function finalizeRestore(
+    private function runRestoreConvergence(
         Node $node,
+        array $initialProbe,
         array $families,
-        ?string $key,
-        DoctorTargetScope $scope,
-        array $actions,
+        DoctorRunRequest $request,
     ): array {
-        $probe = $this->probe($node, $families, $key, scope: $scope);
+        $scope = $request->targetScope();
+        $convergence = new DoctorRestoreConvergence;
+        // Apply may mutate the node row via a separately loaded model instance
+        // (e.g. nodeFromIssue). Re-resolve the selected node from the database
+        // for every post-mutation probe/apply so record changes are observed
+        // without dropping family/key/instance/workspace fences.
+        $resolveSelectedNode = function () use ($node): Node {
+            $fresh = Node::query()->find($node->getKey());
 
-        return $this->finalize(
-            $probe,
-            'restore',
-            $this->markVerifiedRestoreActionsWithRemainingDriftAsFailed(
-                $actions,
-                $this->issuesFromProbe($probe),
+            return $fresh instanceof Node ? $fresh : $node;
+        };
+        /** @var callable(): array{issues?: list<array<string, mixed>>} $probe */
+        $probe = function () use ($resolveSelectedNode, $families, $request, $initialProbe): array {
+            static $first = true;
+
+            if ($first) {
+                $first = false;
+
+                /** @var array{issues?: list<array<string, mixed>>} $initialProbe */
+                return $initialProbe;
+            }
+
+            /** @var array{issues?: list<array<string, mixed>>} $fresh */
+            $fresh = $this->probe(
+                $resolveSelectedNode(),
+                $families,
+                $request->key,
+                scope: $request->targetScope(),
+            );
+
+            return $fresh;
+        };
+        $result = $convergence->run(
+            probe: $probe,
+            apply: fn (array $issues): array => $this->apply($resolveSelectedNode(), 'restore', $issues),
+            isRestorable: fn (array $issue): bool => $this->issueSupportsMode($issue, 'restore'),
+        );
+
+        $actions = $result['actions'];
+        $finalProbe = $result['probe'];
+        $finalIssues = $this->issuesFromProbe($finalProbe);
+        $actions = [
+            ...$actions,
+            ...$this->actionsForUnsupportedMode('restore', $finalIssues, $actions),
+        ];
+
+        if ($actions === [] && $result['stop_reason'] === 'no_restorable') {
+            return $this->attachConvergenceMetadata(
+                report: $this->finalize(
+                    probe: $initialProbe,
+                    mode: 'restore',
+                    actions: $actions,
+                    authoritativeObservation: false,
+                ),
+                passes: 0,
+                stopReason: 'no_restorable',
+            );
+        }
+
+        $annotatedActions = $this->annotateRestoreActionsWithRemainingDrift(
+            $actions,
+            $finalIssues,
+        );
+
+        return $this->attachConvergenceMetadata(
+            report: $this->finalize(
+                probe: $finalProbe,
+                mode: 'restore',
+                actions: $annotatedActions,
+                authoritativeObservation: true,
             ),
+            passes: $result['passes'],
+            stopReason: $result['stop_reason'],
         );
     }
 
     /**
-     * @param  array<string, mixed>  $probe
+     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
      */
-    public function restoreRequiresVerification(string $mode, ?string $key, array $probe): bool
+    private function attachConvergenceMetadata(array $report, int $passes, string $stopReason): array
     {
-        if ($mode !== 'restore') {
-            return false;
+        $report['convergence'] = [
+            'passes' => $passes,
+            'stop_reason' => $stopReason,
+            'max_passes' => DoctorRestoreConvergence::MAX_PASSES,
+        ];
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $report['summary'] = [
+            ...$summary,
+            'passes' => $passes,
+            'stop_reason' => $stopReason,
+        ];
+
+        return $report;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @return array<string, int>
+     */
+    private function dispositionCounts(array $issues): array
+    {
+        $counts = [
+            DoctorIssueDisposition::GenuineDrift->value => 0,
+            DoctorIssueDisposition::BlockedInspection->value => 0,
+            DoctorIssueDisposition::InvalidIntent->value => 0,
+            DoctorIssueDisposition::RuntimeIncident->value => 0,
+        ];
+
+        foreach ($issues as $issue) {
+            $disposition = is_string($issue['disposition'] ?? null)
+                ? $issue['disposition']
+                : null;
+
+            if ($disposition !== null && array_key_exists($disposition, $counts)) {
+                $counts[$disposition]++;
+            }
         }
 
-        if ($key === 'node.updates') {
-            return true;
-        }
+        return $counts;
+    }
 
-        $scope = is_array($probe['scope'] ?? null) ? $probe['scope'] : [];
-        $families = is_array($scope['families'] ?? null) ? $scope['families'] : [];
+    /**
+     * Re-probe the selected scope after a real restore/adopt mutation and treat
+     * the fresh observation as authoritative for remaining issues and health.
+     *
+     * @param  list<array<string, mixed>>  $actions
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    public function finalizeResolution(
+        Node $node,
+        string $mode,
+        array $actions,
+        array $families = [],
+        ?DoctorRunRequest $request = null,
+    ): array {
+        $request ??= DoctorRunRequest::none();
+        $probe = $this->probe(
+            $node,
+            $families,
+            $request->key,
+            scope: $request->targetScope(),
+        );
+        $freshIssues = $this->issuesFromProbe($probe);
+        // Fresh observation decides remaining issues for every resolution mode.
+        // Richer per-family failure annotations are restore-only and never hide issues.
+        $annotatedActions = $mode === 'restore'
+            ? $this->annotateRestoreActionsWithRemainingDrift($actions, $freshIssues)
+            : $actions;
 
-        if (in_array('proxy', $families, true)) {
-            return true;
-        }
-
-        if (is_string($key) && in_array($key, self::VERIFIED_WEBSOCKET_RESTORE_KEYS, true)) {
-            return true;
-        }
-
-        if ($key === 'node.dns_mapping_mismatch') {
-            return true;
-        }
-
-        if (is_string($key) && in_array($key, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)) {
-            return true;
-        }
-
-        return array_any(
-            $this->issuesFromProbe($probe),
-            fn (array $issue): bool => (
-                ($issue['key'] ?? null) === 'node.dns_mapping_mismatch'
-                || in_array($issue['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)
-                || in_array(
-                    $issue['key'] ?? null,
-                    self::VERIFIED_WEBSOCKET_RESTORE_KEYS,
-                    true,
-                )
-            ),
+        return $this->finalize(
+            probe: $probe,
+            mode: $mode,
+            actions: $annotatedActions,
+            authoritativeObservation: true,
         );
     }
 
@@ -1259,47 +1446,76 @@ final readonly class DoctorReportRunner
                 + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0);
 
-            $this->runFamilyCheckPlan($onFamilyProgress, 'node', $nodeCheckTotal, function (callable $advance) use (
-                $node,
-                $key,
-                &$issues,
-            ): void {
-                $snapshot = $this->nodesProbe->introspect($node);
-                $issues = [
-                    ...$issues,
-                    ...array_map(
-                        fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
-                        $this->nodesProbe->diff($node, $snapshot, $key),
-                    ),
-                ];
-                $advance();
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'node',
+                $nodeCheckTotal,
+                function (callable $advance) use ($node, $key, &$issues): void {
+                    $snapshot = $this->nodesProbe->introspect($node);
+                    $issues = [
+                        ...$issues,
+                        ...array_map(
+                            fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
+                            $this->nodesProbe->diff($node, $snapshot, $key),
+                        ),
+                    ];
+                    $advance();
 
-                foreach ($this->nodeDnsProjectionProbe->drift($node) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-                }
-
-                $advance();
-
-                $webSocketAssignment = $this->activeWebSocketAssignment($node);
-
-                if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                    foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    // Fleet node DNS projection is only consumed by the DNS runtime on
+                    // the VPN/gateway host. Probe once there (targeted and broad scopes
+                    // share this gate) and attribute each source node's fragment
+                    // mismatch to that source — never fan out the same shared artifact
+                    // path across non-consumer nodes. Skip content probes when the live
+                    // orbit-dns runtime does not mount the appion directory so
+                    // unmounted host files cannot produce false positives.
+                    if (
+                        $this->shouldProbeNodeDnsProjection($node)
+                        && $this->dnsmasqReconciler->projectionDirectoryIsMounted()
+                    ) {
+                        foreach ($this->nodeDnsProjectionSources() as $source) {
+                            foreach ($this->nodeDnsProjectionProbe->drift($source) as $entry) {
+                                $issues[] = $this->nodeScopedIssuePayload($entry, $source);
+                            }
+                        }
                     }
 
                     $advance();
-                }
 
-                $s3Assignment = $this->activeS3Assignment($node);
+                    $webSocketAssignment = $this->activeWebSocketAssignment($node);
 
-                if ($s3Assignment instanceof NodeRoleAssignment) {
-                    foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                        foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        }
+
+                        $advance();
                     }
 
-                    $advance();
-                }
-            });
+                    $s3Assignment = $this->activeS3Assignment($node);
+
+                    if ($s3Assignment instanceof NodeRoleAssignment) {
+                        foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        }
+
+                        $advance();
+                    }
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'node',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -1311,24 +1527,38 @@ final readonly class DoctorReportRunner
 
         if (in_array('app', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $appInstances = $this->scopedAppInstances($this->appInstancesForNode($node), $scope);
-            $includeNodeConfigInventory = $scope->app === null && $scope->appInstanceId === null;
+            $appInstances = $this->scopedInstances($this->instancesForNode($node), $scope);
+            $includeNodeConfigInventory = $scope->app === null && $scope->instanceId === null;
             $appCheckTotal = $appInstances->count() + ($includeNodeConfigInventory ? 1 : 0);
 
-            $this->runFamilyCheckPlan($onFamilyProgress, 'app', $appCheckTotal, function (callable $advance) use (
-                $appInstances,
-                $includeNodeConfigInventory,
-                $node,
-                &$issues,
-            ): void {
-                $this->probeAppFamily(
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'app',
+                $appCheckTotal,
+                function (callable $advance) use ($appInstances, $includeNodeConfigInventory, $node, &$issues): void {
+                    $this->probeAppFamily(
+                        $node,
+                        $appInstances,
+                        $includeNodeConfigInventory,
+                        $issues,
+                        $advance,
+                    );
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
-                    $appInstances,
-                    $includeNodeConfigInventory,
-                    $issues,
-                    $advance,
-                );
-            });
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'app',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -1356,6 +1586,20 @@ final readonly class DoctorReportRunner
 
                         $advance();
                     }
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'workspace',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
                 },
             );
 
@@ -1403,6 +1647,20 @@ final readonly class DoctorReportRunner
 
                     $advance();
                 },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'process',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
             );
 
             $this->reportFamilyProgress(
@@ -1424,14 +1682,28 @@ final readonly class DoctorReportRunner
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0);
 
-            $this->runFamilyCheckPlan($onFamilyProgress, 'proxy', $proxyCheckTotal, function (callable $advance) use (
-                $node,
-                $proxyRoutes,
-                $scope,
-                &$issues,
-            ): void {
-                $this->probeProxyFamily($node, $proxyRoutes, $scope, $issues, $advance);
-            });
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'proxy',
+                $proxyCheckTotal,
+                function (callable $advance) use ($node, $proxyRoutes, $scope, &$issues): void {
+                    $this->probeProxyFamily($node, $proxyRoutes, $scope, $issues, $advance);
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'proxy',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -1458,6 +1730,20 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'firewall_rule',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
             );
 
             $this->reportFamilyProgress(
@@ -1476,48 +1762,64 @@ final readonly class DoctorReportRunner
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
 
-            $this->runFamilyCheckPlan($onFamilyProgress, 'tool', $toolCheckTotal, function (callable $advance) use (
-                $node,
-                &$issues,
-            ): void {
-                foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
-                    $snapshot = $this->toolsProbe->introspect($tool);
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'tool',
+                $toolCheckTotal,
+                function (callable $advance) use ($node, &$issues): void {
+                    foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
+                        $snapshot = $this->toolsProbe->introspect($tool);
 
-                    foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                        $issues[] = $this->toolIssuePayload($entry, $tool);
+                        foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
+                            $issues[] = $this->toolIssuePayload($entry, $tool);
+                        }
+
+                        $advance();
                     }
 
-                    $advance();
-                }
+                    $webSocketAssignment = $this->activeWebSocketAssignment($node);
 
-                $webSocketAssignment = $this->activeWebSocketAssignment($node);
+                    if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                        foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        }
 
-                if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                    foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        $advance();
                     }
 
-                    $advance();
-                }
+                    $s3Assignment = $this->activeS3Assignment($node);
 
-                $s3Assignment = $this->activeS3Assignment($node);
+                    if ($s3Assignment instanceof NodeRoleAssignment) {
+                        foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        }
 
-                if ($s3Assignment instanceof NodeRoleAssignment) {
-                    foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        $advance();
                     }
 
-                    $advance();
-                }
+                    if ($this->shouldProbeDnsRuntime($node)) {
+                        foreach ($this->dnsRuntimeProbe->probe() as $entry) {
+                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        }
 
-                if ($this->shouldProbeDnsRuntime($node)) {
-                    foreach ($this->dnsRuntimeProbe->probe() as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        $advance();
                     }
-
-                    $advance();
-                }
-            });
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'tool',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -1562,6 +1864,20 @@ final readonly class DoctorReportRunner
                         $advance();
                     }
                 },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'schedule',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
             );
 
             $this->reportFamilyProgress(
@@ -1575,20 +1891,35 @@ final readonly class DoctorReportRunner
         if (in_array('database_connection', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
 
-            $this->runFamilyCheckPlan($onFamilyProgress, 'database_connection', 1, function (callable $advance) use (
-                $node,
-                $scope,
-                &$issues,
-            ): void {
-                foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
-                    $issues[] = $this->annotateIssue([
-                        ...$issue,
-                        'node' => $node->name,
-                    ]);
-                }
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'database_connection',
+                1,
+                function (callable $advance) use ($node, $scope, &$issues): void {
+                    foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
+                        $issues[] = $this->annotateIssue([
+                            ...$issue,
+                            'node' => $node->name,
+                        ]);
+                    }
 
-                $advance();
-            });
+                    $advance();
+                },
+                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
+                    $node,
+                    &$issues,
+                    $familyIssueOffset,
+                    $onFamilyProgress,
+                ): void {
+                    $this->appendFamilyProbeFailure(
+                        $node,
+                        'database_connection',
+                        $exception,
+                        $issues,
+                        $familyIssueOffset,
+                    );
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -1600,6 +1931,7 @@ final readonly class DoctorReportRunner
 
         $issues = $this->filterIssuesByKey($issues, $key);
         $summary = $this->summary('verify', $issues, []);
+        $summary['dispositions'] = $this->dispositionCounts($issues);
 
         return [
             'healthy' => $issues === [],
@@ -1636,6 +1968,7 @@ final readonly class DoctorReportRunner
         );
         $issues = $this->filterIssuesByKey([$issue], $key);
         $summary = $this->summary('verify', $issues, []);
+        $summary['dispositions'] = $this->dispositionCounts($issues);
 
         return [
             'healthy' => false,
@@ -1688,7 +2021,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
-     * @return array{families: list<string>, node: string, role: string, self: false, app: string|null, app_instance: string|null, workspace: string|null, key: string|null}
+     * @return array{families: list<string>, node: string, role: string, roles: list<string>, self: false, app: string|null, instance: string|null, workspace: string|null, key: string|null}
      */
     private function reportScope(
         array $families,
@@ -1700,12 +2033,55 @@ final readonly class DoctorReportRunner
             'families' => $families,
             'node' => $node->name,
             'role' => $node->displayRole(),
+            'roles' => $this->nodeRoles($node),
             'self' => false,
             'app' => $scope->app,
-            'app_instance' => $scope->appInstance,
+            'instance' => $scope->instance,
             'workspace' => $scope->workspace,
             'key' => $key,
         ];
+    }
+
+    /**
+     * Active canonical roles in stable sorted order. Operator nodes with no
+     * active role assignment surface as `['operator']` so consumers always
+     * receive a complete role set alongside the legacy primary `role` field.
+     *
+     * @return list<string>
+     */
+    private function nodeRoles(Node $node): array
+    {
+        $roles = app(NodeRoleAssignments::class)->activeRoleNames($node);
+
+        return $roles === [] ? ['operator'] : $roles;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function familyProbeFailedIssue(
+        Node $node,
+        string $family,
+        string $key,
+        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
+        string $summary,
+    ): array {
+        $detail = [
+            'error' => $exception->getMessage(),
+        ];
+
+        if ($exception instanceof RemoteShellFailed) {
+            $detail['exit_code'] = $exception->result->exitCode;
+        }
+
+        return $this->annotateIssue([
+            'family' => $family,
+            'node' => $node->name,
+            'key' => $key,
+            'kind' => DriftKind::Unverifiable->value,
+            'summary' => $summary,
+            'detail' => $detail,
+        ]);
     }
 
     /**
@@ -1718,21 +2094,11 @@ final readonly class DoctorReportRunner
         RemoteShellFailed $exception,
         string $summary,
     ): array {
-        return $this->annotateIssue([
-            'family' => $family,
-            'node' => $node->name,
-            'key' => $key,
-            'kind' => DriftKind::Unverifiable->value,
-            'summary' => $summary,
-            'detail' => [
-                'error' => $exception->getMessage(),
-                'exit_code' => $exception->result->exitCode,
-            ],
-        ]);
+        return $this->familyProbeFailedIssue($node, $family, $key, $exception, $summary);
     }
 
     /**
-     * @param  Collection<int, AppInstance>  $appInstances
+     * @param  Collection<int, Instance>  $appInstances
      * @param  list<array<string, mixed>>  $issues
      */
     private function probeAppFamily(
@@ -1763,9 +2129,9 @@ final readonly class DoctorReportRunner
         }
 
         $activePhpAppSlugs = $this
-            ->appInstancesForNode($node)
-            ->filter(fn (AppInstance $instance): bool => $instance->app->runtimeKind() === AppRuntimeKind::Php)
-            ->map(fn (AppInstance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
+            ->instancesForNode($node)
+            ->filter(fn (Instance $instance): bool => $instance->app->runtimeKind() === AppRuntimeKind::Php)
+            ->map(fn (Instance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
                 $instance->app,
                 $instance,
             ))
@@ -1815,16 +2181,16 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return Collection<int, AppInstance>
+     * @return Collection<int, Instance>
      */
-    private function appInstancesForNode(Node $node): Collection
+    private function instancesForNode(Node $node): Collection
     {
-        /** @var Collection<int, AppInstance> $instances */
-        $instances = AppInstance::query()
+        /** @var Collection<int, Instance> $instances */
+        $instances = Instance::query()
             ->with(['app.node', 'app.instances'])
             ->get()
             ->filter(
-                fn (AppInstance $instance): bool => (
+                fn (Instance $instance): bool => (
                     $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
                 ),
             )
@@ -1834,20 +2200,20 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  Collection<int, AppInstance>  $instances
-     * @return Collection<int, AppInstance>
+     * @param  Collection<int, Instance>  $instances
+     * @return Collection<int, Instance>
      */
-    private function scopedAppInstances(Collection $instances, DoctorTargetScope $scope): Collection
+    private function scopedInstances(Collection $instances, DoctorTargetScope $scope): Collection
     {
-        /** @var list<AppInstance> $scoped */
+        /** @var list<Instance> $scoped */
         $scoped = [];
 
         foreach ($instances as $instance) {
-            if ($scope->appInstanceId !== null && $instance->id !== $scope->appInstanceId) {
+            if ($scope->instanceId !== null && $instance->id !== $scope->instanceId) {
                 continue;
             }
 
-            if ($scope->appInstanceId === null && $scope->app !== null && $instance->app->name !== $scope->app) {
+            if ($scope->instanceId === null && $scope->app !== null && $instance->app->name !== $scope->app) {
                 continue;
             }
 
@@ -1864,7 +2230,7 @@ final readonly class DoctorReportRunner
     {
         $slugs = [];
 
-        foreach ($this->appInstancesForNode($node) as $instance) {
+        foreach ($this->instancesForNode($node) as $instance) {
             if ($instance->app->runtimeKind() !== AppRuntimeKind::Php) {
                 continue;
             }
@@ -1884,7 +2250,7 @@ final readonly class DoctorReportRunner
         $renderer = app(AppRuntimeContainerRenderer::class);
         $issues = [];
 
-        foreach ($this->appInstancesForNode($node) as $instance) {
+        foreach ($this->instancesForNode($node) as $instance) {
             $app = $instance->app;
 
             if (! $this->appHasManagedFrankenPhpRuntimeIntent($app)) {
@@ -1895,7 +2261,7 @@ final readonly class DoctorReportRunner
             $exists = Process::query()
                 ->where('owner_type', $app->getMorphClass())
                 ->where('owner_id', $app->getKey())
-                ->where('app_instance_id', $instance->id)
+                ->where('instance_id', $instance->id)
                 ->where('name', $processName)
                 ->exists();
 
@@ -1911,7 +2277,7 @@ final readonly class DoctorReportRunner
                 'summary' => "FrankenPHP runtime intent is missing for instance {$app->name}.{$instance->name}.",
                 'detail' => [
                     'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'instance' => $instance->name,
                     'process' => $processName,
                     'runtime_unit' => $renderer->containerNameForInstance($app, $instance),
                     'reason' => 'runtime_process_missing',
@@ -1922,7 +2288,7 @@ final readonly class DoctorReportRunner
         return $issues;
     }
 
-    private function appHasManagedFrankenPhpRuntimeIntent(Project $app): bool
+    private function appHasManagedFrankenPhpRuntimeIntent(App $app): bool
     {
         return Process::query()
             ->where('owner_type', $app->getMorphClass())
@@ -2068,11 +2434,13 @@ final readonly class DoctorReportRunner
                 $issues[] = $this->annotateIssue([
                     'family' => 'proxy',
                     'node' => $node->name,
+                    'code' => 'proxy.route_extra',
                     'key' => $domain,
                     'kind' => 'extra',
                     'summary' => $entry->summary,
                     'detail' => [
                         'domain' => $domain,
+                        'code' => 'proxy.route_extra',
                     ],
                 ]);
             }
@@ -2104,16 +2472,27 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  callable(callable(): void): void  $runner
+     * @param  (callable(RemoteShellFailed|RemoteLocalExecutorTransportFailed): void)|null  $onFamilyProbeFailed
      */
     private function runFamilyCheckPlan(
         ?callable $onFamilyProgress,
         string $family,
         int $total,
         callable $runner,
+        ?callable $onFamilyProbeFailed = null,
     ): void {
         if ($total === 0) {
             $this->reportFamilyProgress($onFamilyProgress, $family, 'running');
-            $runner(static function (): void {});
+
+            try {
+                $runner(static function (): void {});
+            } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
+                if ($onFamilyProbeFailed === null) {
+                    throw $exception;
+                }
+
+                $onFamilyProbeFailed($exception);
+            }
 
             return;
         }
@@ -2149,7 +2528,44 @@ final readonly class DoctorReportRunner
             );
         };
 
-        $runner($advance);
+        try {
+            $runner($advance);
+        } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
+            if ($onFamilyProbeFailed === null) {
+                throw $exception;
+            }
+
+            $onFamilyProbeFailed($exception);
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     */
+    private function appendFamilyProbeFailure(
+        Node $node,
+        string $family,
+        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
+        array &$issues,
+        int $familyIssueOffset,
+    ): void {
+        $familyIssues = array_slice($issues, $familyIssueOffset);
+        $alreadyAttributed = array_any(
+            $familyIssues,
+            static fn (array $issue): bool => str_ends_with((string) ($issue['key'] ?? ''), 'probe_failed'),
+        );
+
+        if ($alreadyAttributed) {
+            return;
+        }
+
+        $issues[] = $this->familyProbeFailedIssue(
+            node: $node,
+            family: $family,
+            key: $family === 'proxy' ? 'proxy.node_probe_failed' : "{$family}.remote_shell_probe_failed",
+            exception: $exception,
+            summary: "Doctor {$family} probe failed on node '{$node->name}': {$exception->getMessage()}",
+        );
     }
 
     /**
@@ -2210,11 +2626,8 @@ final readonly class DoctorReportRunner
 
             if (
                 $mode === 'restore'
-                && in_array(
-                    $issue['key'] ?? null,
-                    ['node.dns_mapping_mismatch', 'proxy.dns_mapping_mismatch'],
-                    true,
-                )
+                && is_string($issue['key'] ?? null)
+                && DoctorDnsProjectionRestoreSupport::supports($issue['key'])
             ) {
                 $actions[] = $this->applyDnsProjectionIssue($node, $issue);
 
@@ -2259,12 +2672,21 @@ final readonly class DoctorReportRunner
      * @param  list<array<string, mixed>>  $actions
      * @return array<string, mixed>
      */
-    public function finalize(array $probe, string $mode, array $actions, bool $dryRun = false): array
-    {
+    public function finalize(
+        array $probe,
+        string $mode,
+        array $actions,
+        bool $dryRun = false,
+        bool $authoritativeObservation = false,
+    ): array {
         $issues = $probe['issues'] ?? [];
         $issues = is_array($issues) ? array_values(array_filter($issues, is_array(...))) : [];
-        $remainingIssues = $this->remainingIssues($issues, $actions);
+        /** @var list<array<string, mixed>> $remainingIssues */
+        $remainingIssues = $authoritativeObservation
+            ? $issues
+            : $this->remainingIssues($issues, $actions);
         $summary = $this->summary($mode, $remainingIssues, $actions);
+        $summary['dispositions'] = $this->dispositionCounts($remainingIssues);
 
         $result = [
             ...$probe,
@@ -2289,7 +2711,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
-    private function appIssuePayload(DriftEntry $entry, Project $app): array
+    private function appIssuePayload(DriftEntry $entry, App $app): array
     {
         $app->loadMissing('node');
 
@@ -2311,7 +2733,7 @@ final readonly class DoctorReportRunner
      */
     private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
 
         return $this->annotateIssue([
             'family' => $entry->family,
@@ -2334,7 +2756,7 @@ final readonly class DoctorReportRunner
     {
         $app = $process->ownerApp();
         $app?->loadMissing('node');
-        $node = $app instanceof Project ? $app->node : $process->node;
+        $node = $app instanceof App ? $app->node : $process->node;
 
         return $this->annotateIssue([
             'family' => $entry->family,
@@ -2352,7 +2774,7 @@ final readonly class DoctorReportRunner
     private function issuePayload(DriftEntry $entry, Node $node): array
     {
         $detail = $entry->detail ?? [];
-        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+        $code = $this->driftEntryCatalogCode($entry);
 
         return $this->annotateIssue([
             'family' => 'node',
@@ -2371,7 +2793,7 @@ final readonly class DoctorReportRunner
     private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): array
     {
         $detail = $entry->detail ?? [];
-        $code = is_string($detail['code'] ?? null) ? $detail['code'] : $entry->key;
+        $code = $this->driftEntryCatalogCode($entry);
 
         return $this->annotateIssue([
             'family' => $entry->family,
@@ -2389,10 +2811,13 @@ final readonly class DoctorReportRunner
      */
     private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
     {
+        $code = $this->driftEntryCatalogCode($entry);
+
         return $this->annotateIssue([
             'family' => $entry->family,
             'node' => $route->node->name,
             'key' => $entry->key,
+            'code' => $code,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => [
@@ -2400,6 +2825,22 @@ final readonly class DoctorReportRunner
                 'domain' => $route->domain,
             ],
         ]);
+    }
+
+    private function driftEntryCatalogCode(DriftEntry $entry): string
+    {
+        $detail = $entry->detail ?? [];
+        $explicit = is_string($detail['code'] ?? null) ? $detail['code'] : '';
+
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if (DoctorIssueCatalog::has($entry->key)) {
+            return $entry->key;
+        }
+
+        throw DoctorUncataloguedIssueException::forCode($entry->key);
     }
 
     /**
@@ -2550,6 +2991,39 @@ final readonly class DoctorReportRunner
         );
     }
 
+    /**
+     * Node-owned dnsmasq projection content is verified only on the DNS-serving
+     * host (gateway-coupled VPN role), matching proxy DNS projection scope.
+     */
+    private function shouldProbeNodeDnsProjection(Node $node): bool
+    {
+        return $this->shouldProbeDnsRuntime($node);
+    }
+
+    /**
+     * @return list<Node>
+     */
+    private function nodeDnsProjectionSources(): array
+    {
+        $nodes = Node::query()
+            ->with('roleAssignments')
+            ->where('status', NodeStatus::Active->value)
+            ->orderBy('id')
+            ->get();
+
+        $sources = [];
+
+        foreach ($nodes as $node) {
+            if (! $node instanceof Node) {
+                continue;
+            }
+
+            $sources[] = $node;
+        }
+
+        return $sources;
+    }
+
     private function shouldProbeProxyDnsProjection(Node $node, DoctorTargetScope $scope): bool
     {
         return (
@@ -2653,11 +3127,11 @@ final readonly class DoctorReportRunner
             ->where('name', $processName)
             ->whereIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
 
         if ($appName !== null && $appInstanceName !== null) {
             $query->whereHas(
-                'appInstance',
+                'instance',
                 fn (Builder $instanceQuery): Builder => $instanceQuery
                     ->where('name', $appInstanceName)
                     ->whereHas(
@@ -2668,7 +3142,7 @@ final readonly class DoctorReportRunner
         }
 
         /** @var Collection<int, Process> $processes */
-        $processes = $query->with('appInstance.app')->get();
+        $processes = $query->with('instance.app')->get();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
 
         if ($runtimeUnit === null) {
@@ -2757,6 +3231,10 @@ final readonly class DoctorReportRunner
      */
     private function applyDatabaseConnectionIssue(string $key, array $detail): ?array
     {
+        if (! array_key_exists($key, DatabaseConnectionRestorer::restoreSupport())) {
+            return null;
+        }
+
         $targetType = is_string($detail['target_type'] ?? null) ? $detail['target_type'] : null;
         $targetId = is_int($detail['target_id'] ?? null)
             ? $detail['target_id']
@@ -2767,14 +3245,14 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        if (! in_array($targetType, ['app_instance', 'workspace'], true)) {
+        if (! in_array($targetType, ['instance', 'workspace'], true)) {
             return null;
         }
 
         $target = DatabaseConnectionTarget::query()
-            ->with(['appInstance.app', 'workspace.appInstance.app'])
+            ->with(['instance.app', 'workspace.instance.app'])
             ->where('env_prefix', $prefix)
-            ->when($targetType === 'app_instance', fn ($query) => $query->where('app_instance_id', $targetId))
+            ->when($targetType === 'instance', fn ($query) => $query->where('instance_id', $targetId))
             ->when($targetType === 'workspace', fn ($query) => $query->where('workspace_id', $targetId))
             ->first();
 
@@ -2845,7 +3323,7 @@ final readonly class DoctorReportRunner
         DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
             'env_prefix' => $prefix,
-            'app_instance_id' => $targetType === 'app_instance' ? $targetId : null,
+            'instance_id' => $targetType === 'instance' ? $targetId : null,
             'workspace_id' => $targetType === 'workspace' ? $targetId : null,
         ]);
 
@@ -2865,10 +3343,10 @@ final readonly class DoctorReportRunner
 
     private function databaseConnectionTargetNodeName(string $targetType, int $targetId): ?string
     {
-        if ($targetType === 'app_instance') {
-            $instance = AppInstance::query()->with('app')->find($targetId);
+        if ($targetType === 'instance') {
+            $instance = Instance::query()->with('app')->find($targetId);
 
-            return $instance instanceof AppInstance
+            return $instance instanceof Instance
                 ? $this->workspacePlacement->nodeForInstance($instance)?->name
                 : null;
         }
@@ -2878,7 +3356,7 @@ final readonly class DoctorReportRunner
         }
 
         $workspace = Workspace::query()
-            ->with(['appInstance.app'])
+            ->with(['instance.app'])
             ->find($targetId);
 
         return $workspace instanceof Workspace
@@ -2888,8 +3366,8 @@ final readonly class DoctorReportRunner
 
     private function databaseConnectionTargetNode(DatabaseConnectionTarget $target): ?Node
     {
-        if ($target->appInstance instanceof AppInstance) {
-            return $this->workspacePlacement->nodeForInstance($target->appInstance);
+        if ($target->instance instanceof Instance) {
+            return $this->workspacePlacement->nodeForInstance($target->instance);
         }
 
         if ($target->workspace instanceof Workspace) {
@@ -2953,9 +3431,9 @@ final readonly class DoctorReportRunner
 
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->where('name', $workspaceName)
-            ->whereHas('app', function ($query) use ($appName): void {
+            ->whereHas('app', static function ($query) use ($appName): void {
                 if ($appName !== null) {
                     $query->where('name', $appName);
                 }
@@ -2980,6 +3458,10 @@ final readonly class DoctorReportRunner
      */
     private function applyProcessIssue(Node $node, string $key, array $detail): ?array
     {
+        if (! DoctorProcessRestoreSupport::supports($key)) {
+            return null;
+        }
+
         if ($key === 'process.runtime_unit_extra') {
             return $this->removeExtraManagedProcessRuntime($node, $key, $detail);
         }
@@ -2988,13 +3470,15 @@ final readonly class DoctorReportRunner
             return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
         }
 
-        if (in_array($key, ['process.event_notifier_missing', 'process.event_notifier_mismatch'], true)) {
-            return $this->restoreProcessEventNotifierIssue($node, $key);
-        }
-
         if (! in_array(
             $key,
-            ['process.runtime_unit_missing', 'process.runtime_unit_mismatch', 'process.runtime_unit_down'],
+            [
+                'process.runtime_unit_missing',
+                'process.runtime_unit_mismatch',
+                'process.runtime_unit_down',
+                'process.restart_policy_mismatch',
+                'process.runtime_environment_mismatch',
+            ],
             true,
         )) {
             return null;
@@ -3022,20 +3506,20 @@ final readonly class DoctorReportRunner
 
         $app = $process->ownerApp();
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return $this->applyNodeOwnedProcessIssue($node, $key, $process);
         }
 
-        $process->loadMissing('appInstance');
-        $appInstance = $process->appInstance;
+        $process->loadMissing('instance');
+        $instance = $process->instance;
 
-        if (! $appInstance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return null;
         }
 
         try {
             $this->refreshManagedFrankenPhpProcessIntent($process);
-            $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app, $appInstance);
+            $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app, $instance);
         } catch (Throwable $e) {
             return [
                 'family' => 'process',
@@ -3059,7 +3543,7 @@ final readonly class DoctorReportRunner
                 'key' => $key,
                 'mode' => 'restore',
                 'status' => 'failed',
-                'summary' => "Process runtime restore for {$app->name}.{$appInstance->name} completed with warnings.",
+                'summary' => "Process runtime restore for {$app->name}.{$instance->name} completed with warnings.",
                 'details' => [
                     'warnings' => $warnings,
                 ],
@@ -3073,10 +3557,10 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => "Restored process runtime units for {$app->name}.{$appInstance->name}.",
+            'summary' => "Restored process runtime units for {$app->name}.{$instance->name}.",
             'details' => [
                 'app' => $app->name,
-                'app_instance' => $appInstance->name,
+                'instance' => $instance->name,
                 'process' => $process->name,
             ],
         ];
@@ -3097,7 +3581,38 @@ final readonly class DoctorReportRunner
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
-        $started = $driver->start($node, $runtimeUnit);
+        $this->recordProcessEvent->handle(
+            ProcessEventType::Starting,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
+
+        try {
+            $started = $driver->start($node, $runtimeUnit);
+        } catch (\Throwable $exception) {
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
+            throw $exception;
+        }
+
+        $this->recordProcessEvent->handle(
+            $started ? ProcessEventType::Started : ProcessEventType::Failed,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
 
         return [
             'family' => 'process',
@@ -3124,23 +3639,23 @@ final readonly class DoctorReportRunner
     private function restoreMissingFrankenPhpRuntimeProcess(Node $node, string $key, array $detail): ?array
     {
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $instanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+        $instanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
 
         if ($appName === null || $instanceName === null) {
             return null;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with('instances')
             ->where('name', $appName)
             ->first();
-        $instance = $app instanceof Project
+        $instance = $app instanceof App
             ? $app->instances->firstWhere('name', $instanceName)
             : null;
 
         if (
-            ! $app instanceof Project
-            || ! $instance instanceof AppInstance
+            ! $app instanceof App
+            || ! $instance instanceof Instance
             || $this->workspacePlacement->nodeForInstance($instance)?->id !== $node->id
         ) {
             return null;
@@ -3175,20 +3690,125 @@ final readonly class DoctorReportRunner
     {
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? trim($detail['runtime_unit']) : '';
 
-        if (
-            ($detail['reason'] ?? null) !== 'orphaned_managed_app_runtime'
-            || ! str_starts_with($runtimeUnit, 'orbit-app-')
-        ) {
+        if ($runtimeUnit === '') {
             return null;
         }
 
-        try {
-            $removed = app(ProcessDockerRuntimeManager::class)->remove($node, $runtimeUnit);
-        } catch (Throwable $exception) {
-            $removed = false;
-            $detail['error'] = $exception->getMessage();
+        if (
+            ($detail['reason'] ?? null) === 'orphaned_managed_app_runtime'
+            && str_starts_with($runtimeUnit, 'orbit-app-')
+        ) {
+            try {
+                $removed = app(ProcessDockerRuntimeManager::class)->remove($node, $runtimeUnit);
+            } catch (Throwable $exception) {
+                $removed = false;
+                $detail['error'] = $exception->getMessage();
+            }
+
+            return $this->extraRuntimeRemovalAction($node, $key, $runtimeUnit, $removed, $detail);
         }
 
+        $runtime = is_string($detail['runtime'] ?? null) ? $detail['runtime'] : null;
+
+        if ($runtime === 'systemd' && $this->isSafeOrbitSystemdExtraUnit($runtimeUnit, $detail)) {
+            try {
+                $removed = $this->processRuntimeDrivers->for('systemd')->remove($node, $runtimeUnit);
+            } catch (Throwable $exception) {
+                $removed = false;
+                $detail['error'] = $exception->getMessage();
+            }
+
+            return $this->extraRuntimeRemovalAction($node, $key, $runtimeUnit, $removed, $detail);
+        }
+
+        if ($runtime === 'launchd' && $this->isSafeOrbitLaunchdExtraUnit($runtimeUnit, $node, $detail)) {
+            try {
+                $removed = $this->processRuntimeDrivers->for('launchd')->remove($node, $runtimeUnit);
+            } catch (Throwable $exception) {
+                $removed = false;
+                $detail['error'] = $exception->getMessage();
+            }
+
+            return $this->extraRuntimeRemovalAction($node, $key, $runtimeUnit, $removed, $detail);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function isSafeOrbitSystemdExtraUnit(string $runtimeUnit, array $detail): bool
+    {
+        if (! $this->isSafeOrbitManagedRuntimeUnitIdentity($runtimeUnit)) {
+            return false;
+        }
+
+        $expectedPath = is_string($detail['expected_path'] ?? null) ? $detail['expected_path'] : null;
+        $canonicalPath = '/etc/systemd/system/'.$runtimeUnit.'.service';
+
+        if ($expectedPath !== null && $expectedPath !== $canonicalPath) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function isSafeOrbitLaunchdExtraUnit(string $runtimeUnit, Node $node, array $detail): bool
+    {
+        // Launchd remove/render asserts ProcessRuntimeUnitName::isValid (max 64).
+        // Do not accept legacy over-length identities that cannot be operated safely.
+        if (! ProcessRuntimeUnitName::isValid($runtimeUnit) || ! str_starts_with($runtimeUnit, 'orbit_')) {
+            return false;
+        }
+
+        $home = NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
+        $label = 'dev.hardimpact.orbit.'.$runtimeUnit;
+        $canonicalPath = $home.'/Library/LaunchAgents/'.$label.'.plist';
+        $expectedPath = is_string($detail['expected_path'] ?? null) ? $detail['expected_path'] : null;
+        $expected = is_string($detail['expected'] ?? null) ? $detail['expected'] : null;
+
+        if ($expectedPath !== null && $expectedPath !== $canonicalPath) {
+            return false;
+        }
+
+        if ($expected !== null && $expected !== $canonicalPath && $expected !== $runtimeUnit) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function isSafeOrbitManagedRuntimeUnitIdentity(string $runtimeUnit): bool
+    {
+        // Orbit-owned systemd units are orbit_* identities. Allow legacy units
+        // longer than the current 64-char bound so restore can remove them
+        // after a rename/bound migration, but never absolute/relative paths.
+        if (! str_starts_with($runtimeUnit, 'orbit_')) {
+            return false;
+        }
+
+        if (str_contains($runtimeUnit, '/') || str_contains($runtimeUnit, "\0") || str_contains($runtimeUnit, '..')) {
+            return false;
+        }
+
+        return (bool) preg_match('/\Aorbit_[a-z0-9](?:[a-z0-9_.-]{0,200}[a-z0-9])?\z/', $runtimeUnit);
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>
+     */
+    private function extraRuntimeRemovalAction(
+        Node $node,
+        string $key,
+        string $runtimeUnit,
+        bool $removed,
+        array $detail,
+    ): array {
         return [
             'family' => 'process',
             'node' => $node->name,
@@ -3222,7 +3842,7 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof Project) {
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
             return $this->restoreManagedFrankenPhpAppRuntime($node, $key, $process, $process->owner);
         }
 
@@ -3236,17 +3856,17 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
-    private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, Project $app): array
+    private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, App $app): array
     {
-        $process->loadMissing('appInstance');
-        $appInstance = $process->appInstance;
-        $instanceNode = $appInstance instanceof AppInstance
-            ? $this->workspacePlacement->nodeForInstance($appInstance)
+        $process->loadMissing('instance');
+        $instance = $process->instance;
+        $instanceNode = $instance instanceof Instance
+            ? $this->workspacePlacement->nodeForInstance($instance)
             : null;
 
         if (
-            ! $appInstance instanceof AppInstance
-            || $appInstance->app_id !== $app->id
+            ! $instance instanceof Instance
+            || $instance->app_id !== $app->id
             || ! $instanceNode instanceof Node
             || $instanceNode->id !== $node->id
         ) {
@@ -3260,7 +3880,7 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to restore {$key}.",
                 'details' => [
                     'app' => $app->name,
-                    'app_instance' => $appInstance?->name,
+                    'instance' => $instance?->name,
                     'process' => $process->name,
                     'error' => 'Process instance has no active serving node.',
                 ],
@@ -3268,11 +3888,11 @@ final readonly class DoctorReportRunner
         }
 
         try {
-            app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $appInstance);
-            $runtimeApp = app(AppRuntimeContainerRenderer::class)->runtimeAppForInstance($app, $appInstance);
+            app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $instance);
+            $runtimeApp = app(AppRuntimeContainerRenderer::class)->runtimeAppForInstance($app, $instance);
             $this->ensureAppRuntimeTlsMaterial($runtimeApp, $instanceNode);
 
-            $container = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $appInstance);
+            $container = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance);
             $outcome = $this->appRuntimeContainerManagerForAgentPush()->apply($instanceNode, $container);
         } catch (Throwable $e) {
             return [
@@ -3285,7 +3905,7 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to restore {$key}.",
                 'details' => [
                     'app' => $app->name,
-                    'app_instance' => $appInstance->name,
+                    'instance' => $instance->name,
                     'process' => $process->name,
                     'error' => $e->getMessage(),
                 ],
@@ -3299,10 +3919,10 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => "Restored managed FrankenPHP runtime container for {$app->name}.{$appInstance->name}.",
+            'summary' => "Restored managed FrankenPHP runtime container for {$app->name}.{$instance->name}.",
             'details' => [
                 'app' => $app->name,
-                'app_instance' => $appInstance->name,
+                'instance' => $instance->name,
                 'process' => $process->name,
                 'container' => $container->name(),
                 'outcome' => $outcome->value,
@@ -3339,11 +3959,11 @@ final readonly class DoctorReportRunner
         Process $process,
         Workspace $workspace,
     ): array {
-        $workspace->loadMissing(['app.node', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'instance']);
         $app = $workspace->app;
         $workspaceNode = $this->workspacePlacement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof Project || ! $workspaceNode instanceof Node || $workspaceNode->id !== $node->id) {
+        if (! $app instanceof App || ! $workspaceNode instanceof Node || $workspaceNode->id !== $node->id) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3355,7 +3975,7 @@ final readonly class DoctorReportRunner
                 'details' => [
                     'workspace' => $workspace->name,
                     'process' => $process->name,
-                    'error' => 'Process workspace has no active parent project node.',
+                    'error' => 'Process workspace has no active parent app node.',
                 ],
             ];
         }
@@ -3402,128 +4022,9 @@ final readonly class DoctorReportRunner
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function restoreProcessEventNotifierIssue(Node $node, string $key): array
-    {
-        $renderer = app(ProcessEventNotifierRenderer::class);
-        $gatewayEndpoint = $renderer->expectedGatewayEndpoint();
-
-        if ($gatewayEndpoint === null) {
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'error' => 'Gateway endpoint is not configured.',
-                ],
-            ];
-        }
-
-        try {
-            $results = [
-                $renderer->installPath() => $this->writeProcessEventNotifierFile(
-                    node: $node,
-                    path: $renderer->installPath(),
-                    content: $renderer->content(),
-                    mode: '0755',
-                ),
-                $renderer->gatewayEndpointPath() => $this->writeProcessEventNotifierFile(
-                    node: $node,
-                    path: $renderer->gatewayEndpointPath(),
-                    content: "{$gatewayEndpoint}\n",
-                    mode: '0644',
-                ),
-            ];
-        } catch (Throwable $exception) {
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'script' => $renderer->installPath(),
-                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-                    'error' => $exception->getMessage(),
-                ],
-            ];
-        }
-
-        foreach ($results as $path => $result) {
-            if ($result->successful()) {
-                continue;
-            }
-
-            return [
-                'family' => 'process',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$key}.",
-                'details' => [
-                    'script' => $renderer->installPath(),
-                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-                    'failed_path' => $path,
-                    'exit_code' => $result->exitCode,
-                    'stderr' => trim($result->stderr),
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'process',
-            'node' => $node->name,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => 'Restored process crash event notifier material.',
-            'details' => [
-                'script' => $renderer->installPath(),
-                'gateway_endpoint' => $renderer->gatewayEndpointPath(),
-            ],
-        ];
-    }
-
-    private function writeProcessEventNotifierFile(
-        Node $node,
-        string $path,
-        string $content,
-        string $mode,
-    ): RemoteShellResult {
-        return app(RemoteLocalExecutor::class)->runInternal(
-            node: $node,
-            commandName: InternalCommand::ManagedFile->value,
-            arguments: ['write'],
-            transportOptions: [
-                'input' => json_encode([
-                    'path' => $path,
-                    'content' => $content,
-                    'mode' => $mode,
-                    'directory_mode' => '0755',
-                ], JSON_THROW_ON_ERROR),
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'process-event-notifier.restore',
-                ],
-                'timeout' => 30,
-                'throw' => false,
-            ],
-        );
-    }
-
     private function refreshManagedFrankenPhpProcessIntent(Process $process): void
     {
-        $process->loadMissing(['owner', 'appInstance']);
+        $process->loadMissing(['owner', 'instance']);
 
         $config = $process->runtime_config;
         $hashLabel = is_string($config['container_spec_hash_label'] ?? null)
@@ -3536,14 +4037,14 @@ final readonly class DoctorReportRunner
 
         $ensureFrankenPhpRuntimeProcess = app(EnsureFrankenPhpRuntimeProcess::class);
 
-        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof Project) {
-            if (! $process->appInstance instanceof AppInstance) {
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
+            if (! $process->instance instanceof Instance) {
                 throw new RuntimeException(
                     'A concrete instance is required to refresh FrankenPHP process intent.',
                 );
             }
 
-            $ensureFrankenPhpRuntimeProcess->forApp($process->owner, $process->appInstance);
+            $ensureFrankenPhpRuntimeProcess->forApp($process->owner, $process->instance);
 
             return;
         }
@@ -3709,21 +4210,33 @@ final readonly class DoctorReportRunner
         }
 
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
 
         if (($appName === null) !== ($appInstanceName === null)) {
             return null;
         }
 
+        $placement = app(WorkspacePlacement::class);
+        /** @var list<int> $placedInstanceIds */
+        $placedInstanceIds = [];
+
+        foreach (Instance::query()->get() as $instance) {
+            if ($placement->nodeForInstance($instance)?->is($node) !== true) {
+                continue;
+            }
+
+            $placedInstanceIds[] = $instance->id;
+        }
+
         /** @var Collection<int, Process> $processes */
         $processes = $this
-            ->processQueryForNode($node)
-            ->with(['owner', 'appInstance.app'])
+            ->processQueryForNode($node, $placedInstanceIds)
+            ->with(['owner', 'instance.app'])
             ->where('name', $processName)
             ->when(
                 $appName !== null && $appInstanceName !== null,
                 fn (Builder $query): Builder => $query->whereHas(
-                    'appInstance',
+                    'instance',
                     fn (Builder $instanceQuery): Builder => $instanceQuery
                         ->where('name', $appInstanceName)
                         ->whereHas(
@@ -3733,6 +4246,11 @@ final readonly class DoctorReportRunner
                 ),
             )
             ->get();
+
+        /** @var Collection<int, Process> $processes */
+        $processes = $processes
+            ->filter(fn (Process $process): bool => $this->processBelongsToNode($process, $node, $placement))
+            ->values();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
         $runtimeProcess = $this->processForRuntimeUnit($node, $processes, $runtimeUnit);
 
@@ -3776,7 +4294,7 @@ final readonly class DoctorReportRunner
 
     private function processOwnerContext(Node $node, Process $process): ?ProcessOwnerContext
     {
-        $process->loadMissing(['owner', 'appInstance']);
+        $process->loadMissing(['owner', 'instance']);
 
         if ($process->owner instanceof Node) {
             return new ProcessOwnerContext(
@@ -3787,8 +4305,8 @@ final readonly class DoctorReportRunner
             );
         }
 
-        if ($process->owner instanceof Project) {
-            if (! $process->appInstance instanceof AppInstance) {
+        if ($process->owner instanceof App) {
+            if (! $process->instance instanceof Instance) {
                 return null;
             }
 
@@ -3797,18 +4315,18 @@ final readonly class DoctorReportRunner
                 app: $process->owner,
                 workspace: null,
                 owner: $process->owner,
-                appInstance: $process->appInstance,
+                instance: $process->instance,
             );
         }
 
         if ($process->owner instanceof Workspace) {
-            $process->owner->loadMissing(['app', 'appInstance']);
+            $process->owner->loadMissing(['app', 'instance']);
 
             if (
-                ! $process->owner->app instanceof Project
-                || ! $process->appInstance instanceof AppInstance
-                || ! $process->owner->appInstance instanceof AppInstance
-                || ! $process->appInstance->is($process->owner->appInstance)
+                ! $process->owner->app instanceof App
+                || ! $process->instance instanceof Instance
+                || ! $process->owner->instance instanceof Instance
+                || ! $process->instance->is($process->owner->instance)
             ) {
                 return null;
             }
@@ -3818,7 +4336,7 @@ final readonly class DoctorReportRunner
                 app: $process->owner->app,
                 workspace: $process->owner,
                 owner: $process->owner,
-                appInstance: $process->appInstance,
+                instance: $process->instance,
             );
         }
 
@@ -3831,10 +4349,6 @@ final readonly class DoctorReportRunner
      */
     private function applyAppIssue(Node $node, string $key, array $detail): ?array
     {
-        if ($key === 'app.runtime_config_probe_failed') {
-            return $this->handleAppRuntimeConfigProbeFailed($node);
-        }
-
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
 
         if ($appName === null) {
@@ -3845,23 +4359,23 @@ final readonly class DoctorReportRunner
             return $this->handleAppConfigExtraAction($node, $appName);
         }
 
-        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
 
         if ($appInstanceName !== null) {
-            $app = Project::query()
+            $app = App::query()
                 ->with(['node', 'instances'])
                 ->where('name', $appName)
                 ->first();
-            $instance = $app instanceof Project
+            $instance = $app instanceof App
                 ? $app->instances->firstWhere('name', $appInstanceName)
                 : null;
 
             if (
-                $app instanceof Project
-                && $instance instanceof AppInstance
+                $app instanceof App
+                && $instance instanceof Instance
                 && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
             ) {
-                return $this->handleAppInstanceAction(
+                return $this->handleInstanceAction(
                     $app,
                     $instance,
                     $this->driftEntryFromStoredParts('app', $key, $detail),
@@ -3871,13 +4385,13 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with('node')
             ->where('node_id', $node->id)
             ->where('name', $appName)
             ->first();
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
@@ -3887,7 +4401,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>|null
      */
-    private function handleAppInstanceAction(Project $app, AppInstance $instance, DriftEntry $entry): ?array
+    private function handleInstanceAction(App $app, Instance $instance, DriftEntry $entry): ?array
     {
         try {
             return $this->appsFixer->fixInstance($app, $instance, $entry);
@@ -3904,69 +4418,11 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to fix {$entry->key}.",
                 'details' => [
                     'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'instance' => $instance->name,
                     'error' => $e->getMessage(),
                 ],
             ];
         }
-    }
-
-    /**
-     * Re-probe the managed runtime config directory after a permission/probe
-     * failure. If the probe now succeeds the drift clears; if it still fails
-     * the doctor run emits the probe-failed drift again so the operator can
-     * investigate the underlying daemon/permission issue.
-     *
-     * @return array<string, mixed>
-     */
-    private function handleAppRuntimeConfigProbeFailed(Node $node): array
-    {
-        try {
-            $probe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_config_probe_failed',
-                'key' => 'app.runtime_config_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to re-probe managed runtime config directory on {$node->name}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        if ($probe->status === NodeRuntimeConfigsProbeStatus::Error) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_config_probe_failed',
-                'key' => 'app.runtime_config_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Managed runtime config directory probe still failing on {$node->name}.",
-                'details' => [
-                    'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                    'error' => $probe->error,
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'app',
-            'node' => $node->name,
-            'code' => 'app.runtime_config_probe_failed',
-            'key' => 'app.runtime_config_probe_failed',
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Re-probed managed runtime config directory on {$node->name}.",
-            'details' => [
-                'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                'status' => $probe->status->value,
-            ],
-        ];
     }
 
     /**
@@ -4354,6 +4810,22 @@ final readonly class DoctorReportRunner
         $targetNode = $this->nodeFromIssue($issue) ?? $node;
         $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
 
+        if (! DoctorDnsProjectionRestoreSupport::supports($key)) {
+            return [
+                'family' => $family,
+                'node' => $targetNode->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'skipped',
+                'summary' => "No restore action is registered for {$key}.",
+                'details' => [
+                    ...$detail,
+                    'reason' => 'mode_not_supported',
+                ],
+            ];
+        }
+
         if (! $this->dnsmasqReconciler->projectionDirectoryIsMounted()) {
             return [
                 'family' => $family,
@@ -4460,28 +4932,31 @@ final readonly class DoctorReportRunner
     {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
 
-        if (in_array(
-            $key,
-            [
-                'schedule.scheduler_missing',
-                'schedule.scheduler_stopped',
-                'schedule.scheduler_image_mismatch',
-                'schedule.scheduler_replicas_mismatch',
-                'schedule.lock_stuck',
-            ],
-            true,
-        )) {
+        if (in_array($key, SchedulesFixer::GatewayRestorableCodes, true)) {
             $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
             $schedule = $scheduleKey === null
                 ? null
                 : Schedule::query()->where('schedule_key', $scheduleKey)->first();
 
             try {
-                return $this->schedulesFixer->fixGateway(
+                $fixed = $this->schedulesFixer->fixGateway(
                     $gatewayNode,
                     $this->driftEntryFromStoredParts('schedule', $key, $detail, $issue),
                     $schedule instanceof Schedule ? $schedule : null,
                 );
+
+                return $fixed ?? [
+                    'family' => 'schedule',
+                    'node' => $gatewayNode->name,
+                    'code' => $key,
+                    'key' => $key,
+                    'mode' => 'restore',
+                    'status' => 'skipped',
+                    'summary' => "No restore action is registered for {$key}.",
+                    'details' => [
+                        'reason' => 'mode_not_supported',
+                    ],
+                ];
             } catch (Throwable $e) {
                 return [
                     'family' => 'schedule',
@@ -4573,96 +5048,20 @@ final readonly class DoctorReportRunner
     {
         $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
         $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
-        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
         $kind = is_string($issue['kind'] ?? null) ? $issue['kind'] : '';
-        $restorableKeys = [
-            'proxy.route_missing',
-            'proxy.route_mismatch',
-            'proxy.public_route_missing',
-            'proxy.public_route_mismatch',
-            'proxy.router_route_missing',
-            'proxy.router_route_mismatch',
-            'proxy.backend_route_missing',
-            'proxy.backend_route_mismatch',
-            'proxy.tls_missing',
-            'proxy.tls_mismatch',
-            'proxy.enactment_incomplete',
-            'proxy.caddy_container_missing',
-            'proxy.caddy_container_down',
-            'proxy.caddy_container_detached',
-            'proxy.global_config_missing',
-            'proxy.global_config_mismatch',
-            'proxy.dns_mapping_mismatch',
-            'proxy.agent_tool_route_missing',
-            'proxy.agent_tool_route_mismatch',
-            WebSocketProxyDoctorProbe::RouterRouteKey,
-            WebSocketProxyDoctorProbe::PublicRouteKey,
-            S3ProxyDoctorProbe::RouterRouteKey,
-            S3ProxyDoctorProbe::RouterBackendKey,
-            S3ProxyDoctorProbe::PublicRouteKey,
-            AnalyticsProxyDoctorProbe::RouterRouteKey,
-            AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
-            AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY,
-            'workspace.security.system_user',
-            'workspace.security.fs_permissions',
-            'app.runtime_config_missing',
-            'app.runtime_config_mismatch',
-            'app.runtime_config_extra',
-            'app.runtime_config_probe_failed',
-            'app.security.system_user',
-            'app.security.fs_permissions',
-            'firewall_rule.rule_missing',
-            'firewall_rule.rule_mismatch',
-            'process.runtime_unit_missing',
-            'process.runtime_unit_mismatch',
-            'process.runtime_unit_down',
-            'process.runtime_unit_extra',
-            'process.runtime_unit_unrenderable',
-            'process.event_notifier_missing',
-            'process.event_notifier_mismatch',
-            'tool.capability_missing',
-            'tool.container_missing',
-            'tool.container_not_running',
-            'tool.container_spec_mismatch',
-            'tool.version_mismatch',
-            'tool.config_missing',
-            'tool.config_mismatch',
-            'tool.credentials_missing',
-            'tool.credentials_mismatch',
-            'tool.dns_container_missing',
-            'tool.dns_port_not_listening',
-            'tool.dns_base_config_mismatch',
-            'tool.dns_client_dns_drift',
-            'tool.dns_forwarding_missing',
-            'schedule.scheduler_missing',
-            'schedule.scheduler_stopped',
-            'schedule.scheduler_image_mismatch',
-            'schedule.scheduler_replicas_mismatch',
-            'schedule.lock_stuck',
-            'node.role_convergence_failed',
-            'node.role_baseline_mismatch',
-            'node.dns_mapping_mismatch',
-            'node.websocket.backend_cert_missing',
-            'node.websocket.bind_public_interface',
-            'node.security.sshd_config',
-            'node.security.sshd_listen',
-            'node.security.public_ssh_deny',
-            'node.security.sysctl',
-            'node.updates_config_missing',
-            'node.updates_config_mismatch',
-            'node.updates_dry_run_failed',
-            'node.updates_last_run_failed',
-            'node.updates_unverifiable',
-            'database_connection.env_missing',
-            'database_connection.env_mismatch',
-            'database_connection.target_missing',
-        ];
+        $code = $this->catalogCodeForIssue($issue);
+        $definition = DoctorIssueCatalog::require($code);
+        $restorable = DoctorIssueCatalog::isRestorable($code);
+        $restoreAction = $restorable
+            ? DoctorRestoreSupport::actionId($code)
+            : null;
 
         return [
             ...$issue,
             'code' => $code,
-            'restorable' =>
-                in_array($code, $restorableKeys, true) || $family === 'proxy' && $kind === DriftKind::Extra->value,
+            'disposition' => $definition->disposition->value,
+            'restore_action' => $restoreAction,
+            'restorable' => $restorable,
             'adoptable' =>
                 ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value
                     || $family === 'database_connection'
@@ -4676,6 +5075,35 @@ final readonly class DoctorReportRunner
                         true,
                     ),
         ];
+    }
+
+    /**
+     * Resolve the catalogued issue code. Resource-scoped keys (for example a
+     * proxy domain) must emit an explicit `code`; only registered catalog keys
+     * may use key-as-code. Unknown codes never invent a disposition.
+     *
+     * @param  array<string, mixed>  $issue
+     */
+    private function catalogCodeForIssue(array $issue): string
+    {
+        $explicit = is_string($issue['code'] ?? null) ? $issue['code'] : '';
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $detailCode = is_string($detail['code'] ?? null) ? $detail['code'] : '';
+        $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
+
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        if ($detailCode !== '') {
+            return $detailCode;
+        }
+
+        if ($key !== '' && DoctorIssueCatalog::has($key)) {
+            return $key;
+        }
+
+        throw DoctorUncataloguedIssueException::forCode($key !== '' ? $key : '(missing code)');
     }
 
     /**
@@ -4739,18 +5167,22 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * Enrich restore action receipts when family-specific re-probe still finds
+     * matching drift. Does not filter issues; fresh observation remains
+     * authoritative in finalizeResolution.
+     *
      * @param  list<array<string, mixed>>  $actions
      * @param  list<array<string, mixed>>  $remainingIssues
      * @return list<array<string, mixed>>
      */
-    private function markVerifiedRestoreActionsWithRemainingDriftAsFailed(
+    private function annotateRestoreActionsWithRemainingDrift(
         array $actions,
         array $remainingIssues,
     ): array {
-        $verifiedActions = [];
+        $annotatedActions = [];
 
         foreach ($actions as $action) {
-            $verifiedActions[] = $this->verifyCompletedDnsToolAction(
+            $annotatedActions[] = $this->verifyCompletedDnsToolAction(
                 $this->verifyCompletedWebSocketAction(
                     $this->verifyCompletedNodeDnsAction(
                         $this->verifyCompletedProxyAction($action, $remainingIssues),
@@ -4762,7 +5194,7 @@ final readonly class DoctorReportRunner
             );
         }
 
-        return $verifiedActions;
+        return $annotatedActions;
     }
 
     /**
@@ -5224,7 +5656,7 @@ final readonly class DoctorReportRunner
         ];
     }
 
-    private function ensureAppRuntimeTlsMaterial(Project $app, Node $node): void
+    private function ensureAppRuntimeTlsMaterial(App $app, Node $node): void
     {
         $innerTlsPolicy = app(AppDevelopmentInnerTlsPolicy::class);
 
@@ -5255,7 +5687,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>|null
      */
-    private function handleAppAction(Project $app, DriftEntry $entry): ?array
+    private function handleAppAction(App $app, DriftEntry $entry): ?array
     {
         try {
             return $this->appsFixer->fix($app, $entry);
@@ -5364,11 +5796,11 @@ final readonly class DoctorReportRunner
 
     private function scheduleNodeName(Schedule $schedule): ?string
     {
-        $schedule->loadMissing(['app', 'appInstance', 'node']);
+        $schedule->loadMissing(['app', 'instance', 'node']);
 
         if ($schedule->scope === 'app') {
-            return $schedule->appInstance instanceof AppInstance
-                ? $this->workspacePlacement->nodeForInstance($schedule->appInstance)?->name
+            return $schedule->instance instanceof Instance
+                ? $this->workspacePlacement->nodeForInstance($schedule->instance)?->name
                 : null;
         }
 
@@ -5392,7 +5824,7 @@ final readonly class DoctorReportRunner
     {
         if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
             return Schedule::query()
-                ->with(['app', 'appInstance', 'node'])
+                ->with(['app', 'instance', 'node'])
                 ->where('enabled', true)
                 ->where('status', 'expected')
                 ->get();
@@ -5400,7 +5832,7 @@ final readonly class DoctorReportRunner
 
         return $this
             ->expectedSchedulesTargetingNode($node)
-            ->with(['app', 'appInstance', 'node'])
+            ->with(['app', 'instance', 'node'])
             ->get();
     }
 
@@ -5411,15 +5843,15 @@ final readonly class DoctorReportRunner
     {
         /** @var Builder<Schedule> $query */
         $query = Schedule::query();
-        $appInstanceIds = $this->appInstancesForNode($node)->pluck('id')->all();
+        $instanceIds = $this->instancesForNode($node)->pluck('id')->all();
 
         return $query
             ->where('enabled', true)
             ->where('status', 'expected')
-            ->where(function (Builder $query) use ($node, $appInstanceIds): void {
+            ->where(static function (Builder $query) use ($node, $instanceIds): void {
                 $query
                     ->where('node_id', $node->id)
-                    ->orWhereIn('app_instance_id', $appInstanceIds);
+                    ->orWhereIn('instance_id', $instanceIds);
             });
     }
 

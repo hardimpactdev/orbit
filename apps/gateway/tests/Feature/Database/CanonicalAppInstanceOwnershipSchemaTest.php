@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 it('makes workspace ownership concrete and removes app-level compatibility tables', function (): void {
-    $workspaceInstanceColumn = canonical_schema_column('workspaces', 'app_instance_id');
-    $workspaceStepInstanceColumn = canonical_schema_column('workspace_steps', 'app_instance_id');
+    $workspaceInstanceColumn = canonical_schema_column('workspaces', 'instance_id');
+    $workspaceStepInstanceColumn = canonical_schema_column('workspace_steps', 'instance_id');
 
     expect($workspaceInstanceColumn)
         ->toBeArray()
@@ -29,7 +29,7 @@ it('makes workspace ownership concrete and removes app-level compatibility table
 it('persists only app-instance and workspace database targets', function (): void {
     expect(Schema::hasColumn('database_connection_targets', 'app_id'))
         ->toBeFalse()
-        ->and(Schema::hasColumn('database_connection_targets', 'app_instance_id'))
+        ->and(Schema::hasColumn('database_connection_targets', 'instance_id'))
         ->toBeTrue()
         ->and(Schema::hasColumn('database_connection_targets', 'workspace_id'))
         ->toBeTrue()

@@ -8,7 +8,6 @@ use App\Services\Operations\LocalFleetUpdateVerifyAction;
 use App\Services\Operations\LocalFleetUpdateVerifyFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class FleetUpdateVerifyCommand extends InternalExecutorCommand
 {
@@ -43,7 +42,7 @@ final class FleetUpdateVerifyCommand extends InternalExecutorCommand
      */
     private function payload(): array
     {
-        $stdin = $this->stdin();
+        $stdin = trim($this->stdin());
 
         if ($stdin === '') {
             return [];
@@ -64,16 +63,5 @@ final class FleetUpdateVerifyCommand extends InternalExecutorCommand
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return trim((string) stream_get_contents($stream));
-        }
-
-        return trim((string) stream_get_contents(STDIN));
     }
 }

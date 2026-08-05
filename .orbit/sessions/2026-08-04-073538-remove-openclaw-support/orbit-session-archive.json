@@ -1,0 +1,38 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T05:35:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-remove-openclaw-support/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-073538-remove-openclaw-support",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/release-0.1.190-openclaw-remove/post-doctor-all.ndjson",
+        "evidence/release-0.1.190-openclaw-remove/post-hermes-proof.txt",
+        "evidence/release-0.1.190-openclaw-remove/post-openclaw-inventory.json",
+        "evidence/release-0.1.190-openclaw-remove/post-openclaw-urls.txt",
+        "evidence/release-0.1.190-openclaw-remove/tool-remove-openclaw.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-03T225911Z-6e1245a61dc4.json"
+    ],
+    "entry_digests": {
+        "evidence/release-0.1.190-openclaw-remove/post-doctor-all.ndjson": "c240e736857fbd49a93539bf7c4d7dc0c0562681005e7a3c31a1c831fb5da2e6",
+        "evidence/release-0.1.190-openclaw-remove/post-hermes-proof.txt": "02a814ae2a53ab80af1f18a6b9f04f90c333a797a0c5fc0e943e9f5851d93d8f",
+        "evidence/release-0.1.190-openclaw-remove/post-openclaw-inventory.json": "f7f4fb7ab11e962f131ab7b5f82dc97ba270dc9f4f8fdf2b8b1851d5894d8194",
+        "evidence/release-0.1.190-openclaw-remove/post-openclaw-urls.txt": "b2119ad689c3559ca69fedbfc8da63735e6145fba8078a117a5ad5721040d455",
+        "evidence/release-0.1.190-openclaw-remove/tool-remove-openclaw.json": "9fa0ea999267cda8bcdbe639db58f68f8e8432ccf559989dec6cf69f53c35058",
+        "loop.md": "252a7d54c01cb7d3cc3bdb66436b76ad2fd5a602fdb28b1b6baaab88c215ac3e",
+        "quality-gates/quality-check-2026-08-03T225911Z-6e1245a61dc4.json": "446bb183c693a0c908e3a52fb369b063a9de49030e68e3b19c7d7320bd5d38be"
+    },
+    "slug": "remove-openclaw-support",
+    "requested_slug": "remove-openclaw-support",
+    "compatible_slugs": [
+        "remove-openclaw-support"
+    ],
+    "branch": "codex/remove-openclaw-support",
+    "candidate_commit": "106cb613fba5c39e8618ce8e053f19546489045d",
+    "accepted_feature_tip": "106cb613fba5c39e8618ce8e053f19546489045d",
+    "accepted_main_tip": "fc199f1dff741f4341e9bb26585c69545b7bb38c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

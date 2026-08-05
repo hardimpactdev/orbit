@@ -1,0 +1,6 @@
+{"event":"step","data":{"key":"__doctor_panel","status":"running","compact_progress":true,"message":"Doctor queued"}}
+{"event":"tree","data":{"title":"Running Doctor","steps":[{"key":"process","label":"Check process"}]}}
+{"event":"step","data":{"key":"process","status":"running","compact_progress":true,"family":"process","phase":"running","message":"Checking process"}}
+{"event":"step","data":{"key":"process","status":"running","compact_progress":true,"family":"process","phase":"running","message":"Checking process"}}
+{"event":"step","data":{"key":"process","status":"done","compact_progress":true,"family":"process","phase":"done","message":"process checked"}}
+{"event":"complete","success":{"data":{"doctor":{"healthy":true,"mode":"verify","scope":{"families":["process"],"node":"gateway","role":"gateway","self":false,"project":null,"instance":null,"workspace":null,"key":null},"summary":{"issues":0,"fixed":0,"adopted":0,"skipped":0,"conflicts":0,"failed":0,"planned":0},"issues":[],"actions":[]}},"meta":{"exit_code":0}}}

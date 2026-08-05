@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Kernel as ConsoleKernel;
+use App\Http\Middleware\ProcessBrowserCors;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernelContract;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -22,6 +23,9 @@ $app = Application::configure(basePath: $gatewayRoot)
         $middleware->trimStrings(except: [
             fn (Request $request): bool => $request->is('api/operations/*/stream/publish'),
         ]);
+        // Origin admission only (never identity). Exact-path no-op elsewhere;
+        // process preflight without OPTIONS routes; wraps grant/identity errors.
+        $middleware->prepend(ProcessBrowserCors::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

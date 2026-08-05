@@ -102,11 +102,9 @@ The sections below walk through each layer of the stack in the same order as the
 | S3 service backend | SeaweedFS in a canonical node-owned Docker process on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and active Ubuntu workload nodes; Grafana private route `metrics.orbit` |
 | Analytics service backend | Plausible CE 3.2.1 in a node-owned Docker process on `analytics` nodes, published only on the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL 16 Alpine and ClickHouse 24.12 Alpine run as authenticated, node-owned Docker service processes published only on active `database` nodes' WireGuard addresses. |
-| Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
+| Agent runtime | Hermes as the first-party agent tool, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
-
-Cloudflare is the current first-party DNS/CDN provider integration. Agent IDE adapters and workspace source adapters may be first-party or extension-provided, but the gateway always owns the stored configuration and command behavior.
 
 ## Frameworks
 
@@ -130,10 +128,26 @@ remain readable at mode `0644`. Gateway startup and convergence repair these
 modes on existing paths instead of applying them only when a path is first
 created.
 
+When the config root is bind-mounted from the host, container startup must keep
+that tree owned by the host Orbit installation user's numeric `uid:gid`. It must
+never assign the image-internal `orbit` account, because that uid does not match
+the host install user. Ownership comes from the host home view under
+`ORBIT_HOST_PATH_PREFIX` (host `/home` mounted at `/mnt/orbit-host/home`), so
+the host Orbit CLI can still read config after gateway restarts. When no host
+path prefix is present, image-local or development roots may fall back to the
+image `orbit` user.
+
 Gateway maintenance in production is containerized: migrations and update work
-run through the gateway container entrypoint or durable one-shot runner. Source
-development can still use `bin/orbit-gateway-artisan` or direct
-`php apps/gateway/artisan` from a controlled checkout for local ergonomics.
+run through the gateway container entrypoint or durable one-shot runner. The
+durable update runner must mount the same host path-prefix trees as the Swarm
+gateway service (`/etc/caddy`, `/etc/orbit`, and host `/home` under
+`ORBIT_HOST_PATH_PREFIX`) so entrypoint ownership resolution and host leaf
+install share one layout. After installing a new gateway API leaf into the
+router-owned host cert paths, fleet update restarts `orbit-caddy` so the served
+TLS certificate matches the files on disk; Caddy `reload` alone keeps stale
+in-memory leaves when only cert/key bytes change. Source development can still
+use `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` from a
+controlled checkout for local ergonomics.
 The public `orbit` command never dispatches to gateway Artisan. Every public
 gateway-backed or remote command uses the typed gateway HTTPS API over
 WireGuard. Local-only, pre-grants-bootstrap, and identity-gated self-management
@@ -190,7 +204,6 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 
 - A configuration row describes a desired physical fact on a node; the node-side artifact is the applied representation of that row.
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
-- Agent IDE defaults are gateway configuration owned by nodes and instances — not a separate state family.
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
 - Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, systemd unit names, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 
@@ -205,18 +218,29 @@ overlay `orbit-network`, and `orbit-gateway` publishes no host ports. In
 `gateway-direct` mode, the `orbit-gateway` service publishes gateway HTTPS
 directly. In both modes the gateway leaf certificate chains to the Orbit root
 CA, and WireGuard/firewall policy restricts TCP/443 and UDP/443 access to the
-Orbit control plane.
+Orbit control plane. The gateway leaf SANs cover the short host `gateway`, the
+configured browser Gateway hostname (default `gateway.orbit`, the private
+Toolbar/TypeScript SDK/EventSource URL host), and the gateway WireGuard API
+IP. Installer and convergence reissue a fresh leaf when any required SAN is
+missing; they do not weaken TLS verification.
 
 In router-colocated mode, the gateway API route is an internal `proxy` entry.
 Its proxy and TLS artifact is repaired by `doctor --family=proxy --restore`,
 not by a backend-named provisioning command.
 
 The gateway API listener must not trust client-supplied forwarding identity.
+CLI, TypeScript SDK, and browser toolbar callers send **no** bearer token and
+**no** peer-IP identity header. Caller identity is the authenticated WireGuard
+peer: the gateway maps the actual peer source IP (or, only on the private
+proxy hop when configured, a proxy-injected header derived from that observed
+peer address) to a node, then enforces the grant, the required permission for
+the API call, and existing target-node authorization.
+
 Router-owned `orbit-caddy` strips `X-Forwarded-For`, `X-Real-IP`, `Forwarded`,
-and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It then
-injects `X-Orbit-WireGuard-Ip` from the observed WireGuard peer address for the
-private `orbit-gateway` hop. Caller identity still comes from the Orbit network
-identity model, not from caller-supplied headers.
+and any incoming `X-Orbit-WireGuard-Ip` before proxying to Laravel. It may then
+inject `X-Orbit-WireGuard-Ip` from the **observed** WireGuard peer address for
+the private `orbit-gateway` hop only. Clients never supply that header; browser
+CORS admission never establishes identity.
 
 Long-lived stream and log endpoints must not starve short command/API requests.
 The Swarm-managed API runtime owns this concurrency contract inside
@@ -232,14 +256,58 @@ surface, internal-only gateway/runtime surface, or deferred optional/admin
 surface. Public SDK operations are candidates for PHP SDK request classes and
 generated into the TypeScript gateway SDK package at `packages/sdk-typescript`
 from the filtered public OpenAPI input. The generated TypeScript package is a
-thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri
-and TanStack Query callers; it must consume the classified OpenAPI contract
-instead of hand-maintaining route definitions. Internal-only operations,
-including local executor token verification, process event ingest, Solo proxy
-routes, and update artifact plumbing, must not be emitted as public SDK methods.
-Deferred optional groups such as Cloudflare, S3, metrics credentials, extension
-administration, and sensitive app env routes require an explicit promotion slice
-before they enter a generated public SDK.
+thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri,
+TanStack Query, and browser toolbar callers; it must consume the classified
+OpenAPI contract instead of hand-maintaining route definitions. Browser toolbar
+callers use `createOrbitGatewayClient` for process list and lifecycle commands
+and a durable native `EventSource` process-stream subscriber for
+`GET /api/processes/stream?app=<hostname>` (no client polling). Auth matches the
+CLI model (WireGuard peer source IP plus grants/permissions; no bearer and no
+client peer-IP header). The `app` hostname is the only browser stream selector;
+CORS Origin admission only matches a registered origin to the requested `app`
+and never authenticates the caller. `X-Orbit-Client` is optional and never
+required for EventSource.
+Internal-only operations, including local executor token
+verification, process event ingest, Solo proxy routes, and update artifact
+plumbing, must not be emitted as public SDK methods. Deferred optional groups
+such as Cloudflare, S3, metrics credentials, extension administration, and
+sensitive app env routes require an explicit promotion slice before they enter
+a generated public SDK.
+
+The TypeScript package remains consumable outside the monorepo under the exact
+npm name `@hardimpactdev/orbit-sdk-typescript`. Canonical source lives at
+`packages/sdk-typescript` in `hardimpactdev/orbit` and stays `private=true` in
+the monorepo to block accidental npm publish from the monorepo tree. Package
+versioning is **independent of monorepo root `VERSION`**: the package’s own
+`package.json` version is authoritative (initial public release `0.1.0`).
+
+Local release preparation uses
+`bin/orbit-prepare-release-package --package=sdk-typescript` and stamps the
+**package.json version** (not root `VERSION`) into prepared `package.json` and
+`package-lock.json` identity fields, sets `private=false`, rewrites repository
+metadata to the durable generated package repository
+`hardimpactdev/orbit-sdk-typescript`, and includes that repository’s
+`.github/workflows/publish.yml`. Install trees (`node_modules`) are never
+committed. `composer quality-check` still runs package `typecheck` and `build`.
+
+npm publication is **not** performed by monorepo `.github/workflows/orbit-release.yml`
+and the monorepo never holds a durable npm publish secret for this package.
+
+Operators push the prepared split tree to `hardimpactdev/orbit-sdk-typescript`.
+That repository’s `.github/workflows/publish.yml` has two paths:
+
+1. **One-time bootstrap** (`workflow_dispatch`, exact version input `0.1.0`):
+   fail-closed unless `scripts/npm-bootstrap-registry-absent.sh` confirms npm
+   `E404` absence for the package and `0.1.0`, a successful lookup refuses as
+   already existing, any non-E404 registry/DNS/TLS/rate/auth error stops, and
+   the input matches `package.json` `0.1.0`. May use a short-lived
+   least-privilege split-repo secret `NPM_BOOTSTRAP_TOKEN` only for that
+   create, then the secret/token is deleted/revoked.
+2. **Steady-state** (`release: published`): Craft-style OIDC Trusted Publisher
+   (Node 24, `id-token: write`, `npm publish --provenance --access public`)
+   with **no** token. Configure Trusted Publisher for
+   `hardimpactdev/orbit-sdk-typescript` / `publish.yml` after the first package
+   exists (npm cannot attach Trusted Publisher before the package name exists).
 
 #### Remote command progress
 
@@ -383,8 +451,6 @@ V1 is scoped narrowly:
   deferred.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
-IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and
-Hermes as managed workloads; Agent IDE adapters support human-driven coding
 sessions. Orbit Agent is a node-local execution lane for Orbit operations.
 Gateway-pushed commands are limited to Agent-eligible nodes. The `agent` workload role
 supplies derived intent like every other workload role; it is not a duplicated
@@ -428,7 +494,7 @@ Caddy configuration is split by exposure boundary, not by who happens to write t
 
 Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. Gateway API proxy routes belong here only when the gateway is in `router-colocated` mode, where router-owned `orbit-caddy` forwards to `orbit-gateway` over `orbit-network`. In `gateway-direct` mode, `orbit-gateway` publishes gateway HTTPS directly and no gateway API Caddy route is required. Gateway API exposure must not create a broad public virtual host.
 
-Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. Project, instance, workspace, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
+Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App, instance, workspace, and custom proxy routes write here because they may be served on public or app domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist in the `orbit-caddy` mount or managed volume, but never replace unrelated site blocks or remove existing imports.
 
@@ -436,13 +502,25 @@ On an `app-dev` instance or workspace route, stock Caddy's file matcher bypasses
 the gateway while the scope's node-local awake marker exists. When the marker is
 absent, `forward_auth` performs a bounded TLS request to the gateway activation
 endpoint using the installed Orbit root CA; the gateway accepts only the exact
-serving node's WireGuard identity and does not require a user grant. The
-original browser request continues only after activation succeeds. A dedicated
-JSON access log in `/data/caddy/orbit/hibernation` supplies the scope's last
-HTTP activity time. Awake and hibernated markers live under Caddy's ephemeral
-`/dev/shm`, so a host or Caddy restart cannot preserve a stale awake decision.
-Caddy itself remains persistent, and this contract requires neither a custom
-module nor an Orbit-specific Caddy image.
+serving node's WireGuard identity and does not require a user grant. When the
+scope is already awake, the pre-check returns success so the original request
+continues. When soft or cold wake work is required, the pre-check starts or
+follows one detached activation operation and returns the minimal boot page
+immediately (one indeterminate animated Orbit mark only; no soft/cold UI
+distinction or progress bar). That page stays mounted and probes the original
+same-origin URI every one second with non-overlapping background fetches
+until an explicit Orbit activation-state header is absent (application handoff)
+or reports terminal failure; soft runners only fence process activation and
+start configured lifecycle processes concurrently, cold runners restore
+dependencies first then use the same concurrent start phase, and both require a
+bounded aggregate readiness observation of every expected runtime unit before
+the awake marker; dependency inspection, restoration, dependency readiness, and
+cold-marker clearing remain cold-only.
+A dedicated JSON access log in `/data/caddy/orbit/hibernation` supplies the
+scope's last HTTP activity time. Awake and hibernated markers live under Caddy's
+ephemeral `/dev/shm`, so a host or Caddy restart cannot preserve a stale awake
+decision. Caddy itself remains persistent, and this contract requires neither a
+custom module nor an Orbit-specific Caddy image.
 
 ### PHP runtime
 
@@ -543,9 +621,10 @@ container running FrankenPHP. The container listens on internal HTTP port `8080`
 publishes no public host ports, runs as a path-derived app user, and is reached
 only by the app-role backend `orbit-caddy` route. That app user must not be in
 the Docker group and must not have the Docker socket mounted into its runtime.
-Release-aware deployments may switch the source path the container bind mounts,
-but the mount boundary stays inside the app source or active release plus
-explicitly managed shared paths. The container is represented as the
+Release-aware deployments keep the app source boundary mounted at `/app`, then
+resolve the active `live` symlink inside that boundary and run the container
+with `/app/live` as its working directory and Laravel base path. Its server root
+is the configured document root below that active release. The container is represented as the
 process-owned long-running HTTP runtime unit with Docker runtime; configured
 host command processes are systemd-backed on Linux and launchd-backed on macOS
 under the process family. A fully baked app-runtime Docker Swarm service
@@ -806,14 +885,14 @@ Docker socket, not Docker-in-Docker.
 
 ### Agent runtime
 
-Nodes with the `agent` role run first-party autonomous agent tools — OpenClaw
-and Hermes — that operate Orbit through the gateway API. The agent role
-baseline converges `orbit-caddy`, the WireGuard/node identity and trust
-material every other Orbit node uses, a single unprivileged shared `agent`
-runtime user, and whatever role-specific runtime containers the agent workloads
-need. Agent tools never run as the privileged `orbit` maintenance user. The
-node identity requires an explicit unique `tld`, as every active node does;
-`orbit` is reserved for the proxy-owned `.orbit` namespace.
+Nodes with the `agent` role run the first-party autonomous agent tool Hermes,
+which operates Orbit through the gateway API. The agent role baseline converges
+`orbit-caddy`, the WireGuard/node identity and trust material every other Orbit
+node uses, a single unprivileged shared `agent` runtime user, and whatever
+role-specific runtime containers the agent workloads need. The agent tool never
+runs as the privileged `orbit` maintenance user. The node identity requires an
+explicit unique `tld`, as every active node does; `orbit` is reserved for the
+proxy-owned `.orbit` namespace.
 The `agent` and `app-dev` roles consume that node-owned field for wildcard DNS mappings;
 neither role owns it or supplies a default.
 The node family always maps `orbit.{tld}` to an active node's WireGuard address
@@ -821,7 +900,15 @@ and adds `*.{tld}` plus a local-zone directive only while that node has an
 active `app-dev` or `agent` role. Stable private `.orbit` service names are
 proxy-family state and distinct from these node records.
 
-Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, run through the runtime backend declared by the tool definition, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
+Hermes is an ordinary entry in the `tool` catalog with category `agent`; there
+is no separate `agent_tool` state family. It is installed through
+`orbit tool:install`, run through the runtime backend declared by the tool
+definition, and configured through gateway-tracked tool state. The Hermes web
+UI is exposed by default through a tool-owned internal HTTPS proxy route under
+the agent TLD (for example `https://hermes.agent`). Tool credentials and web UI
+tokens are returned only by `tool:credentials` and only when the caller has the
+explicit `tool:credentials` permission; the agent self-grant does not include
+that permission. See [Architecture: Node roles](architecture.md#node-roles).
 
 ### Network
 
@@ -898,9 +985,18 @@ default FrankenPHP app/workspace runtime image for app-role nodes, the
 `orbit-caddy` container where the node role needs HTTP routing, and
 WireGuard/SSH identity material. Production gateway-only nodes do not need host
 PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
-nodes install static host PHP builds and Composer for app-source workflows; the
-Orbit-owned PHP 8.5 build carries the same SQLite safety floor as the PHP 8.5
-app/workspace runtime image. The Laravel installer installs on `app-dev` only.
+nodes install Orbit-owned static host PHP builds (`php-cli`) and Composer for
+app-source workflows. The single `php-cli` slug persists a `coverage` or
+`standard` variant: `app-dev` desires coverage PHP with statically linked PCOV
+for Pest TIA, while `app-prod` installs standard PHP without PCOV. Until the
+fleet-scoped 9-cell matrix is promoted, install/update remain on the
+compatibility contract (standard-family published artifacts); doctor classifies
+against that effective runtime and only enforces coverage/PCOV after matrix
+cutover. Orbit owns fleet-scoped matrix artifacts for PHP 8.3/8.4/8.5:
+coverage on linux-x86_64 and macos-aarch64, standard on linux-x86_64 only (no
+linux-aarch64, macos-x86_64, or standard macOS production cells), and every
+artifact carries the same SQLite safety floor as the PHP 8.5 app/workspace
+runtime image. The Laravel installer installs on `app-dev` only.
 Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
 `ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install

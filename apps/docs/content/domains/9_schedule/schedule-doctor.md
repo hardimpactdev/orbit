@@ -59,6 +59,15 @@ both the gateway-daemon problem and any reachability problems.
 
 ## Schedule Issue Codes
 
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 The table below lists every issue code the schedule probe may emit and the condition that triggers it.
 
 | Code | Detected when |
@@ -78,6 +87,8 @@ The table below lists every issue code the schedule probe may emit and the condi
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
 | `schedule.target_unreachable` | The gateway cannot reach the schedule's target node through agent-push/local-executor verification. Dispatch will fail until reachability is restored. |
 | `schedule.run_stuck` | The latest `schedule_runs` row for an enabled schedule has been in `running` state past the configured threshold. |
+
+`schedule.heartbeat_stale` is not restorable via doctor (runtime_incident); restart or diagnose the scheduler path outside restore.
 
 ## Schedule Fix Map
 

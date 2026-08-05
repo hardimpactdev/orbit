@@ -3,20 +3,20 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
@@ -485,19 +485,37 @@ describe('DoctorRunController', function (): void {
             doctor_run_explicit_fallback_server(),
         );
 
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.doctor.healthy', false)
-            ->assertJsonPath('success.data.doctor.summary.fixed', 0)
-            ->assertJsonPath('success.data.doctor.summary.failed', 1)
-            ->assertJsonPath('success.data.doctor.issues.0.key', 'proxy.route_mismatch')
-            ->assertJsonPath('success.data.doctor.issues.0.detail.expected_hash', $expectedHash)
-            ->assertJsonPath('success.data.doctor.actions.0.status', 'failed')
-            ->assertJsonPath('success.data.doctor.actions.0.details.node', 'ingress-1')
-            ->assertJsonPath(
-                'success.data.doctor.actions.0.details.operation',
-                'verify proxy.route_mismatch',
-            );
+        $response->assertOk();
+        $doctor = $response->json('success.data.doctor');
+        $mismatchActions = collect($doctor['actions'] ?? [])
+            ->where('key', 'proxy.route_mismatch')
+            ->where('status', 'failed')
+            ->values();
+
+        expect($doctor['healthy'] ?? null)
+            ->toBeFalse()
+            ->and($doctor['summary']['fixed'] ?? null)
+            ->toBe(0)
+            ->and($doctor['summary']['failed'] ?? null)
+            ->toBe(4)
+            ->and($doctor['convergence']['passes'] ?? null)
+            ->toBe(3)
+            ->and($doctor['convergence']['stop_reason'] ?? null)
+            ->toBe('no_progress')
+            ->and(collect($doctor['issues'] ?? [])->pluck('key')->all())
+            ->toContain('proxy.route_mismatch')
+            ->and(
+                collect($doctor['issues'] ?? [])->firstWhere('key', 'proxy.route_mismatch')['detail']['expected_hash']
+                ?? null,
+            )
+            ->toBe($expectedHash)
+            ->and($mismatchActions)
+            ->not
+            ->toBeEmpty()
+            ->and($mismatchActions[0]['details']['node'] ?? null)
+            ->toBe('ingress-1')
+            ->and($mismatchActions[0]['details']['operation'] ?? null)
+            ->toBe('verify proxy.route_mismatch');
     });
 
     it('dry-runs API restore without applying fixers', function (): void {
@@ -605,15 +623,15 @@ describe('DoctorRunController', function (): void {
     it('accepts the instance family scope and returns instance drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $appNode->id,
                 node: $appNode->name,
                 path: '/home/orbit/apps/docs',
@@ -648,12 +666,12 @@ describe('DoctorRunController', function (): void {
     it('requires a concrete instance for an ambiguous project doctor selector', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = Project::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->for($appNode, 'node')->create(['name' => 'docs']);
 
         foreach (['development', 'production'] as $instanceName) {
-            AppInstance::factory()->for($app)->create([
+            Instance::factory()->for($app)->create([
                 'name' => $instanceName,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $appNode->id,
                     node: $appNode->name,
                     path: "/home/orbit/apps/docs-{$instanceName}",
@@ -684,15 +702,15 @@ describe('DoctorRunController', function (): void {
         $caller = createDoctorRunCallerNode(role: 'operator');
         $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'status' => 'active']);
         $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'status' => 'active']);
-        $app = Project::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
 
         foreach ([
             'visible' => $visibleNode,
             'hidden' => $hiddenNode,
         ] as $instanceName => $node) {
-            AppInstance::factory()->for($app)->create([
+            Instance::factory()->for($app)->create([
                 'name' => $instanceName,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $node->id,
                     node: $node->name,
                     path: "/home/orbit/apps/docs-{$instanceName}",
@@ -727,7 +745,7 @@ describe('DoctorRunController', function (): void {
                     ->assertUnprocessable()
                     ->assertJsonPath('error.code', 'validation_failed')
                     ->assertJsonPath('error.meta.field', 'instance')
-                    ->assertJsonPath('error.meta.project', 'docs')
+                    ->assertJsonPath('error.meta.app', 'docs')
                     ->assertJsonPath('error.meta.instance', $instanceName)
                     ->assertJsonMissingPath('error.meta.reason')
                     ->assertJsonMissingPath('error.meta.missing_permission')
@@ -753,11 +771,11 @@ describe('DoctorRunController', function (): void {
     it('retains unavailable instance diagnostics for gateway-admin doctor callers', function (): void {
         $caller = createDoctorRunCallerNode(role: 'operator');
         $gateway = createTestGatewayNode(['name' => 'gateway']);
-        $app = Project::factory()->for($gateway, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->for($gateway, 'node')->create(['name' => 'docs']);
 
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: 999_999,
                 node: 'missing-app-node',
                 path: '/home/orbit/apps/docs-development',
@@ -787,7 +805,7 @@ describe('DoctorRunController', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'instance_unavailable')
-            ->assertJsonPath('error.meta.project', 'docs')
+            ->assertJsonPath('error.meta.app', 'docs')
             ->assertJsonPath('error.meta.instance', 'development');
     });
 
@@ -795,20 +813,20 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode();
         $developmentNode = createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
         $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
-        $app = Project::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
 
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $developmentNode->id,
                 node: $developmentNode->name,
                 path: '/home/orbit/apps/docs-development',
                 document_root: 'public',
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $productionNode->id,
                 node: $productionNode->name,
                 path: '/home/orbit/apps/docs-production',
@@ -835,7 +853,7 @@ describe('DoctorRunController', function (): void {
             )
             ->assertOk()
             ->assertJsonPath('success.data.doctor.scope.node', 'app-prod-1')
-            ->assertJsonPath('success.data.doctor.scope.project', 'docs')
+            ->assertJsonPath('success.data.doctor.scope.app', 'docs')
             ->assertJsonPath('success.data.doctor.scope.instance', 'production')
             ->assertJsonPath('success.data.doctor.issues.0.detail.instance', 'production');
     });
@@ -843,11 +861,11 @@ describe('DoctorRunController', function (): void {
     it('rejects workspace doctor family and scope for production instances', function (): void {
         createDoctorRunCallerNode();
         $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
-        $app = Project::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
 
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $productionNode->id,
                 node: $productionNode->name,
                 path: '/home/orbit/apps/docs-production',
@@ -923,7 +941,7 @@ describe('DoctorRunController', function (): void {
     it('accepts the workspace family scope and returns workspace drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -958,7 +976,7 @@ describe('DoctorRunController', function (): void {
     it('accepts the process family scope and returns process drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -1169,10 +1187,76 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
     });
 
+    it('applies selected issues through doctor fix and treats post-mutation re-probe as authoritative', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-selected-1', 'status' => 'active']);
+        NodeTool::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'expected_version' => '2.9',
+        ]);
+        // Selected-issues path skips the pre-apply probe: mutation first, then
+        // finalizeResolution re-probes. Keep the post-mutation observation divergent
+        // so the response cannot claim health from the completed action receipt alone.
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            '',
+            perRouteStdouts: [
+                // Apply/update mutation succeeds.
+                '',
+                // Re-probe still observes the mismatched version.
+                "/usr/bin/caddy\t2.8.4\tstopped\n",
+            ],
+        ));
+        bind_tool_script_dispatcher_to_remote_shell();
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'restore',
+                'families' => ['tool'],
+                'node' => 'app-selected-1',
+                'key' => 'tool.version_mismatch',
+                'issues' => [[
+                    'family' => 'tool',
+                    'node' => 'app-selected-1',
+                    'key' => 'tool.version_mismatch',
+                    'kind' => 'divergent',
+                    'restorable' => true,
+                    'summary' => 'Tool caddy version differs from gateway intent.',
+                    'detail' => [
+                        'tool' => 'caddy',
+                        'expected_version' => '2.9',
+                        'observed_version' => '2.8.4',
+                    ],
+                ]],
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.mode', 'restore')
+            ->assertJsonPath('success.data.doctor.scope.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.scope.families', ['tool'])
+            ->assertJsonPath('success.data.doctor.scope.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.actions.0.family', 'tool')
+            ->assertJsonPath('success.data.doctor.actions.0.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.actions.0.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'completed')
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.version_mismatch')
+            ->assertJsonPath('success.data.doctor.issues.0.node', 'app-selected-1')
+            ->assertJsonPath('success.data.doctor.issues.0.family', 'tool');
+    });
+
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $appNode->id]);
+        $app = App::factory()->create(['node_id' => $appNode->id]);
         Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
             'node_id' => $appNode->id,
@@ -1266,12 +1350,12 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($dngdmtPath);
         File::ensureDirectoryExists($otherPath);
 
-        $dngdmt = Project::factory()->create([
+        $dngdmt = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'dngdmt',
             'path' => $dngdmtPath,
         ]);
-        $other = Project::factory()->create([
+        $other = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'other-app',
             'path' => $otherPath,
@@ -1290,7 +1374,7 @@ describe('DoctorRunController', function (): void {
                 'credentials' => ['password' => $fixturePassword],
             ]);
             DatabaseConnectionTarget::factory()
-                ->forAppInstance(doctorRunDatabaseAppInstance($app))
+                ->forInstance(doctorRunDatabaseInstance($app))
                 ->create([
                     'database_connection_id' => $connection->id,
                     'env_prefix' => 'DB',
@@ -1318,11 +1402,11 @@ describe('DoctorRunController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.doctor.scope.project', 'dngdmt')
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt')
             ->assertJsonPath('success.data.doctor.scope.workspace', null);
 
         $issueApps = collect($response->json('success.data.doctor.issues'))
-            ->pluck('detail.project')
+            ->pluck('detail.app')
             ->filter()
             ->unique()
             ->values()
@@ -1340,7 +1424,7 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($featurePath);
         File::ensureDirectoryExists($hotfixPath);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'docs',
             'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs'),
@@ -1398,7 +1482,7 @@ describe('DoctorRunController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.doctor.scope.workspace', 'feature')
-            ->assertJsonPath('success.data.doctor.scope.project', null);
+            ->assertJsonPath('success.data.doctor.scope.app', null);
 
         $issueWorkspaces = collect($response->json('success.data.doctor.issues'))
             ->pluck('detail.workspace')
@@ -1421,12 +1505,12 @@ describe('DoctorRunController', function (): void {
             File::ensureDirectoryExists($docsFeaturePath);
             File::ensureDirectoryExists($billingFeaturePath);
 
-            $docs = Project::factory()->create([
+            $docs = App::factory()->create([
                 'node_id' => $appNode->id,
                 'name' => 'docs',
                 'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs-root'),
             ]);
-            $billing = Project::factory()->create([
+            $billing = App::factory()->create([
                 'node_id' => $appNode->id,
                 'name' => 'billing',
                 'path' => storage_path('framework/testing/doctor-run-db-scope-verify-billing-root'),
@@ -1485,7 +1569,7 @@ describe('DoctorRunController', function (): void {
 
             $response
                 ->assertOk()
-                ->assertJsonPath('success.data.doctor.scope.project', 'docs')
+                ->assertJsonPath('success.data.doctor.scope.app', 'docs')
                 ->assertJsonPath('success.data.doctor.scope.workspace', 'feature');
 
             $issueDetails = collect($response->json('success.data.doctor.issues'))
@@ -1495,7 +1579,7 @@ describe('DoctorRunController', function (): void {
 
             expect($issueDetails->pluck('workspace')->filter()->unique()->values()->all())
                 ->toBe(['feature'])
-                ->and($issueDetails->pluck('project')->filter()->unique()->values()->all())
+                ->and($issueDetails->pluck('app')->filter()->unique()->values()->all())
                 ->toBe(['docs']);
         },
     );
@@ -1509,18 +1593,18 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($dngdmtPath);
         File::ensureDirectoryExists($otherPath);
 
-        $dngdmt = Project::factory()->create([
+        $dngdmt = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'dngdmt',
             'path' => $dngdmtPath,
         ]);
-        doctorRunDatabaseAppInstance($dngdmt);
-        $other = Project::factory()->create([
+        doctorRunDatabaseInstance($dngdmt);
+        $other = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'other-app',
             'path' => $otherPath,
         ]);
-        doctorRunDatabaseAppInstance($other);
+        doctorRunDatabaseInstance($other);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1547,14 +1631,14 @@ describe('DoctorRunController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.doctor.dry_run', true)
-            ->assertJsonPath('success.data.doctor.scope.project', 'dngdmt')
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt')
             ->assertJsonPath('success.data.doctor.scope.workspace', null);
 
         $actions = collect($response->json('success.data.doctor.actions'));
 
         expect($actions)
             ->toHaveCount(1)
-            ->and($actions->pluck('details.project')->filter()->unique()->values()->all())
+            ->and($actions->pluck('details.app')->filter()->unique()->values()->all())
             ->toBe(['dngdmt'])
             ->and($actions->first())
             ->not->toHaveKey('detail');
@@ -1569,18 +1653,18 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($dngdmtPath);
         File::ensureDirectoryExists($otherPath);
 
-        $dngdmt = Project::factory()->create([
+        $dngdmt = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'dngdmt',
             'path' => $dngdmtPath,
         ]);
-        doctorRunDatabaseAppInstance($dngdmt);
-        $other = Project::factory()->create([
+        doctorRunDatabaseInstance($dngdmt);
+        $other = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'other-app',
             'path' => $otherPath,
         ]);
-        doctorRunDatabaseAppInstance($other);
+        doctorRunDatabaseInstance($other);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1605,7 +1689,7 @@ describe('DoctorRunController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.doctor.scope.project', 'dngdmt');
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt');
 
         expect(DatabaseConnection::query()->count())
             ->toBe(1)
@@ -1616,16 +1700,16 @@ describe('DoctorRunController', function (): void {
     });
 });
 
-function doctorRunDatabaseAppInstance(Project $app): AppInstance
+function doctorRunDatabaseInstance(App $app): Instance
 {
     $instance = $app->instances()->first();
 
-    if ($instance instanceof AppInstance) {
+    if ($instance instanceof Instance) {
         return $instance;
     }
 
-    return AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    return Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,

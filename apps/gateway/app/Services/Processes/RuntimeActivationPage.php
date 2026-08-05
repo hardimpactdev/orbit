@@ -4,98 +4,78 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use Illuminate\Http\Response;
 use Orbit\Core\Enums\OperationStatus;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final readonly class RuntimeActivationPage
 {
+    public const string ACTIVATION_STATE_HEADER = 'X-Orbit-Runtime-Activation-State';
+
+    public const string STATE_PENDING = 'pending';
+
+    public const string STATE_FAILED = 'failed';
+
+    public const int POLL_INTERVAL_SECONDS = 1;
+
     public function response(
         RuntimeHibernationScope $scope,
         OperationRun $run,
         string $originalUri,
     ): Response {
-        $events = $run->events()->get();
-        $tree = $events->first(
-            static fn (OperationEvent $event): bool => $event->event_type === 'tree',
-        );
-        $steps = [];
-        /** @mago-expect analyzer:mixed-assignment */
-        $rawSteps = $tree instanceof OperationEvent ? $tree->payload['steps'] ?? [] : [];
-
-        if (is_array($rawSteps)) {
-            /** @mago-expect analyzer:mixed-assignment */
-            foreach ($rawSteps as $rawStep) {
-                if (
-                    ! is_array($rawStep)
-                    || ! is_string($rawStep['key'] ?? null)
-                    || ! is_string($rawStep['label'] ?? null)
-                ) {
-                    continue;
-                }
-
-                $steps[] = [
-                    'key' => $rawStep['key'],
-                    'label' => $rawStep['label'],
-                ];
-            }
-        }
-
-        $statuses = [];
-
-        foreach ($events as $event) {
-            if ($event->event_type !== 'step') {
-                continue;
-            }
-
-            if (
-                is_string($event->payload['key'] ?? null)
-                && is_string($event->payload['status'] ?? null)
-            ) {
-                $statuses[$event->payload['key']] = $event->payload['status'];
-            }
-        }
-
         $uri = $this->safeOriginalUri($originalUri);
-        $steps = array_map(static fn (array $step): array => [
-            'key' => $step['key'],
-            'label' => $step['label'],
-            'status' => $statuses[$step['key']] ?? 'waiting',
-        ], $steps);
-        $completedSteps = count(array_filter(
-            $steps,
-            static fn (array $step): bool => $step['status'] === 'done',
-        ));
-        $totalSteps = count($steps);
-        $nonce = base64_encode(random_bytes(18));
+        $failed = $run->status === OperationStatus::Failed;
+        $scriptNonce = $failed ? null : bin2hex(random_bytes(16));
 
-        return response()
+        $response = response()
             ->view(
                 'runtime-activation',
                 [
                     'name' => $scope->displayName(),
-                    'steps' => $steps,
-                    'completedSteps' => $completedSteps,
-                    'totalSteps' => $totalSteps,
-                    'progress' => $totalSteps === 0
-                        ? 0
-                        : (int) floor(($completedSteps / $totalSteps) * 100),
-                    'nonce' => $nonce,
-                    'failed' => $run->status === OperationStatus::Failed,
+                    'failed' => $failed,
                     'refreshUri' => $uri,
                     'retryUri' => $this->retryUri($uri),
+                    'scriptNonce' => $scriptNonce,
+                    'pollIntervalMs' => self::POLL_INTERVAL_SECONDS * 1000,
+                    'activationStateHeader' => self::ACTIVATION_STATE_HEADER,
+                    'pendingState' => self::STATE_PENDING,
                 ],
                 503,
             )
             ->header('Cache-Control', 'no-store, private')
-            ->header('Retry-After', '2')
+            ->header(
+                self::ACTIVATION_STATE_HEADER,
+                $failed ? self::STATE_FAILED : self::STATE_PENDING,
+            )
             ->header(
                 'Content-Security-Policy',
-                "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{$nonce}'; base-uri 'none'; frame-ancestors 'none'",
+                $this->contentSecurityPolicy($scriptNonce),
             )
             ->header('X-Robots-Tag', 'noindex, nofollow');
+
+        if (! $failed) {
+            $response->header('Retry-After', (string) self::POLL_INTERVAL_SECONDS);
+        }
+
+        return $response;
+    }
+
+    private function contentSecurityPolicy(?string $scriptNonce): string
+    {
+        $directives = [
+            "default-src 'none'",
+            "style-src 'unsafe-inline'",
+            'img-src data:',
+            "base-uri 'none'",
+            "frame-ancestors 'none'",
+        ];
+
+        if (is_string($scriptNonce) && $scriptNonce !== '') {
+            $directives[] = "script-src 'nonce-{$scriptNonce}'";
+            $directives[] = "connect-src 'self'";
+        }
+
+        return implode('; ', $directives);
     }
 
     private function safeOriginalUri(string $uri): string

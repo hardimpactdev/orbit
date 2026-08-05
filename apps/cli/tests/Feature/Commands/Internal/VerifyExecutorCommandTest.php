@@ -74,6 +74,28 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
         },
     );
 
+    it('propagates a recognized gateway denial reason through verify JSON failures', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => false,
+            'reason' => 'target_node_mismatch',
+            'operation_id' => 'op-verify-node-mismatch',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+            '--operation-token' => signVerifyExecutorToken(id: 'op-verify-node-mismatch'),
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('target_node_mismatch', 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('op-verify-node-mismatch');
+    });
+
     it('posts the expected verification payload to the gateway endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,

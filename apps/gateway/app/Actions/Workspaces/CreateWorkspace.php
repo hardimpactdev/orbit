@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Contracts\WorkspaceSourceDrivers;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Workspaces\WorkspaceNodeReachability;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
+use App\Services\Workspaces\WorktreeWorkspaceDriver;
 use RuntimeException;
 
 final readonly class CreateWorkspace
@@ -26,7 +26,7 @@ final readonly class CreateWorkspace
 
     public function __construct(
         private SetupWorkspace $setupWorkspace,
-        private WorkspaceSourceDrivers $sourceDrivers,
+        private WorktreeWorkspaceDriver $worktreeDriver,
         private WorkspaceRoleGuard $roleGuard,
         private WorkspaceNodeReachability $nodeReachability,
         private WorkspacePlacement $placement,
@@ -40,9 +40,9 @@ final readonly class CreateWorkspace
      * }
      */
     public function handle(
-        Project $app,
+        App $app,
         string $name,
-        AppInstance $instance,
+        Instance $instance,
         string $base = 'main',
         ?string $phpVersion = null,
     ): array {
@@ -78,7 +78,7 @@ final readonly class CreateWorkspace
         return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
     }
 
-    public function resolveAppNode(Project $app, AppInstance $instance): Node
+    public function resolveAppNode(App $app, Instance $instance): Node
     {
         $app->loadMissing('node');
 
@@ -90,7 +90,7 @@ final readonly class CreateWorkspace
                 "Instance '{$app->name}.{$instance->name}' does not have an owning app node.",
                 [
                     'field' => 'instance',
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -128,40 +128,33 @@ final readonly class CreateWorkspace
     }
 
     public function createIntent(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         ?string $phpVersion,
         WorkspaceProvisionResult $provisionResult,
     ): Workspace {
         /** @var Workspace $workspace */
         $workspace = Workspace::create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => $provisionResult->name,
             'path' => $provisionResult->path,
             'php_version' => $phpVersion,
-            'agent_ide' => $provisionResult->agentIde,
-            'agent_ide_workspace_id' => $provisionResult->agentIdeWorkspaceId,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
         $workspace->setRelation('app', $app);
-        $workspace->setRelation('appInstance', $instance);
+        $workspace->setRelation('instance', $instance);
 
         return $workspace;
     }
 
-    public function effectiveAgentIde(AppInstance $instance): ?string
-    {
-        return $this->sourceDrivers->effectiveAdapter($instance);
-    }
-
     public function provisionWorkspaceSource(
-        Project $app,
+        App $app,
         Node $node,
         string $name,
         string $base,
-        AppInstance $instance,
+        Instance $instance,
     ): WorkspaceProvisionResult {
         $originalPath = $app->path;
 
@@ -172,9 +165,7 @@ final readonly class CreateWorkspace
                 $app->path = $instancePath;
             }
 
-            $driver = $this->sourceDrivers->resolve($app, $instance);
-
-            return $driver->create($app, $node, $name, $base);
+            return $this->worktreeDriver->create($app, $node, $name, $base);
         } finally {
             $app->path = $originalPath;
         }
@@ -183,9 +174,12 @@ final readonly class CreateWorkspace
     /**
      * @return array{label: string, done_label: string}
      */
-    public function sourceProgressLabels(AppInstance $instance, Node $node): array
+    public function sourceProgressLabels(Instance $instance, Node $node): array
     {
-        return $this->sourceDrivers->progressLabels($instance, $node);
+        return [
+            'label' => 'Creating git worktree',
+            'done_label' => 'Git worktree created',
+        ];
     }
 
     /**
@@ -199,14 +193,14 @@ final readonly class CreateWorkspace
      */
     public function result(
         Workspace $workspace,
-        Project $app,
+        App $app,
         Node $node,
         string $base,
         array $httpProbe,
         array $warnings,
     ): array {
         $workspace->refresh();
-        $workspace->loadMissing('appInstance');
+        $workspace->loadMissing('instance');
         $workspace->setRelation('app', $app);
 
         return [
@@ -224,31 +218,27 @@ final readonly class CreateWorkspace
     /**
      * @return array<string, mixed>
      */
-    private function workspacePayload(Workspace $workspace, Project $app, Node $node): array
+    private function workspacePayload(Workspace $workspace, App $app, Node $node): array
     {
         return [
             'name' => $workspace->name,
-            'project' => $app->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $app->name,
+            'instance' => $workspace->instance->name,
             'node' => $node->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'agent_ide' => [
-                'adapter' => $workspace->agent_ide,
-                'workspace_id' => $workspace->agent_ide_workspace_id,
-            ],
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
     }
 
-    private function appPathForInstance(?AppInstance $instance): ?string
+    private function appPathForInstance(?Instance $instance): ?string
     {
         $config = $instance?->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
             return null;
         }
 

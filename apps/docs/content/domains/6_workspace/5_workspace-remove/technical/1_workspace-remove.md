@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
-- The current node identity is authorized to manage the resolved workspace or its parent project.
+- The current node identity is authorized to manage the resolved workspace or its parent app.
 - Runtime, process, teardown-step, and worktree cleanup use Agent push to the
   concrete instance node. Cleanup reachability is not a
   pre-configuration prerequisite; failures become structured warnings.
@@ -22,7 +22,7 @@ gateway-owned workspace configuration and its derived node artifacts.
 ## Signature
 
 ```bash
-orbit workspace:remove [name] [--instance=<project.instance>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--instance=<app.instance>] [--keep-files] [--force] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--instance` for cross-app disambiguation). |
-| `instance` | `--instance=<project.instance>` | When `name` resolves to more than one workspace across projects. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
+| `instance` | `--instance=<app.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -67,7 +67,7 @@ This command follows the shared
 
 `workspace:remove` is a destructive-write command with cross-family cleanup
 across `proxy`, `process`, and the workspace's own node-side
-artifacts. The contract follows the resolved `project:remove` atomicity boundary:
+artifacts. The contract follows the resolved `app:remove` atomicity boundary:
 gateway configuration removal is the point of no return, and any node-side
 residue afterwards is non-fatal drift.
 
@@ -75,7 +75,7 @@ residue afterwards is non-fatal drift.
 
 - Resolve target workspace per [Input Resolution](#input-resolution).
 - Check authorization for the resolved workspace on its effective workspace
-  node (or its parent project).
+  node (or its parent app).
 - If self-targeting (caller is inside the resolved workspace's worktree), warn
   the operator that their shell's working directory will be invalidated unless
   `--keep-files` is also set.
@@ -151,7 +151,7 @@ runs.
    any Phase B node-side cleanup begins.
 2. **Parent Instance Integrity:** Removing a workspace must not remove or modify
    process definitions, runtime container configuration, or proxy routes owned by the
-   parent project.
+   parent app.
 3. **Worktree Cleanup:**
    - If `--keep-files` is `false`, Step 7 deletes the workspace directory on
      the node.
@@ -160,9 +160,10 @@ runs.
 4. **Teardown Steps:** Configured teardown steps run before runtime container and worktree
    removal so they observe a stable workspace lifecycle environment.
 5. **Authorization:**
-   - Control and gateway peers must be authorized by the gateway to manage
-     the target workspace or its parent project.
-   - Instance-role peers are denied by the gateway before any side effects.
+   - The gateway authorizes `workspace:remove` on the workspace's instance
+     serving node through the caller's grant. Grants containing workspace
+     permissions are invalid when either endpoint carries `app-prod`, so
+     production app services can never operate workspaces.
 6. **Idempotence Boundary:**
    - If the workspace record exists, the command proceeds.
    - If the workspace record is absent, the command fails with
@@ -205,7 +206,7 @@ and `next_command` (typically `doctor --family=<family> --restore`). The exit co
 remains `0`; the warnings are the machine-readable signal.
 
 This atomicity boundary matches the resolved
-[`project:remove`](../../../5_project/6_project-remove/technical/1_project-remove.md) and
+[`app:remove`](../../../5_app/6_app-remove/technical/1_app-remove.md) and
 [`node:remove`](../../../1_node/8_node-remove/technical/1_node-remove.md)
 exemplars: gateway-owned configuration removal is the point of no return, and
 leftover node-side artifacts are convergence drift owned by the affected
@@ -218,14 +219,15 @@ family doctor — not a removal failure.
 - Workspace-owned artifacts remaining after a failed cleanup are detected as
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)
   and the affected family doctors:
-  - `workspace.artifact_extra` — orphaned worktree or runtime container
-    (`doctor --family=workspace --restore`).
+  - `workspace.artifact_extra` — orphaned worktree or runtime configuration
+    (workspace doctor is report-only; inspect with
+    `doctor --family=workspace` and remove leftover artifacts explicitly).
   - `proxy.route_extra` — orphaned workspace-owned proxy route
     (`doctor --family=proxy --restore`).
   - `process.runtime_unit_extra` — orphaned inherited runtime unit
     (`doctor --family=process --restore`).
 - `workspace:remove` does not duplicate drift item shapes for each family; it
-  points operators at the affected `doctor --family=<family> --restore` via the
+  points operators at the owning family's repair or report path via the
   warning's `next_command`.
 
 ## Test Mapping

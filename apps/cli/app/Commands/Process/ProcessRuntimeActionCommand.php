@@ -22,34 +22,48 @@ abstract class ProcessRuntimeActionCommand extends ProcessGatewayCommand
 
     public function handle(): int
     {
+        $appHostname = $this->appHostnameContext();
         $node = $this->nodeContext();
-        $app = $node === null ? $this->appContext() : $this->stringOption('instance');
+        $instance =
+            $node === null && $appHostname === null
+                ? $this->appContext()
+                : $this->stringOption('instance');
         $workspace = $this->workspaceContext();
 
-        if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->failValidation(
-                'context',
-                'A node context cannot be combined with instance or workspace context.',
-                [
-                    'node' => $node,
-                    'instance' => $app,
-                    'workspace' => $workspace,
-                ],
-            );
+        $conflictFailure = $this->rejectConflictingProcessSelectors(
+            appHostname: $appHostname,
+            node: $node,
+            instance: $instance,
+            workspace: $workspace,
+        );
+
+        if ($conflictFailure !== null) {
+            return $conflictFailure;
         }
 
-        if ($node === null && $app === null && $workspace === null) {
-            return $this->failValidation('instance', 'A node, instance, or workspace context is required.');
+        $missingFailure = $this->requireProcessSelector(
+            appHostname: $appHostname,
+            node: $node,
+            instance: $instance,
+            workspace: $workspace,
+        );
+
+        if ($missingFailure !== null) {
+            return $missingFailure;
         }
 
         $name = $this->stringArgument('name');
         $path = "/api/processes/{$this->action()}";
         $payload = $this->filledQuery([
+            'app' => $appHostname,
             'node' => $node,
-            'instance' => $app,
+            'instance' => $instance,
             'workspace' => $workspace,
             'name' => $name,
         ]);
+        $label = $appHostname !== null
+            ? "app '{$appHostname}'"
+            : $this->contextLabel($node, $instance, $workspace);
 
         if ($this->wantsJson()) {
             try {
@@ -61,7 +75,7 @@ abstract class ProcessRuntimeActionCommand extends ProcessGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderRuntimeActionTree($path, $payload, $name, $this->contextLabel($node, $app, $workspace));
+        return $this->renderRuntimeActionTree($path, $payload, $name, $label);
     }
 
     /**

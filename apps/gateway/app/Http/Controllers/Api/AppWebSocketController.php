@@ -11,9 +11,9 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\EnableAppWebSocketApiRequest;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppWebSocketBinding;
-use App\Models\Project;
+use App\Models\Instance;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
@@ -29,7 +29,7 @@ final class AppWebSocketController implements Loggable
         private readonly AppSelectorResolver $appSelectorResolver,
     ) {}
 
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     private ?string $activityTargetName = null;
 
@@ -64,7 +64,7 @@ final class AppWebSocketController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $binding = $service->enable($targetApp, $request->publicHosts());
@@ -79,7 +79,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.prerequisite_failed',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -113,7 +113,7 @@ final class AppWebSocketController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $credentials = $service->credentials($targetApp);
@@ -121,7 +121,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -157,7 +157,7 @@ final class AppWebSocketController implements Loggable
 
         $targetApp = $selection->app;
         $targetInstance = $selection->instance;
-        assert($targetInstance instanceof AppInstance);
+        assert($targetInstance instanceof Instance);
 
         try {
             $binding = $service->disable($targetApp);
@@ -165,7 +165,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
+                meta: ['app' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -209,19 +209,19 @@ final class AppWebSocketController implements Loggable
 
     /**
      * @return array{
-     *     project: string,
+     *     app: string,
      *     instance: string,
      *     internal_host: string,
      *     public_hosts: list<string>,
      *     allowed_origins: list<string>,
      * }
      */
-    private function bindingPayload(AppWebSocketBinding $binding, AppInstance $instance): array
+    private function bindingPayload(AppWebSocketBinding $binding, Instance $instance): array
     {
         $binding->loadMissing('app');
 
         return [
-            'project' => $binding->app->name,
+            'app' => $binding->app->name,
             'instance' => $instance->name,
             'internal_host' => WebSocketRouteRegistrar::ServiceDomain,
             'public_hosts' => $this->stringList($binding->public_hosts),

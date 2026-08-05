@@ -19,7 +19,7 @@ final class WorkspaceShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:show
         {name? : Workspace name}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--json}';
 
     #[\Override]
@@ -144,19 +144,17 @@ final class WorkspaceShowCommand extends GatewayCommand
         $inheritedProcesses = is_array($response['success']['data']['inherited_processes'] ?? null)
             ? $response['success']['data']['inherited_processes']
             : [];
-        $agentIde = is_array($workspace['agent_ide'] ?? null) ? $workspace['agent_ide'] : [];
 
         $title = sprintf(
             'Workspace: %s.%s',
             (string) ($workspace['name'] ?? ''),
-            (string) ($workspace['project'] ?? ''),
+            (string) ($workspace['app'] ?? ''),
         );
 
         $this->renderShowDetails($title, [
             'URL' => $workspace['url'] ?? null,
             'Node' => $this->nodeLabel($node),
             'Path' => $workspace['path'] ?? null,
-            'Agent IDE' => $this->agentIdeLabel($agentIde),
             'PHP' => $workspace['php_version'] ?? null,
             'Processes' => $this->processLabels($inheritedProcesses),
         ]);
@@ -175,16 +173,6 @@ final class WorkspaceShowCommand extends GatewayCommand
         }
 
         return $host === null || $host === '' ? $name : "{$name} ({$host})";
-    }
-
-    /**
-     * @param  array<string, mixed>  $agentIde
-     */
-    private function agentIdeLabel(array $agentIde): string
-    {
-        $adapter = $agentIde['adapter'] ?? null;
-
-        return is_string($adapter) && $adapter !== '' ? $adapter : '—';
     }
 
     /**

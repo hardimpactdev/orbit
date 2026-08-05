@@ -193,10 +193,17 @@ jobs:
             rm -rf "$output"
             bin/orbit-prepare-release-package --package="$package" --version="$VERSION" --output="$output"
 
+            # Never ship install trees into split repositories.
+            rm -rf "$output/node_modules" "$output/coverage"
+
             git -C "$output" init
             git -C "$output" config user.name "github-actions[bot]"
             git -C "$output" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git -C "$output" add -A
+            if git -C "$output" ls-files --error-unmatch node_modules >/dev/null 2>&1; then
+              echo "Refusing to publish split package with node_modules tracked." >&2
+              exit 1
+            fi
             git -C "$output" commit -m "Release $TAG"
             git -C "$output" branch -M main
             git -C "$output" tag -f "$TAG"
@@ -204,6 +211,11 @@ jobs:
             git -C "$output" push --force origin HEAD:main
             git -C "$output" push --force origin "refs/tags/${TAG}"
           }
+
+          # TypeScript SDK (@hardimpactdev/orbit-sdk-typescript) is independently
+          # versioned and published from hardimpactdev/orbit-sdk-typescript via
+          # its own OIDC release workflow. Root orbit-release.yml must not
+          # prepare, split-tag, or npm-publish that package.
 
           publish_split core hardimpactdev/orbit-core
           publish_split sdk hardimpactdev/orbit-sdk-laravel

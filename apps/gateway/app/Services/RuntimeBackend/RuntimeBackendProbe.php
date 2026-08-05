@@ -7,6 +7,7 @@ namespace App\Services\RuntimeBackend;
 use App\Data\RuntimeBackend\RuntimeBackendProbeResult;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
@@ -29,6 +30,9 @@ final readonly class RuntimeBackendProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'runtime-backend.probe',
                 ],
+                // Host backends live outside orbit-gateway; force host boundary
+                // only when the target is the gateway node.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'timeout' => 15,
             ],
         );

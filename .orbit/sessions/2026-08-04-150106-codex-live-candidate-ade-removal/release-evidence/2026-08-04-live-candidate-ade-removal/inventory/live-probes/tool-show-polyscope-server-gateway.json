@@ -1,0 +1,1 @@
+{"error":{"code":"validation_failed","message":"Invalid value for --node: 'gateway'. Expected a visible tool node name.","meta":{"field":"node","value":"gateway"}}}

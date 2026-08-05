@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Analytics;
 
 use App\Models\AppAnalyticsBinding;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\IngressResolver;
@@ -21,7 +21,7 @@ final readonly class AppAnalyticsPayloadFactory
     ) {}
 
     /** @return array<string, mixed> */
-    public function enableResult(AppAnalyticsBinding $binding, AppInstance $instance): array
+    public function enableResult(AppAnalyticsBinding $binding, Instance $instance): array
     {
         return [
             'binding' => $this->integrationBinding($binding, $instance),
@@ -49,7 +49,7 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    public function verificationContext(AppAnalyticsBinding $binding, AppInstance $instance): array
+    public function verificationContext(AppAnalyticsBinding $binding, Instance $instance): array
     {
         return [
             'binding' => $this->integrationBinding($binding, $instance),
@@ -59,13 +59,13 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    public function binding(AppAnalyticsBinding $binding, AppInstance $instance): array
+    public function binding(AppAnalyticsBinding $binding, Instance $instance): array
     {
         $binding->loadMissing('app');
         $publicHosts = $this->stringList($binding->public_hosts);
 
         return [
-            'project' => $binding->app->name,
+            'app' => $binding->app->name,
             'instance' => $instance->name,
             'enabled' => $binding->enabled,
             'internal_host' => AnalyticsRouteRegistrar::ServiceDomain,
@@ -84,7 +84,7 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    private function integrationBinding(AppAnalyticsBinding $binding, AppInstance $instance): array
+    private function integrationBinding(AppAnalyticsBinding $binding, Instance $instance): array
     {
         $bindingPayload = $this->binding($binding, $instance);
         $siteDomain = $this->siteDomain($binding);

@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T21:04:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-orphaned-workspace-route-repair/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-230413-codex-orphaned-workspace-route-repair",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/orphan-proxy-remove-contract-proof.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T205838Z-9c78c3e2945e.json"
+    ],
+    "entry_digests": {
+        "evidence/orphan-proxy-remove-contract-proof.md": "78a6d5d052ce3df8c5bc88df100a75d1e176e0fd6b7463077937f627d79306be",
+        "feedback.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "loop.md": "c18b8ef247cb3f4a04b3b7b80098553c18058c30d5208d5dd04b13bc82478285",
+        "quality-gates/quality-check-2026-08-02T205838Z-9c78c3e2945e.json": "e892bd63cc37c0231ef89643143b7ddea431af742f010bed06006fcacad5ecfe"
+    },
+    "branch": "codex/orphaned-workspace-route-repair",
+    "candidate_commit": "db1a60cc73f9847ed96c8ae56c540536926b6303",
+    "accepted_feature_tip": "db1a60cc73f9847ed96c8ae56c540536926b6303",
+    "accepted_main_tip": "9e4d7e8d6dd8b13a8912735590f740e11ab2f1ff",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -6,6 +6,7 @@ namespace App\Services\Apps;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class RemoteAppRuntimeContainersProbe
@@ -23,6 +24,9 @@ final readonly class RemoteAppRuntimeContainersProbe
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'process-runtime-containers.probe',
                 ],
+                // Docker inventory is host-owned; leave the container only when the
+                // target is the gateway host boundary. Host binary is ~/.local/bin/orbit.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'strict' => true,
                 'timeout' => 30,
             ],

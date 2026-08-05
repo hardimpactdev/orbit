@@ -1,0 +1,1 @@
+PASS: .orbit/loop.md compact feature loop is ready for finalization

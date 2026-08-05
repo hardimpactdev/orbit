@@ -22,7 +22,7 @@ final readonly class DeployController
         private DeployOperationRunner $deployOperations,
     ) {}
 
-    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::InstanceOwning)]
     public function storeStep(Request $request): JsonResponse
     {
         $instanceSelector = $this->stringInput($request, 'instance');
@@ -68,7 +68,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function listSteps(Request $request): JsonResponse
     {
         $instanceSelector = $this->stringInput($request, 'instance');
@@ -86,7 +86,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::InstanceOwning)]
     public function removeStep(string $step, Request $request): JsonResponse
     {
         if ($request->boolean('destructive_consent') !== true) {
@@ -113,7 +113,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:run', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:run', servingNode: ServingNode::InstanceOwning)]
     public function run(Request $request): JsonResponse
     {
         $instanceSelector = $this->stringInput($request, 'instance');
@@ -149,7 +149,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function history(Request $request): JsonResponse
     {
         $instanceSelector = $this->stringInput($request, 'instance');
@@ -178,7 +178,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function log(string $run, Request $request): JsonResponse
     {
         $instanceSelector = $this->stringInput($request, 'instance');

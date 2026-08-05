@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -58,7 +58,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -88,7 +88,7 @@ describe('ProcessUpdateController', function (): void {
     it('rejects unauthorized callers before changing intent', function (): void {
         createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
@@ -115,7 +115,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('denies app callers without a process edit grant before changing intent', function (): void {
         $caller = createProcessUpdateCallerNode(role: 'app-dev');
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
@@ -141,8 +141,8 @@ describe('ProcessUpdateController', function (): void {
     it('lets app-dev self grants update app-owned process intent on their own node only', function (): void {
         $caller = createProcessUpdateCallerNode(role: 'app-dev');
         $otherNode = createTestAppHostNode(['name' => 'app-2']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        $hiddenApp = Project::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue', 'command' => 'php artisan queue:work']);
         grantProcessUpdateAccess(
@@ -197,7 +197,7 @@ describe('ProcessUpdateController', function (): void {
 
     it('keeps app-prod self grants from updating process intent', function (): void {
         $caller = createProcessUpdateCallerNode(role: 'app-prod');
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         grantProcessUpdateAccess(
             caller: $caller,
@@ -231,7 +231,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -291,7 +291,7 @@ describe('ProcessUpdateController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.process.node', 'app-1')
-            ->assertJsonPath('success.data.process.project', null)
+            ->assertJsonPath('success.data.process.app', null)
             ->assertJsonPath('success.data.process.workspace', null)
             ->assertJsonPath('success.data.process.command', 'opencode serve -a')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
@@ -364,7 +364,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()
             ->forOwner($app)
@@ -526,7 +526,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()
             ->forOwner($workspace)
@@ -554,7 +554,7 @@ describe('ProcessUpdateController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.process.project', 'docs')
+            ->assertJsonPath('success.data.process.app', 'docs')
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
             ->assertJsonPath('success.data.process.command', 'php artisan horizon')
             ->assertJsonPath('success.data.runtime_units.0', [
@@ -569,7 +569,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
@@ -599,7 +599,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -633,7 +633,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -667,7 +667,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'systemd']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -701,7 +701,7 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
         Process::factory()->forOwner($workspace)->create(['name' => 'queue', 'runtime' => 'systemd']);
         $remoteShell = new ProcessUpdateRemoteShell([]);
@@ -741,7 +741,7 @@ describe('ProcessUpdateController', function (): void {
     ): void {
         createProcessUpdateCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
@@ -780,7 +780,7 @@ describe('ProcessUpdateController', function (): void {
             'user' => 'nckrtl',
         ]);
         grantProcessUpdateAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()
             ->forOwner($app)
             ->create([
@@ -807,7 +807,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'crash_notification')
-            ->assertJsonPath('error.meta.reason', 'launchd_crash_notification_deferred');
+            ->assertJsonPath('error.meta.value', 'agent_ide');
 
         expect(Process::query()->where('name', 'feedback')->value('crash_notification')->value)
             ->toBe('none')

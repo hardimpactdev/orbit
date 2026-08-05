@@ -1,0 +1,22 @@
+pre_merge_feature_tip=ac766f4be2a3e4e1c02be53aa04f4a3c99d0c743
+post_merge_tip=eb30aa9ce5dfc2bd00c9cb783b9f241d26a3b7f1
+main_tip=eec2d757646f73c112fada2cf4ca363deb50aac3
+UNCHANGED blob=f0f2ae8518a2d835a4664ed2c36294ddfa628013  apps/gateway/app/Services/Processes/RuntimeActivationPage.php
+UNCHANGED blob=31e27c577d204bc30421edfb0748c05f7b7a215d  apps/gateway/app/Services/Processes/RuntimeActivationService.php
+UNCHANGED blob=93c1dcc0c8ce9d6e4790ad07d653baaebfd213c8  apps/gateway/app/Services/Processes/RuntimeActivationRunner.php
+UNCHANGED blob=9edd4c5ecb3208b896fdc6c7badf95afe83dd771  apps/gateway/app/Services/Processes/RuntimeActivationRunnerLauncher.php
+UNCHANGED blob=2ea27638da7c1ad976611b20aadd48c2bac52c55  apps/gateway/app/Services/Processes/RuntimeActivationOperations.php
+UNCHANGED blob=a967f24ba807159e82eae401af4fa85c8cb3fa5c  apps/gateway/app/Services/Processes/RuntimeActivationOutcome.php
+UNCHANGED blob=c808f3360368b8b710541e635c659aba52590220  apps/gateway/app/Services/Processes/RuntimeActivationFence.php
+UNCHANGED blob=f1a8cdff62b53f081ff62725dad3f4be3e305dba  apps/gateway/app/Http/Controllers/Api/RuntimeActivationController.php
+UNCHANGED blob=3a001c0b48cb9dd1246061bbdd5e487d87e501dc  apps/gateway/resources/views/runtime-activation.blade.php
+UNCHANGED blob=dfb01e0716979c05b0eb0cdb33ededcc01eb94c5  apps/gateway/tests/Pest.php
+UNCHANGED blob=9173d2562d3badf72884a939e5c0f20e6a5080e6  apps/gateway/tests/Feature/Services/Processes/RuntimeColdActivationTest.php
+UNCHANGED blob=4694bcdfb5011fd7992df610f93050968993d192  apps/gateway/tests/Feature/Services/Processes/RuntimeHibernationTest.php
+UNCHANGED blob=fc63b7b04740366d4ce6238d20d27060781bc671  PRODUCT_DECISIONS.md
+UNCHANGED blob=01c78bef34dd41057165c1c2b58c9cb6721acc9d  apps/docs/content/architecture.md
+UNCHANGED blob=a92593db21cb63d380688f19ba54e1934e4dec10  apps/docs/content/tech-stack.md
+UNCHANGED blob=5dcb0798e8701d7d489ea1295eb2e0c198a7ec60  apps/docs/content/domains/8_proxy/proxy-concepts.md
+--- git diff --stat ac766f4be2a3e4e1c02be53aa04f4a3c99d0c743..eb30aa9ce5dfc2bd00c9cb783b9f241d26a3b7f1 (activation paths) ---
+activation_paths_changed=0
+ACTIVATION_BLOBS_UNCHANGED_BY_MAIN_MERGE=yes

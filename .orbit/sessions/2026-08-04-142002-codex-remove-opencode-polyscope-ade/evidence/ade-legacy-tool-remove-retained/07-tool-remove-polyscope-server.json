@@ -1,0 +1,1 @@
+{"success":{"data":{"tool":{"name":"polyscope-server","node":"app-dev-1","stale_record":true,"legacy_runtime_cleanup":true,"routes_removed":0,"tool_row_removed":true,"process":{"name":"polyscope-server","runtime":"systemd","tool":"polyscope-server","action":"removed"}}},"meta":[]}}

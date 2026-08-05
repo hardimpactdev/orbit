@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -155,14 +155,14 @@ describe('ToolShowController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
-        $project = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => 'docs.example.com',
         ]);
-        AppInstance::factory()->for($project)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
         ]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 

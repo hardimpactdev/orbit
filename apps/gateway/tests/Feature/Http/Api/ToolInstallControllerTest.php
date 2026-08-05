@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -111,10 +111,10 @@ describe('ToolInstallController', function (): void {
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
         assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node);
-        $project = Project::factory()->create(['name' => 'docs']);
-        AppInstance::factory()->for($project)->create([
+        $app = App::factory()->create(['name' => 'docs']);
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: '/home/orbit/apps/docs',
                 document_root: 'public',
@@ -217,16 +217,14 @@ describe('ToolInstallController', function (): void {
             ->toBe([]);
     });
 
-    it('checks agent runtime-user isolation before OpenClaw or Hermes installation side effects', function (
-        string $tool,
-    ): void {
+    it('checks agent runtime-user isolation before Hermes installation side effects', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => "{$tool}-missing-runtime-user",
+            'name' => 'hermes-missing-runtime-user',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => "{$tool}-agent",
+            'tld' => 'hermes-agent',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell([
@@ -241,7 +239,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/tools/{$tool}/install",
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
@@ -251,13 +249,13 @@ describe('ToolInstallController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
-            ->assertJsonPath('error.meta.tool', $tool)
+            ->assertJsonPath('error.meta.tool', 'hermes')
             ->assertJsonPath('error.meta.constraint', 'runtime_user')
             ->assertJsonPath('error.meta.required', 'agent')
             ->assertJsonPath('error.meta.actual', 'missing')
             ->assertJsonPath('error.meta.exit_code', 64);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists())
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeFalse()
             ->and($shell->scripts)
             ->toHaveCount(1)
@@ -265,16 +263,44 @@ describe('ToolInstallController', function (): void {
             ->toContain("id -u 'agent'")
             ->and($shell->toolRowsPresent)
             ->toBe([false]);
-    })->with(['openclaw', 'hermes']);
+    });
+
+    it('rejects openclaw as an unsupported agent tool install', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'agent-openclaw-rejected',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/openclaw/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'tool.unsupported_action');
+        expect($shell->scripts)->toBeEmpty()->and(NodeTool::query()->where('name', 'openclaw')->exists())->toBeFalse();
+    });
 
     it('rejects a privileged agent runtime user through stable isolation metadata', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => 'openclaw-privileged-runtime-user',
+            'name' => 'hermes-privileged-runtime-user',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => 'openclaw-privileged',
+            'tld' => 'hermes-privileged',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell([
@@ -289,7 +315,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/openclaw/install',
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
@@ -304,7 +330,7 @@ describe('ToolInstallController', function (): void {
             ->assertJsonPath('error.meta.actual', 'privileged-user')
             ->assertJsonPath('error.meta.exit_code', 65);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeFalse()
             ->and($shell->toolRowsPresent)
             ->toBe([false]);
@@ -360,10 +386,10 @@ describe('ToolInstallController', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
-            'name' => 'openclaw-preflight-order',
+            'name' => 'hermes-preflight-order',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'tld' => 'openclaw-agent',
+            'tld' => 'hermes-agent',
         ]);
         assignToolInstallApiRole($node, 'agent');
         $shell = new ToolInstallApiRecordingShell;
@@ -371,40 +397,54 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/openclaw/install',
+            '/api/tools/hermes/install',
             ['node' => $node->name],
             [],
             [],
             tool_install_api_server_headers(),
         );
 
-        $response->assertOk();
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.process.name', 'orbit-hermes-dashboard')
+            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
+            ->assertJsonPath('success.data.tool.process.tool', 'hermes')
+            ->assertJsonPath('success.data.tool.process.action', 'configured');
 
         expect($shell->scripts)
-            ->toHaveCount(3)
+            ->toHaveCount(5)
             ->and($shell->scripts[0])
             ->toContain("id -u 'agent'")
             ->and($shell->scripts[1])
-            ->toContain('https://openclaw.ai/install.sh')
-            ->and($shell->toolRowsPresent)
-            ->toBe([false, true, true])
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+            ->toContain('https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh')
+            ->and($shell->scripts[1])
+            ->toContain('--skip-setup')
+            ->and($shell->scripts[1])
+            ->toContain('https://hermes.hermes-agent')
+            ->and($shell->toolRowsPresent[0] ?? null)
+            ->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists())
             ->toBeTrue();
     });
 
-    it('configures the related singleton process by default when installing a service tool', function (): void {
+    it('passes the resolved agent TLD hostname into Hermes install and configures orbit-hermes-dashboard', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-oc-1', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
+        $node = Node::factory()->create([
+            'name' => 'hermes-hostname-install',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'fleet-agent',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call(
             'POST',
-            '/api/tools/opencode-cli/install',
-            [
-                'node' => 'app-oc-1',
-            ],
+            '/api/tools/hermes/install',
+            ['node' => $node->name],
             [],
             [],
             tool_install_api_server_headers(),
@@ -412,172 +452,24 @@ describe('ToolInstallController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'opencode-cli')
-            ->assertJsonPath('success.data.tool.process.name', 'opencode-server')
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.process.name', 'orbit-hermes-dashboard')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.tool.process.tool', 'opencode-cli')
+            ->assertJsonPath('success.data.tool.process.tool', 'hermes')
             ->assertJsonPath('success.data.tool.process.action', 'configured');
 
-        $tool = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'opencode-cli')
-            ->first();
+        $installScript = collect($shell->scripts)
+            ->first(
+                static fn (string $script): bool => str_contains($script, 'install.sh'),
+            );
 
-        expect($tool)
-            ->not
-            ->toBeNull();
-
-        $process = DB::table('processes')
-            ->where('node_id', $node->id)
-            ->where('name', 'opencode-server')
-            ->first();
-
-        expect($process)
-            ->not
-            ->toBeNull()
-            ->and($process->command)
-            ->toBe('opencode serve -a')
-            ->and($process->runtime)
-            ->toBe('systemd')
-            ->and($process->tool)
-            ->toBe('opencode-cli');
-    });
-
-    it('skips process configuration when with_process is false', function (): void {
-        $caller = createToolInstallApiCallerNode();
-        assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-oc-2', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
-
-        $response = $this->call(
-            'POST',
-            '/api/tools/opencode-cli/install',
-            [
-                'node' => 'app-oc-2',
-                'with_process' => false,
-            ],
-            [],
-            [],
-            tool_install_api_server_headers(),
-        );
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.process', null);
-
-        expect(
-            DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->exists(),
-        )->toBeFalse();
-    });
-
-    it('converges the related process idempotently on re-install', function (): void {
-        $caller = createToolInstallApiCallerNode();
-        assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-oc-3', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
-
-        $payload = ['node' => 'app-oc-3'];
-        $headers = tool_install_api_server_headers();
-
-        $this->call('POST', '/api/tools/opencode-cli/install', $payload, [], [], $headers)->assertOk();
-
-        $response = $this->call('POST', '/api/tools/opencode-cli/install', $payload, [], [], $headers);
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.process.action', 'converged');
-
-        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->count())->toBe(1);
-    });
-
-    it('configures the related singleton process by default when installing polyscope server', function (): void {
-        $caller = createToolInstallApiCallerNode();
-        assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-ps-1', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
-
-        $response = $this->call(
-            'POST',
-            '/api/tools/polyscope-server/install',
-            [
-                'node' => 'app-ps-1',
-            ],
-            [],
-            [],
-            tool_install_api_server_headers(),
-        );
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'polyscope-server')
-            ->assertJsonPath('success.data.tool.process.name', 'polyscope-server')
-            ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.tool.process.tool', 'polyscope-server')
-            ->assertJsonPath('success.data.tool.process.action', 'configured');
-
-        $process = DB::table('processes')
-            ->where('node_id', $node->id)
-            ->where('name', 'polyscope-server')
-            ->first();
-
-        expect($process)
-            ->not
-            ->toBeNull()
-            ->and($process->command)
-            ->toBe('polyscope-server')
-            ->and($process->runtime)
-            ->toBe('systemd')
-            ->and($process->tool)
-            ->toBe('polyscope-server');
-    });
-
-    it('skips polyscope server process configuration when with_process is false', function (): void {
-        $caller = createToolInstallApiCallerNode();
-        assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-ps-2', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
-
-        $response = $this->call(
-            'POST',
-            '/api/tools/polyscope-server/install',
-            [
-                'node' => 'app-ps-2',
-                'with_process' => false,
-            ],
-            [],
-            [],
-            tool_install_api_server_headers(),
-        );
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.process', null);
-
-        expect(
-            DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->exists(),
-        )->toBeFalse();
-    });
-
-    it('converges the polyscope server related process idempotently on re-install', function (): void {
-        $caller = createToolInstallApiCallerNode();
-        assignToolInstallApiRole($caller, 'gateway');
-        $node = Node::factory()->create(['name' => 'app-ps-3', 'status' => 'active', 'platform' => 'ubuntu_24-04']);
-        assignToolInstallApiRole($node, 'app-dev');
-        app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
-
-        $payload = ['node' => 'app-ps-3'];
-        $headers = tool_install_api_server_headers();
-
-        $this->call('POST', '/api/tools/polyscope-server/install', $payload, [], [], $headers)->assertOk();
-
-        $response = $this->call('POST', '/api/tools/polyscope-server/install', $payload, [], [], $headers);
-
-        $response->assertOk()
-            ->assertJsonPath('success.data.tool.process.action', 'converged');
-
-        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->count())
-            ->toBe(1);
+        expect($installScript)
+            ->not->toBeNull()->toContain('https://hermes.fleet-agent')->toContain('ORBIT_HERMES_PUBLIC_URL')->toContain(
+                'systemctl show -p ActiveState --value orbit-hermes-dashboard.service',
+            )
+            ->not->toContain('https://hermes.agent"')->and(
+                NodeTool::query()->where('node_id', $node->id)->where('name', 'hermes')->exists(),
+            )->toBeTrue();
     });
 
     it('does not treat an unassigned caller as gateway tool authority', function (): void {
@@ -699,7 +591,7 @@ describe('ToolInstallController', function (): void {
         );
 
         $response
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'tool.unsupported_action')
             ->assertJsonPath('error.meta.tool', $tool)
             ->assertJsonPath('error.meta.action', 'install');

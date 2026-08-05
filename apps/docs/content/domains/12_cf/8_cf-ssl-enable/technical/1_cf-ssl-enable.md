@@ -59,7 +59,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-ssl:enable` changes provider SSL mode, but it does not create a Cloudflare
 doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns
-proxy TLS artifact health and [`doctor --family=instance`](../../../5_project/instance-doctor.md)
+proxy TLS artifact health and [`doctor --family=instance`](../../../5_app/instance-doctor.md)
 owns app-domain health.
 
 ## Test Mapping

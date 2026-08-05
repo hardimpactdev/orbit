@@ -8,16 +8,16 @@ use App\Actions\Deploy\AddDeployStep;
 use App\Actions\Deploy\RemoveDeployStep;
 use App\Contracts\AppRuntimeUserResolver;
 use App\Contracts\ProgressReporter;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
@@ -25,7 +25,6 @@ use App\Services\Apps\AppSelectorResolver;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -38,6 +37,7 @@ final readonly class DeployManager
         private RunsInternalCommands $localExecutor,
         private AppSelectorResolver $appSelectorResolver,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
+        private ActiveReleaseRuntimeActivator $activeReleaseRuntimeActivator,
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
         private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
@@ -58,7 +58,7 @@ final readonly class DeployManager
         $instance = $this->productionInstance($app);
 
         $step = $this->addDeployStep->handle(
-            appInstanceId: $instance->id,
+            instanceId: $instance->id,
             title: $title ?? $this->titleFromCommand($command),
             command: $command,
             timeoutSeconds: $timeout,
@@ -90,7 +90,7 @@ final readonly class DeployManager
         return [
             'steps' => $steps,
             'meta' => [
-                'project' => $instance->app->name,
+                'app' => $instance->app->name,
                 'instance' => $instance->name,
                 'count' => count($steps),
             ],
@@ -112,7 +112,7 @@ final readonly class DeployManager
                 )}'.",
                 errorCode: 'deploy.step_not_found',
                 errorMeta: [
-                    'project' => $instance->app->name,
+                    'app' => $instance->app->name,
                     'instance' => $instance->name,
                     'step' => $selector,
                 ],
@@ -138,8 +138,8 @@ final readonly class DeployManager
     {
         $instance = $this->productionInstance($app);
         $model = $this->runtimeApp($instance);
-        $steps = DeployStep::query()
-            ->where('app_instance_id', $instance->id)
+        $steps = $instance
+            ->deploySteps()
             ->orderBy('sort_order')
             ->get();
 
@@ -147,18 +147,18 @@ final readonly class DeployManager
             throw new GatewayApiException(
                 message: "Deployment pipeline is empty for instance '{$this->targetName($instance)}'.",
                 errorCode: 'deploy.pipeline_empty',
-                errorMeta: ['project' => $model->name, 'instance' => $instance->name],
+                errorMeta: ['app' => $model->name, 'instance' => $instance->name],
             );
         }
 
-        $progress?->tree('Running Deployment', $this->progressSteps($steps, $detach));
+        $progress?->tree('Running Deployment', $this->progressSteps($model, $steps, $detach));
         $progress?->stepStart('resolve-instance');
         $progress?->stepDone('resolve-instance', $this->targetName($instance));
 
         $startedAt = Carbon::now();
         $progress?->stepStart('create-run');
         $run = DeploymentRun::query()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'status' => 'running',
             'exit_code' => null,
             'started_at' => $startedAt,
@@ -194,9 +194,9 @@ final readonly class DeployManager
             $progress?->stepStart($this->progressKey($step));
             $result = $this->runStep(
                 $model->node ?? throw new GatewayApiException(
-                    message: "Project '{$model->name}' has no owning node.",
+                    message: "App '{$model->name}' has no owning node.",
                     errorCode: 'deploy.execution_failed',
-                    errorMeta: ['project' => $model->name],
+                    errorMeta: ['app' => $model->name],
                 ),
                 command: $routedCommand,
                 cwd: $model->path,
@@ -235,7 +235,23 @@ final readonly class DeployManager
 
         if ($status === 'completed') {
             try {
-                $warmupResult = $this->runWarmupSteps($model, $instance, $context, $progress);
+                $warmupPath = $model->path;
+
+                if ($this->usesLivePath($steps) && $model->runtimeKind() === AppRuntimeKind::Php) {
+                    $progress?->stepStart('activate-runtime');
+
+                    try {
+                        $activation = $this->activeReleaseRuntimeActivator->activate($model, $instance, $context);
+                        $warmupPath = $activation['live_path'];
+                        $progress?->stepDone('activate-runtime', $activation['resolved_path']);
+                    } catch (GatewayApiException $exception) {
+                        $progress?->stepFail('activate-runtime', 'failed');
+
+                        throw $exception;
+                    }
+                }
+
+                $warmupResult = $this->runWarmupSteps($model, $instance, $context, $warmupPath, $progress);
                 if ($warmupResult !== null) {
                     $stdout .= $warmupResult['stdout'];
                     $stderr .= $warmupResult['stderr'];
@@ -289,7 +305,7 @@ final readonly class DeployManager
                 )}'.",
                 errorCode: 'deploy.step_failed',
                 errorMeta: [
-                    'project' => $model->name,
+                    'app' => $model->name,
                     'instance' => $instance->name,
                     'step' => $failedStep?->title,
                     'duration_ms' => $run->duration_ms,
@@ -304,7 +320,7 @@ final readonly class DeployManager
         return $payload;
     }
 
-    public function runTarget(string $app): Project
+    public function runTarget(string $app): App
     {
         return $this->runtimeApp($this->productionInstance($app));
     }
@@ -321,9 +337,10 @@ final readonly class DeployManager
      * @return array{stdout: string, stderr: string}|null
      */
     private function runWarmupSteps(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         array $context,
+        string $cwd,
         ?ProgressReporter $progress = null,
     ): ?array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
@@ -345,12 +362,17 @@ final readonly class DeployManager
         $stderr = '';
 
         foreach ($warmupCommands as $warmupCommand) {
-            $routedCommand = $this->appCommandRouter->route($app, $warmupCommand, $this->environment($context));
+            $routedCommand = $this->appCommandRouter->routeForPath(
+                $app,
+                $warmupCommand,
+                $cwd,
+                $this->environment($context),
+            );
 
             $result = $this->runStep(
                 node: $node,
                 command: $routedCommand,
-                cwd: $app->path,
+                cwd: $cwd,
                 timeout: 300,
                 environment: $this->environment($context),
             );
@@ -363,7 +385,7 @@ final readonly class DeployManager
                     message: "Deployment warmup step '{$warmupCommand}' failed for project '{$app->name}'.",
                     errorCode: 'deploy.warmup_failed',
                     errorMeta: [
-                        'project' => $app->name,
+                        'app' => $app->name,
                         'warmup_command' => $warmupCommand,
                     ],
                     errorData: [
@@ -388,7 +410,7 @@ final readonly class DeployManager
      *
      * @param  array<string, mixed>  $context
      */
-    private function runHttpWarmup(Project $app, AppInstance $instance, array $context): void
+    private function runHttpWarmup(App $app, Instance $instance, array $context): void
     {
         $warmupPaths = $instance->deploy_warmup_paths ?? [];
 
@@ -489,10 +511,10 @@ final readonly class DeployManager
     }
 
     /**
-     * @param  Collection<int, DeployStep>  $steps
+     * @param  iterable<array-key, object>  $steps
      * @return list<array{key: string, label: string, doneLabel?: string}>
      */
-    private function progressSteps(Collection $steps, bool $detach): array
+    private function progressSteps(App $app, iterable $steps, bool $detach): array
     {
         $progressSteps = [
             [
@@ -512,10 +534,22 @@ final readonly class DeployManager
         }
 
         foreach ($steps as $step) {
+            if (! $step instanceof DeployStep) {
+                continue;
+            }
+
             $progressSteps[] = [
                 'key' => $this->progressKey($step),
                 'label' => $step->title,
                 'doneLabel' => $step->title,
+            ];
+        }
+
+        if ($app->runtimeKind() === AppRuntimeKind::Php && $this->usesLivePath($steps)) {
+            $progressSteps[] = [
+                'key' => 'activate-runtime',
+                'label' => 'Activate release runtime',
+                'doneLabel' => 'Activated release runtime',
             ];
         }
 
@@ -526,6 +560,20 @@ final readonly class DeployManager
         ];
 
         return $progressSteps;
+    }
+
+    /**
+     * @param  iterable<array-key, object>  $steps
+     */
+    private function usesLivePath(iterable $steps): bool
+    {
+        foreach ($steps as $step) {
+            if ($step instanceof DeployStep && preg_match('/{{\s*live_path\s*}}/', $step->command) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function progressKey(DeployStep $step): string
@@ -569,7 +617,7 @@ final readonly class DeployManager
                     'limit' => $effectiveLimit,
                     'limit_capped' => $limit > 500,
                 ],
-                'project' => $instance->app->name,
+                'app' => $instance->app->name,
                 'instance' => $instance->name,
             ],
         ];
@@ -583,7 +631,7 @@ final readonly class DeployManager
         $instance = $this->productionInstance($app);
         $run = DeploymentRun::query()
             ->with('steps')
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->whereKey($runId)
             ->first();
 
@@ -592,7 +640,7 @@ final readonly class DeployManager
                 message: "Deployment run {$runId} was not found for instance '{$this->targetName($instance)}'.",
                 errorCode: 'deploy.run_not_found',
                 errorMeta: [
-                    'project' => $instance->app->name,
+                    'app' => $instance->app->name,
                     'instance' => $instance->name,
                     'run' => $runId,
                 ],
@@ -611,7 +659,7 @@ final readonly class DeployManager
  )}'.",
                     errorCode: 'deploy.step_not_found',
                     errorMeta: [
-                        'project' => $instance->app->name,
+                        'app' => $instance->app->name,
                         'instance' => $instance->name,
                         'run' => $runId,
                         'step' => $stepId,
@@ -644,7 +692,7 @@ final readonly class DeployManager
         ];
     }
 
-    public function productionInstance(string $selector): AppInstance
+    public function productionInstance(string $selector): Instance
     {
         try {
             $selection = $this->appSelectorResolver->resolve($selector);
@@ -666,10 +714,10 @@ final readonly class DeployManager
 
         if ($selection->app->environment !== 'production') {
             throw new GatewayApiException(
-                message: "Project '{$selection->app->name}' is not production-capable.",
-                errorCode: 'deploy.production_project_required',
+                message: "App '{$selection->app->name}' is not production-capable.",
+                errorCode: 'deploy.production_app_required',
                 errorMeta: [
-                    'project' => $selection->app->name,
+                    'app' => $selection->app->name,
                     'environment' => $selection->app->environment,
                 ],
             );
@@ -687,14 +735,14 @@ final readonly class DeployManager
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new GatewayApiException(
-                message: "Project '{$selection->app->name}' requires a concrete instance selector.",
+                message: "App '{$selection->app->name}' requires a concrete instance selector.",
                 errorCode: 'validation_failed',
                 errorMeta: [
                     'field' => 'instance',
                     'reason' => 'instance_required',
-                    'project' => $selection->app->name,
+                    'app' => $selection->app->name,
                 ],
             );
         }
@@ -707,12 +755,12 @@ final readonly class DeployManager
     /** @return array<string, mixed> */
     public function stepEntity(DeployStep $step): array
     {
-        $step->loadMissing('appInstance.app');
+        $step->loadMissing('instance.app');
 
         return [
             'id' => $step->id,
-            'project' => $step->appInstance->app->name,
-            'instance' => $step->appInstance->name,
+            'app' => $step->instance->app->name,
+            'instance' => $step->instance->name,
             'title' => $step->title,
             'command' => $step->command,
             'order' => $step->sort_order,
@@ -724,12 +772,12 @@ final readonly class DeployManager
     /** @return array<string, mixed> */
     public function runEntity(DeploymentRun $run): array
     {
-        $run->loadMissing('appInstance.app', 'steps');
+        $run->loadMissing('instance.app', 'steps');
 
         return [
             'id' => $run->id,
-            'project' => $run->appInstance->app->name,
-            'instance' => $run->appInstance->name,
+            'app' => $run->instance->app->name,
+            'instance' => $run->instance->name,
             'status' => $run->status,
             'exit_code' => $run->exit_code,
             'started_at' => $run->started_at?->toJSON(),
@@ -765,9 +813,9 @@ final readonly class DeployManager
         ];
     }
 
-    private function findStep(AppInstance $instance, string $selector): ?DeployStep
+    private function findStep(Instance $instance, string $selector): ?DeployStep
     {
-        $query = DeployStep::query()->where('app_instance_id', $instance->id);
+        $query = DeployStep::query()->where('instance_id', $instance->id);
 
         if (ctype_digit($selector)) {
             return (clone $query)->whereKey((int) $selector)->first();
@@ -802,8 +850,8 @@ final readonly class DeployManager
      * @return array<string, mixed>
      */
     private function runContext(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         DeploymentRun $run,
         Carbon $startedAt,
     ): array {
@@ -815,13 +863,9 @@ final readonly class DeployManager
 
         return [
             'app_name' => $app->name,
-            'app_instance' => $instance->name,
+            'instance' => $instance->name,
             'app_path' => $appPath,
             'app_user' => $appUser,
-            'project_name' => $app->name,
-            'instance' => $instance->name,
-            'project_path' => $appPath,
-            'project_user' => $appUser,
             'domain' => $app->domain,
             'repository' => $app->repository,
             'release' => $release,
@@ -832,13 +876,6 @@ final readonly class DeployManager
             'env_path' => "{$appPath}/.env",
             'storage_path' => "{$appPath}/storage",
             'database_path' => "{$appPath}/database/database.sqlite",
-            'project' => [
-                'name' => $app->name,
-                'path' => $appPath,
-                'user' => $appUser,
-                'domain' => $app->domain,
-                'repository' => $app->repository,
-            ],
             'app' => [
                 'name' => $app->name,
                 'instance' => $instance->name,
@@ -855,19 +892,19 @@ final readonly class DeployManager
         ];
     }
 
-    private function appUser(Project $app): string
+    private function appUser(App $app): string
     {
         return $this->appRuntimeUser->forApp($app);
     }
 
-    private function runtimeApp(AppInstance $instance): Project
+    private function runtimeApp(Instance $instance): App
     {
         $instance->loadMissing('app');
         $app = $instance->app;
         $config = $instance->driver_config;
 
         if (
-            ! $config instanceof OrbitAppInstanceDriverConfigData
+            ! $config instanceof OrbitInstanceDriverConfigData
             || ! is_string($config->path)
             || trim($config->path) === ''
         ) {
@@ -875,7 +912,7 @@ final readonly class DeployManager
                 message: "Instance '{$this->targetName($instance)}' does not support Orbit Agent deployment.",
                 errorCode: 'deploy.instance_driver_unsupported',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                     'driver' => $instance->driver->value,
                 ],
@@ -890,7 +927,7 @@ final readonly class DeployManager
                 message: "Instance '{$this->targetName($instance)}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -899,7 +936,7 @@ final readonly class DeployManager
         return $runtimeApp;
     }
 
-    private function targetName(AppInstance $instance): string
+    private function targetName(Instance $instance): string
     {
         $instance->loadMissing('app');
 

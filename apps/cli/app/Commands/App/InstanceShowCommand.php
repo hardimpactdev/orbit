@@ -9,7 +9,7 @@ use App\Exceptions\GatewayApiException;
 final class InstanceShowCommand extends InstanceCommand
 {
     #[\Override]
-    protected $signature = 'instance:show {instance? : project.instance selector} {--json : Output JSON}';
+    protected $signature = 'instance:show {instance? : app.instance selector} {--json : Output JSON}';
 
     #[\Override]
     protected $description = 'Show one instance.';
@@ -24,7 +24,7 @@ final class InstanceShowCommand extends InstanceCommand
 
         try {
             $response = $this->gatewayGet($this->apiProjectPath(
-                $selector['project'],
+                $selector['app'],
                 '/instances/'.rawurlencode($selector['instance']),
             ));
         } catch (GatewayApiException $exception) {

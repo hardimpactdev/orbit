@@ -39,7 +39,7 @@ it('grants node access from a operator caller through the gateway api', function
             'action' => 'granted',
             'already_granted' => false,
             'permissions' => [
-                'project:read',
+                'app:read',
                 'instance:read',
                 'database:read',
                 'doctor:verify',
@@ -63,7 +63,7 @@ it('grants node access from a operator caller through the gateway api', function
         expect($showPayload['success']['data']['node']['grants']['consuming_nodes'])->toContain([
             'name' => 'operator-1',
             'permissions' => [
-                'project:read',
+                'app:read',
                 'instance:read',
                 'database:read',
                 'doctor:verify',

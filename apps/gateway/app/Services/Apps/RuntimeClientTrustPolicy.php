@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -35,7 +35,7 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function mountsForApp(Project $app): array
+    public function mountsForApp(App $app): array
     {
         if (! $this->appliesToApp($app)) {
             return [];
@@ -61,10 +61,10 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function mountsForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app', 'app.instances', 'instance']);
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -86,7 +86,7 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return array<string, string>
      */
-    public function phpIniForApp(Project $app): array
+    public function phpIniForApp(App $app): array
     {
         if (! $this->appliesToApp($app)) {
             return [];
@@ -100,10 +100,10 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function phpIniForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app', 'app.instances', 'instance']);
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -115,7 +115,7 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return array<string, string>
      */
-    public function environmentForApp(Project $app): array
+    public function environmentForApp(App $app): array
     {
         if (! $this->appliesToApp($app)) {
             return [];
@@ -129,10 +129,10 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function environmentForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app', 'app.instances', 'instance']);
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -141,7 +141,7 @@ final readonly class RuntimeClientTrustPolicy
         return $node instanceof Node && $this->appliesTo($app, $node) ? self::ENVIRONMENT : [];
     }
 
-    private function appliesToApp(Project $app): bool
+    private function appliesToApp(App $app): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
@@ -156,7 +156,7 @@ final readonly class RuntimeClientTrustPolicy
         return $app->node instanceof Node && $this->appliesTo($app, $app->node);
     }
 
-    private function appliesTo(Project $app, Node $node): bool
+    private function appliesTo(App $app, Node $node): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;

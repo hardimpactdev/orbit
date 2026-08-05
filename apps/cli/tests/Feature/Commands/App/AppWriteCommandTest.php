@@ -19,11 +19,11 @@ function fakeGatewaySequence(): ResponseSequence
     return $sequence;
 }
 
-describe('project and instance write commands', function (): void {
-    it('validates required project:new inputs before gateway IO', function (): void {
+describe('app and instance write commands', function (): void {
+    it('validates required app:new inputs before gateway IO', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--json' => true,
         ]);
@@ -40,18 +40,18 @@ describe('project and instance write commands', function (): void {
             ->toBe('node');
     });
 
-    it('posts project:new payloads to the gateway projects endpoint', function (): void {
+    it('posts app:new payloads to the gateway apps endpoint', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
                 'result' => ['action' => 'created'],
-                'project' => ['name' => 'docs', 'node' => 'app-1'],
+                'app' => ['name' => 'docs', 'node' => 'app-1'],
             ],
         ];
 
         fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--repo' => 'spatie/docs',
@@ -66,7 +66,7 @@ describe('project and instance write commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/projects'
+                && $request->url() === 'https://gateway.test/api/apps'
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'name' => 'docs',
@@ -91,18 +91,18 @@ describe('project and instance write commands', function (): void {
             ]);
     });
 
-    it('posts template-based project:new payloads to the gateway projects endpoint', function (): void {
+    it('posts template-based app:new payloads to the gateway apps endpoint', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
                 'result' => ['action' => 'created'],
-                'project' => ['name' => 'docs', 'node' => 'app-1'],
+                'app' => ['name' => 'docs', 'node' => 'app-1'],
             ],
         ];
 
         fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
-        [$exitCode] = runCommand($this, 'project:new', [
+        [$exitCode] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--template-repo' => 'hardimpact/laravel-template',
@@ -127,10 +127,10 @@ describe('project and instance write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
-    it('rejects incomplete or conflicting project:new source input before gateway IO', function (array $source): void {
+    it('rejects incomplete or conflicting app:new source input before gateway IO', function (array $source): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             ...$source,
@@ -160,10 +160,10 @@ describe('project and instance write commands', function (): void {
         ]],
     ]);
 
-    it('rejects credential-bearing project:new clone URLs before gateway IO', function (string $repository): void {
+    it('rejects credential-bearing app:new clone URLs before gateway IO', function (string $repository): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'project:new', [
+        [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--repo' => $repository,
@@ -190,11 +190,11 @@ describe('project and instance write commands', function (): void {
     it('posts instance:register payloads to the gateway register endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'adopted'],
-            'project' => ['name' => 'docs', 'node' => 'app-1'],
+            'app' => ['name' => 'docs', 'node' => 'app-1'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
             '--root' => 'public',
@@ -228,11 +228,11 @@ describe('project and instance write commands', function (): void {
     it('omits instance:register runtime proxy transport unless it is explicit', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'converged'],
-            'project' => ['name' => 'docs', 'node' => 'app-1'],
+            'app' => ['name' => 'docs', 'node' => 'app-1'],
         ]));
 
         [$exitCode] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
             '--json' => true,
@@ -261,14 +261,14 @@ describe('project and instance write commands', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('project');
+            ->toBe('app');
     });
 
-    it('requires force before removing a project non-interactively', function (): void {
+    it('requires force before removing an app non-interactively', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'project:remove', [
-            'project' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'app:remove', [
+            'app' => 'docs',
             '--json' => true,
         ]);
 
@@ -284,15 +284,15 @@ describe('project and instance write commands', function (): void {
             ->toBe('force');
     });
 
-    it('deletes project:remove targets with destructive consent when forced', function (): void {
+    it('deletes app:remove targets with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'result' => ['action' => 'removed'],
             'cleanup' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'project:remove', [
-            'project' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'app:remove', [
+            'app' => 'docs',
             '--force' => true,
             '--json' => true,
         ]);
@@ -302,7 +302,7 @@ describe('project and instance write commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'DELETE'
-                && $request->url() === 'https://gateway.test/api/projects/docs'
+                && $request->url() === 'https://gateway.test/api/apps/docs'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
@@ -314,23 +314,23 @@ describe('project and instance write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['action'])->toBe('removed');
     });
 
-    it('prompts before removing a project without force in interactive mode', function (): void {
+    it('prompts before removing an app without force in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'result' => ['action' => 'removed'],
             'cleanup' => [],
         ]));
 
         $this
-            ->artisan('project:remove', ['project' => 'docs'])
-            ->expectsConfirmation("Remove project 'docs' and all owned artifacts? This cannot be undone.", 'yes')
-            ->expectsOutputToContain("Project 'docs' removed")
+            ->artisan('app:remove', ['app' => 'docs'])
+            ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
+            ->expectsOutputToContain("App 'docs' removed")
             ->assertSuccessful();
 
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'DELETE'
-                && $request->url() === 'https://gateway.test/api/projects/docs'
+                && $request->url() === 'https://gateway.test/api/apps/docs'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
@@ -339,64 +339,9 @@ describe('project and instance write commands', function (): void {
         );
     });
 
-    it('posts instance:prune payloads to the gateway prune endpoint', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => 'docs',
-            'stale_workspaces' => [],
-            'dry_run' => true,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:prune', [
-            'instance' => 'docs',
-            '--dry-run' => true,
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/instances/prune'
-                && $request->data() === [
-                    'instance' => 'docs',
-                    'dry_run' => true,
-                ]
-                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
-            ),
-        );
-
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['dry_run'])->toBeTrue();
-    });
-
-    it('prompts before pruning stale workspaces without force in interactive mode', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => 'docs',
-            'stale_workspaces' => [],
-            'dry_run' => false,
-        ]));
-
-        $this
-            ->artisan('instance:prune', ['instance' => 'docs'])
-            ->expectsConfirmation("Pruning will permanently remove all stale workspaces for 'docs'. Continue?", 'yes')
-            ->expectsOutputToContain('Pruning Instance Workspaces')
-            ->assertSuccessful();
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/instances/prune'
-                && $request->data() === [
-                    'instance' => 'docs',
-                    'dry_run' => false,
-                ]
-            ),
-        );
-    });
-
     it('posts instance:root payloads to the gateway instance root endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs', 'root' => 'public'],
+            'app' => ['name' => 'docs', 'root' => 'public'],
             'result' => ['changed' => true],
         ]));
 
@@ -439,110 +384,9 @@ describe('project and instance write commands', function (): void {
             ->toBe('root');
     });
 
-    it('validates required instance:agent-ide inputs before gateway IO', function (array $params, string $field): void {
-        Http::fake();
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            ...$params,
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])
-            ->toBe($field);
-    })->with([
-        'missing instance' => [[], 'instance'],
-        'missing adapter' => [['instance' => 'docs'], 'agent_ide'],
-    ]);
-
-    it('prompts before instance:agent-ide resubmits destructive cleanup consent', function (): void {
-        $sequence = fakeGatewaySequence();
-        $sequence
-            ->push(fakeErrorEnvelope(
-                'workspace_cleanup_consent_required',
-                "Destructive workspace cleanup required (1 workspace(s) managed by 'opencode'). Use force=true to proceed.",
-                [
-                    'previous_adapter' => 'opencode',
-                    'stale_workspaces' => ['stale-ws'],
-                ],
-            ), 422)
-            ->push(fakeSuccessEnvelope([
-                'instance' => ['project' => 'docs', 'name' => 'development', 'node' => 'app-1'],
-                'agent_ide' => ['adapter' => 'polyscope', 'source' => 'instance', 'effective_adapter' => 'polyscope'],
-                'cleanup' => ['workspaces_removed' => ['stale-ws']],
-                'action' => 'set',
-                'previous_adapter' => 'opencode',
-            ]));
-
-        $this
-            ->artisan('instance:agent-ide', [
-                'instance' => 'docs',
-                'agent_ide' => 'polyscope',
-            ])
-            ->expectsConfirmation(
-                "This will remove 1 workspace(s) managed by the previous adapter 'opencode'. Continue?",
-                'yes',
-            )
-            ->expectsOutputToContain('Instance')
-            ->assertSuccessful();
-
-        Http::assertSentCount(2);
-        Http::assertSentInOrder([
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/instances/docs/agent-ide'
-                && $request->data() === ['agent_ide' => 'polyscope', 'force' => false]
-            ),
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/instances/docs/agent-ide'
-                && $request->data() === ['agent_ide' => 'polyscope', 'force' => true]
-            ),
-        ]);
-    });
-
-    it('uses force for instance:agent-ide without prompting', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'docs', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'polyscope', 'source' => 'instance', 'effective_adapter' => 'polyscope'],
-            'cleanup' => ['workspaces_removed' => ['stale-ws']],
-            'action' => 'set',
-            'previous_adapter' => 'opencode',
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'docs',
-            'agent_ide' => 'polyscope',
-            '--force' => true,
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/instances/docs/agent-ide'
-                && $request->data() === ['agent_ide' => 'polyscope', 'force' => true]
-            ),
-        );
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($decoded['success']['data']['cleanup']['workspaces_removed'])
-            ->toBe(['stale-ws']);
-    });
-
     it('forwards instance:worker actions to their gateway endpoints', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => null,
@@ -569,7 +413,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker show output for an enabled instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
@@ -596,7 +440,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker show output for a disabled instance without config detail', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => null,
@@ -618,7 +462,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker enable output when state changed', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
@@ -645,7 +489,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker enable output when already enabled', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
@@ -671,7 +515,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker disable output retaining config detail', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
@@ -698,7 +542,7 @@ describe('project and instance write commands', function (): void {
 
     it('renders human instance:worker disable output when already disabled', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => null,
@@ -750,7 +594,7 @@ describe('project and instance write commands', function (): void {
 
     it('forwards instance:mount list to the gateway endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'mounts' => [[
                 'source' => '/home/orbit/packages',
                 'target' => '/home/orbit/packages',
@@ -808,15 +652,15 @@ describe('project and instance write commands', function (): void {
 
     it('forwards dotted instance selectors unchanged to the instance:mount gateway endpoints', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'hauser'],
+            'app' => ['name' => 'hauser'],
             'target' => [
                 'type' => 'instance',
-                'project' => 'hauser',
+                'app' => 'hauser',
                 'instance' => 'nmbp',
             ],
             'mount' => [
-                'source' => '/Users/nckrtl/projects',
-                'target' => '/projects',
+                'source' => '/Users/nckrtl/apps',
+                'target' => '/apps',
                 'read_only' => true,
             ],
             'mounts' => [],
@@ -827,8 +671,8 @@ describe('project and instance write commands', function (): void {
         [$exitCode] = runCommand($this, 'instance:mount', [
             'action' => 'add',
             'instance' => 'hauser.nmbp',
-            'source' => '/Users/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/Users/nckrtl/apps',
+            'target' => '/apps',
             '--json' => true,
         ]);
 
@@ -837,8 +681,8 @@ describe('project and instance write commands', function (): void {
                 $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/instances/hauser.nmbp/mounts'
                 && $request->data() === [
-                    'source' => '/Users/nckrtl/projects',
-                    'target' => '/projects',
+                    'source' => '/Users/nckrtl/apps',
+                    'target' => '/apps',
                     'read_only' => true,
                 ]
             ),
@@ -847,10 +691,10 @@ describe('project and instance write commands', function (): void {
         expect($exitCode)->toBe(0);
 
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'hauser'],
+            'app' => ['name' => 'hauser'],
             'target' => [
                 'type' => 'instance',
-                'project' => 'hauser',
+                'app' => 'hauser',
                 'instance' => 'nmbp',
             ],
             'mounts' => [],
@@ -861,7 +705,7 @@ describe('project and instance write commands', function (): void {
         [$removeExitCode] = runCommand($this, command: 'instance:mount', params: [
             'action' => 'remove',
             'instance' => 'hauser.nmbp',
-            'target' => '/projects',
+            'target' => '/apps',
             '--json' => true,
         ]);
 
@@ -869,7 +713,7 @@ describe('project and instance write commands', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'DELETE'
                 && $request->url() === 'https://gateway.test/api/instances/hauser.nmbp/mounts'
-                && $request->data() === ['target' => '/projects']
+                && $request->data() === ['target' => '/apps']
             ),
         );
 
@@ -881,12 +725,12 @@ describe('project and instance mutation command human renderers', function (): v
     it('renders instance:register human output as a progress tree with a registered footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'registered'],
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -898,7 +742,7 @@ describe('project and instance mutation command human renderers', function (): v
             ->and($output)
             ->toContain('Apply and verify instance runtime')
             ->and($output)
-            ->toContain("Instance for project 'docs' successfully registered on node 'app-1'.")
+            ->toContain("Instance for app 'docs' successfully registered on node 'app-1'.")
             ->and($output)
             ->not->toContain('action:')->and($output)
             ->not->toContain('{');
@@ -907,12 +751,12 @@ describe('project and instance mutation command human renderers', function (): v
     it('renders instance:register adopted action as adoption prose', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'adopted'],
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -921,7 +765,7 @@ describe('project and instance mutation command human renderers', function (): v
             ->toBe(0)
             ->and($output)
             ->toContain(
-                "Instance for project 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.",
+                "Instance for app 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.",
             )
             ->and($output)
             ->not->toContain('{');
@@ -930,12 +774,12 @@ describe('project and instance mutation command human renderers', function (): v
     it('renders instance:register converged action as no-change prose', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'converged'],
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -943,7 +787,7 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for project 'docs' is already converged on node 'app-1'. No changes were needed.")
+            ->toContain("Instance for app 'docs' is already converged on node 'app-1'. No changes were needed.")
             ->and($output)
             ->not->toContain('{');
     });
@@ -951,7 +795,7 @@ describe('project and instance mutation command human renderers', function (): v
     it('renders instance:register partial action without claiming convergence', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'partial'],
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
         ], [
             'warnings' => [[
@@ -966,7 +810,7 @@ describe('project and instance mutation command human renderers', function (): v
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -974,16 +818,16 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for project 'docs' is registered on node 'app-1', but proxy enactment is incomplete.")
+            ->toContain("Instance for app 'docs' is registered on node 'app-1', but proxy enactment is incomplete.")
             ->toContain("failed on node 'gateway-router' during 'caddy.router.install'")
-            ->not->toContain("Instance for project 'docs' converged")
+            ->not->toContain("Instance for app 'docs' converged")
             ->not->toContain('No changes were needed.');
     });
 
     it('renders instance:register warnings after the success line', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'registered'],
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
         ], [
             'warnings' => [[
@@ -995,7 +839,7 @@ describe('project and instance mutation command human renderers', function (): v
         ]));
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -1003,7 +847,7 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for project 'docs' successfully registered on node 'app-1'.")
+            ->toContain("Instance for app 'docs' successfully registered on node 'app-1'.")
             ->and($output)
             ->toContain("Production domain 'docs.example.com' is not yet active.")
             ->and($output)
@@ -1017,7 +861,7 @@ describe('project and instance mutation command human renderers', function (): v
         ), 422);
 
         [$exitCode, $output] = runCommand($this, 'instance:register', [
-            'project' => 'docs',
+            'app' => 'docs',
             '--node' => 'app-1',
             '--path' => '/home/orbit/apps/docs',
         ]);
@@ -1032,7 +876,7 @@ describe('project and instance mutation command human renderers', function (): v
 
     it('renders instance:root human output as a progress tree with a changed footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-01', 'root' => 'public'],
             'result' => ['changed' => true],
         ]));
@@ -1059,7 +903,7 @@ describe('project and instance mutation command human renderers', function (): v
 
     it('renders instance:root converged no-op as already prose', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-01', 'root' => 'public'],
             'result' => ['changed' => false],
         ]));
@@ -1081,7 +925,7 @@ describe('project and instance mutation command human renderers', function (): v
 
     it('renders instance:root drift warnings after the tree', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'docs'],
+            'app' => ['name' => 'docs'],
             'instance' => ['name' => 'development', 'node' => 'app-01', 'root' => 'public'],
             'result' => ['changed' => true],
         ], [
@@ -1129,34 +973,34 @@ describe('project and instance mutation command human renderers', function (): v
             ->not->toContain('"error"');
     });
 
-    it('renders project:remove human output as a progress tree with a removed footer', function (): void {
+    it('renders app:remove human output as a progress tree with a removed footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'my-app'],
+            'app' => ['name' => 'my-app'],
             'result' => ['action' => 'removed'],
             'cleanup' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'project:remove', [
-            'project' => 'my-app',
+        [$exitCode, $output] = runCommand($this, 'app:remove', [
+            'app' => 'my-app',
             '--force' => true,
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Removing Project')
+            ->toContain('Removing App')
             ->and($output)
-            ->toContain('Apply and verify project removal')
+            ->toContain('Apply and verify app removal')
             ->and($output)
-            ->toContain("Project 'my-app' removed")
+            ->toContain("App 'my-app' removed")
             ->and($output)
             ->not->toContain('action:')->and($output)
             ->not->toContain('{');
     });
 
-    it('renders project:remove drift warnings in the footer and notes', function (): void {
+    it('renders app:remove drift warnings in the footer and notes', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'project' => ['name' => 'my-app'],
+            'app' => ['name' => 'my-app'],
             'result' => ['action' => 'removed'],
             'cleanup' => [],
         ], [
@@ -1168,15 +1012,15 @@ describe('project and instance mutation command human renderers', function (): v
             ]],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'project:remove', [
-            'project' => 'my-app',
+        [$exitCode, $output] = runCommand($this, 'app:remove', [
+            'app' => 'my-app',
             '--force' => true,
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Project 'my-app' removed with drift")
+            ->toContain("App 'my-app' removed with drift")
             ->and($output)
             ->toContain('Drift detected:')
             ->and($output)
@@ -1185,270 +1029,18 @@ describe('project and instance mutation command human renderers', function (): v
             ->not->toContain('{');
     });
 
-    it('renders project:remove gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('project.not_found', "Project 'my-app' not found."), 404);
+    it('renders app:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('app.not_found', "App 'my-app' not found."), 404);
 
-        [$exitCode, $output] = runCommand($this, 'project:remove', [
-            'project' => 'my-app',
+        [$exitCode, $output] = runCommand($this, 'app:remove', [
+            'app' => 'my-app',
             '--force' => true,
         ]);
 
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain("Project 'my-app' not found.")
-            ->and($output)
-            ->not->toContain('"error"');
-    });
-
-    it('renders instance:prune human output as a per-workspace progress tree', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => 'docs',
-            'stale_workspaces' => [
-                ['name' => 'feature-docs', 'removed' => true],
-                ['name' => 'stale-experiment', 'removed' => true],
-            ],
-            'dry_run' => false,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:prune', [
-            'instance' => 'docs',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Pruning Instance Workspaces')
-            ->and($output)
-            ->toContain('Query agent IDE adapters')
-            ->and($output)
-            ->toContain('Remove workspace `feature-docs`')
-            ->and($output)
-            ->toContain('Remove workspace `stale-experiment`')
-            ->and($output)
-            ->not->toContain('dry_run:')->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:prune dry-run output with preview labels and footer', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => 'docs',
-            'stale_workspaces' => [
-                ['name' => 'feature-docs', 'removed' => false],
-            ],
-            'dry_run' => true,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:prune', [
-            'instance' => 'docs',
-            '--dry-run' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Previewing Instance Workspace Prune')
-            ->and($output)
-            ->toContain('Preview workspace `feature-docs`')
-            ->and($output)
-            ->toContain('Dry run complete. No side effects performed.')
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:prune gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('instance.not_found', "Instance 'docs' not found."), 404);
-
-        [$exitCode, $output] = runCommand($this, 'instance:prune', [
-            'instance' => 'docs',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($output)
-            ->toContain("Instance 'docs' not found.")
-            ->and($output)
-            ->not->toContain('"error"');
-    });
-
-    it('renders instance:agent-ide human output as a progress tree with a set footer', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'opencode', 'source' => 'instance', 'effective_adapter' => 'opencode'],
-            'cleanup' => ['workspaces_removed' => []],
-            'action' => 'set',
-            'previous_adapter' => null,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'opencode',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Configuring Instance Agent IDE')
-            ->and($output)
-            ->toContain('Apply and verify instance agent IDE')
-            ->and($output)
-            ->toContain('Instance "my-app.development" agent IDE set to "opencode" (effective: "opencode").')
-            ->and($output)
-            ->not->toContain('action:')->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide inherit resolution prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => null, 'source' => 'node', 'effective_adapter' => 'polyscope'],
-            'cleanup' => ['workspaces_removed' => []],
-            'action' => 'set',
-            'previous_adapter' => null,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'inherit',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain(
-                'Instance "my-app.development" agent IDE set to inherit (effective: "polyscope" from node "app-1").',
-            )
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide none resolution prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'none', 'source' => 'instance', 'effective_adapter' => null],
-            'cleanup' => ['workspaces_removed' => []],
-            'action' => 'set',
-            'previous_adapter' => null,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'none',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Instance "my-app.development" agent IDE set to "none" (effective: "none").')
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide converged as already-set prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'opencode', 'source' => 'instance', 'effective_adapter' => 'opencode'],
-            'cleanup' => ['workspaces_removed' => []],
-            'action' => 'converged',
-            'previous_adapter' => null,
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'opencode',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Instance "my-app.development" agent IDE already set to "opencode".')
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide cleanup summary after the success line', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'polyscope', 'source' => 'instance', 'effective_adapter' => 'polyscope'],
-            'cleanup' => ['workspaces_removed' => ['stale-ws-1', 'stale-ws-2']],
-            'action' => 'set',
-            'previous_adapter' => 'opencode',
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'polyscope',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Instance "my-app.development" agent IDE set to "polyscope" (effective: "polyscope").')
-            ->and($output)
-            ->toContain('Removed 2 stale workspaces during adapter switch:')
-            ->and($output)
-            ->toContain('- stale-ws-1')
-            ->and($output)
-            ->toContain('- stale-ws-2')
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide post-configuration warnings as prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'instance' => ['project' => 'my-app', 'name' => 'development', 'node' => 'app-1'],
-            'agent_ide' => ['adapter' => 'polyscope', 'source' => 'instance', 'effective_adapter' => 'polyscope'],
-            'cleanup' => ['workspaces_removed' => []],
-            'action' => 'set',
-            'previous_adapter' => 'opencode',
-        ], [
-            'warnings' => [[
-                'code' => 'workspace.remove_failed',
-                'family' => 'workspace',
-                'message' => "Failed to remove workspace 'stale-ws'.",
-                'next_command' => 'workspace:remove stale-ws --instance=my-app --force',
-            ]],
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'polyscope',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain('Instance "my-app.development" agent IDE set to "polyscope" (effective: "polyscope").')
-            ->and($output)
-            ->toContain("Failed to remove workspace 'stale-ws'.")
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders instance:agent-ide gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope(
-            'authorization_failed',
-            "This node is not authorized for 'instance:agent' on 'app-1'.",
-        ), 403);
-
-        [$exitCode, $output] = runCommand($this, 'instance:agent-ide', [
-            'instance' => 'my-app',
-            'agent_ide' => 'opencode',
-            '--force' => true,
-        ]);
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($output)
-            ->toContain('not authorized')
+            ->toContain("App 'my-app' not found.")
             ->and($output)
             ->not->toContain('"error"');
     });

@@ -91,10 +91,10 @@ it('updates an app root from a operator caller through the gateway api', functio
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $project = $payload['success']['data']['project'] ?? null;
+        $app = $payload['success']['data']['app'] ?? null;
         $instance = $payload['success']['data']['instance'] ?? null;
 
-        expect($project)
+        expect($app)
             ->toBeArray()
             ->and($instance)
             ->toBeArray()
@@ -104,7 +104,7 @@ it('updates an app root from a operator caller through the gateway api', functio
             ->toBe('app-dev-1')
             ->and($payload['success']['meta']['artifacts_reenacted'])
             ->toBeTrue()
-            ->and($project['name'])
+            ->and($app['name'])
             ->toBe($name)
             ->and($instance['node'])
             ->toBe('app-dev-1')
@@ -117,7 +117,7 @@ it('updates an app root from a operator caller through the gateway api', functio
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'root' => \\App\\Models\\AppInstance::query()
+                'root' => \\App\\Models\\Instance::query()
                     ->whereHas('project', fn (\$query) => \$query->where('name', '{$name}'))
                     ->where('name', 'development')
                     ->firstOrFail()

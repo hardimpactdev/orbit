@@ -5,14 +5,14 @@ declare(strict_types=1);
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\SystemdUnitRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +36,7 @@ it('renders and enacts systemd units for app process definitions', function (): 
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
@@ -93,7 +93,7 @@ it('reports process family warnings when systemd unit enactment fails after inte
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'runtime' => AppRuntimeKind::Static,
@@ -151,7 +151,7 @@ it(
             'status' => 'active',
         ]);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'runtime' => AppRuntimeKind::Static,
@@ -202,20 +202,20 @@ it('does not enact runtime units when an app has no process definitions', functi
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
     ]);
     $app->setRelation('node', $node);
-    $appInstance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
 
     $remoteShell = new ProcessRuntimeRecordingRemoteShell;
 
     $warnings = makeEnsureRuntimeUnitsAction($remoteShell, new ProcessRuntimeRecordingSiteCertificateInstaller)->handle(
         $app,
-        $appInstance,
+        $instance,
     );
 
     expect($warnings)->toBe([])->and($remoteShell->scripts)->toBe([]);
@@ -229,24 +229,24 @@ it('does not reenact workspace runtime units for app-prod targets', function ():
             'tld' => 'test',
             'status' => 'active',
         ]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
         'runtime' => AppRuntimeKind::Static,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
     Workspace::factory()->for($app)->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'legacy-workspace',
     ]);
     OrbitProcess::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
             'runtime' => ProcessRuntime::Systemd,
         ]);
@@ -276,7 +276,7 @@ describe('runtime dispatcher', function (): void {
             'user' => 'orbit',
         ]);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -340,7 +340,7 @@ describe('runtime dispatcher', function (): void {
             'status' => 'active',
         ]);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'marketing',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/marketing',

@@ -1,0 +1,132 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Processes;
+
+use App\Models\ProcessEvent;
+use Generator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+
+/**
+ * Durable process_events cursor reader for cross-worker process SSE.
+ *
+ * Follow always starts after a connect-time high-water mark (snapshot cursor).
+ * It never replays rows at or below that mark, regardless of Last-Event-ID.
+ *
+ * Tail scope is instance_id + workspace_id|null + node_id (not a frozen
+ * process-id list), so processes configured after connect still stream.
+ *
+ * @mago-expect analysis:less-specific-return-statement
+ */
+final readonly class ProcessEventStreamer
+{
+    public function __construct(
+        private ProcessStreamRuntimeConfig $config,
+        private ProcessStreamSleeper $sleeper,
+        private ProcessStreamClock $clock,
+        private ProcessStreamConnection $connection,
+    ) {}
+
+    /**
+     * @return Collection<int, ProcessEvent>
+     */
+    public function eventsAfter(ProcessStreamScope $scope, int $afterId): Collection
+    {
+        return $this
+            ->scopedQuery($scope)
+            ->with(['process', 'node', 'app', 'instance', 'workspace'])
+            ->where('id', '>', $afterId)
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Highest durable process_events.id currently in scope, or 0 when none exist.
+     *
+     * Zero is a defined SSE snapshot id so native EventSource stores a cursor even
+     * when the scope has no lifecycle rows yet.
+     */
+    public function highWaterMark(ProcessStreamScope $scope): int
+    {
+        $id = $this->scopedQuery($scope)->max('id');
+
+        return is_numeric($id) ? (int) $id : 0;
+    }
+
+    /**
+     * Follow durable process_events after {@see $afterId} (exclusive).
+     *
+     * Each poll re-queries the scope filters so newly configured processes in
+     * the same app instance/workspace/node are included as soon as they write
+     * process_events rows.
+     *
+     * Yields {@see ProcessEvent} for ordered updates. Yields the string
+     * {@code heartbeat} only when the heartbeat interval elapses without a new
+     * row (independent of the faster DB poll cadence).
+     *
+     * @return Generator<int, ProcessEvent|'heartbeat'>
+     */
+    public function follow(
+        ProcessStreamScope $scope,
+        int $afterId,
+        ?ProcessStreamRuntimeConfig $config = null,
+    ): Generator {
+        $config ??= $this->config;
+        $idlePolls = 0;
+        $lastHeartbeatAt = $this->clock->now();
+
+        while (true) {
+            if ($this->connection->aborted()) {
+                return;
+            }
+
+            $events = $this->eventsAfter($scope, $afterId);
+
+            if ($events->isNotEmpty()) {
+                foreach ($events as $event) {
+                    $afterId = $event->id;
+                    $lastHeartbeatAt = $this->clock->now();
+
+                    yield $event;
+                }
+
+                $idlePolls = 0;
+
+                continue;
+            }
+
+            if ($config->maxIdlePolls !== null && $idlePolls >= $config->maxIdlePolls) {
+                return;
+            }
+
+            $now = $this->clock->now();
+            $elapsedMicros = (int) round(($now - $lastHeartbeatAt) * 1_000_000);
+
+            if ($elapsedMicros >= $config->heartbeatMicroseconds) {
+                $lastHeartbeatAt = $now;
+
+                yield 'heartbeat';
+            }
+
+            $idlePolls++;
+            $this->sleeper->sleep($config->pollMicroseconds);
+        }
+    }
+
+    private function scopedQuery(ProcessStreamScope $scope): Builder
+    {
+        $query = ProcessEvent::query()
+            ->where('instance_id', $scope->instanceId)
+            ->where('node_id', $scope->nodeId);
+
+        if ($scope->workspaceId !== null) {
+            $query->where('workspace_id', $scope->workspaceId);
+        } else {
+            $query->whereNull('workspace_id');
+        }
+
+        return $query;
+    }
+}

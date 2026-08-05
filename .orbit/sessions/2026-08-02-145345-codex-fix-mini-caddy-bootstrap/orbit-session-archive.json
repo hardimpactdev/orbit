@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T12:53:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-mini-caddy-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-145345-codex-fix-mini-caddy-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-caddy-global-bootstrap-dev-3acd04.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T123308Z-18a8fcfce0ee.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-caddy-global-bootstrap-dev-3acd04.txt": "0d9909f3c31b44cc5f397feec973db2e489ffaccb6755767587e96779420ea3c",
+        "loop.md": "d2c36687d709ab78822586a84bfa2601afed87d86a2213d08ea94c22940cdcfd",
+        "quality-gates/quality-check-2026-08-02T123308Z-18a8fcfce0ee.json": "1547fa60dc46bbdc63a5b2c5ff3109f5bb1ad03ae0b3e7719db15c278b68ab58"
+    },
+    "branch": "codex/fix-mini-caddy-bootstrap",
+    "candidate_commit": "e297668c8f128092fedfcfce84167938ef90c89f",
+    "accepted_feature_tip": "e297668c8f128092fedfcfce84167938ef90c89f",
+    "accepted_main_tip": "cf552d1f76e1fb5e8e2d35208ca0caa0de3a06d9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

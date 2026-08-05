@@ -26,7 +26,7 @@ it('serializes process creation body', function (): void {
         name: 'vite',
         command: 'npm run dev -- --host=0.0.0.0',
         restartPolicy: 'always',
-        crashNotification: 'agent_ide',
+        crashNotification: 'none',
         start: true,
     );
 
@@ -35,7 +35,7 @@ it('serializes process creation body', function (): void {
         'name' => 'vite',
         'command' => 'npm run dev -- --host=0.0.0.0',
         'restart_policy' => 'always',
-        'crash_notification' => 'agent_ide',
+        'crash_notification' => 'none',
         'start' => true,
     ]);
 });
@@ -60,6 +60,30 @@ it('serializes an explicit runtime override into the request body', function ():
         'command' => './legacy.sh',
         'runtime' => 'systemd',
     ]);
+});
+
+it('serializes an optional label into the request body when supplied', function (): void {
+    $request = new AddProcessRequest(
+        instance: 'docs',
+        name: 'vite',
+        command: 'npm run dev',
+        label: 'Vite Dev Server',
+    );
+
+    expect($request->body()->all())
+        ->toMatchArray([
+            'instance' => 'docs',
+            'name' => 'vite',
+            'label' => 'Vite Dev Server',
+        ])
+        ->and($request->body()->all())
+        ->not->toHaveKey('runtime');
+});
+
+it('omits label from the request body when none was supplied', function (): void {
+    $request = new AddProcessRequest(instance: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('label');
 });
 
 it('returns a ProcessAddResponse DTO with warnings', function (): void {

@@ -1,0 +1,30 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T21:26:42+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-runtime-wake-parallel/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-232641-codex-runtime-wake-parallel",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-wake-parallel-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T211132Z-d6b4a464bf48.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-wake-parallel-retained-incus.md": "3eb265b77b3af05cd4ec4b7275250a779a5a4c4157dcf0a80bc725a133da4ebc",
+        "loop.md": "c53b15e889d29d1e6f0676992f463c8bea9cafc2b00d0370cd248454d4752c50",
+        "quality-gates/quality-check-2026-08-04T211132Z-d6b4a464bf48.json": "195149a026fc8fb82e0b9234d4de8380c122d0c786a8adbe15cfd61e84ca7756"
+    },
+    "slug": "codex-runtime-wake-parallel",
+    "requested_slug": "codex-runtime-wake-parallel",
+    "compatible_slugs": [
+        "codex-runtime-wake-parallel"
+    ],
+    "branch": "codex-runtime-wake-parallel",
+    "candidate_commit": "02b2b43c024e5e168d0104e77933daa021b2b171",
+    "accepted_feature_tip": "02b2b43c024e5e168d0104e77933daa021b2b171",
+    "accepted_main_tip": "64aab716cea3523c0b84d59992410de148dff0f3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

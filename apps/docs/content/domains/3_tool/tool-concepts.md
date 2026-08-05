@@ -13,7 +13,7 @@ These terms define the core vocabulary used across tool command contracts and th
   units. A tool row is not itself a runtime unit, but a definition may expose
   lifecycle or logs capabilities when it maps to exactly one direct runtime.
 - **Tool process dependency:** Optional relationship from a process to the
-  tool capability it uses, such as `opencode-cli`, `viteplus`, or `php-cli`.
+  tool capability it uses, such as `hermes`, `viteplus`, or `php-cli`.
   The process owns lifecycle; the tool supplies the capability. A tool
   definition may also declare a related singleton process (runtime, command,
   and `--tool` dependency); `tool:install` configures that process by default so
@@ -81,7 +81,7 @@ These terms describe how Orbit relates to each tool in the catalog.
   unprivileged `agent` user when the backend uses an agent runtime, and uses
   the backend declared by its catalog entry.
 - **Agent tool internal route:** Tool-owned proxy route under the agent node's
-  node-owned TLD, such as `https://openclaw.agent`. Reachable only over the
+  node-owned TLD, such as `https://hermes.agent`. Reachable only over the
   Orbit/WireGuard network.
 - **Agent tool credentials:** Web UI access metadata returned by
   `tool:credentials` for agent tools. Reading agent tool credentials
@@ -149,7 +149,7 @@ These rules define what tool commands may and may not change.
   tool maps to exactly one runtime: either one direct tool-owned runtime or one
   process row whose `tool` equals the canonical slug. Ambiguity fails with
   `tool.runtime_ambiguous`; no generic related-process fallback is permitted.
-- They do not own projects, instances, workspaces, process lifecycle, schedules, custom proxy
+- They do not own apps, instances, workspaces, process lifecycle, schedules, custom proxy
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is
   clearer as its own product surface.

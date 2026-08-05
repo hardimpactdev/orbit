@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Updates;
 
 use App\Services\Version\InstallMetadataStore;
+use App\Services\Version\VersionOutputParser;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use JsonException;
@@ -42,11 +43,15 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     private readonly InstallMetadataStore $installMetadata;
 
+    private readonly VersionOutputParser $versionOutputParser;
+
     public function __construct(
         private readonly CheckoutPathResolver $checkoutPathResolver,
         ?InstallMetadataStore $installMetadata = null,
+        ?VersionOutputParser $versionOutputParser = null,
     ) {
         $this->installMetadata = $installMetadata ?? new InstallMetadataStore;
+        $this->versionOutputParser = $versionOutputParser ?? new VersionOutputParser;
     }
 
     /**
@@ -128,7 +133,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             return $this->failedDownloadFrom($chmodResult);
         }
 
-        $verifyResult = $this->runCommand([$stagedBinary, '--version'], 30);
+        $verifyResult = $this->runCommand([$stagedBinary, '--version', '--local', '--json'], 30);
 
         if (! $verifyResult->successful()) {
             $this->discard($stagedBinary);
@@ -136,12 +141,23 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             return $this->failedDownloadFrom($verifyResult);
         }
 
+        $version = $this->requireVersionFromOutput($verifyResult->output());
+
+        if ($version === null) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownload(
+                'CLI version verification failed: version output was not structured JSON.',
+                1,
+            );
+        }
+
         return [
             'successful' => true,
             'exit_code' => 0,
             'output' => trim($verifyResult->output()),
             'staged_path' => $stagedBinary,
-            'version' => $this->versionFromOutput($verifyResult->output()),
+            'version' => $version,
         ];
     }
 
@@ -193,14 +209,25 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedReplaceFrom($linkResult);
             }
 
-            $verifyResult = $this->runCommand([$linkPath, '--version'], 30);
+            $verifyResult = $this->runCommand([$linkPath, '--version', '--local', '--json'], 30);
 
             if (! $verifyResult->successful()) {
                 return $this->failedReplaceFrom($verifyResult);
             }
 
+            $verifiedVersion = $this->requireVersionFromOutput($verifyResult->output());
+
+            if ($verifiedVersion === null) {
+                return [
+                    'successful' => false,
+                    'exit_code' => 1,
+                    'output' => 'CLI version verification failed: version output was not structured JSON.',
+                    'skipped' => false,
+                ];
+            }
+
             $this->installMetadata->write(
-                version: $this->versionFromOutput($verifyResult->output()),
+                version: $verifiedVersion,
                 binaryPath: $linkPath,
                 installRoot: $installRoot,
                 releasedAt: $releasedAt,
@@ -366,15 +393,14 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         ];
     }
 
-    private function versionFromOutput(string $output): string
+    /**
+     * Fail closed: successful `--version --local --json` must yield a structured
+     * version. Never fall back to config('app.version') or 0.0.0 (that would
+     * install/link under the wrong version path).
+     */
+    private function requireVersionFromOutput(string $output): ?string
     {
-        if (preg_match('/\b\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?\b/', $output, $matches) === 1) {
-            return $matches[0];
-        }
-
-        $configured = config('app.version');
-
-        return is_string($configured) && trim($configured) !== '' ? trim($configured) : '0.0.0';
+        return $this->versionOutputParser->fromJsonOutput($output);
     }
 
     private function versionedBinaryPath(string $installRoot, string $version): string

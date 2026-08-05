@@ -2,14 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Contracts\ConvergesAppRuntimeContainers;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeployStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Deploy\DeployManager;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -22,12 +24,20 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final class DeployManagerRecordingShell implements RunsInternalCommands
 {
     public array $runs = [];
 
     public array $results = [];
 
+    public ?array $sourcePathProbe = null;
+
+    /**
+     * @mago-expect lint:halstead
+     */
     public function runInternal(
         Node $node,
         string $commandName,
@@ -35,14 +45,71 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
         array $commandOptions = [],
         array $transportOptions = [],
     ): RemoteShellResult {
+        if ($commandName === 'internal:app-source-path:probe') {
+            $this->runs[] = [
+                'node' => $node,
+                'binary' => $commandName,
+                'arguments' => $arguments,
+                'script' => null,
+                'options' => $commandOptions,
+                'command_name' => $commandName,
+                'transport_options' => $transportOptions,
+            ];
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(
+                    JsonEnvelope::success(
+                        $this->sourcePathProbe ?? [
+                            'path' => $arguments[0] ?? null,
+                            'exists' => false,
+                            'resolved_path' => null,
+                            'within_boundary' => false,
+                        ],
+                    ),
+                    JSON_THROW_ON_ERROR,
+                ),
+                stderr: '',
+                durationMs: 25,
+            );
+        }
+
+        if ($commandName === 'internal:process-docker-container') {
+            $payload = json_decode(
+                (string) ($transportOptions['input'] ?? ''),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+            assert(is_array($payload), description: 'Process Docker payload must decode to an array.');
+            $this->runs[] = [
+                'node' => $node,
+                'binary' => $commandName,
+                'arguments' => [],
+                'script' => null,
+                'options' => $payload,
+                'command_name' => $commandName,
+                'transport_options' => $transportOptions,
+            ];
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success([
+                    'action' => $payload['action'] ?? null,
+                    'container' => $payload['container'] ?? null,
+                ]), JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 25,
+            );
+        }
+
         $payload = json_decode(
             (string) ($transportOptions['input'] ?? ''),
             associative: true,
             flags: JSON_THROW_ON_ERROR,
         );
-        assert(is_array($payload));
+        assert(is_array($payload), description: 'Deploy command payload must decode to an array.');
         $argumentsPayload = $payload['arguments'] ?? [];
-        assert(is_array($argumentsPayload));
+        assert(is_array($argumentsPayload), description: 'Deploy command arguments must be an array.');
         $result = $this->results !== []
             ? array_shift($this->results)
             : new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 25);
@@ -79,7 +146,7 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
     }
 }
 
-function createDeployManagerTestApp(array $overrides = []): Project
+function createDeployManagerTestApp(array $overrides = []): App
 {
     $node = Node::factory()
         ->appProd()
@@ -98,11 +165,11 @@ function createDeployManagerTestApp(array $overrides = []): Project
     $warmupPaths = $attributes['deploy_warmup_paths'] ?? null;
     unset($attributes['deploy_warmup_paths']);
 
-    $app = Project::factory()->create($attributes);
-    AppInstance::factory()->create([
+    $app = App::factory()->create($attributes);
+    Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -115,12 +182,12 @@ function createDeployManagerTestApp(array $overrides = []): Project
     return $app;
 }
 
-function createDeployManagerTestStep(Project $app, string $command, string $title = 'Test step'): DeployStep
+function createDeployManagerTestStep(App $app, string $command, string $title = 'Test step'): DeployStep
 {
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
 
     return DeployStep::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'title' => $title,
         'command' => $command,
         'sort_order' => 1,
@@ -130,7 +197,7 @@ function createDeployManagerTestStep(Project $app, string $command, string $titl
 
 it('requires a concrete deployment instance when a logical app has multiple instances', function (): void {
     $app = createDeployManagerTestApp();
-    AppInstance::factory()->create([
+    Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'canary',
     ]);
@@ -141,13 +208,13 @@ it('requires a concrete deployment instance when a logical app has multiple inst
 
 it('scopes deployment policy to the selected instance', function (): void {
     $app = createDeployManagerTestApp();
-    $production = AppInstance::query()->where('app_id', $app->id)->sole();
-    $canary = AppInstance::factory()->create([
+    $production = Instance::query()->where('app_id', $app->id)->sole();
+    $canary = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'canary',
     ]);
     DeployStep::query()->create([
-        'app_instance_id' => $canary->id,
+        'instance_id' => $canary->id,
         'title' => 'Canary only',
         'command' => 'true',
         'sort_order' => 1,
@@ -165,22 +232,22 @@ it('scopes deployment policy to the selected instance', function (): void {
 
     expect($result['step'])
         ->toMatchArray([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'production',
             'title' => 'Production only',
         ])
-        ->and(DeployStep::query()->where('app_instance_id', $production->id)->count())
+        ->and(DeployStep::query()->where('instance_id', $production->id)->count())
         ->toBe(1)
-        ->and(DeployStep::query()->where('app_instance_id', $canary->id)->count())
+        ->and(DeployStep::query()->where('instance_id', $canary->id)->count())
         ->toBe(1);
 });
 
 it('executes and records a deployment against the concrete instance target', function (): void {
     $app = createDeployManagerTestApp();
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
     $instanceNode = Node::factory()->appProd()->create(['name' => 'instance-prod']);
     $instance->forceFill([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $instanceNode->id,
             node: $instanceNode->name,
             path: '/home/billing/releases',
@@ -202,7 +269,7 @@ it('executes and records a deployment against the concrete instance target', fun
         ->toBe('production')
         ->and($instance->refresh()->latest_deployment_status)
         ->toBe('completed')
-        ->and(DeploymentRun::query()->sole()->app_instance_id)
+        ->and(DeploymentRun::query()->sole()->instance_id)
         ->toBe($instance->id);
 });
 
@@ -354,7 +421,7 @@ it('runs all commands on the host for static apps', function (): void {
 
 it('does not transform host paths to container paths when routing through host', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'cd "{{ project_path }}" && php artisan migrate');
+    createDeployManagerTestStep($app, 'cd "{{ app_path }}" && php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
 
@@ -374,7 +441,7 @@ it('does not transform host paths to container paths when routing through host',
 
 it('preserves documented app context aliases for existing deployment steps', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'mkdir -p "{{ app_path }}/database"');
+    createDeployManagerTestStep($app, command: 'mkdir -p "{{ app_path }}/database"');
 
     app(DeployManager::class)->run('docs.production', detach: true);
 
@@ -383,13 +450,13 @@ it('preserves documented app context aliases for existing deployment steps', fun
     expect($context)
         ->toMatchArray([
             'app_name' => 'docs',
-            'app_instance' => 'production',
+            'instance' => 'production',
             'app_path' => '/srv/docs',
             'app_user' => 'orbit',
-            'project_name' => 'docs',
+            'app_name' => 'docs',
             'instance' => 'production',
-            'project_path' => '/srv/docs',
-            'project_user' => 'orbit',
+            'app_path' => '/srv/docs',
+            'app_user' => 'orbit',
             'app' => [
                 'name' => 'docs',
                 'instance' => 'production',
@@ -414,9 +481,9 @@ it('passes deploy environment variables to the host command', function (): void 
 
     $script = $shell->runs[0]['script'];
     expect($script)
-        ->toContain('ORBIT_DEPLOY_PROJECT_NAME=')
+        ->toContain('ORBIT_DEPLOY_APP_NAME=')
         ->toContain('docs')
-        ->not->toContain("'ORBIT_DEPLOY_PROJECT_NAME=docs'");
+        ->not->toContain("'ORBIT_DEPLOY_APP_NAME=docs'");
 });
 
 it('sets the working directory to the app source path for host commands', function (): void {
@@ -472,6 +539,151 @@ it('runs built-in warmup steps on the host after user steps for php apps', funct
         ->toContain("'sudo'")
         ->and($shell->runs[2]['script'])
         ->toContain("'sudo'");
+});
+
+it('activates a safe live release runtime before warming the application', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep(
+        $app,
+        command: 'ln -sfn "{{ release_path }}" "{{ live_path }}"',
+        title: 'Activate release',
+    );
+
+    $shell = new DeployManagerRecordingShell;
+    $shell->sourcePathProbe = [
+        'path' => '/srv/docs/live',
+        'exists' => true,
+        'resolved_path' => '/srv/docs/releases/20260729_100713_219',
+        'within_boundary' => true,
+    ];
+    app()->instance(RunsInternalCommands::class, $shell);
+    $runtimeConverger = Mockery::mock(ConvergesAppRuntimeContainers::class);
+    $runtimeConverger->shouldReceive('apply')->once()->andReturn(AppRuntimeContainerApplyOutcome::Recreated);
+    app()->instance(ConvergesAppRuntimeContainers::class, $runtimeConverger);
+
+    app(DeployManager::class)->run('docs');
+
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
+    $config = $instance->driver_config;
+    assert(
+        $config instanceof OrbitInstanceDriverConfigData,
+        description: 'Instance must retain Orbit driver config.',
+    );
+    $warmupRuns = array_values(array_filter(
+        $shell->runs,
+        static fn (array $run): bool => (
+            is_string($run['script'] ?? null)
+            && (
+                str_contains($run['script'], 'composer install --no-dev')
+                || str_contains($run['script'], 'php artisan optimize')
+            )
+        ),
+    ));
+    $probeRuns = array_values(array_filter(
+        $shell->runs,
+        static fn (array $run): bool => ($run['command_name'] ?? null) === 'internal:app-source-path:probe',
+    ));
+
+    expect($config->document_root)
+        ->toBe('live/public')
+        ->and($probeRuns)
+        ->toHaveCount(1)
+        ->and($probeRuns[0])
+        ->toMatchArray([
+            'node' => $app->node,
+            'binary' => 'internal:app-source-path:probe',
+            'arguments' => ['/srv/docs/live'],
+            'script' => null,
+            'options' => ['boundary' => '/srv/docs'],
+            'command_name' => 'internal:app-source-path:probe',
+            'transport_options' => [
+                'metadata' => ['ORBIT_OPERATION_ID' => 'app-source-path.probe'],
+                'strict' => true,
+                'timeout' => 15,
+            ],
+        ])
+        ->and($warmupRuns)
+        ->toHaveCount(2)
+        ->and(array_column($warmupRuns, 'options'))
+        ->each(
+            fn ($options) => $options->toMatchArray(['cwd' => '/srv/docs/live']),
+        )
+        ->and(array_column($warmupRuns, 'script'))
+        ->each(
+            fn ($script) => $script
+                ->toContain("cd '\\''/srv/docs/live'\\'' &&")
+                ->not->toContain("cd '\\''/srv/docs'\\'' &&"),
+        );
+});
+
+it('restarts an unchanged runtime after activating a new live release', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, command: 'ln -sfn "{{ release_path }}" "{{ live_path }}"');
+
+    $shell = new DeployManagerRecordingShell;
+    $shell->sourcePathProbe = [
+        'path' => '/srv/docs/live',
+        'exists' => true,
+        'resolved_path' => '/srv/docs/releases/20260729_100713_219',
+        'within_boundary' => true,
+    ];
+    app()->instance(RunsInternalCommands::class, $shell);
+    $runtimeConverger = Mockery::mock(ConvergesAppRuntimeContainers::class);
+    $runtimeConverger->shouldReceive('apply')->once()->andReturn(AppRuntimeContainerApplyOutcome::Unchanged);
+    app()->instance(ConvergesAppRuntimeContainers::class, $runtimeConverger);
+
+    app(DeployManager::class)->run('docs');
+
+    $restartRuns = array_values(array_filter(
+        $shell->runs,
+        static fn (array $run): bool => ($run['command_name'] ?? null) === 'internal:process-docker-container',
+    ));
+
+    expect($restartRuns)
+        ->toHaveCount(1)
+        ->and($restartRuns[0]['options'])
+        ->toMatchArray([
+            'action' => 'restart',
+            'container' => 'orbit-app-docs-production',
+        ]);
+});
+
+it('fails closed when an active release escapes the app source boundary', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, command: 'ln -sfn "{{ release_path }}" "{{ live_path }}"');
+
+    $shell = new DeployManagerRecordingShell;
+    $shell->sourcePathProbe = [
+        'path' => '/srv/docs/live',
+        'exists' => true,
+        'resolved_path' => '/tmp/escaped-release',
+        'within_boundary' => false,
+    ];
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    try {
+        app(DeployManager::class)->run('docs');
+        $this->fail('Expected GatewayApiException');
+    } catch (GatewayApiException $exception) {
+        expect($exception->errorCode())->toBe('deploy.active_release_unsafe');
+    }
+
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
+    $config = $instance->driver_config;
+    assert(
+        $config instanceof OrbitInstanceDriverConfigData,
+        description: 'Instance must retain Orbit driver config.',
+    );
+
+    expect($config->document_root)
+        ->toBe('public')
+        ->and(DeploymentRun::query()->sole()->status)
+        ->toBe('failed')
+        ->and(array_filter(
+            $shell->runs,
+            static fn (array $run): bool => ($run['command_name'] ?? null) === 'internal:app-runtime-container',
+        ))
+        ->toBeEmpty();
 });
 
 it('skips warmup steps when a user step fails', function (): void {

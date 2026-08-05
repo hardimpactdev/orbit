@@ -9,15 +9,16 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\NodeContainerScope;
@@ -91,6 +92,37 @@ final readonly class ProxyRouteFixer
     }
 
     /**
+     * Codes ProxyRouteFixer methods can restore (route fix, caddy, global, agent tool, extra).
+     * Specialized websocket/s3/analytics probes own their own support maps.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'proxy.route_missing',
+            'proxy.route_mismatch',
+            'proxy.route_extra',
+            'proxy.public_route_missing',
+            'proxy.public_route_mismatch',
+            'proxy.router_route_missing',
+            'proxy.router_route_mismatch',
+            'proxy.backend_route_missing',
+            'proxy.backend_route_mismatch',
+            'proxy.tls_missing',
+            'proxy.tls_mismatch',
+            'proxy.enactment_incomplete',
+            'proxy.caddy_container_missing',
+            'proxy.caddy_container_down',
+            'proxy.caddy_container_detached',
+            'proxy.global_config_missing',
+            'proxy.global_config_mismatch',
+            'proxy.agent_tool_route_missing',
+            'proxy.agent_tool_route_mismatch',
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function fix(ProxyRoute $route, DriftEntry $entry): ?array
@@ -122,6 +154,10 @@ final readonly class ProxyRouteFixer
         $route->loadMissing('node');
 
         if ($entry->key === 'proxy.enactment_incomplete') {
+            if ($route->owner_type === 'custom') {
+                return $this->reenactCustomRoute($route, $entry);
+            }
+
             return $this->reenactAppRoute($route, $entry);
         }
 
@@ -185,17 +221,56 @@ final readonly class ProxyRouteFixer
     /**
      * @return array<string, mixed>|null
      */
+    private function reenactCustomRoute(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $applied = $this->fix(
+            $route,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.route_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Custom proxy route {$route->domain} requires re-enactment.",
+            ),
+        );
+
+        if ($applied === null) {
+            return null;
+        }
+
+        $route->refresh();
+        $config = is_array($route->config) ? $route->config : [];
+        $route->forceFill([
+            'config' => ProxyRouteEnactment::converged($config),
+        ])->save();
+
+        return [
+            'family' => 'proxy',
+            'node' => $route->node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Re-enacted custom proxy route {$route->domain} from gateway intent.",
+            'details' => [
+                'route' => $route->domain,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
     private function reenactAppRoute(ProxyRoute $route, DriftEntry $entry): ?array
     {
         $route->loadMissing(['node', 'app']);
         $app = $route->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
-        $instance = $this->appRouteTargets()->appInstanceForRoute($route);
-        $runtimeApp = $instance instanceof AppInstance
+        $instance = $this->appRouteTargets()->instanceForRoute($route);
+        $runtimeApp = $instance instanceof Instance
             ? $this->appRuntimeRenderer()->runtimeAppForInstance($app, $instance)
             : $app;
 
@@ -222,7 +297,7 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(Project $app, ?AppInstance $instance): void
+    private function executeAppRouteEnactment(App $app, ?Instance $instance): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
             ($this->appRouteEnactor)($app, $instance);
@@ -489,11 +564,11 @@ final readonly class ProxyRouteFixer
     {
         $config = is_array($route->config) ? $route->config : [];
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
-        $appInstance = $config['app_instance'] ?? null;
+        $instance = $config['instance'] ?? null;
         $isDevelopmentRuntimeRoute = $node->hasActiveRole('app-dev') && app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->whereNotNull('wireguard_address')
-            ->exists() && ($route->kind === 'workspace' || $route->kind === 'app' && is_array($appInstance) && is_int($appInstance['id'] ?? null));
+            ->exists() && ($route->kind === 'workspace' || $route->kind === 'app' && is_array($instance) && is_int($instance['id'] ?? null));
 
         if (
             ! $isDevelopmentRuntimeRoute
@@ -677,9 +752,11 @@ final readonly class ProxyRouteFixer
 
     /**
      * Restore the orbit-caddy container on a serving node when proxy probing
-     * reports the container is missing, stopped, or detached from its managed
-     * network. A stopped container is started, while missing and detached
-     * containers are reconciled from the managed spec.
+     * reports the container is missing, stopped, restarting, or detached from
+     * its managed network. With a managed tool spec, apply-container starts a
+     * stopped container and force-recreates restart loops even when the stored
+     * spec hash and network match. Without a managed record, only docker start
+     * is attempted for the container-down path.
      *
      * @return array<string, mixed>|null
      */
@@ -693,7 +770,7 @@ final readonly class ProxyRouteFixer
                 ? $this->caddyConfig()->startContainer($node, $caddyName)
                 : $this->caddyConfig()->applyContainer($node, $spec);
 
-            $this->ensureSuccessful($result, "Failed to start orbit-caddy container on {$node->name}");
+            $this->ensureSuccessful($result, "Failed to restore orbit-caddy container on {$node->name}");
 
             return [
                 'family' => 'proxy',
@@ -702,7 +779,9 @@ final readonly class ProxyRouteFixer
                 'key' => $entry->key,
                 'mode' => 'fix',
                 'status' => 'completed',
-                'summary' => "Started orbit-caddy container on {$node->name}.",
+                'summary' => $spec === null
+                    ? "Started orbit-caddy container on {$node->name}."
+                    : "Restored orbit-caddy container on {$node->name}.",
                 'details' => [
                     'container' => $caddyName,
                 ],
@@ -802,10 +881,40 @@ final readonly class ProxyRouteFixer
     }
 
     /**
+     * Restore the host-mounted global Caddyfile. When the file is missing and a
+     * managed orbit-caddy tool spec exists, apply the container so the host
+     * bind source is seeded before create/recreate and repair ends only after
+     * the container is stably running. Healthy mismatch still writes the host
+     * artifact and reloads.
+     *
      * @return array<string, mixed>
      */
     public function fixGlobalConfig(Node $node, DriftEntry $entry): array
     {
+        $spec = $this->managedCaddyContainerSpec($node);
+
+        if ($entry->key === 'proxy.global_config_missing' && $spec !== null) {
+            $result = $this->caddyConfig()->applyContainer($node, $spec);
+            $this->ensureSuccessful(
+                $result,
+                "Failed to restore host global orbit-caddy config and container on {$node->name}",
+            );
+
+            return [
+                'family' => 'proxy',
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'fix',
+                'status' => 'completed',
+                'summary' => "Restored host global orbit-caddy config and container on {$node->name}.",
+                'details' => [
+                    'node' => $node->name,
+                    'container' => $this->caddyContainerNameFromSpec($spec, $node),
+                ],
+            ];
+        }
+
         $content = $this->caddyConfig()->readGlobal($node);
 
         if ($content === null) {
@@ -818,7 +927,19 @@ final readonly class ProxyRouteFixer
             $write = $this->caddyConfig()->writeGlobal($node, $updated);
             $this->ensureSuccessful($write, "Failed to write global orbit-caddy config on {$node->name}");
 
-            $this->reloadCaddy($node);
+            try {
+                $this->reloadCaddy($node);
+            } catch (RuntimeException $exception) {
+                if ($spec === null) {
+                    throw $exception;
+                }
+
+                $result = $this->caddyConfig()->applyContainer($node, $spec);
+                $this->ensureSuccessful(
+                    $result,
+                    "Failed to apply orbit-caddy container after writing global config on {$node->name}",
+                );
+            }
         }
 
         return [

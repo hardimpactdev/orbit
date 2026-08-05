@@ -7,9 +7,9 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\AppWorkerService;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -21,7 +21,7 @@ use Illuminate\Http\Request;
 
 final class AppWorkerController implements Loggable
 {
-    private ?AppInstance $activitySubject = null;
+    private ?Instance $activitySubject = null;
 
     private string $currentAction = 'show';
 
@@ -68,7 +68,7 @@ final class AppWorkerController implements Loggable
             return $this->error('authorization_failed', 'Peer identity unknown.', status: 403);
         }
 
-        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+        $instanceIsVisible = fn (Instance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
             $caller,
             $instance,
             $permission,
@@ -96,7 +96,7 @@ final class AppWorkerController implements Loggable
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return $this->instanceUnavailable($selection->app, null);
         }
 
@@ -129,7 +129,7 @@ final class AppWorkerController implements Loggable
                     $readiness->message
                     ?? "Instance '{$selection->app->name}.{$instance->name}' is not ready for worker mode.",
                     array_merge([
-                        'project' => $selection->app->name,
+                        'app' => $selection->app->name,
                         'instance' => $instance->name,
                         'missing' => $readiness->missing,
                     ], $readiness->meta),
@@ -159,19 +159,19 @@ final class AppWorkerController implements Loggable
     }
 
     /**
-     * @return array{project: string, instance: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
+     * @return array{app: string, instance: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
      */
-    private function workerPayload(Project $app, AppInstance $instance): array
+    private function workerPayload(App $app, Instance $instance): array
     {
         return [
-            'project' => $app->name,
+            'app' => $app->name,
             'instance' => $instance->name,
             'worker_enabled' => $instance->worker_enabled,
             'worker_config' => is_array($instance->worker_config) ? $instance->worker_config : null,
         ];
     }
 
-    private function instanceUnavailable(Project $app, ?AppInstance $instance): JsonResponse
+    private function instanceUnavailable(App $app, ?Instance $instance): JsonResponse
     {
         return $this->error(
             'validation_failed',
@@ -179,7 +179,7 @@ final class AppWorkerController implements Loggable
             [
                 'field' => 'instance',
                 'reason' => 'instance_unavailable',
-                'project' => $app->name,
+                'app' => $app->name,
                 'instance' => $instance?->name,
             ],
         );

@@ -64,7 +64,12 @@ The tools probe reads gateway tool rows and checks these layers:
    backend metadata match gateway configuration when the tool definition owns them.
 6. **Credential material:** managed credentials or connection metadata exist and
    match the tool definition when credentials are part of the tool contract.
-7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
+7. **Autonomous-agent consumer URL:** for installed agent-category tools that
+   declare a proxy consumer host (for example `https://hermes.agent`), the
+   gateway trust path can reach that exact HTTPS
+   URL with a 2xx/3xx response. Tool family owns this service-readiness check;
+   proxy family continues to own route rows, Caddy artifacts, and TLS material.
+8. **Adoption scope:** during `doctor --adopt`, explicitly selected observed tools may
    be inspected for compatible tool facts.
 
 Observed node capabilities without gateway tool rows are unmanaged inventory by
@@ -77,6 +82,15 @@ depend on facts the probe could not establish.
 
 ## Tool Issue Codes
 
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
+
 Each code below identifies a specific kind of drift the tool probe can detect.
 
 | Code | Detected when |
@@ -86,6 +100,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
+| `tool.php_cli_coverage_missing` | `php-cli` effective runtime is the `coverage` variant (matrix install contract) but a supported minor lacks a working statically linked PCOV (`extension_loaded('pcov')`, `function_exists('pcov\\start')`, `pcov.enabled`, or `php --ri pcov`). Under `install_contract=compatibility`, doctor validates the retained standard runtime instead and does not emit this code for desired coverage alone. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |
 | `tool.config_mismatch` | Managed configuration exists but differs from gateway configuration. |
@@ -101,8 +116,10 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_forwarding_missing` | The Swarm VPN task is missing the UDP/TCP 53 DNAT and MASQUERADE rules that forward WireGuard peer DNS traffic to `orbit-dns`. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/home/agent/.local/bin/orbit --version --local` through the owner-user shim. |
+| `tool.agent_runtime_probe_failed` | Agent-user/runtime inspection raised, returned non-success, or produced an empty/malformed payload, so agent runtime drift is unverifiable for this run. |
+| `tool.agent_consumer_url_unreachable` | An installed autonomous-agent tool's exact consumer HTTPS URL (for example `https://hermes.agent`) is not reachable from the gateway trust path with a 2xx/3xx response. Tool family owns this service-readiness check; proxy family owns route rows, Caddy artifacts, and TLS. Details include `expected_url`, observed state, and `next_command` pointing at `doctor --family=proxy` — no unsafe route restore is invented here. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
-| `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
+| `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; reconverge the `s3` role baseline (restore does not create tool rows). |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
 
 The five `tool.dns_*` codes are owned by the DNS tool capability; see
@@ -134,6 +151,7 @@ credential repair logic.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `tool.capability_missing` | Install or restore the managed capability only when the tool definition declares a safe install or repair path. |
+| `tool.php_cli_coverage_missing` | Reinstall `php-cli` using the role-resolved `coverage` variant so the node receives Orbit-owned PCOV-enabled matrix artifacts. |
 | `tool.version_mismatch` | Update or downgrade the managed tool only when the tool definition supports the target version transition. |
 | `tool.config_missing` | Recreate managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
 | `tool.config_mismatch` | Rewrite managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
@@ -146,17 +164,22 @@ credential repair logic.
 | `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
-| `tool.seaweedfs.credentials_missing` | Regenerate managed SeaweedFS credentials via the `seaweedfs` tool definition credential generation path. |
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
 `tool.config_probe_failed`, `tool.credentials_probe_failed`,
-`tool.agent_orbit_cli_inaccessible`, or `tool.seaweedfs.row_missing` (the
-`seaweedfs` tool row must be recreated by converging the `s3` role baseline;
-restore does not create tool rows).
+`tool.agent_runtime_probe_failed`,
+`tool.agent_orbit_cli_inaccessible`, `tool.agent_consumer_url_unreachable`,
+`tool.seaweedfs.credentials_missing`, or
+`tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be recreated by
+reconverging the `s3` role baseline; missing credentials remain `runtime_incident`
+until operators re-run S3 configure — ToolsFixer has no credential restorer;
+restore does not create tool rows). `tool.agent_consumer_url_unreachable` is a
+read-only service-readiness check; route/TLS repair stays with
+`doctor --family=proxy`.
 
 Tools without a safe repair path are reported with the required manual action.
-Tool doctor never creates projects, instances, workspaces, processes, schedules, custom proxy
+Tool doctor never creates apps, instances, workspaces, processes, schedules, custom proxy
 routes, non-tool firewall rules, node identities, or node grants. It may repair
 endpoint configuration owned by the tool only when the selected tool definition declares that
 ownership; live proxy and firewall artifact drift remains in the `proxy` and
@@ -211,7 +234,6 @@ Required test files:
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for tool family scope, tool drift reporting, and restore behavior. |
 | `apps/gateway/tests/Feature/Services/Doctor/DnsRuntimeProbeTest.php` | DNS base configuration and granular container, listener, client-DNS, and forwarding issue codes. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
-| `apps/e2e/tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
 
 No current E2E test is mapped for tool-family read-only or adopt coverage.
 

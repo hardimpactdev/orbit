@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Tools\ToolCatalog;
+use App\Tools\HermesTool;
 
 /** @mago-expect lint:cyclomatic-complexity */
 final readonly class AgentToolProxyRouteIntent
@@ -71,9 +72,15 @@ final readonly class AgentToolProxyRouteIntent
         }
 
         $toolConfig = is_array($tool->config) ? $tool->config : [];
-        $upstream = is_string($toolConfig['upstream'] ?? null) && $toolConfig['upstream'] !== ''
+        $configuredUpstream = is_string($toolConfig['upstream'] ?? null) && $toolConfig['upstream'] !== ''
             ? $toolConfig['upstream']
-            : 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
+            : null;
+        $upstream = $configuredUpstream ?? $this->defaultUpstream($tool->name);
+
+        if ($upstream === null) {
+            return null;
+        }
+
         $config = [
             'target' => ['type' => 'upstream', 'value' => $upstream],
             'upstream' => $upstream,
@@ -121,6 +128,49 @@ final readonly class AgentToolProxyRouteIntent
         $expectedConfig = is_array($expected->config) ? $expected->config : [];
 
         return ($actualConfig['owner_name'] ?? null) !== ($expectedConfig['owner_name'] ?? null);
+    }
+
+    /**
+     * Upstream listen port from the expected proxy route config, derived from
+     * the catalog tool's canonical loopback upstream (not the public HTTPS port).
+     */
+    public function upstreamPort(NodeTool $tool): ?int
+    {
+        $route = $this->expectedRoute($tool);
+
+        if (! $route instanceof ProxyRoute) {
+            return null;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $upstream = is_string($config['upstream'] ?? null) ? $config['upstream'] : null;
+
+        if ($upstream === null || $upstream === '') {
+            return null;
+        }
+
+        $parts = parse_url($upstream);
+        $port = is_array($parts) ? $parts['port'] ?? null : null;
+
+        return is_int($port) ? $port : null;
+    }
+
+    /**
+     * Default container-reachable upstream for agent tool web UIs.
+     * Hermes uses port 8080 and leaves Orbit Caddy's private backend on 8081 free.
+     */
+    private function defaultUpstream(string $toolName): ?string
+    {
+        $port = match ($toolName) {
+            'hermes' => HermesTool::WEB_PORT,
+            default => null,
+        };
+
+        if ($port === null) {
+            return null;
+        }
+
+        return 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':'.$port;
     }
 
     public function persist(ProxyRoute $expected): ?ProxyRoute

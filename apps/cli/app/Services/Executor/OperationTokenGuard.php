@@ -9,16 +9,17 @@ use App\Services\GatewayApiClient;
 use Closure;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenEnvironment;
 use Orbit\Core\Security\TrustedExecutionContext;
 use SensitiveParameter;
 use Throwable;
 
-/** @mago-expect lint:kan-defect */
 final readonly class OperationTokenGuard
 {
     public function __construct(
         /** @var Closure(): GatewayApiClient */
         private Closure $resolveGateway,
+        private OperationStdinBuffer $stdinBuffer = new OperationStdinBuffer,
     ) {}
 
     public function verify(
@@ -29,6 +30,10 @@ final readonly class OperationTokenGuard
         if ($expectedCommand === '') {
             throw new OperationTokenGuardException;
         }
+
+        // Capture piped stdin before verify so bound input can be hashed and later
+        // re-read by the internal command without an empty stream.
+        $this->stdinBuffer->captureFromProcessStdin();
 
         if (
             $this->trustedExecutionAlreadyAuthorized($compactToken, $expectedCommand)
@@ -46,9 +51,13 @@ final readonly class OperationTokenGuard
             throw new OperationTokenGuardException;
         }
 
-        if (! $this->isAllowedResponse($response)) {
-            throw new OperationTokenGuardException;
+        if ($this->isAllowedResponse($response)) {
+            return;
         }
+
+        throw OperationTokenGuardException::fromGatewayReason(
+            $this->safeDenialReason($response),
+        );
     }
 
     /**
@@ -56,19 +65,51 @@ final readonly class OperationTokenGuard
      */
     private function isAllowedResponse(array $response): bool
     {
+        $data = $this->verificationData($response);
+
+        if ($data === null) {
+            return false;
+        }
+
+        return ($data['allowed'] ?? null) === true;
+    }
+
+    /**
+     * Extract a candidate denial reason only from a well-formed allowed=false body.
+     * Malformed responses never expose free-form gateway text.
+     *
+     * @param  array<string, mixed>  $response
+     */
+    private function safeDenialReason(array $response): mixed
+    {
+        $data = $this->verificationData($response);
+
+        if ($data === null || ($data['allowed'] ?? null) !== false) {
+            return null;
+        }
+
+        return $data['reason'] ?? null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<array-key, mixed>|null
+     */
+    private function verificationData(array $response): ?array
+    {
         $success = $response['success'] ?? null;
 
         if (! is_array($success)) {
-            return false;
+            return null;
         }
 
         $data = $success['data'] ?? null;
 
         if (! is_array($data)) {
-            return false;
+            return null;
         }
 
-        return ($data['allowed'] ?? null) === true;
+        return $data;
     }
 
     /**
@@ -78,6 +119,7 @@ final readonly class OperationTokenGuard
      *     argv: list<string>,
      *     cwd?: string,
      *     environment: array<string, string>,
+     *     input?: string,
      *     consume: true,
      * }
      */
@@ -97,6 +139,12 @@ final readonly class OperationTokenGuard
 
         if (is_string($cwd) && $cwd !== '') {
             $payload['cwd'] = $cwd;
+        }
+
+        $input = $this->stdinBuffer->contents();
+
+        if (is_string($input) && $input !== '') {
+            $payload['input'] = $input;
         }
 
         return $payload;
@@ -132,25 +180,7 @@ final readonly class OperationTokenGuard
      */
     private function verificationEnvironment(): array
     {
-        $environment = [];
-
-        foreach ([
-            'APP_KEY',
-            'HOME',
-            'ORBIT_CONFIG_PATH',
-            'ORBIT_INSTALL_METADATA_PATH',
-            'ORBIT_WG_EASY_DB_PATH',
-        ] as $key) {
-            $value = getenv($key);
-
-            if (! is_string($value) || $value === '') {
-                continue;
-            }
-
-            $environment[$key] = $value;
-        }
-
-        return $environment;
+        return OperationTokenEnvironment::fromProcess();
     }
 
     private function agentPushAlreadyAuthorized(

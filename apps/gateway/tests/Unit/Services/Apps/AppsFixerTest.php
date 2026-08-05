@@ -3,17 +3,17 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -152,7 +152,7 @@ function apps_fixer_security_repair_was_sent(string $user, string $home, string 
 
 it('hands a missing FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -184,17 +184,17 @@ it('hands a missing FrankenPHP runtime unit to the process fixer', function (): 
 it('hands a missing app instance FrankenPHP runtime unit to the process fixer', function (): void {
     $beast = appsFixerNode();
     $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-    $app = Project::factory()->for($beast, 'node')->create([
+    $app = App::factory()->for($beast, 'node')->create([
         'name' => 'hauser',
         'path' => '/home/nckrtl/apps/hauser',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'nmbp',
             path: '/Users/nckrtl/apps/hauser',
@@ -223,7 +223,7 @@ it('hands a missing app instance FrankenPHP runtime unit to the process fixer', 
 
 it('does not mutate managed process intent through an app runtime issue', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -274,7 +274,7 @@ it('does not mutate managed process intent through an app runtime issue', functi
 
 it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -311,7 +311,7 @@ it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (
 
 it('returns null for non-app-runtime drift keys', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
 
     $result = buildAppsFixer(new AppsFixerRecordingRemoteShell)->fix($app, new DriftEntry(
         family: 'app',
@@ -325,7 +325,7 @@ it('returns null for non-app-runtime drift keys', function (): void {
 
 it('returns null for static apps even on runtime container drift keys', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+    $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
 
     $shell = new AppsFixerRecordingRemoteShell;
 
@@ -404,16 +404,16 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_missing', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/home/orbit/apps/docs',
@@ -437,7 +437,7 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
         ->toBe('completed')
         ->and($result['key'])
         ->toBe('app.runtime_config_missing')
-        ->and($result['details']['app_instance'])
+        ->and($result['details']['instance'])
         ->toBe('production')
         ->and($result['details']['path'])
         ->toBe('/home/orbit/.config/orbit/apps/docs-production.ini')
@@ -445,22 +445,22 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
         ->toContain('/home/orbit/.config/orbit/apps/docs-production.ini')
         ->and($shell->scripts[0])
         ->toContain('base64 -d')
-        ->and(OrbitProcess::query()->where('app_instance_id', $instance->id)->exists())
+        ->and(OrbitProcess::query()->where('instance_id', $instance->id)->exists())
         ->toBeTrue();
 });
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_mismatch', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/home/orbit/apps/docs',
@@ -484,7 +484,7 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
         ->toBe('completed')
         ->and($result['key'])
         ->toBe('app.runtime_config_mismatch')
-        ->and($result['details']['app_instance'])
+        ->and($result['details']['instance'])
         ->toBe('production');
 });
 
@@ -494,7 +494,7 @@ it('repairs the production runtime user when handed app.security.system_user', f
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -531,7 +531,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -564,7 +564,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
 
 it('leaves production runtime container isolation repair to the process family', function (): void {
     $node = appsFixerNode();
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',

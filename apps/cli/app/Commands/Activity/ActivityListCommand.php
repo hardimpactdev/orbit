@@ -17,7 +17,7 @@ final class ActivityListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'activity:list
-        {--project= : Filter by project}
+        {--app= : Filter by app}
         {--node= : Filter by node}
         {--effect= : Filter by effect (read|write|destructive)}
         {--correlation= : Filter by correlation UUID}
@@ -136,14 +136,14 @@ final class ActivityListCommand extends GatewayCommand
     }
 
     /**
-     * @return array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool|null, limit: int}|null
+     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool|null, limit: int}|null
      */
     private function validatedFilters(): ?array
     {
-        $project = $this->stringFilter('project');
+        $app = $this->stringFilter('app');
 
-        if ($project === false) {
-            return $this->invalidFilter('project', 'invalid');
+        if ($app === false) {
+            return $this->invalidFilter('app', 'invalid');
         }
 
         $node = $this->stringFilter('node');
@@ -185,7 +185,7 @@ final class ActivityListCommand extends GatewayCommand
         }
 
         return [
-            'project' => $project,
+            'app' => $app,
             'node' => $node,
             'effect' => $effect,
             'correlation' => $correlation,

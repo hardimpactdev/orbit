@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T14:52:32+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-doctor-platform-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-165232-codex-fix-doctor-platform-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-platform-drift-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T144925Z-a9e00c66d1c6.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-platform-drift-proof.txt": "402c6b05d08e4b0a45b1e0763173db96ce05ee5fcce5bad5f77f125af2b96965",
+        "loop.md": "e9d40326362fa7e9528b8cf4d2bc40f0f894a37e2aaa28e0392c535e29ca36d6",
+        "quality-gates/quality-check-2026-08-02T144925Z-a9e00c66d1c6.json": "c5509e8919c51d024b7a6f53e2fe56600a493c97d731058fd83390e63059a45c"
+    },
+    "branch": "codex/fix-doctor-platform-drift",
+    "candidate_commit": "870a749ed4e3cf5331d10fdbd18f68cf0d2eeab5",
+    "accepted_feature_tip": "870a749ed4e3cf5331d10fdbd18f68cf0d2eeab5",
+    "accepted_main_tip": "f6d18e0faf64e6023be593b16d31da09a89124e8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

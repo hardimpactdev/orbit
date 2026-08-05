@@ -4,33 +4,33 @@ declare(strict_types=1);
 
 use App\Actions\Deploy\AddDeployStep;
 use App\Actions\Deploy\RemoveDeployStep;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DeployStep;
-use App\Models\Project;
+use App\Models\Instance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('inserts deploy steps at the requested order and compacts after removal', function (): void {
-    $app = Project::factory()->create();
-    $instance = AppInstance::factory()->create(['app_id' => $app->id]);
+    $app = App::factory()->create();
+    $instance = Instance::factory()->create(['app_id' => $app->id]);
     $addStep = app(AddDeployStep::class);
     $removeStep = app(RemoveDeployStep::class);
 
     $addStep->handle(
-        appInstanceId: $instance->id,
+        instanceId: $instance->id,
         title: 'Install dependencies',
         command: 'composer install',
         timeoutSeconds: DeployStep::DEFAULT_TIMEOUT_SECONDS,
     );
     $second = $addStep->handle(
-        appInstanceId: $instance->id,
+        instanceId: $instance->id,
         title: 'Run migrations',
         command: 'php artisan migrate --force',
         timeoutSeconds: 300,
     );
     $inserted = $addStep->handle(
-        appInstanceId: $instance->id,
+        instanceId: $instance->id,
         title: 'Build assets',
         command: 'npm run build',
         timeoutSeconds: 120,
@@ -40,7 +40,7 @@ it('inserts deploy steps at the requested order and compacts after removal', fun
 
     expect(
         DeployStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->orderBy('sort_order')
             ->pluck('title', 'sort_order')
             ->all(),
@@ -57,7 +57,7 @@ it('inserts deploy steps at the requested order and compacts after removal', fun
 
     expect(
         DeployStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->orderBy('sort_order')
             ->pluck('sort_order', 'title')
             ->all(),

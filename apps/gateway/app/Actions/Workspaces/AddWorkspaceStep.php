@@ -14,7 +14,7 @@ final readonly class AddWorkspaceStep
     public function handle(
         int $appId,
         WorkspaceLifecyclePhase $phase,
-        int $appInstanceId,
+        int $instanceId,
         string $command,
         int $timeoutSeconds = WorkspaceStep::DEFAULT_TIMEOUT_SECONDS,
         ?int $beforeStepId = null,
@@ -27,12 +27,12 @@ final readonly class AddWorkspaceStep
             $timeoutSeconds,
             $beforeStepId,
             $afterStepId,
-            $appInstanceId,
+            $instanceId,
         ): WorkspaceStep {
             $phaseSteps = WorkspaceStep::query()
                 ->where('app_id', $appId)
                 ->where('phase', $phase)
-                ->where('app_instance_id', $appInstanceId);
+                ->where('instance_id', $instanceId);
 
             if ($beforeStepId !== null) {
                 $anchor = (clone $phaseSteps)->find($beforeStepId);
@@ -58,7 +58,7 @@ final readonly class AddWorkspaceStep
 
             return WorkspaceStep::query()->create([
                 'app_id' => $appId,
-                'app_instance_id' => $appInstanceId,
+                'instance_id' => $instanceId,
                 'phase' => $phase,
                 'sort_order' => $sortOrder,
                 'command' => $command,

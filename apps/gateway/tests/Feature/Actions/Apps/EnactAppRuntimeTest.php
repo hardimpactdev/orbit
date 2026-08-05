@@ -5,17 +5,17 @@ declare(strict_types=1);
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
@@ -33,7 +33,7 @@ beforeEach(function (): void {});
 
 afterEach(function (): void {});
 
-function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
+function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
 {
     $node = Node::factory()->create([
         'status' => 'active',
@@ -46,16 +46,16 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => $kind,
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -67,7 +67,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
     return $app;
 }
 
-function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
+function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
 {
     $ingress = Node::factory()
         ->ingress()
@@ -94,7 +94,7 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
         ],
     ]);
 
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -102,9 +102,9 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
         'runtime' => $kind,
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -370,7 +370,7 @@ it('reconciles an existing FrankenPHP app runtime process row', function (): voi
             'name' => 'frankenphp-docs',
             'command' => 'stale command',
             'restart_policy' => ProcessRestartPolicy::Never,
-            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'crash_notification' => ProcessCrashNotification::None,
             'runtime' => ProcessRuntime::Systemd,
             'runtime_config' => [
                 'container_name' => 'stale-container',
@@ -395,9 +395,9 @@ it('seeds one FrankenPHP process definition per concrete app instance', function
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
     $development = $app->instances()->sole();
     $productionNode = createTestAppHostNode(['name' => 'app-production']);
-    $production = AppInstance::factory()->for($app)->create([
+    $production = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $productionNode->id,
             node: $productionNode->name,
             path: '/srv/docs-production',
@@ -410,13 +410,13 @@ it('seeds one FrankenPHP process definition per concrete app instance', function
     $developmentProcess = $seeder->forApp($app, $development);
     $productionProcess = $seeder->forApp($app, $production);
 
-    expect($developmentProcess->app_instance_id)
+    expect($developmentProcess->instance_id)
         ->toBe($development->id)
         ->and($developmentProcess->node_id)
         ->toBe($app->node_id)
         ->and($developmentProcess->runtime_config['container_name'])
         ->toBe('orbit-app-docs-development')
-        ->and($productionProcess->app_instance_id)
+        ->and($productionProcess->instance_id)
         ->toBe($production->id)
         ->and($productionProcess->node_id)
         ->toBe($productionNode->id)
@@ -432,9 +432,9 @@ it('keeps logical app runtime enactment safe after the app gains multiple instan
         'name' => 'nmbp',
         'tld' => 'nmbp',
     ]);
-    $nmbp = AppInstance::factory()->for($app)->create([
+    $nmbp = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbpNode->id,
             node: $nmbpNode->name,
             path: '/Users/nckrtl/apps/docs',
@@ -469,7 +469,7 @@ it('keeps logical app runtime enactment safe after the app gains multiple instan
         ->toBe('app')
         ->and($routes->firstWhere('domain', 'docs.nmbp')?->kind)
         ->toBe('app')
-        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['app_instance']['id'] ?? null)
+        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['instance']['id'] ?? null)
         ->toBe($nmbp->id)
         ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['runtime_upstream'])
         ->toBeNull();
@@ -665,7 +665,7 @@ it('returns process.runtime_unit_mismatch when recreating a drifted container fa
 });
 
 it('throws when the app has no owning node', function (): void {
-    $app = Project::factory()->make([
+    $app = App::factory()->make([
         'name' => 'orphan',
         'path' => '/home/orbit/apps/orphan',
         'php_version' => '8.5',
@@ -677,19 +677,19 @@ it('throws when the app has no owning node', function (): void {
     expect(fn () => app(EnactAppRuntime::class)->handle($app))->toThrow(RuntimeException::class);
 });
 
-function expectAppFrankenPhpRuntimeProcess(Project $app): void
+function expectAppFrankenPhpRuntimeProcess(App $app): void
 {
     $instance = $app->instances()->sole();
     $process = OrbitProcess::query()
         ->ownedBy($app)
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->where('name', "frankenphp-{$app->name}")
         ->first();
 
     expect($process)
         ->not
         ->toBeNull()
-        ->and($process?->app_instance_id)
+        ->and($process?->instance_id)
         ->toBe($instance->id)
         ->and($process?->node_id)
         ->toBe($app->node_id)

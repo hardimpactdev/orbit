@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-05T08:59:18+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-prove-repair-transition/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-105918-loop-prove-repair-transition",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T085314Z-64db4e06915d.json"
+    ],
+    "entry_digests": {
+        "loop.md": "ce3df5a3b6d2e9181cf2623a69fe5eb74aca7e7b246db20d00458d8bf25131f8",
+        "quality-gates/quality-check-2026-08-05T085314Z-64db4e06915d.json": "8fea6e775dfa77d31bbb29bcf1e0e8c9ee2dc1f8d032850d77159f536a4a7d55"
+    },
+    "slug": "loop-prove-repair-transition",
+    "requested_slug": "loop-prove-repair-transition",
+    "compatible_slugs": [
+        "loop-prove-repair-transition"
+    ],
+    "branch": "codex/loop-prove-repair-transition",
+    "candidate_commit": "6c79e106d90c60f681b8f2e67fa0147a8da74b77",
+    "accepted_feature_tip": "6c79e106d90c60f681b8f2e67fa0147a8da74b77",
+    "accepted_main_tip": "39cb532c5bc9828103b4ed11ff9e1d124d5ab0d2",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

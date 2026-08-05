@@ -112,7 +112,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
                 'node_id' => $node->id,
                 'command' => $descriptor->command,
                 'restart_policy' => ProcessRestartPolicy::Always,
-                'crash_notification' => ProcessCrashNotification::AgentIde,
+                'crash_notification' => ProcessCrashNotification::None,
                 'runtime' => ProcessRuntime::Docker,
                 'tool' => null,
                 'runtime_config' => $settings->runtimeConfig,

@@ -30,6 +30,14 @@ it('serializes node, app, and workspace filters when provided', function (): voi
     ]);
 });
 
+it('serializes the app hostname selector', function (): void {
+    $request = new ListProcessesRequest(app: 'test.app.example');
+
+    expect($request->query()->all())->toBe([
+        'app' => 'test.app.example',
+    ]);
+});
+
 it('omits null filters from the query', function (): void {
     $request = new ListProcessesRequest(instance: 'docs');
 

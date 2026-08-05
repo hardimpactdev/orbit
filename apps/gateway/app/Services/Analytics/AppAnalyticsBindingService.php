@@ -7,8 +7,8 @@ namespace App\Services\Analytics;
 use App\Exceptions\AnalyticsMutationBusy;
 use App\Exceptions\AnalyticsRouteCleanupFailed;
 use App\Exceptions\AnalyticsRouteEnactmentFailed;
+use App\Models\App;
 use App\Models\AppAnalyticsBinding;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -34,13 +34,13 @@ final readonly class AppAnalyticsBindingService
     /**
      * @param  array<int, mixed>  $publicHosts
      */
-    public function enable(Project $app, array $publicHosts): AppAnalyticsBinding
+    public function enable(App $app, array $publicHosts): AppAnalyticsBinding
     {
         return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->enableUnlocked($app, $publicHosts));
     }
 
     /** @param array<int, mixed> $publicHosts */
-    private function enableUnlocked(Project $app, array $publicHosts): AppAnalyticsBinding
+    private function enableUnlocked(App $app, array $publicHosts): AppAnalyticsBinding
     {
         $hosts = $this->publicHostNormalizer->normalize($app, $publicHosts);
         $this->routes->requireServiceRoute();
@@ -85,12 +85,12 @@ final readonly class AppAnalyticsBindingService
         return $binding->refresh();
     }
 
-    public function disable(Project $app): AppAnalyticsBinding
+    public function disable(App $app): AppAnalyticsBinding
     {
         return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->disableUnlocked($app));
     }
 
-    private function disableUnlocked(Project $app): AppAnalyticsBinding
+    private function disableUnlocked(App $app): AppAnalyticsBinding
     {
         $this->binding($app);
 
@@ -116,12 +116,12 @@ final readonly class AppAnalyticsBindingService
         return $binding;
     }
 
-    public function show(Project $app): AppAnalyticsBinding
+    public function show(App $app): AppAnalyticsBinding
     {
         return $this->binding($app);
     }
 
-    private function existingBinding(Project $app): ?AppAnalyticsBinding
+    private function existingBinding(App $app): ?AppAnalyticsBinding
     {
         $binding = AppAnalyticsBinding::query()
             ->where('app_id', $app->id)
@@ -130,19 +130,19 @@ final readonly class AppAnalyticsBindingService
         return $binding instanceof AppAnalyticsBinding ? $binding : null;
     }
 
-    private function binding(Project $app): AppAnalyticsBinding
+    private function binding(App $app): AppAnalyticsBinding
     {
         $binding = $this->existingBinding($app);
 
         if (! $binding instanceof AppAnalyticsBinding) {
-            throw new RuntimeException("Project '{$app->name}' does not have an analytics binding.");
+            throw new RuntimeException("App '{$app->name}' does not have an analytics binding.");
         }
 
         return $binding;
     }
 
     /** @param Closure(): AppAnalyticsBinding $mutation */
-    private function withMutationLock(Project $app, Closure $mutation): AppAnalyticsBinding
+    private function withMutationLock(App $app, Closure $mutation): AppAnalyticsBinding
     {
         try {
             /** @var AppAnalyticsBinding $binding */
@@ -158,7 +158,7 @@ final readonly class AppAnalyticsBindingService
         }
     }
 
-    private function mutationLockSeconds(Project $app): int
+    private function mutationLockSeconds(App $app): int
     {
         $existingRouteCount = ProxyRoute::query()
             ->where('app_id', $app->id)

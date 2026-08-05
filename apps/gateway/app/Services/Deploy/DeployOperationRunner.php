@@ -31,9 +31,9 @@ final readonly class DeployOperationRunner
 
         if (! $node instanceof Node) {
             throw new GatewayApiException(
-                "Project '{$target->name}' has no owning node.",
+                "App '{$target->name}' has no owning node.",
                 'deploy.execution_failed',
-                ['project' => $target->name, 'instance' => $instanceSelector],
+                ['app' => $target->name, 'instance' => $instanceSelector],
             );
         }
 

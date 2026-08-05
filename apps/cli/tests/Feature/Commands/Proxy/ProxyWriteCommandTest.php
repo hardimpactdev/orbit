@@ -194,11 +194,11 @@ describe('proxy write commands', function (): void {
             'route' => [
                 'domain' => 'old.test',
                 'node' => 'app-1',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ],
         ], [
-            'backend_removed' => false,
-            'tls_removed' => false,
+            'backend_removed' => true,
+            'tls_removed' => true,
             'warnings' => [],
         ]));
 
@@ -221,7 +221,7 @@ describe('proxy write commands', function (): void {
             ),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['status'])->toBe('removed_with_drift');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['status'])->toBe('removed');
     });
 
     it('prompts before removing a proxy route without force in interactive mode', function (): void {
@@ -229,11 +229,11 @@ describe('proxy write commands', function (): void {
             'route' => [
                 'domain' => 'old.test',
                 'node' => 'app-1',
-                'status' => 'removed_with_drift',
+                'status' => 'removed',
             ],
         ], [
-            'backend_removed' => false,
-            'tls_removed' => false,
+            'backend_removed' => true,
+            'tls_removed' => true,
             'warnings' => [],
         ]));
 
@@ -354,7 +354,8 @@ describe('proxy write commands', function (): void {
             ],
         ], [
             'backend_removed' => true,
-            'tls_removed' => false,
+            'tls_removed' => true,
+            'removal_reason' => 'custom',
         ]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
@@ -377,13 +378,60 @@ describe('proxy write commands', function (): void {
             ->and($output)
             ->toContain('Backend cleanup: completed')
             ->and($output)
-            ->toContain('TLS cleanup: skipped')
+            ->toContain('TLS cleanup: completed')
+            ->and($output)
+            ->not->toContain('{');
+    });
+
+    it('renders orphan-owner proxy:remove safety detail in human mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'route' => [
+                'domain' => 'auth.craft-starterkit-react.test',
+                'kind' => 'workspace',
+                'owner' => ['type' => 'workspace', 'name' => null],
+                'node' => 'app-1',
+                'target' => ['type' => 'workspace', 'value' => null],
+                'status' => 'removed',
+            ],
+        ], [
+            'backend_removed' => true,
+            'tls_removed' => true,
+            'removal_reason' => 'orphan_owner',
+            'owner_type' => 'workspace',
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'proxy:remove', [
+            'domain' => 'auth.craft-starterkit-react.test',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Proxy route 'auth.craft-starterkit-react.test' removed")
+            ->and($output)
+            ->toContain('Domain: auth.craft-starterkit-react.test')
+            ->and($output)
+            ->toContain('Owner: workspace (orphaned)')
+            ->and($output)
+            ->toContain('Safe because: the recorded workspace owner no longer exists')
             ->and($output)
             ->not->toContain('{');
     });
 
     it('renders proxy:remove gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('proxy.cleanup_failed', 'Backend cleanup failed.'), 500);
+        fakeGateway(fakeErrorEnvelope(
+            'proxy.cleanup_failed',
+            "Proxy route 'old.test' registry is intact, but backend/TLS cleanup failed: simulated",
+            [
+                'domain' => 'old.test',
+                'node' => 'app-1',
+                'backend_removed' => false,
+                'tls_removed' => false,
+                'next_command' => 'doctor --family=proxy --restore --node=app-1',
+            ],
+        ), 422);
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
             'domain' => 'old.test',
@@ -393,7 +441,9 @@ describe('proxy write commands', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain('Backend cleanup failed')
+            ->toContain('registry is intact')
+            ->and($output)
+            ->toContain('backend/TLS cleanup failed')
             ->and($output)
             ->not->toContain('"error"');
     });

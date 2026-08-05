@@ -25,6 +25,12 @@ These terms define the gateway command domain and its relationship to other fami
 - **Gateway WireGuard API address:** Orbit network address for the gateway's
   typed HTTPS API. `gateway:add` may accept it explicitly or derive it from the
   active Orbit WireGuard network when that is unambiguous.
+- **Browser Gateway hostname:** Private DNS hostname clients use for the
+  browser Toolbar, TypeScript SDK, and native EventSource against the gateway
+  API. Default is `gateway.orbit` (config `orbit.gateway.hostname` /
+  `ORBIT_GATEWAY_HOSTNAME`). The Orbit-issued gateway leaf certificate must
+  include this hostname as a DNS SAN together with the short host `gateway`
+  and the gateway WireGuard API IP.
 - **Gateway API runtime:** The Swarm-managed `orbit-gateway` service serving
   the typed HTTPS API. In `router-colocated` exposure mode router-owned
   `orbit-caddy` fronts it over `orbit-network`; in `gateway-direct` mode it

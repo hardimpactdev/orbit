@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
@@ -30,17 +30,17 @@ function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', arr
 }
 
 function createToolContractInstance(
-    Project $project,
+    App $app,
     Node $node,
     string $name = 'development',
     ?string $domain = null,
-): AppInstance {
-    return AppInstance::factory()->for($project, 'app')->create([
+): Instance {
+    return Instance::factory()->for($app, 'app')->create([
         'name' => $name,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: "/srv/{$project->name}-{$name}",
+            path: "/srv/{$app->name}-{$name}",
             document_root: 'public',
             domain: $domain,
         ),
@@ -116,9 +116,19 @@ describe('tool command shared contract', function (): void {
         app()->instance(RemoteShell::class, new class implements RemoteShell {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
+                // php-cli live inspection uses php_cli_runtimes multi-minor probe output.
+                // After matrix cutover, app-dev effective variant is coverage. Line order:
+                // minor|expected_patch|present|patch|pcov_loaded|pcov_start|pcov_enabled|ri_ok.
+                $stdout =
+                    implode("\n", [
+                        '8.5|8.5.8|1|8.5.8|1|1|1|1',
+                        '8.4|8.4.21|1|8.4.21|1|1|1|1',
+                        '8.3|8.3.31|1|8.3.31|1|1|1|1',
+                    ])."\n";
+
                 return new RemoteShellResult(
                     exitCode: 0,
-                    stdout: "/opt/orbit/php/8.5/bin/php\t8.5.1\tinstalled\n",
+                    stdout: $stdout,
                     stderr: '',
                     durationMs: 1,
                 );
@@ -133,7 +143,7 @@ describe('tool command shared contract', function (): void {
             ->and([...$payload, ...$live])
             ->toMatchArray([
                 'observed_state' => 'installed',
-                'observed_version' => '8.5.1',
+                'observed_version' => '8.5.8',
             ]);
     });
 
@@ -147,12 +157,12 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
         assignToolContractAppHostRole($inactiveNode);
 
-        $project = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs-contract',
             'domain' => 'docs-contract.test',
             'node_id' => $secondNode->id,
         ]);
-        createToolContractInstance($project, $secondNode, 'production', 'docs-contract.test');
+        createToolContractInstance($app, $secondNode, 'production', 'docs-contract.test');
 
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $firstNode->id]);
@@ -189,11 +199,11 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($firstNode);
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
-        $project = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs-contract',
             'node_id' => $secondNode->id,
         ]);
-        createToolContractInstance($project, $secondNode, 'production');
+        createToolContractInstance($app, $secondNode, 'production');
 
         $registry = app(ToolRegistry::class);
 
@@ -238,7 +248,7 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($firstNode, settings: ['tld' => 'dev1']);
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
-        $docsProject = Project::factory()->create([
+        $docsProject = App::factory()->create([
             'name' => 'docs-contract',
             'domain' => 'docs-contract.example.test',
             'node_id' => $firstNode->id,
@@ -249,7 +259,7 @@ describe('tool command shared contract', function (): void {
             'development',
             'docs-contract.example.test',
         );
-        $apiProject = Project::factory()->create([
+        $apiProject = App::factory()->create([
             'name' => 'api-contract',
             'node_id' => $secondNode->id,
         ]);

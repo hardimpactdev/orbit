@@ -57,7 +57,8 @@ final class NodeHostPaths
         $normalizedUser = self::normalizeUser($user);
 
         if (self::isMacosPlatform($platform)) {
-            return "/Users/{$normalizedUser}";
+            // macOS root home is /var/root, not /Users/root.
+            return $normalizedUser === 'root' ? '/var/root' : "/Users/{$normalizedUser}";
         }
 
         if ($normalizedUser === 'root') {

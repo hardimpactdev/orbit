@@ -9,9 +9,9 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -41,11 +41,11 @@ final readonly class WorkspacesProbe
 
     public function introspect(Workspace $workspace): ProbeSnapshot
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $app = $workspace->app;
         $node = $this->placement()->nodeForWorkspace($workspace);
 
-        if (! $app instanceof Project || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
             return new ProbeSnapshot([]);
         }
 
@@ -222,7 +222,7 @@ final readonly class WorkspacesProbe
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($workspace));
         $drift = array_merge($drift, $this->checkParentApp($workspace));
-        $drift = array_merge($drift, $this->checkAppInstance($workspace));
+        $drift = array_merge($drift, $this->checkInstance($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkDevelopmentSecurity($workspace, $snapshot));
@@ -239,7 +239,7 @@ final readonly class WorkspacesProbe
             ! is_string($workspace->name)
             || $workspace->name === ''
             || ! is_int($workspace->app_id)
-            || ! is_int($workspace->app_instance_id)
+            || ! is_int($workspace->instance_id)
             || ! is_string($workspace->path)
             || $workspace->path === ''
             || ! is_string($workspace->effectivePhpVersion())
@@ -267,7 +267,7 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        if (! $workspace->app instanceof Project || $workspace->app->runtime !== AppRuntimeKind::Php) {
+        if (! $workspace->app instanceof App || $workspace->app->runtime !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -301,7 +301,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "Docker is not available to serve PHP {$workspace->effectivePhpVersion()} for workspace {$workspace->name} on the parent project node.",
+                    summary: "Docker is not available to serve PHP {$workspace->effectivePhpVersion()} for workspace {$workspace->name} on the parent app node.",
                     detail: [
                         'php_version' => $workspace->effectivePhpVersion(),
                     ],
@@ -319,7 +319,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "FrankenPHP runtime image for PHP {$workspace->effectivePhpVersion()} is not available on the parent project node for workspace {$workspace->name}.",
+                    summary: "FrankenPHP runtime image for PHP {$workspace->effectivePhpVersion()} is not available on the parent app node for workspace {$workspace->name}.",
                     detail: [
                         'php_version' => $workspace->effectivePhpVersion(),
                     ],
@@ -335,10 +335,10 @@ final readonly class WorkspacesProbe
      */
     private function checkDevelopmentSecurity(Workspace $workspace, ProbeSnapshot $snapshot): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $node = $this->placement()->nodeForWorkspace($workspace);
 
-        if (! $workspace->app instanceof Project || ! $node instanceof Node) {
+        if (! $workspace->app instanceof App || ! $node instanceof Node) {
             return [];
         }
 
@@ -415,13 +415,13 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        if (! $workspace->app instanceof Project) {
+        if (! $workspace->app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'workspace.parent_project_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} points at a missing parent project.",
+                    summary: "Workspace {$workspace->name} points at a missing parent app.",
                 ),
             ];
         }
@@ -432,17 +432,17 @@ final readonly class WorkspacesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkAppInstance(Workspace $workspace): array
+    private function checkInstance(Workspace $workspace): array
     {
-        $workspace->loadMissing(['appInstance']);
-        $instance = $workspace->appInstance;
+        $workspace->loadMissing(['instance']);
+        $instance = $workspace->instance;
 
-        if (! $instance instanceof AppInstance) {
-            return [$this->invalidAppInstanceEntry($workspace, 'missing')];
+        if (! $instance instanceof Instance) {
+            return [$this->invalidInstanceEntry($workspace, 'missing')];
         }
 
         if ($instance->app_id !== $workspace->app_id) {
-            return [$this->invalidAppInstanceEntry($workspace, 'app_mismatch', $instance)];
+            return [$this->invalidInstanceEntry($workspace, 'app_mismatch', $instance)];
         }
 
         $node = $this->placement()->nodeForInstance($instance);
@@ -452,16 +452,16 @@ final readonly class WorkspacesProbe
             || ! $node->isActive()
             || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($node)
         ) {
-            return [$this->invalidAppInstanceEntry($workspace, 'node_not_workspaceable', $instance, $node)];
+            return [$this->invalidInstanceEntry($workspace, 'node_not_workspaceable', $instance, $node)];
         }
 
         return [];
     }
 
-    private function invalidAppInstanceEntry(
+    private function invalidInstanceEntry(
         Workspace $workspace,
         string $reason,
-        ?AppInstance $instance = null,
+        ?Instance $instance = null,
         ?Node $node = null,
     ): DriftEntry {
         return new DriftEntry(
@@ -472,7 +472,7 @@ final readonly class WorkspacesProbe
             detail: [
                 'reason' => $reason,
                 'app_id' => $workspace->app_id,
-                'app_instance_id' => $workspace->app_instance_id,
+                'instance_id' => $workspace->instance_id,
                 'resolved_app_id' => $instance?->app_id,
                 'node_id' => $node?->id,
             ],
@@ -494,7 +494,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.path_outside_policy',
                     kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} path is the parent project root, not a workspace path.",
+                    summary: "Workspace {$workspace->name} path is the parent app root, not a workspace path.",
                     detail: [
                         'path' => $workspace->path,
                         'app_path' => $workspace->app?->path,
@@ -515,7 +515,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.path_missing',
                     kind: DriftKind::Missing,
-                    summary: "Workspace {$workspace->name} path is missing on the parent project node.",
+                    summary: "Workspace {$workspace->name} path is missing on the parent app node.",
                     detail: [
                         'expected' => $workspace->path,
                     ],
@@ -546,7 +546,7 @@ final readonly class WorkspacesProbe
 
         $appPath = $this->placement()->appPathForWorkspace($workspace);
 
-        if (! $workspace->app instanceof Project || ! is_string($appPath) || $appPath === '') {
+        if (! $workspace->app instanceof App || ! is_string($appPath) || $appPath === '') {
             return false;
         }
 

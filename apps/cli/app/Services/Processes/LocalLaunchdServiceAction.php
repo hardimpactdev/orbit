@@ -14,7 +14,7 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalLaunchdServiceAction
 {
-    private const array ACTIONS = ['apply', 'probe', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'is-active', 'probe', 'remove', 'restart', 'start', 'stop'];
 
     private const string LABEL_PATTERN = '#^dev\.hardimpact\.orbit\.[A-Za-z0-9_.-]+$#';
 
@@ -258,6 +258,16 @@ final readonly class LocalLaunchdServiceAction
             return $this->lifecycle('start', $label);
         }
 
+        if ($action === 'is-active') {
+            $print = $this->runProcess(['launchctl', 'print', $target]);
+
+            if ($print->isSuccessful() && $this->isLaunchdRunning($print->getOutput())) {
+                return ['action' => $action, 'label' => $label, 'changed' => false];
+            }
+
+            throw $this->failure($action, $label, $print);
+        }
+
         // fallback for other actions
         $result = $this->runProcess(['launchctl', $action, $target]);
         if ($result->isSuccessful()) {
@@ -300,6 +310,19 @@ final readonly class LocalLaunchdServiceAction
             'plist_path' => $plistPath,
             'changed' => true,
         ];
+    }
+
+    private function isLaunchdRunning(string $printOutput): bool
+    {
+        if (preg_match('/^\s*state\s*=\s*running\s*$/mi', $printOutput) !== 1) {
+            return false;
+        }
+
+        if (preg_match('/^\s*pid\s*=\s*(\d+)\s*$/mi', $printOutput, $matches) !== 1) {
+            return false;
+        }
+
+        return (int) $matches[1] > 0;
     }
 
     private function action(string $value): string

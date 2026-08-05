@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:env [action] [name] [--instance=<project.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
+orbit workspace:env [action] [name] [--instance=<app.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | None. | `list`, `set`, or `render`. |
 | `name` | `[name]` | CWD does not resolve one registered workspace. | Registered workspace containing `ORBIT_HOST_CWD`. | Workspace identity slug. |
-| `instance` | `--instance` | Matching workspace names are ambiguous. | None. | Project or concrete instance selector. |
+| `instance` | `--instance` | Matching workspace names are ambiguous. | None. | App or concrete instance selector. |
 | `key` | `--key` | `set`. | None. | Uppercase env key pattern. |
 | `value` | `--value` | `set`. | None. | Any non-secret string, including production-like values. |
 | `apply` | `--apply` | Optional for `set`. | `false`. | Rejected outside `set`. |
@@ -51,8 +51,8 @@ database values are redacted from responses.
 | `GET` | `/api/workspaces/env/resolve-by-path?path=<absolute>` | `workspace:read` | Resolve the workspace containing caller CWD. |
 
 The workspace routes accept an optional `instance` query parameter for
-disambiguation. It accepts `project.instance`, or a bare project only when that
-project resolves to one concrete instance.
+disambiguation. It accepts `app.instance`, or a bare app only when that
+app resolves to one concrete instance.
 
 ## Behavior Contract
 
@@ -65,16 +65,27 @@ project resolves to one concrete instance.
 
 ### Apply boundary
 
-5. `set --apply` reads and writes only `<workspace path>/.env`, clears Laravel
-   config and deletes generated bootstrap cache files at the workspace path as
-   the workspace runtime user, and reapplies only the workspace runtime.
+5. `set --apply` derives the env path only from the resolved registered workspace
+   record (`<workspace path>/.env`). Clients cannot supply an alternate apply
+   path. Orbit reads and writes only that path, clears Laravel config and deletes
+   generated bootstrap cache files at the workspace path as the workspace runtime
+   user, and restarts the exact rendered selected workspace runtime when it uses
+   PHP—even when the container spec already matches a running container.
 6. Parent instance paths, sibling workspace paths, and remote unrelated nodes are
-   outside the side-effect boundary.
+   outside the side-effect boundary. Env publication is atomic (same-directory
+   stage, lock, mode-preserving chmod, revalidate, rename) and preserves
+   unrelated variables via the env editor. Missing remote env files are treated
+   as empty; validation, read, and transport failures do not collapse into empty
+   contents.
 
 ### Result metadata
 
-7. Every success response includes `scope=workspace`, `project`, `instance`,
-   `workspace`, `path`, `stored`, `applied`, and `runtime_restarted`.
+7. Every success response includes `scope=workspace`, `app`, `instance`,
+   `workspace`, `path`, `stored`, `applied`, and `runtime_restarted`. Successful
+   apply payloads also expose explicit `env_written` and `runtime_restarted`
+   facts (including `runtime_outcome=restarted` when a matching running container
+   is restarted). Repeating `--apply` may restart the runtime again while leaving
+   file contents, mode, and unrelated keys stable.
 
 ## Failure Semantics
 
@@ -82,9 +93,10 @@ project resolves to one concrete instance.
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches. | `error.code=workspace.not_found`. |
 | Workspace ambiguous | Name matches more than one visible target. | `error.code=validation_failed`, `error.meta.field=workspace`. |
-| Instance ambiguous | A bare project selector resolves to more than one instance. | `error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`. |
+| Instance ambiguous | A bare app selector resolves to more than one instance. | `error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`. |
 | Production instance unsupported | The selected workspace belongs to an `app-prod` instance. | `error.code=workspace.unsupported_for_production` before storage, file, cache, or runtime effects. |
-| Runtime apply failed | Gateway state saved but workspace file/cache/runtime application failed. | `error.code=workspace.env_apply_failed`. |
+| Env file write failed after storage | Gateway registry saved the key but the workspace `.env` was not written. | `error.code=workspace.env_apply_failed`, `error.meta.phase=env_write`, `stored=true`, `env_written=false`, `runtime_restarted=false`. |
+| Runtime apply failed after write | Workspace `.env` was written but cache clear or runtime restart failed. | `error.code=workspace.env_apply_failed`, `error.meta.phase=runtime`, `stored=true`, `env_written=true`, `runtime_restarted=false`. |
 
 ## Doctor Relationship
 

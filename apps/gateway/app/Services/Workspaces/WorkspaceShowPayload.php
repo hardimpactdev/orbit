@@ -23,7 +23,7 @@ class WorkspaceShowPayload
      */
     public function forWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance', 'app.processes']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance', 'app.processes']);
 
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
@@ -31,17 +31,13 @@ class WorkspaceShowPayload
         /** @var array<string, mixed> $workspacePayload */
         $workspacePayload = [
             'name' => $workspace->name,
-            'project' => $app?->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $app?->name,
+            'instance' => $workspace->instance->name,
             'node' => $node?->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'agent_ide' => [
-                'adapter' => $workspace->agent_ide === 'none' ? null : $workspace->agent_ide,
-                'workspace_id' => $workspace->agent_ide_workspace_id,
-            ],
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
@@ -54,7 +50,7 @@ class WorkspaceShowPayload
                 app: $app,
                 workspace: $workspace,
                 owner: $workspace,
-                appInstance: $workspace->appInstance,
+                instance: $workspace->instance,
             );
         }
 

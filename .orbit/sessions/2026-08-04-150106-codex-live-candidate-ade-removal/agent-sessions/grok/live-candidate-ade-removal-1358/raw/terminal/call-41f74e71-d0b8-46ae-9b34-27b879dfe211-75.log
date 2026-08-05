@@ -1,0 +1,49 @@
+ INFO All files are already formatted.
+bin/quality-check.sh:8:# Defaults are read-only (rector --dry-run, mago format --check). Pass
+bin/quality-check.sh:1125:    run_subgate gateway_mago_format env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago format ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+bin/quality-check.sh:1225:    run_subgate cli_mago_format env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+bin/quality-check.sh:1260:    run_subgate docs_mago_format env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+bin/quality-check.sh:1268:    run_subgate e2e_mago_format env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+bin/quality-check.sh:1303:    run_subgate sdk_mago_format env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+bin/quality-check.sh:1316:    run_subgate core_mago_format env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
+ INFO All files are already formatted.
+warning[no-shorthand-ternary]: Use of the shorthand ternary operator.
+    ┌─ tests/Feature/Runtime/OrbitGatewayImageContractTest.php:118:14
+    │
+118 │     foreach (preg_split('/\R/', $dockerfile) ?: [] as $line) {
+    │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Ambiguous check due to `? :` loose comparison
+    │
+    = Help: Use null coalesce operator (`??`) or ternary operator with explicit strict comparison.
+
+warning[no-shorthand-ternary]: Use of the shorthand ternary operator.
+    ┌─ tests/Feature/Runtime/OrbitGatewayImageContractTest.php:135:19
+    │
+135 │         $tokens = preg_split('/\s+/', $remainder) ?: [];
+    │                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Ambiguous check due to `? :` loose comparison
+    │
+    = Help: Use null coalesce operator (`??`) or ternary operator with explicit strict comparison.
+
+warning: found 4 issues: 3 warning(s), 1 help message(s)
+ = 1 issues contain auto-fix suggestions
+
+ INFO Your baseline file contains 7310 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+    = The property `$not` is defined in mixin class `Pest\Expectation`, but `Pest\Mixins\Expectation` is final and does not have a `__get` method to forward the access.
+    = Help: Add a `__get` method to `Pest\Mixins\Expectation` to handle mixin property accesses.
+
+error[possible-method-access-on-null]: Attempting to call a method on `null`.
+    ┌─ tests/Feature/Runtime/OrbitGatewayImageContractTest.php:165:5
+    │  
+165 │ ╭     expect($dockerfile)
+166 │ │         ->toContain('COPY apps/reverb /app')
+167 │ │         ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
+168 │ │         ->toContain('LABEL orbit.websocket.self_contained="true"')
+    · │
+172 │ │         ->toContain('**/vendor')
+173 │ │         ->not->toContain('!apps/gateway/**');
+    │ ╰─────────────^ This expression can be `null`
+    │  
+    = Help: Use the nullsafe operator (`?->`) if `null` is an expected value.
+
+error: found 19 issues: 18 error(s), 1 warning(s)
+
+ INFO Your baseline file contains 2087 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.

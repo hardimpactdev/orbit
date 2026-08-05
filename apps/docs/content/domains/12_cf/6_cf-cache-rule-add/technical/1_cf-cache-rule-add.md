@@ -1,4 +1,4 @@
-# Technical Contract: `orbit cf-cache-rule:add <project> [--json]`
+# Technical Contract: `orbit cf-cache-rule:add <app> [--json]`
 
 [Back to public `cf-cache-rule:add` documentation.](../cf-cache-rule-add.md)
 
@@ -10,12 +10,12 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The app exists and has a real domain that resolves to a Cloudflare zone.
+- The named app exists and has a Cloudflare-backed `App.domain`.
 
 ## Signature
 
 ```bash
-orbit cf-cache-rule:add <project> [--json]
+orbit cf-cache-rule:add <app> [--json]
 ```
 
 ## Input Contract
@@ -24,17 +24,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
+| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Bare app name. Current resolver uses `App.domain` for the Cloudflare zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
-### Project Zone Resolution Rules
+### App Zone Resolution Rules
 
-- Resolves `project` from gateway project state.
-- Resolves the app's real domain to a Cloudflare zone.
-- Fails before provider mutation when the app has no real Cloudflare-backed
-  domain.
+- Resolves a bare app name and reads `App.domain` through
+  `CloudflareZoneResolver` (current implementation).
+- Fails before provider mutation when the app is missing or has no
+  Cloudflare-backed domain.
+- Direction (pending implementation): instance-owned domain resolution via
+  dotted `app.instance` selectors.
 
 ### Cache Rule Rules
 
@@ -47,7 +49,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Scope Boundaries
 
 `cf-cache-rule:add` writes Cloudflare provider cache policy only. It must not
-mutate app deployment steps, app process state, proxy routes, or DNS records.
+mutate instance deployment steps, process state, proxy routes, or DNS records.
 
 ## Renderer Contracts
 
@@ -63,18 +65,18 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`cf-cache-rule:add` may support app performance policy, but it does not create a
-Cloudflare doctor family. Project-domain and deployment health remain owned by
-[`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
+`cf-cache-rule:add` may support instance performance policy, but it does not create a
+Cloudflare doctor family. Instance-domain and deployment health remain owned by
+[`doctor --family=instance`](../../../5_app/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{project}` and JSON success envelope passthrough. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{app}` and JSON success envelope passthrough. |
 
-There is no gateway-side coverage for this command contract: authorization denial, app lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and app/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
+There is no gateway-side coverage for this command contract: authorization denial, instance lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and instance/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
 
 Renderer-specific test mapping lives in:
 

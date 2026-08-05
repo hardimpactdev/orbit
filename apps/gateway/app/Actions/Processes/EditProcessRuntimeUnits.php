@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
+use App\Models\App;
 use App\Models\Process;
-use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use Throwable;
 
 final readonly class EditProcessRuntimeUnits
 {
@@ -16,6 +18,7 @@ final readonly class EditProcessRuntimeUnits
         private EditProcessRuntimeUnitCleaner $cleaner,
         private EditProcessRuntimeUnitResolver $resolver,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private RecordProcessEvent $recordProcessEvent,
     ) {}
 
     public function fixedRuntimeUnitName(Process $process): ?string
@@ -24,7 +27,7 @@ final readonly class EditProcessRuntimeUnits
     }
 
     /**
-     * @param array{context: ProcessOwnerContext, app: Project, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
+     * @param array{context: ProcessOwnerContext, app: App, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
      * @return array{
      *     warnings: list<array<string, mixed>>,
      *     applied_runtime_units: list<array{name: string, context: string}>
@@ -94,6 +97,11 @@ final readonly class EditProcessRuntimeUnits
      * Restart the rendered runtime units after a successful apply through the
      * process runtime driver selected by `$process->runtime`.
      *
+     * Ordered durable lifecycle: restarting, then started or failed. On
+     * exception, failed is recorded before rethrow so status is never left
+     * transitional. process_name is the immutable snapshot from the Process
+     * model at record time (includes renames applied earlier in process:update).
+     *
      * @param  list<array{name: string, context: string}>  $runtimeUnits
      * @return list<array<string, mixed>>
      */
@@ -101,9 +109,55 @@ final readonly class EditProcessRuntimeUnits
     {
         $warnings = [];
         $driver = $this->runtimeDrivers->forProcess($process);
+        // App-level process:update may restart main plus each workspace unit.
+        // Resolve workspace from each unit's context so events are not all
+        // written with workspace_id=null (which would starve workspace streams
+        // and contaminate main-scope status derivation).
+        $app = $context->runtimeApp();
+        $app->loadMissing(['workspaces']);
 
         foreach ($runtimeUnits as $runtimeUnit) {
-            if ($driver->restart($context->node, $runtimeUnit['name'])) {
+            $workspace = $this->resolver->runtimeWorkspaceForUnit(
+                $context,
+                $app,
+                $process,
+                $runtimeUnit,
+            );
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Restarting,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit['name'],
+            );
+
+            try {
+                $ok = $driver->restart($context->node, $runtimeUnit['name']);
+            } catch (Throwable $exception) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit['name'],
+                );
+
+                throw $exception;
+            }
+
+            $this->recordProcessEvent->handle(
+                $ok ? ProcessEventType::Started : ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $runtimeUnit['name'],
+            );
+
+            if ($ok) {
                 continue;
             }
 

@@ -36,10 +36,11 @@ These rules govern every command contract in this directory.
 - Commands must state which domain owns the behavior.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
-  `2_gateway` contains `gateway:*` commands, `16_dns` contains `dns:*`
-  commands, and `5_project` contains `app:*` commands. `11_operation` is the
-  exception for miscellaneous operational commands such as `doctor`, `update`,
-  and `activity:*`.
+  `2_gateway` contains `gateway:*` commands, `15_dns` contains `dns:*`
+  commands, and `5_app` contains `app:*` and `instance:*` commands.
+  `11_operation` is the exception for miscellaneous operational commands such
+  as `doctor` and `update`. `activity:*` commands belong to the Activity
+  domain (`16_activity`), not Operations.
 - When a domain has compound command prefixes, use the longest compound prefix
   before the colon and put only the action after the colon. Examples:
   `workspace-setup-step:add`, `workspace-teardown-step:add`, `cf-dns:list`,
@@ -178,7 +179,7 @@ Stable state families are `node`, `instance`, `workspace`, `process`,
 These are the keys accepted by `doctor --family=<family>` and the values
 carried by warning or doctor `family` fields. Machine-readable issue and
 warning codes use singular product prefixes, such as `node.wireguard_peer_missing`,
-`app.runtime_config_missing`, `workspace.path_missing`,
+`instance.runtime_config_missing`, `workspace.path_missing`,
 `process.runtime_unit_missing`, `proxy.route_extra`,
 `schedule.scheduler_missing`, and `database_connection.env_missing`.
 
@@ -193,12 +194,12 @@ that a command owns still use the singular product prefix for the command's doma
 
 Family issue-code condition names should use the product relationship term for
 that family, such as `app.owner_node_invalid`,
-`workspace.parent_app_invalid`, or `process.owner_app_invalid`. Do not
+`workspace.parent_instance_invalid`, or `process.owner_app_invalid`. Do not
 normalize these into a generic parent/owner vocabulary when the domain model
 uses a more specific relationship name.
 
 Other documentation domains, such as operations, deployments, VPN
-administration, PHP runtime, and agent IDE commands, may call or affect state
+administration and PHP runtime commands may call or affect state
 families without becoming state families themselves.
 
 Converted documentation domains that are not state families must include a
@@ -276,9 +277,18 @@ the sources of truth.
 
 The catalog is generated and never hand-edited. Regenerate it with
 `bin/orbit-docs-artisan orbit:command-catalog`. The committed artifact lives at
-`apps/docs/content/generated/command-catalog.json`. A Pest drift guard fails
-when the committed catalog omits a live public command or diverges from the
-command-docs registries, and passes once the catalog is regenerated.
+`apps/docs/content/generated/command-catalog.json`. The human-facing catalog
+contract is documented at [`command-catalog.md`](../command-catalog.md). A Pest
+drift guard fails when the committed catalog omits a live public command or
+diverges from the command-docs registries, and passes once the catalog is
+regenerated.
+
+Related top-level product docs for contract authors:
+
+- [Runtime execution lanes](../execution-lanes.md)
+- [Command UX primitives](../ux/README.md)
+- [Testing lane map](../testing/README.md)
+- [Security section pattern](../abstractions/17_security.md)
 
 The catalog joins existing sources instead of re-parsing them:
 
@@ -296,7 +306,7 @@ without a schema change.
 
 Command docs do not keep sidecar files for tracking in-repo ambiguity. When requested
 behavior, existing docs, implementation evidence, tests, or product vocabulary
-disagree, track the unresolved question outside the project. Once the user
+disagree, track the unresolved question outside the app. Once the user
 decides, update the authoritative command docs directly. Do not leave product
 behavior only in decision-history notes.
 
@@ -682,7 +692,7 @@ in-memory contract owner listed in each command's test mapping.
 
 Domains are ordered by dependency: nodes define fleet membership, gateway
 defines control-plane authority and trust, tools and firewall rules establish
-node capabilities and network policy, and projects and instance-owned runtime behavior
+node capabilities and network policy, and apps and instance-owned runtime behavior
 build on top of that foundation.
 
 ### Foundation domains
@@ -694,14 +704,14 @@ They also define the core app/workspace foundation.
 2. [Gateway](2_gateway/README.md)
 3. [Tools](3_tool/README.md)
 4. [Firewall](4_firewall/README.md)
-5. [Apps](5_project/README.md)
+5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)
 
 Processes, proxy, and database support those foundation domains:
 
 7. [Processes](7_process/README.md)
 8. [Proxy](8_proxy/README.md)
-9. [Database](18_database/README.md)
+9. [Database](17_database/README.md)
 
 ### Runtime workflow domains
 
@@ -714,7 +724,7 @@ operations on top of the foundation.
 
 ### Runtime integration and observability domains
 
-These domains integrate Orbit with Cloudflare, VPN, PHP runtimes, agent IDEs,
+These domains integrate Orbit with Cloudflare, VPN, PHP runtimes,
 DNS, activity logs, object-storage workflows owned by the S3 role, and
 observability workflows owned by the metrics role, and analytics workflows
 owned by the analytics role.
@@ -722,25 +732,24 @@ owned by the analytics role.
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
 15. [PHP Runtime](14_php/README.md)
-16. [Agent IDE](15_agent-ide/README.md)
-17. [DNS](16_dns/README.md)
-18. [Activity](17_activity/README.md)
+16. [DNS](15_dns/README.md)
+17. [Activity](16_activity/README.md)
 
 Storage and observability integrations follow the network and activity
 surfaces:
 
-19. [S3](19_s3/README.md)
-20. [Metrics](20_metrics/README.md)
-21. [Analytics](21_analytics/README.md)
+18. [S3](18_s3/README.md)
+19. [Metrics](19_metrics/README.md)
+20. [Analytics](20_analytics/README.md)
 
 ### Optional extension and integration domains
 
 These domains describe optional command/API enablement and integrations that
 build on the core fleet authority model:
 
-22. [Extension](22_extension/README.md) — optional command and gateway API
+21. [Extension](21_extension/README.md) — optional command and gateway API
     surface enablement.
-23. [Codex](23_codex/README.md) — Codex App integration commands.
-24. [Solo](24_solo/README.md) — optional target-local Solo proxy command
+22. [Codex](22_codex/README.md) — Codex App integration commands.
+23. [Solo](23_solo/README.md) — optional target-local Solo proxy command
     catalog.
-25. [Skill](25_skill/README.md) — skill discovery and management commands.
+24. [Skill](24_skill/README.md) — skill discovery and management commands.

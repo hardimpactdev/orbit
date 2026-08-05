@@ -1,0 +1,33 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T23:42:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-doctor-drift-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-03-014203-doctor-drift-hardening",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-dev-2e5689-doctor-all.stream.jsonl",
+        "evidence/retained-dev-2e5689-home-perms-restore.stream.jsonl",
+        "evidence/retained-dev-2e5689-launcher-and-nodes.txt",
+        "evidence/retained-dev-2e5689-proxy-add-gateway.txt",
+        "evidence/retained-dev-2e5689-proxy-remove-gateway.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T234127Z-dad34b0ce600.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-dev-2e5689-doctor-all.stream.jsonl": "49222c42c84648998807f681f79e27ab68662fb826a90eca23e0c931b474cbf6",
+        "evidence/retained-dev-2e5689-home-perms-restore.stream.jsonl": "7c353777ede0b3acc4ed4a24632b4e997bd27ae6fd5dcd490684f5efbf3f8fb6",
+        "evidence/retained-dev-2e5689-launcher-and-nodes.txt": "23c90b0a5b9e5dd785cfa5c0047316b352adcbe8f33bc0a1adeba00b293f5162",
+        "evidence/retained-dev-2e5689-proxy-add-gateway.txt": "e2f065c9e7f1c8d356e70854944fa120f18641faffd881cf8e77f3be5ce4aeac",
+        "evidence/retained-dev-2e5689-proxy-remove-gateway.txt": "a8a7294697382f0748e886c355133c0a888849012bf37fbb4b4c66e1f87b6e6f",
+        "loop.md": "f6947b00671514008d766e55c2b6e62795a452b26c9fade984fccd212e5b9af3",
+        "quality-gates/quality-check-2026-08-02T234127Z-dad34b0ce600.json": "723115da53bad032a1ea2c269d421982bb4aa2146e30d0229e57d4e5e4d0c237"
+    },
+    "branch": "codex/doctor-drift-hardening",
+    "candidate_commit": "65bd9e7e7551aec0b8c83f7aac89caf3d644e9de",
+    "accepted_feature_tip": "65bd9e7e7551aec0b8c83f7aac89caf3d644e9de",
+    "accepted_main_tip": "d0d047a2bd6bb78c4a906b83acdbcead079e5e83",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

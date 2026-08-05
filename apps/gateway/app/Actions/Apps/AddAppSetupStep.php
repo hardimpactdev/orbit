@@ -11,20 +11,20 @@ use InvalidArgumentException;
 final readonly class AddAppSetupStep
 {
     public function handle(
-        int $appInstanceId,
+        int $instanceId,
         string $command,
         int $timeoutSeconds = AppSetupStep::DEFAULT_TIMEOUT_SECONDS,
         ?int $beforeStepId = null,
         ?int $afterStepId = null,
     ): AppSetupStep {
         return DB::transaction(function () use (
-            $appInstanceId,
+            $instanceId,
             $command,
             $timeoutSeconds,
             $beforeStepId,
             $afterStepId,
         ): AppSetupStep {
-            $steps = AppSetupStep::query()->where('app_instance_id', $appInstanceId);
+            $steps = AppSetupStep::query()->where('instance_id', $instanceId);
 
             if ($beforeStepId !== null) {
                 $anchor = (clone $steps)->find($beforeStepId);
@@ -49,7 +49,7 @@ final readonly class AddAppSetupStep
             }
 
             return AppSetupStep::query()->create([
-                'app_instance_id' => $appInstanceId,
+                'instance_id' => $instanceId,
                 'sort_order' => $sortOrder,
                 'command' => $command,
                 'timeout_seconds' => $timeoutSeconds,

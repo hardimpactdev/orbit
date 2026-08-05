@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T17:15:43+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-leaf-host-path-fix/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-191543-codex-gateway-leaf-host-path-fix",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T171320Z-e91bd511470d.json"
+    ],
+    "entry_digests": {
+        "loop.md": "374b4dc5af22f29583b7ff44403b51460a01fc3f2b23ac50c6921b7f56e42eb4",
+        "quality-gates/quality-check-2026-08-04T171320Z-e91bd511470d.json": "3c1766784dd20849738a4d924986944acecef1788e64e418ff99e32d431b653b"
+    },
+    "slug": "codex-gateway-leaf-host-path-fix",
+    "requested_slug": "codex-gateway-leaf-host-path-fix",
+    "compatible_slugs": [
+        "codex-gateway-leaf-host-path-fix"
+    ],
+    "branch": "codex/gateway-leaf-host-path-fix",
+    "candidate_commit": "0d3e840ce9fa74cf410ff93b040e489d22ee6f2d",
+    "accepted_feature_tip": "0d3e840ce9fa74cf410ff93b040e489d22ee6f2d",
+    "accepted_main_tip": "e31884285b77a95a2a8b02a99eb7cfae72b0dc64",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

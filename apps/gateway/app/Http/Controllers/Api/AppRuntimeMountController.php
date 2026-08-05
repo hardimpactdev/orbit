@@ -10,9 +10,9 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
-use App\Models\AppInstanceRuntimeMount;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
+use App\Models\InstanceRuntimeMount;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\AppRuntimeMountValidationException;
@@ -27,7 +27,7 @@ use Illuminate\Support\Collection;
  */
 final class AppRuntimeMountController implements Loggable
 {
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -58,8 +58,8 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
-        if (! $targetInstance instanceof AppInstance) {
-            return $this->appInstanceRequired();
+        if (! $targetInstance instanceof Instance) {
+            return $this->instanceRequired();
         }
 
         return $this->success($this->instanceMountsPayload(
@@ -103,8 +103,8 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
-        if (! $targetInstance instanceof AppInstance) {
-            return $this->appInstanceRequired();
+        if (! $targetInstance instanceof Instance) {
+            return $this->instanceRequired();
         }
 
         try {
@@ -153,8 +153,8 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
-        if (! $targetInstance instanceof AppInstance) {
-            return $this->appInstanceRequired();
+        if (! $targetInstance instanceof Instance) {
+            return $this->instanceRequired();
         }
 
         try {
@@ -168,14 +168,14 @@ final class AppRuntimeMountController implements Loggable
             'action' => $result['action'],
         ];
 
-        if ($result['mount'] instanceof AppInstanceRuntimeMount) {
+        if ($result['mount'] instanceof InstanceRuntimeMount) {
             $payload['mount'] = $mounts->instanceMountPayload($result['mount']);
         }
 
         return $this->success($payload);
     }
 
-    private function appInstanceRequired(): JsonResponse
+    private function instanceRequired(): JsonResponse
     {
         return $this->validationFailed(
             'Runtime mounts can only be changed on instances. Use a dotted selector such as hauser.nmbp.',
@@ -206,7 +206,7 @@ final class AppRuntimeMountController implements Loggable
     }
 
     /**
-     * @return array{app: Project, instance: AppInstance|null}|JsonResponse|null
+     * @return array{app: App, instance: Instance|null}|JsonResponse|null
      */
     private function resolveMountTarget(string $selector): array|JsonResponse|null
     {
@@ -227,17 +227,17 @@ final class AppRuntimeMountController implements Loggable
     }
 
     /**
-     * @param  Collection<int, AppInstanceRuntimeMount>  $mounts
+     * @param  Collection<int, InstanceRuntimeMount>  $mounts
      * @return array{
-     *     project: array<string, mixed>,
-     *     target: array{type: string, project: string, instance: string},
+     *     app: array<string, mixed>,
+     *     target: array{type: string, app: string, instance: string},
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     inherited_by_workspaces: bool
      * }
      */
     private function instanceMountsPayload(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         Collection $mounts,
         AppRuntimeMountService $service,
     ): array {
@@ -248,10 +248,10 @@ final class AppRuntimeMountController implements Loggable
 
         /** @var list<array{source: string, target: string, read_only: bool}> $mountPayloads */
         return [
-            'project' => $this->appPayload($app),
+            'app' => $this->appPayload($app),
             'target' => [
                 'type' => 'instance',
-                'project' => $app->name,
+                'app' => $app->name,
                 'instance' => $instance->name,
             ],
             'mounts' => $mountPayloads,
@@ -262,7 +262,7 @@ final class AppRuntimeMountController implements Loggable
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(Project $app): array
+    private function appPayload(App $app): array
     {
         return app(AppResponsePayload::class)->forApp($app);
     }

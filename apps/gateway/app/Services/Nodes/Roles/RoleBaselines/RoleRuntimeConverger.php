@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Actions\Processes\RecordProcessEvent;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
@@ -85,11 +87,53 @@ class RoleRuntimeConverger
             );
         }
 
-        if (! $driver->start($node, $runtimeUnit)) {
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Starting,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
+
+        try {
+            $started = $driver->start($node, $runtimeUnit);
+        } catch (\Throwable $exception) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
+            throw $exception;
+        }
+
+        if (! $started) {
+            app(RecordProcessEvent::class)->handle(
+                ProcessEventType::Failed,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $node,
+                $runtimeUnit,
+            );
+
             throw new RuntimeException(
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be started.",
             );
         }
+
+        app(RecordProcessEvent::class)->handle(
+            ProcessEventType::Started,
+            $context->eventApp(),
+            $workspace,
+            $process,
+            $node,
+            $runtimeUnit,
+        );
     }
 
     private function applyManagedFiles(Node $node, Process $process): bool

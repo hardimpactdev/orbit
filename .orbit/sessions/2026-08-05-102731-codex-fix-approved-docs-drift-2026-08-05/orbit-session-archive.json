@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-05T08:27:31+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-approved-docs-drift-2026-08-05/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-102731-codex-fix-approved-docs-drift-2026-08-05",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/profiles/2026-08-05T08-23-55Z-edec022659aa/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "loop.md": "f373d6b79c2ea61741dafa9a9c671de86b442bc5f8bd0f4afcae66765cae2a0e",
+        "quality-gates/profiles/2026-08-05T08-23-55Z-edec022659aa/gateway_pest.junit.xml": "b285a217d2350b245e01a0d63b492c5ffea3ea1eeb734c2b205fabbd7abd6ea1"
+    },
+    "slug": "codex-fix-approved-docs-drift-2026-08-05",
+    "requested_slug": "codex-fix-approved-docs-drift-2026-08-05",
+    "compatible_slugs": [
+        "codex-fix-approved-docs-drift-2026-08-05"
+    ],
+    "branch": "codex/fix-approved-docs-drift-2026-08-05",
+    "candidate_commit": "edec022659aab0c8fd485ace4f6c51294f81b95c",
+    "accepted_feature_tip": "edec022659aab0c8fd485ace4f6c51294f81b95c",
+    "accepted_main_tip": "263dcf6c42f5d4ad920ab0b7a01f960f9729b3c7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

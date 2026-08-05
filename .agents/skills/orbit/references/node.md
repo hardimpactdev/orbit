@@ -195,14 +195,3 @@ Gateway-coupled `gateway`, `vpn`, and `router` are bootstrap-owned. `agent` is
 only selectable during `node:new`. If synchronous role convergence leaves the
 assignment in `error`, role add fails and the assignment remains repairable
 through node doctor.
-
-## `orbit node:agent-ide [name] [adapter]`
-
-Set the default Agent IDE adapter for a node. Instances inherit this unless
-overridden by `instance:agent-ide`.
-
-```bash
-orbit node:agent-ide [<name>] [opencode|polyscope|none] [--json]
-```
-
-Per-tool credentials live in the `tools` family  -  use `orbit tool:show opencode-server` and `orbit tool:credentials opencode-server` for those.

@@ -1,0 +1,63 @@
+
+  [31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Runtime\OrbitGatewayImageContractTest[22m [90m>[39m it packages the gateway app in a FrankenPHP image without relying on host PHP sou…   
+[39;1m  Expecting 'FROM dunglas/frankenphp:1-php…ve"]' not to contain 'apps/gateway/resources/node-scripts'.[39;22m
+
+  at [32mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39m:[32m50[39m
+     46▕         ->toContain('COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit')
+     47▕         ->toContain('HEALTHCHECK')
+     48▕         ->not->toContain('COPY apps/gateway /srv/orbit/apps/gateway')
+     49▕         ->not->toContain('COPY packages/core /srv/orbit/packages/core')
+  ➜  50▕         ->not->toContain('apps/gateway/resources/node-scripts')
+     51▕         ->not->toContain('artifact-catalog.build.json')
+     52▕         ->not->toContain('static-php-cli-')
+     53▕         ->not->toContain('pcov-1.0.12-config-m4')
+     54▕         ->not->toContain('COPY apps/gateway /app')
+
+  [33m1   [39m[39;1mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39;22m:[39;1m50[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Runtime\OrbitGatewayImageContractTest[22m [90m>[39m it requires every host-context orbit-gateway Dockerfile COPY source path to exist…   
+[39;1m  Failed asserting that two arrays are identical.
+  [39;22m[31m-Array &0 [][39m[39;1m
+  [39;22m[32m+Array &0 [[39m[39;1m
+  [39;22m[32m+    0 => 'apps/gateway/resources/node-scripts',[39m[39;1m
+  [39;22m[32m+][39m[39;1m
+  [39;22m
+
+  at [32mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39m:[32m75[39m
+     71▕ 
+     72▕         $missing[] = $source;
+     73▕     }
+     74▕ 
+  ➜  75▕     expect($missing)->toBe([]);
+     76▕ });
+     77▕ 
+     78▕ it('keeps the orbit gateway image build context free of host secrets and generated state', function (): void {
+     79▕     $dockerignore = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+
+  [33m1   [39m[39;1mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39;22m:[39;1m75[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Runtime\OrbitGatewayImageContractTest[22m [90m>[39m it keeps the orbit gateway image build context free of host secrets and generated…   
+[39;1m  Expecting '**!apps/!apps/gateway/\…s/**' not to contain 'node-scripts'.[39;22m
+
+  at [32mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39m:[32m106[39m
+    102▕         )->toContain('**/builds')
+    103▕         ->not->toContain('!apps/gateway/**')
+    104▕         ->not->toContain('!apps/reverb/**')
+    105▕         ->not->toContain('!packages/core/**')->toContain('!docker/orbit-gateway/**')
+  ➜ 106▕         ->not->toContain('node-scripts');
+    107▕ });
+    108▕ 
+    109▕ /**
+    110▕  * Host-context COPY sources (not COPY --from= stage copies) from a Dockerfile body.
+
+  [33m1   [39m[39;1mtests/Feature/Runtime/OrbitGatewayImageContractTest.php[39;22m:[39;1m106[39;22m
+
+
+  [90mTests:[39m    [31;1m3 failed[39;22m[90m,[39m[39m [39m[32;1m3 passed[39;22m[90m (110 assertions)[39m
+  [90mDuration:[39m [39m0.41s[39m
+
+EXIT=0

@@ -1,10 +1,31 @@
 {
     "$schema": "https://www.schemastore.org/package.json",
-    "name": "@orbit/sdk-typescript",
-    "version": "0.1.0",
+    "name": "@hardimpactdev/orbit-sdk-typescript",
+    "version": "0.3.0",
     "private": true,
     "type": "module",
     "description": "Generated TypeScript client for the public Orbit gateway API surface.",
+    "license": "MIT",
+    "keywords": [
+        "orbit",
+        "gateway",
+        "openapi",
+        "typescript",
+        "sdk"
+    ],
+    "homepage": "https://github.com/hardimpactdev/orbit/tree/main/packages/sdk-typescript",
+    "bugs": {
+        "url": "https://github.com/hardimpactdev/orbit/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/hardimpactdev/orbit.git",
+        "directory": "packages/sdk-typescript"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -21,7 +42,9 @@
         "generate": "npm run generate:openapi && npm run generate:types",
         "generate:openapi": "composer --working-dir=../../apps/gateway openapi:export && node scripts/filter-public-openapi.mjs",
         "generate:types": "openapi-typescript openapi/public-gateway-openapi.json -o src/generated/schema.ts",
-        "test": "npm run typecheck",
+        "pack:dry-run": "npm pack --dry-run",
+        "test": "npm run typecheck && npm run test:runtime",
+        "test:runtime": "node --experimental-strip-types --test tests/process-stream.test.ts tests/client.test.ts",
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {

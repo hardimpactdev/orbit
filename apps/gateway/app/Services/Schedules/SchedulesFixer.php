@@ -24,6 +24,24 @@ final readonly class SchedulesFixer
     private const string RUNTIME_HIBERNATOR_SERVICE =
         self::Stack.'_'.GatewaySwarmStackRenderer::RUNTIME_HIBERNATOR_SERVICE;
 
+    /**
+     * Gateway-scoped schedule codes restored by fixGateway without a schedule row.
+     * DoctorRestoreSupport aggregates this list — do not duplicate elsewhere.
+     *
+     * @var list<string>
+     */
+    public const array GatewayRestorableCodes = [
+        'schedule.lock_stuck',
+        'schedule.scheduler_missing',
+        'schedule.scheduler_stopped',
+        'schedule.scheduler_image_mismatch',
+        'schedule.scheduler_replicas_mismatch',
+        'schedule.runtime_hibernator_missing',
+        'schedule.runtime_hibernator_stopped',
+        'schedule.runtime_hibernator_image_mismatch',
+        'schedule.runtime_hibernator_replicas_mismatch',
+    ];
+
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
@@ -46,6 +64,10 @@ final readonly class SchedulesFixer
      */
     public function fixGateway(Node $gatewayNode, DriftEntry $entry, ?Schedule $schedule = null): ?array
     {
+        if (! in_array($entry->key, self::GatewayRestorableCodes, true)) {
+            return null;
+        }
+
         if ($entry->key === 'schedule.lock_stuck') {
             $this->releaseStuckLock($gatewayNode, $entry, $schedule);
 

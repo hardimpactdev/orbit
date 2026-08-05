@@ -1,13 +1,15 @@
 # `orbit tool:stop`
 
-Stop a lifecycle-capable tool on a target node.
+[Back to Tool commands.](../README.md)
+
+Stop a lifecycle-capable tool on a target node. Only tools whose catalog
+definition declares `stop` accept this verb (today: `orbstack` on macOS).
 
 ## Usage
 
 ```bash
 orbit tool:stop <tool> --node=<node>
 orbit tool:stop orbstack --node=<mac-node>
-orbit tool:stop opencode-cli --instance=<project.instance>
 orbit tool:stop orbstack --node=<mac-node> --json
 ```
 
@@ -25,7 +27,7 @@ fallback.
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--instance=<project.instance>` resolves the target node from an instance selector.
+- `--instance=<app.instance>` resolves the target node from an instance selector.
 - `--json` returns a single JSON envelope.
 - `--stream-json` streams progress frames.
 

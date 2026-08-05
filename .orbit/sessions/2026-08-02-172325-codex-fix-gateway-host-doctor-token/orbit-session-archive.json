@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T15:23:25+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-gateway-host-doctor-token/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-172325-codex-fix-gateway-host-doctor-token",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T152022Z-27a0d388cf2e.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "loop.md": "a699576ef50e5e1ff48967939e8ed4e7089f8376490ad37e24c716bcb19d13d8",
+        "quality-gates/quality-check-2026-08-02T152022Z-27a0d388cf2e.json": "69385627683bbdcb693da2b6238e8f5b5e1fcba79044b87297e9898e963f067b"
+    },
+    "branch": "codex/fix-gateway-host-doctor-token",
+    "candidate_commit": "0c11e8e44943da7cd1a588375fbdd41ef3ed814a",
+    "accepted_feature_tip": "0c11e8e44943da7cd1a588375fbdd41ef3ed814a",
+    "accepted_main_tip": "8f54774b5420d3085c9a59f830772cd9320db22e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -422,6 +422,44 @@ describe('OrbitCaService', function () {
                 ->toBe($paths);
         });
 
+        it('covers short host, browser Gateway hostname, and WireGuard IP for the gateway leaf SAN set', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('gateway', ['gateway.orbit', '10.6.0.2']);
+
+            $factory = new Factory;
+            $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+            $idempotent = $service->issueLeaf('gateway', ['gateway.orbit', '10.6.0.2']);
+
+            expect($text)
+                ->toContain('DNS:gateway')
+                ->toContain('DNS:gateway.orbit')
+                ->toContain('IP Address:10.6.0.2')
+                ->and($idempotent)
+                ->toBe($paths)
+                ->and(orbitCaServiceTestCertSerial($idempotent['cert']))
+                ->toBe(orbitCaServiceTestCertSerial($paths['cert']));
+        });
+
+        it('reissues a fresh leaf when the browser Gateway hostname SAN is missing', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('gateway', ['10.6.0.2']);
+
+            $factory = new Factory;
+            $initial = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
+            $initialSerial = orbitCaServiceTestCertSerial($paths['cert']);
+
+            $paths2 = $service->issueLeaf('gateway', ['gateway.orbit', '10.6.0.2']);
+            $expanded = $factory->run("openssl x509 -in {$paths2['cert']} -text -noout")->output();
+
+            expect($initial)
+                ->not->toContain('DNS:gateway.orbit')->and($expanded)->toContain('DNS:gateway')->and(
+                    $expanded,
+                )->toContain('DNS:gateway.orbit')->and($expanded)->toContain(
+                    'IP Address:10.6.0.2',
+                )->and(orbitCaServiceTestCertSerial($paths2['cert']))
+                ->not->toBe($initialSerial);
+        });
+
         it('reissues a fresh leaf when the requested SAN set expands', function () {
             $service = new OrbitCaService;
             $paths = $service->issueLeaf('gateway');

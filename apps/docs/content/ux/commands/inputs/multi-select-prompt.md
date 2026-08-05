@@ -2,6 +2,13 @@
 
 Pick zero or more values from a small fixed set of choices.
 
+## Current usage
+
+No public Orbit command currently calls `Laravel\Prompts\multiselect`.
+Gateway-registry entity selection uses `datatable` through
+`PromptsForGatewayRegistryEntities`. Treat the guidance below as the intended
+pattern if a command introduces multi-value selection, not as a live caller map.
+
 ## Use When
 
 Use `multiselect` in the following situations.
@@ -36,6 +43,8 @@ primitive.
 
 ## Example
 
+Illustrative only; not copied from a live command:
+
 ```php
 use function Laravel\Prompts\multiselect;
 
@@ -48,10 +57,11 @@ $capabilities = multiselect(
 
 ## Reference Implementations
 
-No node commands use `multiselect` at plan time.
-
-- None in the node domain at plan time. Add a row here when a node command
-  adopts `multiselect`.
+There are currently no public-command reference implementations of
+`multiselect` in `apps/cli/app`. Prefer `datatable` for searchable
+gateway-registry entity picks (`PromptsForGatewayRegistryEntities`). Do not
+cite `node:permissions` or other permission UIs as multiselect callers unless
+code actually invokes `Laravel\Prompts\multiselect`.
 
 ## Cross References
 

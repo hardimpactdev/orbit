@@ -62,6 +62,7 @@ final class ProxyRouteDestroyController implements Loggable
             'authorization_failed' => 403,
             'proxy.not_found' => 404,
             'proxy.owned_route_denied' => 409,
+            'proxy.cleanup_failed' => 422,
             default => 422,
         };
     }

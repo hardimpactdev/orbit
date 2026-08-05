@@ -7,10 +7,12 @@ namespace App\Actions\Processes;
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
+use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use LogicException;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class AddProcess
 {
     public function __construct(
@@ -28,6 +31,7 @@ final readonly class AddProcess
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private ProcessServiceCatalog $serviceCatalog,
         private ProcessServiceResourceGuard $resourceGuard,
+        private RecordProcessEvent $recordProcessEvent,
     ) {}
 
     /**
@@ -52,6 +56,7 @@ final readonly class AddProcess
         array $replaceContainers = [],
         ?array $binds = null,
         ?Node $consumer = null,
+        ?string $label = null,
     ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
@@ -134,17 +139,6 @@ final readonly class AddProcess
             $credentials = [];
         }
 
-        if ($resolvedRuntime === ProcessRuntime::Launchd && $crashNotification === ProcessCrashNotification::AgentIde) {
-            throw new GatewayApiException(
-                'Crash notification via agent_ide is deferred for launchd runtime.',
-                'validation_failed',
-                [
-                    'field' => 'crash_notification',
-                    'reason' => 'launchd_crash_notification_deferred',
-                ],
-            );
-        }
-
         if ($command === null || trim($command) === '') {
             throw new GatewayApiException('The process command is required.', 'validation_failed', [
                 'field' => 'command',
@@ -167,9 +161,12 @@ final readonly class AddProcess
 
         $replacedContainers = $this->removeReplacementContainers($context, $replaceContainers);
 
+        $resolvedLabel = $label ?? $name;
+
         $process = DB::transaction(function () use (
             $context,
             $name,
+            $resolvedLabel,
             $command,
             $restartPolicy,
             $crashNotification,
@@ -187,8 +184,9 @@ final readonly class AddProcess
                 ->ownerProcesses()
                 ->create([
                     'node_id' => $context->node->id,
-                    'app_instance_id' => $context->appInstance?->id,
+                    'instance_id' => $context->instance?->id,
                     'name' => $name,
+                    'label' => $resolvedLabel,
                     'command' => $command,
                     'restart_policy' => $restartPolicy,
                     'crash_notification' => $crashNotification,
@@ -215,8 +213,8 @@ final readonly class AddProcess
         );
         $startableRuntimeUnits = $runtimeUnits;
 
-        if ($context->app instanceof Project && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance, $consumer);
+        if ($context->app instanceof App && $context->workspace === null) {
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->instance, $consumer);
         } else {
             $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
             $warnings = $applyResult['warnings'];
@@ -338,7 +336,7 @@ final readonly class AddProcess
      */
     private function applyRuntimeUnits(
         ProcessOwnerContext $context,
-        Project $app,
+        App $app,
         Process $process,
         array $runtimeUnits,
     ): array {
@@ -384,18 +382,91 @@ final readonly class AddProcess
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $name = $runtimeUnit['name'];
-            $started = $driver->start($context->node, $name);
+            $workspace = $this->workspaceForRuntimeUnit($context, $runtimeUnit);
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Starting,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $name,
+            );
+
+            try {
+                $started = $driver->start($context->node, $name);
+            } catch (\Throwable $exception) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $name,
+                );
+
+                throw $exception;
+            }
 
             if (! $started) {
+                $this->recordProcessEvent->handle(
+                    ProcessEventType::Failed,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $name,
+                );
                 $warnings[] = [
                     'code' => 'process.runtime_unit_start_failed',
                     'family' => 'process',
                     'message' => "Process runtime unit '{$name}' was rendered but could not be started.",
                     'next_command' => 'doctor --family=process --restore',
                 ];
+
+                continue;
             }
+
+            $this->recordProcessEvent->handle(
+                ProcessEventType::Started,
+                $context->eventApp(),
+                $workspace,
+                $process,
+                $context->node,
+                $name,
+            );
         }
 
         return $warnings;
+    }
+
+    /**
+     * @param  array{name: string, context: string}  $runtimeUnit
+     */
+    private function workspaceForRuntimeUnit(ProcessOwnerContext $context, array $runtimeUnit): ?Workspace
+    {
+        if ($context->workspace instanceof Workspace) {
+            return $context->workspace;
+        }
+
+        $unitContext = $runtimeUnit['context'] ?? null;
+
+        if (! is_string($unitContext) || $unitContext === '' || $unitContext === 'main' || $unitContext === 'node') {
+            return null;
+        }
+
+        $app = $context->app;
+
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        $app->loadMissing('workspaces');
+
+        $workspace = $app->workspaces->first(
+            static fn (mixed $candidate): bool => $candidate instanceof Workspace && $candidate->name === $unitContext,
+        );
+
+        return $workspace instanceof Workspace ? $workspace : null;
     }
 }

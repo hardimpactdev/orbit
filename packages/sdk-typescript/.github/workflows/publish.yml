@@ -1,0 +1,86 @@
+name: Publish package to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version for one-time bootstrap publish (must be 0.1.0)
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          # npm Trusted Publishing requires Node >= 22.14 / npm >= 11.5.1.
+          node-version: "24"
+          package-manager-cache: false
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm test
+
+      - name: Build library
+        run: npm run build
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Guard one-time bootstrap publish
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BOOTSTRAP_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+
+          if [ "$BOOTSTRAP_VERSION" != "0.1.0" ]; then
+            echo "Bootstrap refuses version [$BOOTSTRAP_VERSION]; only exact 0.1.0 is allowed." >&2
+            exit 1
+          fi
+
+          if [ "$package_version" != "0.1.0" ]; then
+            echo "package.json version is [$package_version]; bootstrap requires exact 0.1.0." >&2
+            exit 1
+          fi
+
+          # Fail closed unless npm confirms E404 absence. Success => exists;
+          # non-E404 registry/DNS/TLS/rate/auth errors must stop (do not treat
+          # every nonzero npm view as absent).
+          bash scripts/npm-bootstrap-registry-absent.sh "$package_name"
+          bash scripts/npm-bootstrap-registry-absent.sh "${package_name}@0.1.0"
+
+          echo "Bootstrap guards passed for ${package_name}@0.1.0 (confirmed npm E404 absence)."
+
+      - name: Publish release via OIDC Trusted Publisher
+        if: github.event_name == 'release'
+        run: npm publish --provenance --access public
+
+      - name: Publish bootstrap with short-lived split-repo credential
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          # Split-repo short-lived bootstrap credential only (not a monorepo durable secret).
+          # setup-node injects NODE_AUTH_TOKEN for the registry; override only here.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ] || [ "$NODE_AUTH_TOKEN" = "XXXXX-XXXXX-XXXXX-XXXXX" ]; then
+            echo "NPM_BOOTSTRAP_TOKEN is missing. Set a short-lived least-privilege granular token on this repository only for first publish." >&2
+            exit 1
+          fi
+          npm version "0.1.0" --no-git-tag-version --allow-same-version
+          npm publish --provenance --access public

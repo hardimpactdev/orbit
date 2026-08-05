@@ -3,6 +3,21 @@
 This directory is the authoritative lane map for Orbit verification. Read it
 before adding, changing, debugging, or running E2E tests.
 
+## Related product docs
+
+Use these product docs when a verification lane depends on contracts outside
+this testing tree.
+
+- [Command contracts](../domains/README.md) — behavior contracts under test.
+- [Machine-readable command catalog](../command-catalog.md) — catalog drift
+  guards and regeneration.
+- [Runtime execution lanes](../execution-lanes.md) — which lane a topology proof
+  exercises.
+- [Command UX](../ux/README.md) — admitted renderer and prompt primitives.
+- [Quality gates](quality-gates.md) — gate baselines and retained evidence.
+- [Security section pattern](../abstractions/17_security.md) — family-owned
+  security issue keys used in doctor/probe coverage.
+
 ## Ownership
 
 E2E is root-owned monorepo verification, not a gateway product surface. The only
@@ -110,6 +125,29 @@ node-local Orbit state lives under `~/.config/orbit`, and executor operation
 tokens are verified through the gateway API so nodes do not carry executor
 token signing material.
 
+## Pest versions
+
+Orbit uses Pest for PHP/Laravel in-memory coverage. Active Composer apps
+default to the Pest 5 / PHPUnit 13 line:
+
+| Project | Pest line | Notes |
+| --- | --- | --- |
+| `apps/gateway` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13 |
+| `apps/docs` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13; runtime `php` stays `^8.3` (Pest 5 is `require-dev` only and needs PHP ≥ 8.4 at test time) |
+| `apps/e2e` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13 (safe in-memory suite; external E2E groups remain manual) |
+| `packages/core` | Pest 5 | PHPUnit 13 (transitive) |
+| `packages/sdk` | Pest 5 | PHPUnit 13 (transitive) |
+| `apps/cli` | **Pest 4 + `pest-plugin-laravel` 4** | Authorized exception while Laravel Zero 12 requires Symfony Process 7.x and Pest 5 requires Symfony Process ^8.1 |
+
+Remove the CLI exception when a stable Laravel Zero release (or an authorized
+successor CLI stack) can resolve Pest 5 without a `symfony/process` 7/8
+conflict—including any desktop-notifier / `jolicode/jolinotif` chain that still
+caps Process at 7.x. Until then, keep `apps/cli` installable on Pest 4 and do
+not force Pest 5 there via replace, alias, patch, or fork.
+
+A focused architecture guard in the gateway suite asserts the five Pest 5
+manifests and the CLI Pest 4 exception.
+
 ## Development lane invariant
 
 These rules order the lanes above into a development workflow:
@@ -132,7 +170,7 @@ These rules order the lanes above into a development workflow:
   mount and then to each VM-local runtime overlay. Keep the local worktree as
   source of truth, run commands from the retained VM's runtime overlay, and treat
   VM-side edits as disposable unless explicitly copied back. See
-  `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
+  [prepared topologies — retained dev topologies](e2e/prepared-topologies.md#retained-dev-topologies).
 - Findings from a retained topology should be codified back into focused Pest
   coverage when a deterministic assertion exists. Keep the retained topology
   transcript or artifact as the integrated-topology proof for the feature.
@@ -171,6 +209,7 @@ change.
 | Incus VM-feature behavior and host capacity | [Incus E2E](e2e/incus.md) |
 | E2E environment variables and lease namespaces | [E2E environment](e2e/environment.md) |
 | E2E timing baselines and resource diagnostics | [E2E performance](e2e/performance.md) |
+| Quality-gate lanes, baselines, and retained evidence under `.orbit/quality-gates/` | [Quality gates](quality-gates.md) |
 
 ## Commands
 

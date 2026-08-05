@@ -30,7 +30,7 @@ final readonly class EditProcess
     ) {}
 
     /**
-     * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}  $changes
+     * @param  array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(
@@ -100,8 +100,14 @@ final readonly class EditProcess
                 );
             }
 
+            // Identity rename must not rewrite a defaulted or custom display label.
             $process->name = $changes['name'];
             $changed[] = 'name';
+        }
+
+        if (array_key_exists('label', $changes) && $process->label !== $changes['label']) {
+            $process->label = $changes['label'];
+            $changed[] = 'label';
         }
 
         if (array_key_exists('command', $changes) && $process->command !== $changes['command']) {
@@ -132,23 +138,6 @@ final readonly class EditProcess
             $this->applyBinds($context, $process, $changes['binds'], $changed);
         }
 
-        $effectiveRuntime = $changes['runtime'] ?? $process->runtime;
-        $effectiveCrashNotification = $changes['crash_notification'] ?? $process->crash_notification;
-
-        if (
-            $effectiveRuntime === ProcessRuntime::Launchd
-            && $effectiveCrashNotification === ProcessCrashNotification::AgentIde
-        ) {
-            throw new GatewayApiException(
-                'Crash notification via agent_ide is deferred for launchd runtime.',
-                'validation_failed',
-                [
-                    'field' => 'crash_notification',
-                    'reason' => 'launchd_crash_notification_deferred',
-                ],
-            );
-        }
-
         if ($changed === []) {
             throw new GatewayApiException(
                 'At least one editable field is required.',
@@ -171,7 +160,7 @@ final readonly class EditProcess
         $restartableRuntimeUnits = $runtimeUnits;
 
         if ($context->app !== null && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance, $consumer);
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->instance, $consumer);
 
             if ($warnings === []) {
                 $warnings = $this->runtimeUnits->cleanupPrevious(

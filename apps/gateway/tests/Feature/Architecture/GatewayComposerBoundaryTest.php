@@ -19,7 +19,7 @@ it('defines a self-contained gateway composer boundary', function (): void {
         ->require->toMatchArray([
             'php' => '^8.5',
             'hardimpactdev/orbit-core' => 'dev-main',
-            'laravel/framework' => '^13.0',
+            'laravel/framework' => '^13.20',
         ])->and($composer['require'])
         ->not->toHaveKey('laravel-zero/framework')->and($composer['repositories'][0])->toMatchArray([
             'type' => 'path',

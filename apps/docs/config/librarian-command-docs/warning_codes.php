@@ -31,13 +31,6 @@ return [
             'instance:register',
         ],
     ],
-    'proxy.enactment_deferred' => [
-        'family' => 'proxy',
-        'kind' => 'command_handoff',
-        'allowed_next_commands' => [
-            'doctor --family=proxy --restore',
-        ],
-    ],
     'proxy.enactment_failed' => [
         'family' => 'proxy',
         'kind' => 'command_handoff',

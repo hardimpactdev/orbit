@@ -102,17 +102,9 @@ it('marks a completed tool DNS action failed when live runtime drift remains aft
     $runner = app(DoctorReportRunner::class);
     $probe = $runner->probe($gateway, families: ['tool'], key: 'tool.dns_base_config_mismatch');
 
-    expect($runner->restoreRequiresVerification(
-        'restore',
-        'tool.dns_base_config_mismatch',
-        $probe,
-    ))->toBeTrue();
-
-    $report = $runner->finalizeRestore(
+    $report = $runner->finalizeResolution(
         $gateway,
-        ['tool'],
-        'tool.dns_base_config_mismatch',
-        \App\Data\Doctor\DoctorTargetScope::none(),
+        'restore',
         [[
             'family' => 'tool',
             'node' => 'gateway',
@@ -122,6 +114,8 @@ it('marks a completed tool DNS action failed when live runtime drift remains aft
             'summary' => 'Restored DNS base configuration.',
             'details' => [],
         ]],
+        families: ['tool'],
+        request: new \App\Data\Doctor\DoctorRunRequest(key: 'tool.dns_base_config_mismatch'),
     );
 
     expect($report['healthy'])
@@ -302,20 +296,30 @@ it('leaves scoped DNS projection drift unresolved while a mounted runtime still 
 ]);
 
 it('keeps node DNS drift visible when post-restore verification still finds it', function (): void {
-    $node = Node::factory()->create([
-        'name' => 'database-1',
-        'tld' => 'database',
-        'wireguard_address' => '10.6.0.9',
-        'status' => 'active',
-    ]);
+    // Node DNS projection is verified only on the DNS-serving host
+    // (gateway-coupled VPN), while mismatches still name their source node.
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
     NodeRoleAssignment::factory()->create([
-        'node_id' => $node->id,
+        'node_id' => $gateway->id,
         'role' => 'vpn',
         'status' => 'active',
         'settings' => [
             'public_endpoint' => '203.0.113.10',
             'dns_ip' => '10.6.0.1',
         ],
+    ]);
+    Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
     ]);
     File::put($this->root.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
     File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
@@ -339,7 +343,7 @@ it('keeps node DNS drift visible when post-restore verification still finds it',
     app()->forgetInstance(DoctorReportRunner::class);
 
     $report = app(DoctorReportRunner::class)->run(
-        node: $node,
+        node: $gateway,
         mode: 'restore',
         families: ['node'],
         request: new DoctorRunRequest(key: 'node.dns_mapping_mismatch'),
@@ -352,4 +356,86 @@ it('keeps node DNS drift visible when post-restore verification still finds it',
         ->toBeEmpty()
         ->and(collect($report['actions'])->firstWhere('key', 'node.dns_mapping_mismatch')['status'] ?? null)
         ->toBe('failed');
+});
+
+it('does not probe node DNS projection on non-DNS-consumer nodes', function (): void {
+    $workload = Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+    // VPN capability exists elsewhere so DNS is required fleet-wide, but this
+    // node is not the gateway+VPN DNS consumer.
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => '203.0.113.10',
+            'dns_ip' => '10.6.0.1',
+        ],
+    ]);
+    File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
+    app()->forgetInstance(DoctorReportRunner::class);
+
+    $report = app(DoctorReportRunner::class)->probe(
+        $workload,
+        families: ['node'],
+        key: 'node.dns_mapping_mismatch',
+    );
+
+    expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
+});
+
+it('skips node DNS content probes on the DNS consumer when the appion directory is not mounted', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'tld' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'status' => 'active',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'vpn',
+        'status' => 'active',
+        'settings' => [
+            'public_endpoint' => '203.0.113.10',
+            'dns_ip' => '10.6.0.1',
+        ],
+    ]);
+    Node::factory()->create([
+        'name' => 'database-1',
+        'tld' => 'database',
+        'wireguard_address' => '10.6.0.9',
+        'status' => 'active',
+    ]);
+    File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
+    app()->instance(DnsmasqReconciler::class, new class extends DnsmasqReconciler {
+        public function __construct() {}
+
+        public function projectionDirectoryIsMounted(): bool
+        {
+            return false;
+        }
+    });
+    app()->forgetInstance(DoctorReportRunner::class);
+
+    $report = app(DoctorReportRunner::class)->probe(
+        $gateway,
+        families: ['node'],
+        key: 'node.dns_mapping_mismatch',
+    );
+
+    expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
 });

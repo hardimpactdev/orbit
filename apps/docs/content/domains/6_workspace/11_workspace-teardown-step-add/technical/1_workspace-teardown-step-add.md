@@ -15,13 +15,12 @@
 This command registers a gateway-owned teardown step for an instance's workspace
 lifecycle. It mirrors `workspace-setup-step:add` exactly except for the
 lifecycle phase (`teardown` vs `setup`) and the read sites
-(`workspace:remove` and `instance:prune` instead of `workspace:new` and
 `workspace:setup`).
 
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:add --command=<command> [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-teardown-step:add --command=<command> [--instance=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -31,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--instance` | `text` | Unless the shared workspace selector chain resolves to a concrete instance. | Resolved through the shared workspace selector chain when omitted. | Dotted instance selectors such as `happie.nmbp` are the explicit safe write path. Bare project slugs are rejected with `error.meta.reason=instance_required`. |
+| `--instance` | `text` | Unless the shared workspace selector chain resolves to a concrete instance. | Resolved through the shared workspace selector chain when omitted. | Dotted instance selectors such as `happie.nmbp` are the explicit safe write path. Bare app slugs are rejected with `error.meta.reason=instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same instance and `phase=teardown`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same instance and `phase=teardown`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -41,14 +40,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Instance**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--instance=<project.instance>`, which must be a dotted instance
-     selector such as `happie.nmbp` for gateway writes. Bare project
+   - Explicit `--instance=<app.instance>`, which must be a dotted instance
+     selector such as `happie.nmbp` for gateway writes. Bare app
      slugs are rejected with `error.meta.reason=instance_required`.
-   - `.orbit/config` marker on the caller filesystem (installed by `project:new` /
+   - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `instance:register` and any workspace-installed marker) that names the owning
-     project slug.
+     app slug.
    - Gateway path-ownership lookup keyed on `(caller node identity, absolute
-     cwd)` that returns the project slug whose registered app path or any
+     cwd)` that returns the app slug whose registered app path or any
      registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.
@@ -77,7 +76,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `workspace-teardown-step:add` writes a single teardown step record owned by
 the gateway for an instance's workspace lifecycle. The step is *not* executed during
-this command; it is applied by `workspace:remove` and `instance:prune` at the
 teardown phase, before destructive workspace cleanup.
 
 1. **Registry Write**: Creates one new record in the gateway workspace
@@ -97,7 +95,7 @@ teardown phase, before destructive workspace cleanup.
      with `order = max(existing_order_for_instance_and_phase) + 1` (or `1` if no
      teardown steps exist yet).
 4. **Step-Record Shape**: The persisted record exposes
-   `{ id, project, instance, phase, order, command, timeout_seconds }`. Steps have no
+   `{ id, app, instance, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`
@@ -106,7 +104,6 @@ teardown phase, before destructive workspace cleanup.
    creates two separate step records (each with its own `id`). There is no
    convergence by `command` text because steps are identified by `id`.
 6. **No Runtime Lock**: The command never blocks on, or aborts because of,
-   in-flight `workspace:remove` / `instance:prune` runs. The new step takes
    effect on the next teardown pipeline run that begins after the gateway
    commit. Steps already executing in an in-flight run use the policy
    snapshot the runner read at teardown-phase entry. Recovery from
@@ -114,11 +111,9 @@ teardown phase, before destructive workspace cleanup.
 7. **No Filesystem Side Effects**: The command writes only to gateway
    configuration. Nodes are not contacted.
 8. **Consumer Failure Semantics**: When a teardown step fails during
-   `workspace:remove` or `instance:prune`, the failure is reported as a
    structured non-fatal warning under `success.meta.warnings[]` of the
    consumer command (code `workspace.teardown_step_failed`). Subsequent
    teardown steps still run, and Phase B continues with runtime container and worktree
-   removal. This contract is owned by `workspace:remove` and `instance:prune`;
    `workspace-teardown-step:add` itself never observes the warning.
 9. **Lifecycle Ordering Guarantees**: Teardown steps run before runtime container removal
    and worktree removal during `workspace:remove` Phase B, so they observe
@@ -138,7 +133,7 @@ teardown phase, before destructive workspace cleanup.
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 - **Instance Not Found**: Resolved instance selector does not exist in gateway configuration
-  (`error.code=workspace.instance_not_found`, `error.meta.instance`).
+  (`error.code=instance.not_found`, `error.meta.instance`).
 - **Production app unsupported**: The selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). No
   workspace lifecycle policy is stored.

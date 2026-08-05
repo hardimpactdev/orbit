@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -102,6 +103,9 @@ final readonly class RemoteCaddyConfig
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => "caddy-config.{$action}",
                 ],
+                // Global Caddyfile and site artifacts are host-mounted; leave
+                // the container only when the target is the gateway node.
+                'force_remote_host' => GatewayHostExecution::shouldForceRemoteHostFor($node),
                 'redact_stdout' => $action !== 'read-global',
                 'redact_stderr' => false,
                 'timeout' => $timeout,

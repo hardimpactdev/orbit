@@ -1,0 +1,11 @@
+--- a/config/ext.json
++++ b/config/ext.json
+@@ -637,7 +637,7 @@
+         "type": "external",
+         "source": "pcov",
+         "target": [
+-            "shared"
++            "static"
+         ]
+     },
+     "pdo": {

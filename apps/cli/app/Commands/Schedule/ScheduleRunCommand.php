@@ -17,7 +17,7 @@ final class ScheduleRunCommand extends ScheduleGatewayCommand
     #[\Override]
     protected $signature = 'schedule:run
         {name? : Schedule name}
-        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
+        {--instance= : Filter by instance (app.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--json : Output JSON}';
 

@@ -13,7 +13,7 @@ describe('tool:credentials', function (): void {
     it('returns gateway credential fields verbatim in JSON mode without CLI-side mutation', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'openclaw',
+                'tool' => 'hermes',
                 'node' => 'app-1',
                 'fields' => [
                     'host' => 'orbit.test',
@@ -23,7 +23,7 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -35,7 +35,7 @@ describe('tool:credentials', function (): void {
 
             return (
                 $request->method() === 'GET'
-                && str_contains($url, '/api/tools/openclaw/credentials')
+                && str_contains($url, '/api/tools/hermes/credentials')
                 && str_contains($url, 'node=app-1')
             );
         });
@@ -52,7 +52,7 @@ describe('tool:credentials', function (): void {
     it('does not emit extra sensitive gateway envelope fields in JSON mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'openclaw',
+                'tool' => 'hermes',
                 'node' => 'app-1',
                 'fields' => [
                     'password' => 'gateway-managed-secret',
@@ -64,7 +64,7 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -83,7 +83,7 @@ describe('tool:credentials', function (): void {
     it('renders human credential fields from the gateway payload only', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'openclaw',
+                'tool' => 'hermes',
                 'node' => 'app-1',
                 'fields' => [
                     'host' => 'orbit.test',
@@ -93,14 +93,14 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--node' => 'app-1',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Credentials for openclaw on app-1:')
+            ->toContain('Credentials for hermes on app-1:')
             ->and($output)
             ->toContain('host: orbit.test')
             ->and($output)
@@ -117,7 +117,7 @@ describe('tool:credentials', function (): void {
 
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'tool' => 'openclaw',
+                'tool' => 'hermes',
                 'node' => 'default-app',
                 'fields' => [
                     'password' => 'gateway-managed-secret',
@@ -126,7 +126,7 @@ describe('tool:credentials', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--json' => true,
         ]);
 
@@ -135,7 +135,7 @@ describe('tool:credentials', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/tools/openclaw/credentials') && str_contains($url, 'node=default-app');
+            return str_contains($url, '/api/tools/hermes/credentials') && str_contains($url, 'node=default-app');
         });
 
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['credentials']['node'])->toBe('default-app');
@@ -161,7 +161,7 @@ describe('tool:credentials', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'tools' => [
                         [
-                            'name' => 'openclaw',
+                            'name' => 'hermes',
                             'node' => 'app-1',
                         ],
                     ],
@@ -170,12 +170,12 @@ describe('tool:credentials', function (): void {
 
             if (
                 $request->method() === 'GET'
-                && $path === '/api/tools/openclaw/credentials'
+                && $path === '/api/tools/hermes/credentials'
                 && ($parameters['node'] ?? null) === 'app-1'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'credentials' => [
-                        'tool' => 'openclaw',
+                        'tool' => 'hermes',
                         'node' => 'app-1',
                         'fields' => [
                             'password' => 'gateway-managed-secret',
@@ -190,7 +190,7 @@ describe('tool:credentials', function (): void {
         $command = app(ToolCredentialsCommand::class);
         $command->setLaravel(app());
         $tester = new CommandTester($command);
-        $tester->setInputs(['openclaw']);
+        $tester->setInputs(['hermes']);
 
         $exitCode = $tester->execute([]);
 
@@ -226,7 +226,7 @@ describe('tool:credentials', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'tools' => [
                         [
-                            'name' => 'openclaw',
+                            'name' => 'hermes',
                             'node' => 'default-app',
                         ],
                     ],
@@ -235,12 +235,12 @@ describe('tool:credentials', function (): void {
 
             if (
                 $request->method() === 'GET'
-                && $path === '/api/tools/openclaw/credentials'
+                && $path === '/api/tools/hermes/credentials'
                 && ($parameters['node'] ?? null) === 'default-app'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'credentials' => [
-                        'tool' => 'openclaw',
+                        'tool' => 'hermes',
                         'node' => 'default-app',
                         'fields' => [
                             'password' => 'gateway-managed-secret',
@@ -255,7 +255,7 @@ describe('tool:credentials', function (): void {
         $command = app(ToolCredentialsCommand::class);
         $command->setLaravel(app());
         $tester = new CommandTester($command);
-        $tester->setInputs(['openclaw']);
+        $tester->setInputs(['hermes']);
 
         $exitCode = $tester->execute([]);
 
@@ -287,7 +287,7 @@ describe('tool:credentials', function (): void {
         fakeGateway(fakeErrorEnvelope('authorization_failed', 'This node is not authorized to manage tools.'), 403);
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -318,7 +318,7 @@ describe('tool:credentials', function (): void {
         fakeGatewayDown('Network is unreachable');
 
         [$exitCode, $output] = runCommand($this, 'tool:credentials', [
-            'tool' => 'openclaw',
+            'tool' => 'hermes',
             '--node' => 'app-1',
             '--json' => true,
         ]);

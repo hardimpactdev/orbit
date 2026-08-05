@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
-use App\Models\Project;
 use App\Services\Analytics\AnalyticsProcessEndpointResolver;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
@@ -37,7 +37,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
     $clickHousePassword = Str::random(32);
     $unrelatedDatabasePassword = Str::random(32);
 
-    $unrelatedApp = Project::factory()->create([
+    $unrelatedApp = App::factory()->create([
         'node_id' => $databaseNode->id,
     ]);
     Process::factory()

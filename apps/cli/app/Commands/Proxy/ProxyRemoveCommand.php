@@ -21,7 +21,7 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove custom proxy route intent.';
+    protected $description = 'Remove custom proxy route intent, or orphan-owner rows with --force.';
 
     public function handle(): int
     {
@@ -118,6 +118,7 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
     private function renderRemovalDetail(array $response): void
     {
         $route = $this->routeData($response);
+        $meta = $this->metaData($response);
 
         if ($route !== []) {
             $this->line('  Domain: '.$this->stringField($route, 'domain'));
@@ -126,7 +127,14 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
             $this->line('  Target: '.$this->targetSummary($route));
         }
 
-        $meta = $this->metaData($response);
+        if (($meta['removal_reason'] ?? null) === 'orphan_owner') {
+            $ownerType = is_string($meta['owner_type'] ?? null) && $meta['owner_type'] !== ''
+                ? $meta['owner_type']
+                : 'unknown';
+
+            $this->line("  Owner: {$ownerType} (orphaned)");
+            $this->line("  Safe because: the recorded {$ownerType} owner no longer exists");
+        }
 
         $this->line('  Backend cleanup: '.$this->cleanupSummary($meta['backend_removed'] ?? null));
         $this->line('  TLS cleanup: '.$this->cleanupSummary($meta['tls_removed'] ?? null));

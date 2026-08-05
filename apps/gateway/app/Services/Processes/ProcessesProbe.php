@@ -12,18 +12,20 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Apps\RemoteAppRuntimeContainersProbe;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 use Throwable;
 
@@ -190,6 +192,13 @@ final readonly class ProcessesProbe
             }
 
             if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
+                if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+                    throw new InvalidArgumentException(
+                        "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
+                        ."placement resolved to '{$node->name}' ({$node->platform}).",
+                    );
+                }
+
                 return $this->introspectLaunchd($process, $node);
             }
 
@@ -306,7 +315,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $backendOutput,
                 'runtime_units' => $runtimeUnits,
                 'runtime_unit_extras' => $runtimeUnitExtras,
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -413,7 +421,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $backendOutput,
                 'runtime_units' => $runtimeUnits,
                 'runtime_unit_extras' => $runtimeUnitExtras,
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -422,11 +429,6 @@ final readonly class ProcessesProbe
     {
         $probe = $this->runtimeBackendProbe()->check($node);
         $spec = $this->expectedSystemdUnitSpecs($process);
-        $notifier = [
-            'required' => $this->requiresEventNotifier($process),
-            'script_hash' => $this->processEventNotifierRenderer()->hash(),
-            'gateway_endpoint' => $this->processEventNotifierRenderer()->expectedGatewayEndpoint(),
-        ];
 
         $items = [
             $process->name => [
@@ -435,7 +437,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ];
 
@@ -443,7 +444,7 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot($items);
         }
 
-        $script = $this->systemdProbeScript($spec, $notifier);
+        $script = $this->systemdProbeScript($spec);
 
         $result = $this->scriptDispatcher()->run($node, 'orbit-process', 'probe', $script, throw: true);
 
@@ -454,24 +455,6 @@ final readonly class ProcessesProbe
 
             $parts = explode("\t", $line, 6);
             $name = $parts[0] ?? '';
-
-            if ($name === '__notifier') {
-                if (count($parts) !== 6) {
-                    continue;
-                }
-
-                [, $scriptExists, $scriptExecutable, $scriptMatches, $endpointExists, $endpointMatches] = $parts;
-
-                $items[$process->name]['event_notifier'] = [
-                    'script_exists' => $scriptExists === '1',
-                    'script_executable' => $scriptExecutable === '1',
-                    'script_matches' => $scriptMatches === '1',
-                    'gateway_endpoint_exists' => $endpointExists === '1',
-                    'gateway_endpoint_matches' => $endpointMatches === '1',
-                ];
-
-                continue;
-            }
 
             if ($name === '__extra') {
                 if (count($parts) !== 2) {
@@ -512,7 +495,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => $probe->output,
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ];
 
@@ -553,9 +535,8 @@ final readonly class ProcessesProbe
 
     /**
      * @param  list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>  $units
-     * @param  array{required: bool, script_hash: string, gateway_endpoint: string|null}  $notifier
      */
-    private function systemdProbeScript(array $units, array $notifier): string
+    private function systemdProbeScript(array $units): string
     {
         $expectedNames = array_map(
             fn (array $unit): string => $unit['name'],
@@ -627,18 +608,25 @@ final readonly class ProcessesProbe
                             restart_matches=1
                         fi
 
-                        environment_matches=1
+                        # Exact Environment= multiset match: every expected line must
+                        # appear with the same multiplicity, and no extras are allowed.
+                        # Order is normalized via sort so renderer reordering is not drift.
+                        expected_environment=$(
+                            for environment_line in "$@"; do
+                                if [ "$environment_line" = "" ]; then
+                                    continue
+                                fi
 
-                        for environment_line in "$@"; do
-                            if [ "$environment_line" = "" ]; then
-                                continue
-                            fi
+                                printf '%s\n' "$environment_line"
+                            done | LC_ALL=C sort
+                        )
+                        actual_environment=$(
+                            grep -E '^Environment=' "$unit_path" 2>/dev/null | LC_ALL=C sort || true
+                        )
 
-                            if ! line_exists "$unit_path" "$environment_line"; then
-                                environment_matches=0
-                                break
-                            fi
-                        done
+                        if [ "$expected_environment" = "$actual_environment" ]; then
+                            environment_matches=1
+                        fi
                     fi
 
                     printf '%s\t%s\t%s\t%s\t%s\n' "$unit_name" "$exists" "$matches" "$restart_matches" "$environment_matches"
@@ -648,44 +636,6 @@ final readonly class ProcessesProbe
                     expected_name=$1
 
                     printf '%s\n' "$EXPECTED_NAMES" | grep -Fqx -- "$expected_name"
-                }
-
-                probe_notifier() {
-                    notifier_path='/usr/local/bin/orbit-notify-exit'
-                    endpoint_path='/etc/orbit/gateway-endpoint'
-                SH,
-            '    expected_script_hash='.$this->shellQuote($notifier['script_hash']),
-            '    expected_endpoint='.$this->shellQuote($notifier['gateway_endpoint'] ?? ''),
-            <<<'SH'
-                    notifier_exists=0
-                    notifier_executable=0
-                    notifier_matches=0
-                    endpoint_exists=0
-                    endpoint_matches=0
-
-                    if [ -f "$notifier_path" ]; then
-                        notifier_exists=1
-                        notifier_hash=$(hash_file "$notifier_path" || printf '')
-
-                        if [ -x "$notifier_path" ]; then
-                            notifier_executable=1
-                        fi
-
-                        if [ "$notifier_hash" = "$expected_script_hash" ]; then
-                            notifier_matches=1
-                        fi
-                    fi
-
-                    if [ -f "$endpoint_path" ]; then
-                        endpoint_exists=1
-                        endpoint_value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s:/*$::' "$endpoint_path" 2>/dev/null || printf '')
-
-                        if [ "$expected_endpoint" != "" ] && [ "$endpoint_value" = "$expected_endpoint" ]; then
-                            endpoint_matches=1
-                        fi
-                    fi
-
-                    printf '__notifier\t%s\t%s\t%s\t%s\t%s\n' "$notifier_exists" "$notifier_executable" "$notifier_matches" "$endpoint_exists" "$endpoint_matches"
                 }
 
                 probe_extras() {
@@ -702,7 +652,6 @@ final readonly class ProcessesProbe
                 }
                 SH,
             implode(PHP_EOL, $unitCalls),
-            'probe_notifier',
             'probe_extras',
             '',
         ]);
@@ -773,7 +722,6 @@ final readonly class ProcessesProbe
         $drift = array_merge($drift, $this->checkRuntimeUnitLiveness($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
-        $drift = array_merge($drift, $this->checkEventNotifier($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnitExtras($process, $snapshot));
 
         return $drift;
@@ -843,12 +791,12 @@ final readonly class ProcessesProbe
         array $expectedUnits,
         array $runtimeUnits,
     ): array {
-        $process->loadMissing(['owner', 'appInstance']);
-        $appInstance = $process->appInstance;
+        $process->loadMissing(['owner', 'instance']);
+        $instance = $process->instance;
 
         if (
             $process->owner instanceof Node
-            || ! $appInstance instanceof AppInstance
+            || ! $instance instanceof Instance
             || $process->restart_policy !== ProcessRestartPolicy::Always
             || ! app(NodeRoleAssignments::class)->nodeHasActiveRole(
                 $node,
@@ -872,7 +820,7 @@ final readonly class ProcessesProbe
 
             $scopeKeysByUnit[$unitName] = $workspace instanceof Workspace
                 ? "workspace-{$workspace->id}"
-                : "app-instance-{$appInstance->id}";
+                : "app-instance-{$instance->id}";
         }
 
         if ($scopeKeysByUnit === []) {
@@ -927,15 +875,15 @@ final readonly class ProcessesProbe
         $process->loadMissing('owner');
         $restartPolicy = $process->getRawOriginal('restart_policy');
         $crashNotification = $process->getRawOriginal('crash_notification');
-        $requiresAppInstance = $process->owner instanceof Project || $process->owner instanceof Workspace;
+        $requiresInstance = $process->owner instanceof App || $process->owner instanceof Workspace;
 
         if (
             ! is_int($process->node_id)
             || ! is_string($process->owner_type)
             || $process->owner_type === ''
             || ! is_int($process->owner_id)
-            || $requiresAppInstance
-            && ! is_int($process->app_instance_id)
+            || $requiresInstance
+            && ! is_int($process->instance_id)
             || ! is_string($process->name)
             || $process->name === ''
             || ! is_string($process->command)
@@ -985,7 +933,7 @@ final readonly class ProcessesProbe
         $this->loadProcessApp($process);
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -997,10 +945,10 @@ final readonly class ProcessesProbe
         }
 
         $node = $this->processNode($process);
-        $instance = $process->appInstance;
+        $instance = $process->instance;
 
         if (
-            ! $instance instanceof AppInstance
+            ! $instance instanceof Instance
             || $instance->app_id !== $app->id
             || ! $node instanceof Node
             || ! $node->isActive()
@@ -1047,6 +995,11 @@ final readonly class ProcessesProbe
         $diagnostic = $this->wireGuardSelfRouteProbe()->probe($node);
 
         if (($diagnostic['ok'] ?? false) === true) {
+            return [];
+        }
+
+        // Unsupported platforms and other non-diagnostic states are not drift.
+        if (($diagnostic['supported'] ?? true) === false) {
             return [];
         }
 
@@ -1107,7 +1060,10 @@ final readonly class ProcessesProbe
                 ]);
 
                 if (! $isDocker) {
-                    $detail['expected_path'] = "/etc/systemd/system/{$runtimeUnit}.service";
+                    $runtime = $this->runtimeFor($process);
+                    $detail['expected_path'] = $runtime === ProcessRuntime::Launchd
+                        ? $this->launchdExtraExpectedPath($process, $runtimeUnit)
+                        : "/etc/systemd/system/{$runtimeUnit}.service";
                 }
 
                 return new DriftEntry(
@@ -1130,25 +1086,30 @@ final readonly class ProcessesProbe
         $app = $process->ownerApp();
         $node = $this->processNode($process);
 
-        if (! $app instanceof Project || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
             return [];
         }
 
         $runtimeUnits = [];
 
         $query = Process::query()
-            ->with('owner')
-            ->where('node_id', $node->id)
-            ->where('app_instance_id', $process->app_instance_id);
+            ->with(['owner', 'instance'])
+            ->where('instance_id', $process->instance_id);
 
         if ($this->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
         }
 
-        $query->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
+        $query->each(function (Process $candidate) use ($app, $node, &$runtimeUnits): void {
             $candidateApp = $candidate->ownerApp();
 
-            if (! $candidateApp instanceof Project || ! $candidateApp->is($app)) {
+            if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
+                return;
+            }
+
+            $candidateNode = $this->processNode($candidate);
+
+            if (! $candidateNode instanceof Node || ! $candidateNode->is($node)) {
                 return;
             }
 
@@ -1169,80 +1130,32 @@ final readonly class ProcessesProbe
     {
         $app = $process->ownerApp();
 
-        if (! $app instanceof Project || $app->name === '') {
+        if (! $app instanceof App || $app->name === '') {
             return null;
         }
 
-        $process->loadMissing('appInstance');
+        $process->loadMissing('instance');
 
-        return $process->appInstance instanceof AppInstance
-            ? "orbit_{$app->name}_{$process->appInstance->name}_"
+        return $process->instance instanceof Instance
+            ? "orbit_{$app->name}_{$process->instance->name}_"
             : "orbit_{$app->name}_";
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkEventNotifier(Process $process, ProbeSnapshot $snapshot): array
+    private function launchdExtraExpectedPath(Process $process, string $runtimeUnit): string
     {
-        if (! $this->requiresEventNotifier($process)) {
-            return [];
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
         }
 
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ! is_array($observed['event_notifier'] ?? null)
-        ) {
-            return [];
+        try {
+            return $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node);
+        } catch (InvalidArgumentException) {
+            // Inventory may surface identities that fail launchd validity. Do not
+            // throw from the process family probe; leave a non-path label only.
+            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
         }
-
-        $notifier = $observed['event_notifier'];
-
-        if (
-            ($notifier['script_exists'] ?? null) === false
-            || ($notifier['gateway_endpoint_exists'] ?? null) === false
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.event_notifier_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Process {$process->name} crash event notifier material is missing.",
-                    detail: [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'script' => $this->processEventNotifierRenderer()->installPath(),
-                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
-                    ],
-                ),
-            ];
-        }
-
-        if (
-            ($notifier['script_executable'] ?? null) === false
-            || ($notifier['script_matches'] ?? null) === false
-            || ($notifier['gateway_endpoint_matches'] ?? null) === false
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.event_notifier_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Process {$process->name} crash event notifier material differs from gateway intent.",
-                    detail: [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'script' => $this->processEventNotifierRenderer()->installPath(),
-                        'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
-                    ],
-                ),
-            ];
-        }
-
-        return [];
     }
 
     /**
@@ -1482,7 +1395,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof Project) {
+        if (! $process->app instanceof App) {
             return [];
         }
 
@@ -1520,10 +1433,28 @@ final readonly class ProcessesProbe
 
     private function processNode(Process $process): ?Node
     {
-        $process->loadMissing(['owner', 'node']);
+        $process->loadMissing(['owner', 'node', 'instance']);
 
         if ($process->owner instanceof Node) {
             return $process->owner;
+        }
+
+        // Prefer current instance/workspace placement over a possibly stale
+        // denormalized process.node_id after the app instance moved.
+        if ($process->owner instanceof Workspace) {
+            $placed = app(WorkspacePlacement::class)->nodeForWorkspace($process->owner);
+
+            if ($placed instanceof Node) {
+                return $placed;
+            }
+        }
+
+        if ($process->instance instanceof Instance) {
+            $placed = app(WorkspacePlacement::class)->nodeForInstance($process->instance);
+
+            if ($placed instanceof Node) {
+                return $placed;
+            }
         }
 
         return $process->node;
@@ -1543,9 +1474,11 @@ final readonly class ProcessesProbe
 
         if (is_array($config['endpoints'] ?? null)) {
             foreach ($config['endpoints'] as $endpoint) {
-                if (is_array($endpoint)) {
-                    $rawEndpoints[] = $endpoint;
+                if (! is_array($endpoint)) {
+                    continue;
                 }
+
+                $rawEndpoints[] = $endpoint;
             }
         }
 
@@ -1581,6 +1514,7 @@ final readonly class ProcessesProbe
             [
                 'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
                 'platform' => $diagnostic['platform'] ?? null,
+                'supported' => $diagnostic['supported'] ?? null,
                 'reason' => $diagnostic['reason'] ?? null,
                 'message' => $diagnostic['message'] ?? null,
                 'command' => $diagnostic['command'] ?? null,
@@ -1614,7 +1548,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1670,7 +1604,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof Project) {
+        if (! $process->app instanceof App) {
             return [];
         }
 
@@ -1717,15 +1651,15 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        $project = $process->app;
+        $app = $process->app;
 
-        if (! $project instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
         return collect($this->runtimeContexts($process))
-            ->map(function (?Workspace $workspace) use ($process, $project): array {
-                $container = $this->dockerContainerRenderer()->render($project, $process, $workspace);
+            ->map(function (?Workspace $workspace) use ($process, $app): array {
+                $container = $this->dockerContainerRenderer()->render($app, $process, $workspace);
                 $config = is_array($process->runtime_config) ? $process->runtime_config : [];
                 $configuredHash = $config['container_spec_hash'] ?? null;
                 $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
@@ -1796,19 +1730,19 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
             return [];
         }
 
         $units = [];
 
         foreach ($this->runtimeContexts($process) as $workspace) {
-            $node = $app->node;
-
-            if (! $node instanceof Node) {
-                continue;
-            }
-
             $runtimeUnit = $this->systemdUnitRenderer()->unitName($app, $process, $workspace);
             $content = $this->systemdUnitRenderer()->render($node, $app, $process, $workspace);
 
@@ -1853,19 +1787,26 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
         $units = [];
 
+        $node = $this->processNode($process);
+
+        if (! $node instanceof Node) {
+            return [];
+        }
+
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+            throw new InvalidArgumentException(
+                "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
+                ."placement resolved to '{$node->name}' ({$node->platform}).",
+            );
+        }
+
         foreach ($this->runtimeContexts($process) as $workspace) {
-            $node = $app->node;
-
-            if (! $node instanceof Node) {
-                continue;
-            }
-
             $runtimeUnit = $this->launchdPlistRenderer()->unitName($app, $process, $workspace);
             $content = $this->launchdPlistRenderer()->render($node, $app, $process, $workspace);
 
@@ -1891,20 +1832,14 @@ final readonly class ProcessesProbe
         $lines = [];
 
         foreach (explode("\n", $content) as $line) {
-            if (str_starts_with($line, 'Environment=')) {
-                $lines[] = $line;
+            if (! str_starts_with($line, 'Environment=')) {
+                continue;
             }
+
+            $lines[] = $line;
         }
 
         return $lines;
-    }
-
-    private function requiresEventNotifier(Process $process): bool
-    {
-        return (
-            ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification'))
-            === ProcessCrashNotification::AgentIde
-        );
     }
 
     private function runtimeFor(Process $process): ProcessRuntime
@@ -1939,7 +1874,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1949,9 +1884,9 @@ final readonly class ProcessesProbe
 
         $app->loadMissing('workspaces');
 
-        $workspaces = $process->app_instance_id === null
+        $workspaces = $process->instance_id === null
             ? $app->workspaces
-            : $app->workspaces->where('app_instance_id', $process->app_instance_id);
+            : $app->workspaces->where('instance_id', $process->instance_id);
 
         /** @var list<Workspace> $workspaceModels */
         $workspaceModels = array_values($workspaces->all());
@@ -1966,7 +1901,7 @@ final readonly class ProcessesProbe
             '--filter label=orbit.managed=true',
         ];
 
-        if ($process->app instanceof Project) {
+        if ($process->app instanceof App) {
             $parts[] = '--filter label=orbit.app='.escapeshellarg($process->app->name);
         }
 
@@ -1989,7 +1924,6 @@ final readonly class ProcessesProbe
                 'runtime_backend_output' => '',
                 'runtime_units' => [],
                 'runtime_unit_extras' => [],
-                'event_notifier' => null,
             ],
         ]);
     }
@@ -2071,9 +2005,9 @@ final readonly class ProcessesProbe
         ];
     }
 
-    private function surrogateAppForNode(Node $node): Project
+    private function surrogateAppForNode(Node $node): App
     {
-        $app = new Project([
+        $app = new App([
             'name' => $node->name,
             'path' => ($node->user ?: 'orbit') === 'root'
                 ? '/root'
@@ -2119,14 +2053,14 @@ final readonly class ProcessesProbe
 
     private function loadProcessApp(Process $process, bool $withWorkspaces = false): void
     {
-        $process->loadMissing(['owner', 'node', 'appInstance']);
+        $process->loadMissing(['owner', 'node', 'instance']);
         $logicalApp = $process->ownerApp();
-        $instance = $process->appInstance;
+        $instance = $process->instance;
         $node = $process->node;
 
         if (
-            ! $logicalApp instanceof Project
-            || ! $instance instanceof AppInstance
+            ! $logicalApp instanceof App
+            || ! $instance instanceof Instance
             || ! $node instanceof Node
             || $instance->app_id !== $logicalApp->id
         ) {
@@ -2141,11 +2075,11 @@ final readonly class ProcessesProbe
                 'workspaces',
                 $this->processNodeExcludesWorkspaces($process)
                     ? $logicalApp->newCollection()
-                    : $logicalApp->workspaces()->where('app_instance_id', $instance->id)->get(),
+                    : $logicalApp->workspaces()->where('instance_id', $instance->id)->get(),
             );
         }
 
-        if ($process->owner instanceof Project) {
+        if ($process->owner instanceof App) {
             $process->setRelation('owner', $runtimeApp);
 
             return;
@@ -2174,19 +2108,19 @@ final readonly class ProcessesProbe
     private function processOwnershipDetail(Process $process): array
     {
         $app = $process->ownerApp();
-        $process->loadMissing('appInstance');
+        $process->loadMissing('instance');
         /** @var array<string, string> $detail */
         $detail = [];
         $appName = $app?->name;
-        $appInstance = $process->appInstance;
-        $appInstanceName = $appInstance?->name;
+        $instance = $process->instance;
+        $appInstanceName = $instance?->name;
 
         if (is_string($appName) && $appName !== '') {
             $detail['app'] = $appName;
         }
 
         if (is_string($appInstanceName) && $appInstanceName !== '') {
-            $detail['app_instance'] = $appInstanceName;
+            $detail['instance'] = $appInstanceName;
         }
 
         return $detail;
@@ -2215,11 +2149,6 @@ final readonly class ProcessesProbe
     private function scriptDispatcher(): ToolScriptDispatcher
     {
         return $this->scripts ?? new ToolScriptDispatcher($this->runtimeBackendProbe()->executor());
-    }
-
-    private function processEventNotifierRenderer(): ProcessEventNotifierRenderer
-    {
-        return app(ProcessEventNotifierRenderer::class);
     }
 
     private function dockerContainerRenderer(): ProcessDockerContainerRenderer

@@ -1,0 +1,27 @@
+{
+  "info": {
+    "id": "019fccc5-ed44-7521-b358-8b5c3a66d0c3",
+    "cwd": "/Users/nckrtl/orbit"
+  },
+  "session_summary": "Orbit 0.1.190 ADE Removal Live Candidate Rollout",
+  "created_at": "2026-08-04T12:35:51.401653Z",
+  "updated_at": "2026-08-04T13:01:06.238827Z",
+  "num_messages": 1316,
+  "num_chat_messages": 249,
+  "current_model_id": "grok-4.5",
+  "next_trace_turn": 4,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "8ae06ade95405b5c08eccbc6056d74ee1f5b334a",
+  "head_branch": "main",
+  "request_id": "4b6e664f-f93b-41b5-b258-a216ea2172b9",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-08-04T13:01:06.238827Z",
+  "generated_title": "Orbit 0.1.190 ADE Removal Live Candidate Rollout",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off",
+  "reasoning_effort": "high"
+}

@@ -10,6 +10,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\FirewallRule;
 use App\Services\Convergence\UfwFirewallRule;
+use App\Services\Doctor\DoctorRestoreActionId;
 use RuntimeException;
 
 /**
@@ -22,11 +23,22 @@ final readonly class FirewallRuleFixer
     ) {}
 
     /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'firewall_rule.rule_missing',
+            'firewall_rule.rule_mismatch',
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function fix(FirewallRule $rule, DriftEntry $entry): ?array
     {
-        if (! in_array($entry->key, ['firewall_rule.rule_missing', 'firewall_rule.rule_mismatch'], true)) {
+        if (! array_key_exists($entry->key, self::restoreSupport())) {
             return null;
         }
 

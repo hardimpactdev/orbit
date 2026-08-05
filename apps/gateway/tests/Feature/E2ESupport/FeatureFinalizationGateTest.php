@@ -79,6 +79,179 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
+it('documents optional compact Scope transition framing without a new row or ceremony', function (): void {
+    $template = (string) file_get_contents(repo_path('LOOP.md.example'));
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
+    $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+
+    foreach ([$template, $harness, $skill] as $doc) {
+        expect($doc)
+            ->toContain('primitive=')
+            ->toContain('transitions=')
+            ->toContain('success:')
+            ->toContain('failure:')
+            ->toContain('retry:')
+            ->toContain('stop-restart:')
+            ->toContain('stale:')
+            ->toContain('Omit the clause');
+    }
+
+    expect($template)
+        ->toMatch('/^- Owned:\s*$/m')
+        ->not->toContain('## Transition Framing')
+        ->not->toContain('- Framing:');
+});
+
+it('validates optional Scope framing only when the compact markers are present', function (
+    string $owned,
+    ?string $errorNeedle,
+): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $markdown = compact_feature_loop_packet(owned: $owned);
+    $problem = orbitLoopScopeFramingProblem($markdown);
+
+    if ($errorNeedle === null) {
+        expect($problem)->toBeNull();
+    } else {
+        expect($problem)
+            ->toBeString()
+            ->toContain($errorNeedle);
+    }
+})->with([
+    'ordinary owned without framing' => [
+        'loop tooling',
+        null,
+    ],
+    'valid framing with n/a transitions' => [
+        'apps/cli progress UX; primitive=progress-tree; transitions=success:exit 0 green tree|failure:nonzero tree|retry:re-run command|stop-restart:n/a|stale:refresh snapshot',
+        null,
+    ],
+    'valid framing reordered transition keys' => [
+        'lifecycle feature; primitive=process-start-stop; transitions=stale:refresh|stop-restart:restart unit|retry:retry once|failure:failed state|success:running',
+        null,
+    ],
+    'missing transitions marker' => [
+        'apps/cli; primitive=progress-tree',
+        'missing transitions=',
+    ],
+    'missing primitive marker' => [
+        'apps/cli; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'missing primitive=',
+    ],
+    'empty primitive value' => [
+        'apps/cli; primitive=; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'primitive=',
+    ],
+    'missing required transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a',
+        'missing required key: stale',
+    ],
+    'unknown transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|boom:x',
+        'unknown key: boom',
+    ],
+    'duplicate transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|success:again',
+        'duplicate key: success',
+    ],
+    'duplicate primitive marker' => [
+        'apps/cli; primitive=progress-tree; primitive=other; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'duplicate primitive=',
+    ],
+    'template placeholder in primitive' => [
+        'apps/cli; primitive=<exact primitive>; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'template placeholder in transitions' => [
+        'apps/cli; primitive=progress-tree; transitions=success:<ok>|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'empty transition value' => [
+        'apps/cli; primitive=progress-tree; transitions=success:|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'value for success is empty',
+    ],
+]);
+
+it('parses optional Scope framing only from the Owned row', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $ordinaryWithMarkerProse = compact_feature_loop_packet(owned: 'loop tooling');
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: docs may mention primitive= and transitions= as format tokens only',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Out of scope: .+$/m',
+            '- Out of scope: do not invent a permanent Framing row; leave primitive= off ordinary Owned values',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+
+    expect(orbitLoopScopeFramingProblem($ordinaryWithMarkerProse))->toBeNull();
+
+    $splitAcrossRows = compact_feature_loop_packet(owned: 'apps/cli; primitive=progress-tree');
+    $splitAcrossRows =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+            $splitAcrossRows,
+        ) ?? $splitAcrossRows;
+
+    expect(orbitLoopScopeFramingProblem($splitAcrossRows))
+        ->toBeString()
+        ->toContain('missing transitions=');
+
+    $completeOnOwnedWithProseElsewhere = compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    );
+    $completeOnOwnedWithProseElsewhere =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: other Scope rows may still mention primitive= without becoming the clause source',
+            $completeOnOwnedWithProseElsewhere,
+        ) ?? $completeOnOwnedWithProseElsewhere;
+
+    expect(orbitLoopScopeFramingProblem($completeOnOwnedWithProseElsewhere))->toBeNull();
+});
+
+it('blocks compact finalization lint when optional Scope framing is malformed', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->toContain('Scope framing')
+            ->toContain('missing required key');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('lints compact finalization when optional Scope framing is complete', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('blocks compact finalization while blast-radius closure is unresolved', function (string $blastRadius): void {
     $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(blastRadius: $blastRadius));
 
@@ -402,6 +575,88 @@ it('requires runtime proof for retained automated acceptance before finalization
     }
 });
 
+it('rejects deferred final-hop runtime claims and accepts structured completed proof at finalization', function (
+    string $runtimeDetail,
+    bool $shouldPass,
+    ?string $errorNeedle,
+    bool $seedEvidence = true,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/runtime.php', "<?php\n\n// Updated runtime.\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        $runtime = str_replace('<TIP>', $featureTip, $runtimeDetail);
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - human-judgment=not-required',
+                acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+                runtime: $runtime,
+            ),
+        );
+
+        if ($seedEvidence) {
+            finalization_seed_runtime_evidence($worktree);
+        }
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        if ($shouldPass) {
+            expect($process->getExitCode())
+                ->toBe(0, $process->getErrorOutput())
+                ->and($process->getOutput())
+                ->toContain('FINALIZATION: PASS');
+        } else {
+            expect($process->getExitCode())
+                ->toBe(2)
+                ->and($process->getErrorOutput())
+                ->toContain((string) $errorNeedle)
+                ->toContain('remain in PROVE');
+        }
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'post-LAND deferral' => [
+        'passed - live update failed writing bare /etc/caddy; post-LAND durable re-proof follows',
+        false,
+        'final hop',
+    ],
+    'free-form without receipt' => [
+        'passed - retained fixture',
+        false,
+        'structured runtime receipt',
+    ],
+    'final hop excluded from this run' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=final hop excluded from this run; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'protected words in target field' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=deferred-queue worker; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'missing evidence file' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'existing regular file',
+        false,
+    ],
+    'valid structured receipt' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0 with no failures; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+]);
+
 it('requires exact automated acceptance provenance', function (
     string $review,
     string $acceptance,
@@ -641,6 +896,36 @@ it('rejects unresolved actionable feedback before merge', function (): void {
     }
 });
 
+it('keeps finalization quality-check subgates aligned with quality-check.sh CHECK_LABELS', function (): void {
+    // Canonical producer: same CHECK_LABELS parser contract as VerificationScriptsTest
+    // (helpers live there; parallel workers do not share cross-file test functions).
+    $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
+    $producerLabels = finalization_quality_check_script_labels($script, 'CHECK_LABELS');
+
+    $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    expect(preg_match(
+        '/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s',
+        $hook,
+        $matches,
+    ))->toBe(1);
+
+    preg_match_all("/'([^']+)'/", $matches[1], $labelMatches);
+    $hookLabels = $labelMatches[1];
+    $fixtureLabels = array_keys(finalization_quality_check_subgates());
+
+    sort($producerLabels);
+    sort($hookLabels);
+    sort($fixtureLabels);
+
+    expect($hookLabels)
+        ->toBe($producerLabels)
+        ->and($fixtureLabels)
+        ->toBe($producerLabels)
+        ->and($producerLabels)
+        ->toContain('sdk_typescript_build')
+        ->toContain('sdk_typescript_typecheck');
+});
+
 it('rejects forged or incomplete reserved quality-check evidence', function (
     string $mutation,
     string $reason,
@@ -650,11 +935,12 @@ it('rejects forged or incomplete reserved quality-check evidence', function (
     try {
         commit_finalization_gate_file($worktree, 'bin/example', "#!/usr/bin/env bash\n");
         write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
         write_compact_feature_loop_for_fixture(
             $repo,
             $worktree,
             venue: 'retained-incus',
-            runtime: 'passed - retained fixture',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
         );
         $artifactPath = latest_finalization_artifact_path($worktree, 'quality-check');
         $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
@@ -750,7 +1036,7 @@ it('requires a user acceptance event matching the accepted candidate source and 
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($worktree, $featureTip),
             ),
         );
         write_finalization_acceptance_event(
@@ -793,7 +1079,7 @@ it('allows exact user acceptance provenance', function (): void {
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($worktree, $featureTip),
             ),
         );
         write_finalization_acceptance_event(
@@ -831,7 +1117,7 @@ it('rejects unnecessary user acceptance at finalization', function (): void {
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($worktree, $featureTip),
             ),
         );
 
@@ -2203,6 +2489,117 @@ it('blocks branch deletion when no matching session archive exists', function ()
     }
 });
 
+it('allows cleanup when a valid compact receipt is discoverable under a different basename via compatible slugs', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    // Basename slug differs from branch-derived `feature`; receipt metadata must
+    // make the archive discoverable without bypassing tip/digest validation.
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    commit_finalization_session_archive($repo, $archive);
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a cross-slug compact receipt that mismatches branch tip or digests', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    // Discoverable via compatible_slugs, but digests no longer match archive bytes.
+    $receipt['entry_digests']['loop.md'] = str_repeat('0', 64);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('bin/orbit-session-archive');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a cross-slug compact receipt with wrong branch tip even when compatible slugs match', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+
+    $archive = write_compact_finalization_gate_session_archive(
+        $repo,
+        $worktree,
+        'token-transport-contract',
+    );
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['slug'] = 'token-transport-contract';
+    $receipt['requested_slug'] = 'feature';
+    $receipt['compatible_slugs'] = ['feature', 'token-transport-contract'];
+    // Candidate tip no longer equals the landed feature tip.
+    $receipt['candidate_commit'] = str_repeat('a', 40);
+    $receipt['accepted_feature_tip'] = str_repeat('a', 40);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('bin/orbit-session-archive');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('allows worktree removal when a matching session archive with loop and manifest exists', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 
@@ -2290,10 +2687,111 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
         json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
+    commit_finalization_session_archive($repo, $archive);
+
     try {
         $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('allows cleanup for historical schema-v2 compact receipts that cite release-evidence without retaining it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    $proofSource = latest_finalization_artifact_path($worktree, 'docs-lint');
+    $proofEntry = 'quality-gates/'.basename($proofSource);
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            <<<MARKDOWN
+                - Broader proof: `.orbit/{$proofEntry}`
+                - Release evidence: `.orbit/release-evidence/2026-08-04-live-candidate/proof.txt`
+
+                ## Status
+                MARKDOWN,
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    mkdir("{$archive}/quality-gates", recursive: true);
+    copy($proofSource, "{$archive}/{$proofEntry}");
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 2;
+    $receipt['copied_entries'] = ['loop.md', $proofEntry];
+    sort($receipt['copied_entries']);
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+        $proofEntry => hash_file('sha256', "{$archive}/{$proofEntry}"),
+    ];
+    ksort($receipt['entry_digests']);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    expect($receipt['copied_entries'])
+        ->not->toContain('release-evidence/2026-08-04-live-candidate/proof.txt')->and("{$archive}/release-evidence")
+        ->not->toBeDirectory();
+
+    commit_finalization_session_archive($repo, $archive);
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects schema-v3 compact receipts that cite release-evidence without binding it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n\n## Status",
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 3;
+    $receipt['copied_entries'] = ['loop.md'];
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+    ];
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -3275,7 +3773,10 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
 
     file_put_contents(filename: "{$repo}/HARNESS.md", data: "# Harness\n");
     file_put_contents(filename: "{$repo}/AGENTS.md", data: "# Agents\n");
-    file_put_contents(filename: "{$repo}/.gitignore", data: ".orbit/\n");
+    file_put_contents(
+        filename: "{$repo}/.gitignore",
+        data: "/.orbit/*\n!/.orbit/sessions/\n!/.orbit/sessions/**\n",
+    );
 
     mkdir("{$repo}/apps/cli", recursive: true);
     file_put_contents(filename: "{$repo}/apps/cli/runtime.php", data: "<?php\n");
@@ -3327,6 +3828,7 @@ function compact_feature_loop_packet(
     ?string $reviewedTip = null,
     string $runtime = 'not applicable - no runtime proof venue',
     string $blastRadius = 'not-required - local change',
+    string $owned = 'loop tooling',
 ): string {
     $reviewedTip ??= $featureTip;
 
@@ -3343,7 +3845,7 @@ function compact_feature_loop_packet(
 
         ## Scope
 
-        - Owned: loop tooling
+        - Owned: {$owned}
         - Constraints: no manual E2E
         - Out of scope: product behavior
 
@@ -3382,6 +3884,10 @@ function write_compact_feature_loop_for_fixture(
     $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
 
+    if ($venue !== 'automated' && str_starts_with($runtime, 'passed')) {
+        finalization_seed_runtime_evidence($worktree);
+    }
+
     file_put_contents(
         "{$worktree}/.orbit/loop.md",
         compact_feature_loop_packet(
@@ -3392,6 +3898,43 @@ function write_compact_feature_loop_for_fixture(
             blastRadius: $blastRadius,
         ),
     );
+}
+
+function finalization_structured_runtime(
+    string $worktree,
+    string $candidate,
+    string $venue = 'retained-incus',
+    string $observed = 'exit 0',
+): string {
+    finalization_seed_runtime_evidence($worktree);
+
+    return (
+        'passed - candidate='
+        .$candidate
+        .'; venue='
+        .$venue
+        .'; environment=dev-fixture'
+        .'; target=orbit fixture'
+        .'; expected=exit 0'
+        .'; observed='
+        .$observed
+        .'; result=passed'
+        .'; evidence=`.orbit/evidence/runtime-proof.txt`'
+    );
+}
+
+function finalization_seed_runtime_evidence(
+    string $worktree,
+    string $relative = '.orbit/evidence/runtime-proof.txt',
+): void {
+    $path = $worktree.'/'.ltrim($relative, '/');
+    $directory = dirname($path);
+
+    if (! is_dir($directory)) {
+        mkdir($directory, recursive: true);
+    }
+
+    file_put_contents($path, "runtime proof fixture\n");
 }
 
 function write_finalization_acceptance_event(
@@ -3427,7 +3970,7 @@ function full_template_finalization_packet(): string
 
         ## Feature Context
 
-        - Scratchpad: solo://projects/12/scratchpads/34
+        - Scratchpad: solo://apps/12/scratchpads/34
         - Worktree: .worktrees/example
         - Branch: feature
         - Completed slices:
@@ -3661,8 +4204,12 @@ function remove_finalization_lint_dir(string $packetDir): void
     new Process(['rm', '-rf', $packetDir])->run();
 }
 
-function write_finalization_gate_session_archive(string $repo, string $slug, bool $timestamped = true): string
-{
+function write_finalization_gate_session_archive(
+    string $repo,
+    string $slug,
+    bool $timestamped = true,
+    bool $commit = true,
+): string {
     $archiveName = $timestamped ? "2026-07-02-101500-{$slug}" : $slug;
     $archiveDir = "{$repo}/.orbit/sessions/{$archiveName}";
 
@@ -3673,6 +4220,10 @@ function write_finalization_gate_session_archive(string $repo, string $slug, boo
         data: json_encode(['schema_version' => 1, 'sessions' => []], JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
+    if ($commit) {
+        commit_finalization_session_archive($repo, $archiveDir);
+    }
+
     return $archiveDir;
 }
 
@@ -3681,6 +4232,7 @@ function write_compact_finalization_gate_session_archive(
     string $worktree,
     string $slug,
     bool $includeFeedback = false,
+    bool $commit = true,
 ): string {
     $archiveDir = "{$repo}/.orbit/sessions/2026-07-10-180000-{$slug}";
     mkdir($archiveDir, recursive: true);
@@ -3720,7 +4272,56 @@ function write_compact_finalization_gate_session_archive(
             .PHP_EOL,
     );
 
+    if ($commit) {
+        commit_finalization_session_archive($repo, $archiveDir);
+    }
+
     return $archiveDir;
+}
+
+function commit_finalization_session_archive(string $repo, string $archiveDir): void
+{
+    if (! is_dir("{$repo}/.git") && ! is_file("{$repo}/.git")) {
+        return;
+    }
+
+    $relativeArchive = ltrim(str_replace($repo, '', $archiveDir), '/');
+    $sessionsDir = "{$repo}/.orbit/sessions";
+    $indexPath = "{$sessionsDir}/index.json";
+    $basename = basename($archiveDir);
+
+    $records = [];
+
+    if (is_file($indexPath)) {
+        $existing = json_decode((string) file_get_contents($indexPath), true);
+        if (is_array($existing) && isset($existing['records']) && is_array($existing['records'])) {
+            $records = $existing['records'];
+        }
+    }
+
+    $records = array_values(array_filter(
+        $records,
+        static fn (mixed $record): bool => ! is_array($record) || ($record['archive'] ?? null) !== $basename,
+    ));
+    $records[] = [
+        'archive' => $basename,
+        'slug' => preg_replace('/^\d{4}-\d{2}-\d{2}-\d{6}-/', '', $basename) ?: $basename,
+        'timestamp' => preg_match('/^(\d{4}-\d{2}-\d{2}-\d{6})-/', $basename, $m) === 1 ? $m[1] : '2026-07-10-180000',
+    ];
+
+    file_put_contents(
+        $indexPath,
+        json_encode([
+            'schema_version' => 2,
+            'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
+            'record_count' => count($records),
+            'records' => $records,
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
+            .PHP_EOL,
+    );
+
+    run_fixture_command($repo, ['git', 'add', '--', $relativeArchive, '.orbit/sessions/index.json']);
+    run_fixture_command($repo, ['git', 'commit', '-m', "Archive session {$basename}"]);
 }
 
 function land_finalization_gate_feature(string $repo): void
@@ -3785,6 +4386,27 @@ function latest_finalization_artifact_path(string $worktree, string $gate): stri
     return $paths[0] ?? throw new RuntimeException("Missing {$gate} fixture artifact");
 }
 
+/**
+ * Parse a bash array of quality-check labels from bin/quality-check.sh.
+ * Mirrors quality_check_script_labels() in VerificationScriptsTest.
+ *
+ * @return list<string>
+ */
+function finalization_quality_check_script_labels(string $script, string $arrayName): array
+{
+    $pattern = '/^'.preg_quote($arrayName, '/').'=\\(\\R(?P<body>.*?)^\\)/ms';
+    $matches = [];
+
+    if (preg_match($pattern, $script, $matches) !== 1) {
+        throw new RuntimeException("Expected quality-check script to define [{$arrayName}].");
+    }
+
+    $labelMatches = [];
+    preg_match_all('/^    (?P<label>[a-z0-9_]+)$/m', $matches['body'], $labelMatches);
+
+    return $labelMatches['label'];
+}
+
 /** @return array<string, int> */
 function finalization_quality_check_subgates(): array
 {
@@ -3832,6 +4454,8 @@ function finalization_quality_check_subgates(): array
         'sdk_mago_lint',
         'sdk_pest',
         'sdk_rector',
+        'sdk_typescript_build',
+        'sdk_typescript_typecheck',
     ];
 
     return array_fill_keys($labels, 0);

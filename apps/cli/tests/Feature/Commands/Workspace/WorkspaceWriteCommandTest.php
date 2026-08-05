@@ -9,7 +9,7 @@ describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
         fakeGatewayProgressStream(
             "event: complete\n"
-            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","project":"docs","instance":"development"}}}}'
+            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs","instance":"development"}}}}'
             ."\n\n",
         );
 
@@ -72,7 +72,7 @@ describe('workspace write commands', function (): void {
         try {
             fakeGatewayProgressStream(
                 "event: complete\n"
-                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","project":"docs","instance":"development","action":"set_up"}}}'
+                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","instance":"development","action":"set_up"}}}'
                 ."\n\n",
             );
 
@@ -234,7 +234,7 @@ describe('workspace write commands', function (): void {
     it('deletes workspace:remove targets with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-docs',
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'action' => 'removed',
         ], [
@@ -272,7 +272,7 @@ describe('workspace write commands', function (): void {
     it('prompts for workspace:remove name and confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-docs',
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'action' => 'removed',
         ]));
@@ -302,7 +302,7 @@ describe('workspace write commands', function (): void {
     it('renders workspace:remove human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-api',
-            'project' => 'my-app',
+            'app' => 'my-app',
             'instance' => 'development',
             'action' => 'removed',
             'worktree_removed' => true,
@@ -334,7 +334,7 @@ describe('workspace write commands', function (): void {
     it('renders workspace:remove drift warnings after the tree', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-api',
-            'project' => 'my-app',
+            'app' => 'my-app',
             'instance' => 'development',
             'action' => 'removed',
             'worktree_removed' => false,

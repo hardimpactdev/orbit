@@ -11,7 +11,7 @@ referenced from
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/domains/16_dns/**`. The **node family** owns
+covered by `docs/domains/15_dns/**`. The **node family** owns
 `dnsmasq.d/10-node-records.conf`; the **proxy family** owns
 `dnsmasq.d/20-proxy-records.conf`; and the **tool family** owns base
 `dnsmasq.conf` plus the DNS runtime, listener, VPN forwarding, and client-DNS
@@ -64,8 +64,10 @@ Required envs / settings:
 - `INIT_ENABLED=true` — enables the unattended setup flow in wg-easy v15.
 - `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
   account. The generated password is persisted in `ORBIT_CONFIG_ROOT/.env` (default `~/.config/orbit/.env`) as
-  `WG_EASY_PASSWORD=...` so future runs are idempotent and so
-  `tool:credentials wg-easy` can later expose it.
+  `WG_EASY_PASSWORD=...` so future runs are idempotent. The VPN web UI password
+  is VPN-family state (`vpn-web-ui:change-password`); it is not a tool-catalog
+  credential surface (`wg-easy` is not a catalog slug and
+  `tool:credentials wg-easy` is unsupported).
 - `INIT_HOST=<public host>` — the gateway's public IPv4 or DNS name.
 - `INIT_PORT=51820`.
 - `INIT_DNS=10.6.0.1` — the wg-easy WG IP, where `orbit-dns` listens via the
@@ -255,7 +257,7 @@ runtime fact:
 
 | Drift kind | Owner and detection | Restore | Adopt |
 | --- | --- | --- | --- |
-| `node.dns_mapping_mismatch` | Node: a source-node concrete/wildcard directive is wrong, or the gateway anchor finds an orphan directive. | Re-render only the node projection and use the shared restart path. | No |
+| `node.dns_mapping_mismatch` | Node: verified only on the DNS-serving host (gateway-coupled VPN). A source-node concrete/wildcard directive is wrong, or the gateway anchor finds an orphan directive. Non-consumer nodes are not probed for the shared projection file. | Re-render only the node projection and use the shared restart path. | No |
 | `proxy.dns_mapping_mismatch` | Proxy: `20-proxy-records.conf` differs from router/private `.orbit` and exact-backend intent. | Re-render only the proxy projection and use the shared restart path. | No |
 | `tool.dns_base_config_mismatch` | Tool: base `dnsmasq.conf` differs from `DnsmasqBaseConfigBuilder` output, or the active projection-directory bind source, destination, or read-only mode is wrong. | Rewrite only non-legacy base config, redeploy a wrong mount, and restart or update DNS. Legacy conversion remains an explicit installer migration. | No |
 | `tool.dns_container_missing` | Tool: neither the standalone `orbit-dns` container nor Swarm task is present. | Stage base config plus record-free owner placeholders when absent, then rerun the persisted stack/compose installer; Swarm restore also reconverges forwarding. | No |

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\LaunchdPlistRenderer;
 use App\Services\Processes\RemoteLaunchdService;
@@ -22,14 +22,14 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         private RemoteLaunchdService $launchd,
     ) {}
 
-    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->unitName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -87,6 +87,11 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->launchd->restart($node, $this->renderer->label($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->launchd->isActive($node, $this->renderer->label($runtimeUnit));
+    }
+
     public function stdoutLogPath(Node $node, string $runtimeUnit): string
     {
         return $this->renderer->stdoutLogPath($runtimeUnit, $node);
@@ -102,7 +107,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
      * @mago-expect lint:no-boolean-flag-parameter
      */
     public function logScript(
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

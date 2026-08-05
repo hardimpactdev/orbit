@@ -543,4 +543,4 @@ Unknown values fall back to `fresh-clone`.
 `ORBIT_E2E_TOPOLOGY_RESET` applies after a test has already acquired a topology.
 Initial Incus acquisition can use prepared warm stateful snapshots only when
 `ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1`; see
-`docs/testing/e2e/incus.md#warm-stateful-snapshots`.
+[Incus E2E — warm stateful snapshots](incus.md#warm-stateful-snapshots).

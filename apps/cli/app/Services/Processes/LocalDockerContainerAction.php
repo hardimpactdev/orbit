@@ -14,7 +14,16 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalDockerContainerAction
 {
-    private const array ACTIONS = ['apply', 'ensure-network', 'probe', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = [
+        'apply',
+        'ensure-network',
+        'is-active',
+        'probe',
+        'remove',
+        'restart',
+        'start',
+        'stop',
+    ];
 
     public function __construct(
         private LocalDockerCommandContext $docker,
@@ -354,6 +363,30 @@ final readonly class LocalDockerContainerAction
      */
     private function lifecycle(string $action, string $container): array
     {
+        if ($action === 'is-active') {
+            $result = $this->runProcess([
+                'docker',
+                'inspect',
+                '--format',
+                '{{.State.Running}}',
+                $container,
+            ]);
+            $running = $result->isSuccessful() && trim($result->getOutput()) === 'true';
+
+            if ($running) {
+                return [
+                    'data' => [
+                        'action' => $action,
+                        'container' => $container,
+                        'changed' => false,
+                    ],
+                    'meta' => [],
+                ];
+            }
+
+            throw $this->failure($action, $container, $result);
+        }
+
         $result = $this->runProcess(['docker', $action, $container]);
 
         if ($result->isSuccessful()) {

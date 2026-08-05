@@ -65,6 +65,6 @@ Each family links to a selection guide and individual primitive pages.
 | Family | Pages |
 | --- | --- |
 | [Details](details/show-detail.md) | `show-detail` |
-| [Lists](lists/README.md) | `table`, `data-list`, `property-list` |
+| [Lists](lists/README.md) | `table`, `data-list`, `data-table-prompt`, `property-list` |
 | [Inputs](inputs/README.md) | `text`, `password`, `confirm`, `select`, `multi-select`, `search`, `multi-search`, `suggest` |
 | [Progress](progress/README.md) | `progress-tree`, `spinner` |

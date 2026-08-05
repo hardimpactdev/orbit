@@ -54,7 +54,7 @@ describe('node write commands', function (): void {
             '--gateway-endpoint' => '10.3.0.2',
             '--tld' => 'test',
             '--grant-to' => ['agent-1'],
-            '--agent-tool' => ['openclaw'],
+            '--agent-tool' => ['hermes'],
             '--json' => true,
         ]);
 
@@ -69,7 +69,7 @@ describe('node write commands', function (): void {
                 && $request['gateway_endpoint'] === '10.3.0.2'
                 && $request['tld'] === 'test'
                 && $request['grant_to'] === ['agent-1']
-                && $request['agent_tools'] === ['openclaw']
+                && $request['agent_tools'] === ['hermes']
                 && ! isset($request['template'])
                 && ! isset($request['operator'])
             ),
@@ -1519,107 +1519,6 @@ describe('node write commands', function (): void {
             ->toBe(1)
             ->and($output)
             ->toContain('cannot be removed while dependents exist')
-            ->and($output)
-            ->not->toContain('"error"');
-    });
-
-    it('posts node:agent-ide payloads to the typed gateway API', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'node' => 'app-1',
-            'agent_ide' => ['adapter' => 'opencode', 'source' => 'node'],
-            'action' => 'updated',
-        ]));
-
-        [$exitCode] = runCommand($this, 'node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'opencode',
-            '--json' => true,
-        ]);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/nodes/app-1/agent-ide')
-                && $request['agent_ide'] === 'opencode'
-            ),
-        );
-
-        expect($exitCode)->toBe(0);
-    });
-
-    it('renders node:agent-ide set success as prose without a tree', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'name' => 'app-1',
-            'agent_ide' => ['adapter' => 'opencode', 'source' => 'node'],
-            'action' => 'set',
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'opencode',
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain("Node 'app-1' agent IDE set to 'opencode'")
-            ->and($output)
-            ->not->toContain('action:')->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders node:agent-ide converged success as already-set prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'name' => 'app-1',
-            'agent_ide' => ['adapter' => 'opencode', 'source' => 'node'],
-            'action' => 'converged',
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'opencode',
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain("Node 'app-1' agent IDE already set to 'opencode'")
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders node:agent-ide clear success as cleared prose', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'name' => 'app-1',
-            'agent_ide' => ['adapter' => null, 'source' => 'default'],
-            'action' => 'set',
-        ]));
-
-        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'none',
-        ]);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($output)
-            ->toContain("Node 'app-1' agent IDE cleared")
-            ->and($output)
-            ->not->toContain('{');
-    });
-
-    it('renders node:agent-ide gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('node.unsupported_adapter', "Adapter 'unknown-ide' is not supported."), 422);
-
-        [$exitCode, $output] = runCommand($this, 'node:agent-ide', [
-            'name' => 'app-1',
-            'agent_ide' => 'unknown-ide',
-        ]);
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($output)
-            ->toContain("Adapter 'unknown-ide' is not supported.")
             ->and($output)
             ->not->toContain('"error"');
     });

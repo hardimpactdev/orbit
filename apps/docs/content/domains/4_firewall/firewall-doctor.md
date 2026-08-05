@@ -34,7 +34,7 @@ The firewall probe reads gateway firewall rules and checks these layers:
    Public SSH policy owned by the node family remains
    `node.security.public_ssh_deny`.
 5. **Backend presence:** the expected backend rule exists when gateway configuration says it should exist.
-6. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, protocol, address family, and interface scope.
+6. **Backend shape:** the observed backend rule matches action, direction, source, destination, port, protocol, address family, and interface scope. Host-only CIDR forms are canonicalized for comparison and convergence (`10.6.0.13/32` equals `10.6.0.13`). When intent stores address family `both` for a concrete IPv4 or IPv6 host address, the effective family is derived from that address so a matching single-family UFW rule is not treated as mismatch and is not deleted/recreated.
 7. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend rules may be inspected for compatible firewall-rule facts.
 
 Observed backend firewall rules without gateway firewall configuration are unmanaged node reality by default. They are not reported as drift unless the operator requested an explicit adoption scope.
@@ -42,6 +42,15 @@ Observed backend firewall rules without gateway firewall configuration are unman
 Backend rows that cannot be represented in Orbit firewall-rule fields are reported as unverifiable or skipped according to the probe result. They are not deleted by `doctor --restore` and are not adopted by `doctor --adopt`.
 
 ## Firewall Issue Codes
+
+Every code below is registered in the Doctor issue catalog owned by this
+family, with an explicit public disposition (`genuine_drift`,
+`blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
+codes declare a restore action in the Fix Map and catalog; non-genuine
+dispositions are never auto-repaired as if they were restorable drift. See the
+global
+[doctor technical contract](../11_operation/3_doctor/technical/1_doctor.md#issue-dispositions)
+for disposition semantics.
 
 Each code below identifies a specific kind of drift the firewall probe can detect.
 
@@ -97,5 +106,7 @@ Required test files:
 No current E2E test is mapped for firewall-family read-only or restore coverage.
 
 `FirewallRuleProbeTest.php` covers registry configuration, node eligibility,
-baseline policy boundaries, missing rules, mismatched rules, extra rules in
-adoption scope, and exclusion of node/proxy/app drift from firewall issue codes.
+baseline policy boundaries, missing rules, mismatched rules, host-CIDR and
+effective-family equivalence (`10.6.0.13/32`/`both` vs bare IPv4/`v4`), true
+source mismatches, extra rules in adoption scope, and exclusion of
+node/proxy/app drift from firewall issue codes.

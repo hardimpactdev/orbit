@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppOwningNodeResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -21,21 +21,21 @@ function appOwningNodeResolverNode(): Node
 }
 
 /** @param array<string, mixed> $attributes */
-function appOwningNodeResolverApp(array $attributes = []): Project
+function appOwningNodeResolverApp(array $attributes = []): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    assert($app instanceof Project);
+    assert($app instanceof App);
 
     return $app;
 }
 
 /** @param array<string, mixed> $attributes */
-function appOwningNodeResolverUnsavedApp(array $attributes = []): Project
+function appOwningNodeResolverUnsavedApp(array $attributes = []): App
 {
-    $app = Project::factory()->make($attributes);
+    $app = App::factory()->make($attributes);
 
-    assert($app instanceof Project);
+    assert($app instanceof App);
 
     return $app;
 }
@@ -57,5 +57,5 @@ it('throws when the app has no owning node', function (): void {
     $app->setRelation('node', null);
 
     expect(fn () => new AppOwningNodeResolver()->resolve($app))
-        ->toThrow(RuntimeException::class, "Project 'orphan' has no owning node.");
+        ->toThrow(RuntimeException::class, "App 'orphan' has no owning node.");
 });

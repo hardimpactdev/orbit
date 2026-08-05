@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-02T18:08:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-openclaw-default-port/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-02-200838-openclaw-default-port",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/openclaw-default-port-runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-02T180243Z-1d7c7769b005.json"
+    ],
+    "entry_digests": {
+        "evidence/openclaw-default-port-runtime-proof.txt": "ea5da80fcd7e0dc82dc851868a1eb1ab48bb84046950645864d3e9dd54f39be4",
+        "loop.md": "de066e3cc11def1032ac45e5cd906f9437e4124f7e85d05beefbecb639bb0aef",
+        "quality-gates/quality-check-2026-08-02T180243Z-1d7c7769b005.json": "57acf8887f1103ec3d343614834fb493513e265aeb63b051e5bd97ce6fbe83c6"
+    },
+    "branch": "codex/openclaw-default-port",
+    "candidate_commit": "3a40b2b244d61daffe98b8e9da59879ab2c2141c",
+    "accepted_feature_tip": "3a40b2b244d61daffe98b8e9da59879ab2c2141c",
+    "accepted_main_tip": "9336308c194f1f689c50a3696b9dad28c2256395",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\RemoteDockerSwarmService;
 use InvalidArgumentException;
@@ -19,7 +19,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         private RemoteDockerSwarmService $services,
     ) {}
 
-    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         $config = $this->runtimeConfig($process);
         $serviceName = $this->optionalString($config, 'service_name') ?? $process->name;
@@ -29,7 +29,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function apply(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -82,8 +82,13 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         return $this->services->restart($node, $this->assertServiceName($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->services->isActive($node, $this->assertServiceName($runtimeUnit));
+    }
+
     public function logScript(
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

@@ -8,18 +8,9 @@ final readonly class LocalEnvFileAction
 {
     private const array Actions = ['read', 'write'];
 
-    private const array AllowedRootPrefixes = [
-        '/home/orbit/',
-        '/srv/',
-        '/var/www/',
-    ];
-
-    private const string PRODUCTION_APP_ENV_PATTERN = '#\A/home/[a-z_][a-z0-9_-]*/app/\.env\z#';
-
-    private const string DEVELOPMENT_APP_ENV_PATTERN = '#\A(?:/home/[a-z_][a-z0-9_-]*|/Users/[A-Za-z0-9][A-Za-z0-9._-]*)/apps/[a-z0-9][a-z0-9._-]*/\.env\z#';
-
     public function __construct(
         private RuntimeUserEnvFileWriter $runtimeUserWriter,
+        private LocalEnvFilePath $paths = new LocalEnvFilePath,
     ) {}
 
     /**
@@ -29,13 +20,16 @@ final readonly class LocalEnvFileAction
     public function run(array $payload): array
     {
         $action = $this->action($payload['action'] ?? null);
-        $path = $this->path($payload['path'] ?? null);
+        $path = $this->paths->validate($payload['path'] ?? null);
 
         if ($action === 'read') {
             return $this->read($path);
         }
 
         $contents = $this->contents($payload['contents'] ?? null);
+        // Validate before either write path so a directory/symlink .env cannot
+        // reach stage/rename or the runtime-user publish script.
+        $this->paths->assertWritableTarget($path);
         $runtimeUser = $payload['runtime_user'] ?? null;
 
         if ($runtimeUser !== null) {
@@ -50,7 +44,7 @@ final readonly class LocalEnvFileAction
      */
     private function read(string $path): array
     {
-        if (! is_file($path)) {
+        if (! $this->paths->isReadableFile($path)) {
             throw new LocalEnvFileFailure(errorCode: 'env_file.not_found', message: 'Env file was not found.', meta: [
                 'path' => $path,
             ]);
@@ -90,12 +84,43 @@ final readonly class LocalEnvFileAction
             );
         }
 
-        if (file_put_contents($path, $contents) === false) {
-            throw new LocalEnvFileFailure(
-                errorCode: 'env_file.write_failed',
-                message: 'Env file could not be written.',
-                meta: ['path' => $path],
-            );
+        // Re-check after mkdir: parent must still be a non-escaping real directory.
+        $this->paths->assertWritableTarget($path);
+
+        $mode = is_file($path) ? fileperms($path) & 0o777 : 0o600;
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(8));
+
+        try {
+            if (file_put_contents($temporary, $contents, LOCK_EX) === false) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file could not be written.',
+                    meta: ['path' => $path],
+                );
+            }
+
+            if (! chmod($temporary, $mode)) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file permissions could not be set.',
+                    meta: ['path' => $path],
+                );
+            }
+
+            // Revalidate immediately before same-directory rename.
+            $this->paths->assertWritableTarget($path);
+
+            if (! rename($temporary, $path)) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file could not be published.',
+                    meta: ['path' => $path],
+                );
+            }
+        } finally {
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
         }
 
         return [
@@ -118,32 +143,6 @@ final readonly class LocalEnvFileAction
         ]);
     }
 
-    private function path(mixed $value): string
-    {
-        if (! is_string($value) || $value === '' || str_contains($value, "\0")) {
-            throw $this->invalidPath();
-        }
-
-        if (! str_starts_with($value, '/') || ! str_ends_with($value, '/.env')) {
-            throw $this->invalidPath();
-        }
-
-        if (
-            preg_match(self::PRODUCTION_APP_ENV_PATTERN, $value) === 1
-            || preg_match(self::DEVELOPMENT_APP_ENV_PATTERN, $value) === 1
-        ) {
-            return $value;
-        }
-
-        foreach (self::AllowedRootPrefixes as $prefix) {
-            if (str_starts_with($value, $prefix)) {
-                return $value;
-            }
-        }
-
-        throw $this->invalidPath();
-    }
-
     private function contents(mixed $value): string
     {
         if (is_string($value)) {
@@ -155,12 +154,5 @@ final readonly class LocalEnvFileAction
             message: 'Env file contents must be a string.',
             meta: ['field' => 'contents'],
         );
-    }
-
-    private function invalidPath(): LocalEnvFileFailure
-    {
-        return new LocalEnvFileFailure(errorCode: 'validation_failed', message: 'Env file path is invalid.', meta: [
-            'field' => 'path',
-        ]);
     }
 }

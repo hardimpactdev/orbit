@@ -5,7 +5,7 @@ Single-entity detail display for `*:show` commands.
 ## Use When
 
 Use `show-detail` when a command renders one resolved Orbit entity, such as
-`project:show`, `node:show`, `workspace:show`, `tool:show`, `schedule:show`,
+`app:show`, `node:show`, `workspace:show`, `tool:show`, `schedule:show`,
 `activity:show`, or `database:show`.
 
 ## Avoid When
@@ -66,7 +66,7 @@ Commands use `App\Console\Commands\Concerns\RendersShowDetails` from their
 human renderer path:
 
 ```php
-$this->renderShowDetails("Project: {$project['name']}", [
+$this->renderShowDetails("App: {$app['name']}", [
     'Domain' => $domain,
     'Environment' => $environment,
     'Node' => $node,

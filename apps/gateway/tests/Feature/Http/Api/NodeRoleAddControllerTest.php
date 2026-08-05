@@ -376,13 +376,13 @@ describe('NodeRoleAddController', function (): void {
 
         expect($selfGrant?->permissions)
             ->toBe([
+                'app:read',
                 'instance:read',
                 'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
-                'project:read',
                 'workspace:setup',
             ])
             ->and($selfGrant?->custom_permissions)

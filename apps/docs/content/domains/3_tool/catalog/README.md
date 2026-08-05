@@ -119,18 +119,15 @@ the generated install/update scripts for macOS client targets.
 6. [`antigravity-cli`](antigravity-cli.md)
 7. [`cursor-cli`](cursor-cli.md)
 
-### Agent IDE servers, operator tools, and autonomous agent tools
+### Operator tools and autonomous agent tools
 
-These installable tools support agent IDE sessions, operator application
+These installable tools support operator application
 configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.
 
-9. [`polyscope-server`](polyscope-server.md)
-10. [`opencode-cli`](opencode-cli.md)
-11. [`openclaw`](openclaw.md)
-12. [`hermes`](hermes.md)
-13. [`codex-app`](codex-app.md)
+8. [`hermes`](hermes.md)
+9. [`codex-app`](codex-app.md)
 
 ### macOS runtime providers
 
@@ -139,7 +136,7 @@ They use the generic `tool:*` surface for install, update, probe, adoption, and
 only the runtime verbs their definition declares. OrbStack declares start,
 stop, and restart; it does not create an Orbit process row.
 
-14. [`orbstack`](orbstack.md)
+10. [`orbstack`](orbstack.md)
 
 ## File Contract
 

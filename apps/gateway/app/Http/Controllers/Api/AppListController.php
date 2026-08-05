@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
-use App\Enums\Apps\AppInstanceDriver;
-use App\Models\AppInstance;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -34,8 +34,8 @@ final readonly class AppListController implements Loggable
 
     #[OpenApiResponse(
         status: 200,
-        description: 'The compact project inventory.',
-        type: 'array{success: array{data: array{projects: list<array{name: string, repository: string|null, dependency_audit_status: string, dependency_warning_count: int, dependency_danger_count: int, last_dependency_audit_at: string|null, instance_count: int, workspace_count: int}>}, meta: list<mixed>}}',
+        description: 'The compact app inventory.',
+        type: 'array{success: array{data: array{apps: list<array{name: string, repository: string|null, dependency_audit_status: string, dependency_warning_count: int, dependency_danger_count: int, last_dependency_audit_at: string|null, instance_count: int, workspace_count: int}>}, meta: list<mixed>}}',
     )]
     public function __invoke(Request $request): JsonResponse
     {
@@ -73,9 +73,9 @@ final readonly class AppListController implements Loggable
         $visibleNodeIds = $this->visibleAppNodeIds($caller, $callerIsGateway);
 
         if (! $callerIsGateway && $visibleNodeIds === []) {
-            return $this->authorizationFailed('This node is not authorized to read the project registry.', [
+            return $this->authorizationFailed('This node is not authorized to read the app registry.', [
                 'reason' => 'missing_permission',
-                'missing_permission' => 'project:read',
+                'missing_permission' => 'app:read',
             ]);
         }
 
@@ -95,7 +95,7 @@ final readonly class AppListController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'projects' => $payloads,
+                    'apps' => $payloads,
                 ],
                 'meta' => [],
             ],
@@ -120,7 +120,7 @@ final readonly class AppListController implements Loggable
         $authorizedNodeIds = [];
 
         foreach ($nodes as $node) {
-            if (! $this->authorizer->allows($caller, $node, 'project:read')) {
+            if (! $this->authorizer->allows($caller, $node, 'app:read')) {
                 continue;
             }
 
@@ -143,17 +143,17 @@ final readonly class AppListController implements Loggable
 
     /**
      * @param  list<int>  $visibleNodeIds
-     * @return Collection<int, Project>
+     * @return Collection<int, App>
      */
     private function fetchApps(bool $callerIsGateway, array $visibleNodeIds, ?string $environment): Collection
     {
-        /** @var Builder<Project> $query */
-        $query = Project::query();
-        $query->with(['instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
+        /** @var Builder<App> $query */
+        $query = App::query();
+        $query->with(['instances', 'workspaces.instance', 'dependencyAuditSummaries']);
 
         if (! $callerIsGateway) {
             $query->whereHas('instances', static function (Builder $query) use ($visibleNodeIds): void {
-                $query->where('driver', AppInstanceDriver::Orbit->value)->whereIn(
+                $query->where('driver', InstanceDriver::Orbit->value)->whereIn(
                     'driver_config->data->node_id',
                     $visibleNodeIds,
                 );
@@ -170,7 +170,7 @@ final readonly class AppListController implements Loggable
     }
 
     /**
-     * @param Collection<int, Project> $apps
+     * @param Collection<int, App> $apps
      * @param  list<int>  $visibleNodeIds
      * @param  list<int>  $workspaceNodeIds
      * @return list<array{
@@ -220,7 +220,7 @@ final readonly class AppListController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function visibleInstanceCount(Project $app, bool $callerIsGateway, array $visibleNodeIds): int
+    private function visibleInstanceCount(App $app, bool $callerIsGateway, array $visibleNodeIds): int
     {
         if ($callerIsGateway) {
             return $app->instances->count();
@@ -228,7 +228,7 @@ final readonly class AppListController implements Loggable
 
         return $app
             ->instances
-            ->filter(fn (AppInstance $instance): bool => in_array(
+            ->filter(fn (Instance $instance): bool => in_array(
                 $this->instanceNodeId($instance),
                 $visibleNodeIds,
                 strict: true,
@@ -241,7 +241,7 @@ final readonly class AppListController implements Loggable
      * @param  list<int>  $workspaceNodeIds
      */
     private function visibleWorkspaceCount(
-        Project $app,
+        App $app,
         bool $callerIsGateway,
         bool $callerMayInspectWorkspaces,
         array $visibleNodeIds,
@@ -256,7 +256,7 @@ final readonly class AppListController implements Loggable
             $visibleNodeIds,
             $workspaceNodeIds,
         ): bool {
-            $nodeId = $this->instanceNodeId($workspace->appInstance);
+            $nodeId = $this->instanceNodeId($workspace->instance);
 
             if (! in_array($nodeId, $workspaceNodeIds, strict: true)) {
                 return false;
@@ -266,11 +266,11 @@ final readonly class AppListController implements Loggable
         })->count();
     }
 
-    private function instanceNodeId(?AppInstance $instance): ?int
+    private function instanceNodeId(?Instance $instance): ?int
     {
         $config = $instance?->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
             return null;
         }
 
@@ -303,7 +303,7 @@ final readonly class AppListController implements Loggable
 
     public function type(): string
     {
-        return 'api:GET /projects';
+        return 'api:GET /apps';
     }
 
     public function activityLogAction(): string

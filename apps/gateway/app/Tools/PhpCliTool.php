@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
-use App\Services\Php\PhpRuntimeCatalog;
+use Orbit\Core\Php\PhpCliArtifactCatalog;
+use Orbit\Core\Php\PhpCliVariant;
+use RuntimeException;
 
 final class PhpCliTool extends BaseTool
 {
@@ -13,20 +15,16 @@ final class PhpCliTool extends BaseTool
      */
     protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
 
-    /** Base URL for the static-php-cli bulk preset downloads. */
+    private const string CurlRetryFlags = '--retry 5 --retry-delay 2 --retry-all-errors';
+
+    public const string INSTALL_ROOT = PhpCliArtifactCatalog::INSTALL_ROOT;
+
     public const string BULK_BASE_URL = 'https://dl.static-php.dev/static-php-cli/bulk';
 
     public const string ORBIT_ARTIFACT_BASE_URL = 'https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6';
 
-    private const string CurlRetryFlags = '--retry 5 --retry-delay 2 --retry-all-errors';
-
-    /** Install root for static PHP binaries on the host. */
-    public const string INSTALL_ROOT = '/opt/orbit/php';
-
     /**
-     * Pinned patch versions for each supported minor.
-     *
-     * @var array<string,string>
+     * @var array<string, string>
      */
     public const array PATCH_PINS = [
         '8.5' => '8.5.8',
@@ -34,13 +32,9 @@ final class PhpCliTool extends BaseTool
         '8.3' => '8.3.31',
     ];
 
-    /**
-     * @var array<string, string>
-     */
-    private const array PHP_85_ARTIFACT_SHA256 = [
-        'linux-x86_64' => '305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828',
-        'macos-aarch64' => 'fbd88fc83c699e2f65030f314937ec05edba41209bd38c8baa11b86f224a9329',
-    ];
+    public function __construct(
+        private readonly ?PhpCliArtifactCatalog $catalog = null,
+    ) {}
 
     public function slug(): string
     {
@@ -56,78 +50,212 @@ final class PhpCliTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'update', 'safe-adopt'];
+        return ['install', 'remove', 'update', 'safe-adopt'];
+    }
+
+    /**
+     * Default minor patch pin used as the bulk updateAll version marker.
+     * Install/update always re-apply every supported minor from the catalog.
+     */
+    #[\Override]
+    public function latestSupportedVersion(): string
+    {
+        $catalog = $this->catalog ?? PhpCliArtifactCatalog::load();
+
+        return $catalog->patchForMinor(PhpCliArtifactCatalog::DEFAULT_MINOR);
     }
 
     #[\Override]
     public function installScript(array $config = []): string
     {
-        return $this->buildScript('install');
+        return $this->buildScript('install', $this->normalizeConfig($config));
     }
 
     #[\Override]
     public function updateScript(array $config = []): string
     {
-        return $this->buildScript('update');
+        return $this->buildScript('update', $this->normalizeConfig($config));
+    }
+
+    /**
+     * Remove only Orbit-owned static PHP CLI binaries and their managed symlinks.
+     * Does not touch distro PHP packages or unrelated /usr/local/bin/php targets.
+     */
+    #[\Override]
+    public function removeScript(array $config = []): string
+    {
+        $root = self::INSTALL_ROOT;
+        $minors = implode(' ', PhpCliArtifactCatalog::SUPPORTED_MINORS);
+
+        return <<<BASH
+            #!/usr/bin/env bash
+            # orbit remove php-cli
+            set -euo pipefail
+
+            ROOT={$root}
+
+            for minor in {$minors}; do
+              link="/usr/local/bin/php\${minor}"
+              if [ -L "\${link}" ]; then
+                target="\$(readlink "\${link}" || true)"
+                case "\${target}" in
+                  "\${ROOT}/"*) sudo rm -f "\${link}" ;;
+                esac
+              fi
+            done
+
+            if [ -L /usr/local/bin/php ]; then
+              target="\$(readlink /usr/local/bin/php || true)"
+              case "\${target}" in
+                "\${ROOT}/"*) sudo rm -f /usr/local/bin/php ;;
+              esac
+            fi
+
+            if [ -d "\${ROOT}" ]; then
+              sudo rm -rf "\${ROOT}"
+            fi
+            BASH;
     }
 
     #[\Override]
     public function probeMetadata(): array
     {
+        $root = self::INSTALL_ROOT;
+
         return [
-            'binary' => self::INSTALL_ROOT.'/8.5/bin/php',
-            'version_command' => self::INSTALL_ROOT.'/8.5/bin/php --version',
+            'binary' => "{$root}/8.5/bin/php",
+            'version_command' => "{$root}/8.5/bin/php --version",
+            'probe' => 'php_cli_runtimes',
         ];
     }
 
-    private function buildScript(string $context): string
+    /**
+     * Resolve the effective install variant.
+     *
+     * Role ownership is authoritative: app-prod always standard, app-dev always
+     * coverage. Explicit or stored values cannot place PCOV on app-prod or strip
+     * coverage from app-dev.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    public function resolveVariant(array $config = [], ?string $role = null): PhpCliVariant
     {
-        $base = self::BULK_BASE_URL;
-        $orbitArtifactBase = self::ORBIT_ARTIFACT_BASE_URL;
+        if (is_string($role) && $role !== '') {
+            return PhpCliVariant::forRole($role);
+        }
+
+        if (array_key_exists('variant', $config)) {
+            return PhpCliVariant::fromMixed($config['variant']);
+        }
+
+        return PhpCliVariant::Coverage;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    public function assertVariantAllowedForRole(array $config, ?string $role): void
+    {
+        if ($role === null || $role === '' || ! array_key_exists('variant', $config)) {
+            return;
+        }
+
+        $requested = PhpCliVariant::fromMixed($config['variant']);
+        $required = PhpCliVariant::forRole($role);
+
+        if ($requested !== $required) {
+            throw new RuntimeException(
+                "php-cli variant '{$requested->value}' is not allowed on role '{$role}'; required '{$required->value}'.",
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    public function buildScript(string $context, array $config = []): string
+    {
+        $variant = $this->resolveVariant($config);
+        $catalog = $this->catalog();
         $root = self::INSTALL_ROOT;
+        $sqliteVersion = $catalog->sqliteVersion();
+        $verifyPcov = $catalog->installVerifiesPcov();
 
-        $versionBlocks = [];
+        $stageBlocks = [];
+        $installBlocks = [];
 
-        foreach (PhpRuntimeCatalog::SUPPORTED as $minor) {
-            $patch = self::PATCH_PINS[$minor];
+        foreach ($catalog->patchPins() as $minor => $patch) {
             $archive = "\${TEMP_DIR}/php-{$minor}.tar.gz";
             $extractDirectory = "\${TEMP_DIR}/php-{$minor}";
             $nextRuntime = "\${TEMP_DIR}/php-{$minor}.next";
+            if ($catalog->usesCompatibilityContract()) {
+                $filenameTemplate = "php-{$patch}-cli-\${OS}-\${ARCH}.tar.gz";
+            } else {
+                $filenameTemplate = "php-{$patch}-cli-{$variant->value}-\${OS}-\${ARCH}.tar.gz";
+            }
 
-            $artifactUrl = $minor === '8.5'
-                ? "{$orbitArtifactBase}/php-{$patch}-cli-\${OS}-\${ARCH}.tar.gz"
-                : "{$base}/php-{$patch}-cli-\${OS}-\${ARCH}.tar.gz";
+            if ($catalog->usesCompatibilityContract() && ! $catalog->isOrbitOwnedMinor($minor)) {
+                $artifactUrl = $catalog->bulkBaseUrl().'/${ARTIFACT_NAME}';
+            } else {
+                $artifactUrl = $catalog->artifactBaseUrl().'/${ARTIFACT_NAME}';
+            }
 
-            $checksumVerification = $minor === '8.5'
-                ? <<<'BASH'
-                    printf '%s  %s\n' "$PHP_85_SHA256" "$ARCHIVE" | shasum -a 256 -c -
+            $checksumBlock = $this->checksumStageBlock($catalog, $variant, $minor, $patch);
+            $sqliteBlock = $catalog->requiresSqliteSafetyCheck($minor)
+                ? <<<BASH
+                    SQLITE_EXTENSION_VERSION="\$("\$NEXT_RUNTIME" -r 'echo SQLite3::version()["versionString"];')"
+                    SQLITE_QUERY_VERSION="\$("\$NEXT_RUNTIME" -r 'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();')"
+                    "\$NEXT_RUNTIME" -r '\$extension = SQLite3::version()["versionString"]; \$query = (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn(); \$fixed = in_array(\$extension, ["{$sqliteVersion}", "3.50.7"], true) || version_compare(\$extension, "3.51.3", ">="); exit(\$extension === \$query && \$fixed ? 0 : 1);'
+                    [ "\$SQLITE_EXTENSION_VERSION" = "{$sqliteVersion}" ]
+                    [ "\$SQLITE_QUERY_VERSION" = "{$sqliteVersion}" ]
                     BASH
                 : '';
 
-            $sqliteVerification = $minor === '8.5'
-                ? <<<'BASH'
-                    SQLITE_EXTENSION_VERSION="$("$NEXT_RUNTIME" -r 'echo SQLite3::version()["versionString"];')"
-                    SQLITE_QUERY_VERSION="$("$NEXT_RUNTIME" -r 'echo (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn();')"
-                    "$NEXT_RUNTIME" -r '$extension = SQLite3::version()["versionString"]; $query = (new PDO("sqlite::memory:"))->query("select sqlite_version()")->fetchColumn(); $fixed = in_array($extension, ["3.44.6", "3.50.7"], true) || version_compare($extension, "3.51.3", ">="); exit($extension === $query && $fixed ? 0 : 1);'
-                    [ "$SQLITE_EXTENSION_VERSION" = "3.44.6" ]
-                    [ "$SQLITE_QUERY_VERSION" = "3.44.6" ]
-                    BASH
-                : '';
+            $pcovBlock = '';
+            if ($verifyPcov) {
+                $pcovBlock = $variant === PhpCliVariant::Coverage
+                    ? <<<'BASH'
+                        "$NEXT_RUNTIME" -r 'exit(extension_loaded("pcov") ? 0 : 1);'
+                        "$NEXT_RUNTIME" -r 'exit(function_exists("pcov\\start") ? 0 : 1);'
+                        PCOV_ENABLED="$("$NEXT_RUNTIME" -r 'echo (string) (int) (bool) ini_get("pcov.enabled");')"
+                        [ "$PCOV_ENABLED" = "1" ]
+                        "$NEXT_RUNTIME" --ri pcov >/dev/null
+                        BASH
+                    : <<<'BASH'
+                        "$NEXT_RUNTIME" -r 'exit(extension_loaded("pcov") ? 1 : 0);'
+                        if "$NEXT_RUNTIME" --ri pcov >/dev/null 2>&1; then
+                            echo "standard php-cli must not expose pcov" >&2
+                            exit 1
+                        fi
+                        BASH;
+            }
 
-            $versionBlocks[] = <<<BASH
-                    # --- PHP {$minor} ---
+            $stageBlocks[] = <<<BASH
+                    # --- stage PHP {$minor} ({$variant->value}, contract={$catalog->installContract()}) ---
                     ARCHIVE="{$archive}"
                     EXTRACT_DIRECTORY="{$extractDirectory}"
                     NEXT_RUNTIME="{$nextRuntime}"
+                    ARTIFACT_NAME="{$filenameTemplate}"
+                    ARTIFACT_URL="{$artifactUrl}"
+                    ARTIFACT_SHA256=
+                    {$checksumBlock}
                     mkdir -p "\$EXTRACT_DIRECTORY"
-                    curl -fsSL {$this->curlRetryFlags()} "{$artifactUrl}" -o "\$ARCHIVE"
-                    {$checksumVerification}
+                    curl -fsSL {$this->curlRetryFlags()} "\$ARTIFACT_URL" -o "\$ARCHIVE"
+                    if [ -n "\$ARTIFACT_SHA256" ]; then
+                        printf '%s  %s\\n' "\$ARTIFACT_SHA256" "\$ARCHIVE" | shasum -a 256 -c -
+                    fi
                     tar -xzf "\$ARCHIVE" -C "\$EXTRACT_DIRECTORY"
                     mv "\$EXTRACT_DIRECTORY/php" "\$NEXT_RUNTIME"
                     chmod +x "\$NEXT_RUNTIME"
                     PHP_VERSION="\$("\$NEXT_RUNTIME" -r 'echo PHP_VERSION;')"
                     [ "\$PHP_VERSION" = "{$patch}" ]
-                    {$sqliteVerification}
+                    {$sqliteBlock}
+                    {$pcovBlock}
+                BASH;
+
+            $installBlocks[] = <<<BASH
+                    # --- install PHP {$minor} ---
+                    NEXT_RUNTIME="{$nextRuntime}"
                     sudo mkdir -p {$root}/{$minor}/bin
                     sudo mv -f "\$NEXT_RUNTIME" {$root}/{$minor}/bin/php
                     sudo chmod +x {$root}/{$minor}/bin/php
@@ -135,11 +263,12 @@ final class PhpCliTool extends BaseTool
                 BASH;
         }
 
-        $blocks = implode("\n", $versionBlocks);
+        $stages = implode("\n", $stageBlocks);
+        $installs = implode("\n", $installBlocks);
 
         $header = $context === 'install'
-            ? '#!/usr/bin/env bash'."\n".'# orbit install php-cli'."\n".'set -e'
-            : '#!/usr/bin/env bash'."\n".'# orbit update php-cli'."\n".'set -e';
+            ? '#!/usr/bin/env bash'."\n".'# orbit install php-cli'."\n".'set -euo pipefail'
+            : '#!/usr/bin/env bash'."\n".'# orbit update php-cli'."\n".'set -euo pipefail';
 
         return <<<BASH
             {$header}
@@ -161,16 +290,85 @@ final class PhpCliTool extends BaseTool
                 *)              echo "unsupported arch" >&2; exit 1 ;;
             esac
 
-            case "\${OS}-\${ARCH}" in
-            {$this->php85ArtifactChecksumCases()}
-                *) echo "unsupported PHP 8.5 artifact platform" >&2; exit 1 ;;
-            esac
+            # Stage and verify every minor before replacing any installed runtime.
+            {$stages}
 
-            {$blocks}
+            # Atomic install + relink after all staged runtimes passed verification.
+            {$installs}
 
             # Set php8.5 as the default php
             sudo ln -sf {$root}/8.5/bin/php /usr/local/bin/php
             BASH;
+    }
+
+    /**
+     * Probe script that classifies every supported minor for doctor.
+     */
+    public function runtimeProbeScript(PhpCliVariant $variant): string
+    {
+        $catalog = $this->catalog();
+        $root = self::INSTALL_ROOT;
+        $lines = [];
+
+        foreach ($catalog->patchPins() as $minor => $patch) {
+            $binary = "{$root}/{$minor}/bin/php";
+            $lines[] = <<<BASH
+                probe_minor "{$minor}" "{$patch}" "{$binary}"
+                BASH;
+        }
+
+        $probes = implode("\n", $lines);
+
+        return <<<BASH
+            set -eu
+            expected_variant='{$variant->value}'
+
+            probe_minor() {
+                minor="\$1"
+                expected_patch="\$2"
+                binary="\$3"
+                present=0
+                patch=''
+                extension_loaded_pcov=0
+                function_exists_pcov_start=0
+                pcov_enabled=0
+                ri_pcov_ok=0
+
+                if [ -x "\$binary" ]; then
+                    present=1
+                    patch="\$("\$binary" -r 'echo PHP_VERSION;' 2>/dev/null || true)"
+                    if "\$binary" -r 'exit(extension_loaded("pcov") ? 0 : 1);' >/dev/null 2>&1; then
+                        extension_loaded_pcov=1
+                    fi
+                    if "\$binary" -r 'exit(function_exists("pcov\\\\start") ? 0 : 1);' >/dev/null 2>&1; then
+                        function_exists_pcov_start=1
+                    fi
+                    if [ "\$("\$binary" -r 'echo (string) (int) (bool) ini_get("pcov.enabled");' 2>/dev/null || echo 0)" = 1 ]; then
+                        pcov_enabled=1
+                    fi
+                    if "\$binary" --ri pcov >/dev/null 2>&1; then
+                        ri_pcov_ok=1
+                    fi
+                fi
+
+                printf '%s\n' "\$minor|\$expected_patch|\$present|\$patch|\$extension_loaded_pcov|\$function_exists_pcov_start|\$pcov_enabled|\$ri_pcov_ok"
+            }
+
+            {$probes}
+            BASH;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function patchPins(): array
+    {
+        return $this->catalog()->patchPins();
+    }
+
+    public function catalog(): PhpCliArtifactCatalog
+    {
+        return $this->catalog ?? PhpCliArtifactCatalog::load();
     }
 
     private function curlRetryFlags(): string
@@ -178,14 +376,58 @@ final class PhpCliTool extends BaseTool
         return self::CurlRetryFlags;
     }
 
-    private function php85ArtifactChecksumCases(): string
+    /**
+     * @param  array<array-key, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function normalizeConfig(array $config): array
     {
-        $cases = [];
+        $normalized = [];
 
-        foreach (self::PHP_85_ARTIFACT_SHA256 as $platform => $sha256) {
-            $cases[] = "    {$platform}) PHP_85_SHA256={$sha256} ;;";
+        foreach ($config as $key => $value) {
+            $normalized[(string) $key] = $value;
         }
 
-        return implode("\n", $cases);
+        return $normalized;
+    }
+
+    private function checksumStageBlock(
+        PhpCliArtifactCatalog $catalog,
+        PhpCliVariant $variant,
+        string $minor,
+        string $patch,
+    ): string {
+        if (! $catalog->requiresChecksum($minor)) {
+            return '# bulk artifact: no pinned checksum in compatibility contract';
+        }
+
+        $cases = [];
+
+        foreach ($catalog->platforms() as $platform) {
+            $sha = $catalog->artifactSha256($patch, $variant, $platform);
+
+            if ($sha === null) {
+                continue;
+            }
+
+            $cases[] = "    {$platform}) ARTIFACT_SHA256={$sha} ;;";
+        }
+
+        if ($cases === []) {
+            return <<<'BASH'
+                echo "unsupported php-cli platform or unpublished artifact for this minor" >&2
+                exit 1
+                BASH;
+        }
+
+        $caseBody = implode("\n", $cases);
+
+        return <<<BASH
+            case "\${OS}-\${ARCH}" in
+            {$caseBody}
+                *) echo "unsupported php-cli platform or unpublished artifact for {$patch}" >&2; exit 1 ;;
+            esac
+            [ -n "\$ARTIFACT_SHA256" ] || { echo "php-cli artifact checksum missing for {$patch}/\${OS}-\${ARCH}" >&2; exit 1; }
+            BASH;
     }
 }

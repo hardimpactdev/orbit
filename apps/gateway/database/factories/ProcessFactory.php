@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -33,9 +33,10 @@ class ProcessFactory extends Factory
     {
         return [
             'node_id' => Node::factory(),
-            'owner_type' => Project::class,
-            'owner_id' => Project::factory(),
+            'owner_type' => App::class,
+            'owner_id' => App::factory(),
             'name' => fake()->unique()->slug(1),
+            // Omit label so Process::saving defaults it to name unless tests set one.
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Never,
             'crash_notification' => ProcessCrashNotification::None,
@@ -49,27 +50,27 @@ class ProcessFactory extends Factory
 
     public function forOwner(Model $owner, ?Node $node = null): static
     {
-        $appInstance = $this->appInstanceForOwner($owner, $node);
+        $instance = $this->resolveInstanceForOwner($owner, $node);
 
         return $this->state(fn (): array => [
-            'node_id' => $node->id ?? $this->nodeIdForOwner($owner, $appInstance),
+            'node_id' => $node->id ?? $this->nodeIdForOwner($owner, $instance),
             'owner_type' => $owner->getMorphClass(),
             'owner_id' => $owner->getKey(),
-            'app_instance_id' => $appInstance?->id,
+            'instance_id' => $instance?->id,
             'runtime' => $this->runtimeForOwner($owner),
         ]);
     }
 
     private function runtimeForOwner(Model $owner): ProcessRuntime
     {
-        if ($owner instanceof Project || $owner instanceof Workspace) {
+        if ($owner instanceof App || $owner instanceof Workspace) {
             return ProcessRuntime::Systemd;
         }
 
         return ProcessRuntime::Docker;
     }
 
-    private function nodeIdForOwner(Model $owner, ?AppInstance $appInstance): int
+    private function nodeIdForOwner(Model $owner, ?Instance $instance): int
     {
         if ($owner instanceof Node) {
             return $owner->id;
@@ -79,17 +80,17 @@ class ProcessFactory extends Factory
             return $owner->node_id;
         }
 
-        if ($owner instanceof Project) {
-            $node = $appInstance instanceof AppInstance
-                ? app(WorkspacePlacement::class)->nodeForInstance($appInstance)
+        if ($owner instanceof App) {
+            $node = $instance instanceof Instance
+                ? app(WorkspacePlacement::class)->nodeForInstance($instance)
                 : null;
 
             return $node->id ?? $owner->node_id;
         }
 
         if ($owner instanceof Workspace) {
-            $node = $appInstance instanceof AppInstance
-                ? app(WorkspacePlacement::class)->nodeForInstance($appInstance)
+            $node = $instance instanceof Instance
+                ? app(WorkspacePlacement::class)->nodeForInstance($instance)
                 : null;
 
             if ($node instanceof Node) {
@@ -98,7 +99,7 @@ class ProcessFactory extends Factory
 
             $owner->loadMissing('app');
 
-            if ($owner->app instanceof Project) {
+            if ($owner->app instanceof App) {
                 return $owner->app->node_id;
             }
         }
@@ -106,28 +107,28 @@ class ProcessFactory extends Factory
         return Node::factory()->create()->id;
     }
 
-    private function appInstanceForOwner(Model $owner, ?Node $node): ?AppInstance
+    private function resolveInstanceForOwner(Model $owner, ?Node $node): ?Instance
     {
         if ($owner instanceof Workspace) {
-            $owner->loadMissing('appInstance');
+            $owner->loadMissing('instance');
 
-            return $owner->appInstance;
+            return $owner->instance;
         }
 
-        if (! $owner instanceof Project) {
+        if (! $owner instanceof App) {
             return null;
         }
 
         $instances = $owner->instances()->get();
         $matching = $instances
             ->first(
-                static fn (AppInstance $instance): bool => (
+                static fn (Instance $instance): bool => (
                     $node === null
                     || app(WorkspacePlacement::class)->nodeForInstance($instance)?->is($node) === true
                 ),
             );
 
-        if ($matching instanceof AppInstance) {
+        if ($matching instanceof Instance) {
             return $matching;
         }
 
@@ -137,11 +138,11 @@ class ProcessFactory extends Factory
 
         $servingNode = $node ?? $owner->node;
 
-        return AppInstance::factory()->for($owner)->createOne([
+        return Instance::factory()->for($owner)->createOne([
             'name' => $owner->environment !== ''
                 ? $owner->environment
                 : 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $servingNode?->id,
                 node: $servingNode?->name,
                 path: $owner->path,

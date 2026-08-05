@@ -203,7 +203,7 @@ function doctorFixPayload(array $issues, array $actions = [], bool $healthy = fa
         'scope' => [
             'self' => false,
             'node' => 'app-1',
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,

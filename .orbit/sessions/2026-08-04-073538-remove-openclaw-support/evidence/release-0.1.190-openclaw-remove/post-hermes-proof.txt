@@ -1,0 +1,23 @@
+=== tool:show hermes --live ===
+{"success":{"data":{"tool":{"name":"hermes","node":"agent","expected_state":"installed","observed_state":"installed","observed_version":"Hermes Agent v0.20.0 (2026.8.3)","version":null,"managed":true,"endpoints":[{"name":"hermes","kind":"https","url":"https://hermes.agent","host":"hermes.agent","port":443,"upstream_port":8080}]}},"meta":[]}}
+
+=== hermes.agent ===
+http_code=302
+
+HTTP/2 302 
+alt-svc: h3=":443"; ma=2592000
+date: Tue, 04 Aug 2026 05:33:48 GMT
+location: /login?next=%2F
+server: uvicorn
+via: 1.1 Caddy
+content-length: 0
+
+
+=== official hermes latest tag ===
+tag v2026.8.3
+name Hermes Agent v0.20.0 (2026.8.3)
+published 2026-08-03T16:57:52Z
+
+=== process hermes ===
+node-exporter node-exporter None
+orbit-hermes-dashboard hermes None

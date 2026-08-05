@@ -2,21 +2,32 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
+/**
+ * Historical 2026_07_19 migration joins app_instances. After the 2026-08-05
+ * cutover the final schema has instances; re-applying the immutable historical
+ * file is a no-op when app_instances is gone (effects already applied during
+ * the sequential migrate path while the table still existed).
+ */
 function run_restrict_workspaces_to_app_development_nodes_migration(): void
 {
+    if (! Schema::hasTable('app_instances')) {
+        return;
+    }
+
     /** @var mixed $migration */
     $migration = require
         database_path(
@@ -30,7 +41,7 @@ function run_restrict_workspaces_to_app_development_nodes_migration(): void
     $migration->up();
 }
 
-it('canonicalizes setup state and removes workspace grants involving production nodes', function (): void {
+it('is a no-op when re-run after the app_instances to instances cutover', function (): void {
     $consumer = Node::factory()->create();
     $productionConsumer = Node::factory()->create();
     $developmentNode = Node::factory()->create();
@@ -51,7 +62,7 @@ it('canonicalizes setup state and removes workspace grants involving production 
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->for($developmentNode, 'node')->create();
+    $app = App::factory()->for($developmentNode, 'node')->create();
     $workspace = Workspace::factory()->for($app, 'app')->create();
     DB::table('workspaces')
         ->where('id', $workspace->id)
@@ -69,54 +80,26 @@ it('canonicalizes setup state and removes workspace grants involving production 
         'permissions' => ['app:read', '*', 'workspace:read', 'workspace:setup'],
         'custom_permissions' => ['*', 'workspace:read'],
     ]);
-    $productionConsumerGrant = NodeAccess::query()->create([
-        'consumer_node_id' => $productionConsumer->id,
-        'serving_node_id' => $developmentNode->id,
-        'permissions' => ['app:read', '*', 'workspace:read', 'workspace:setup'],
-        'custom_permissions' => ['*', 'workspace:read'],
-    ]);
+
+    expect(Schema::hasTable('app_instances'))->toBeFalse();
 
     run_restrict_workspaces_to_app_development_nodes_migration();
 
+    // Historical re-application is skipped on the final schema; state is unchanged.
     expect(DB::table('workspaces')->where('id', $workspace->id)->value('lifecycle_status'))
-        ->toBe('setup-pending')
+        ->toBe('setting_up')
         ->and($productionGrant->fresh()?->permissions)
-        ->toContain('app:read', 'deploy:run', 'node:read')
-        ->not->toContain(
-            '*',
-            'workspace:*',
-            'workspace:read',
-            'workspace:setup',
-        )->and($productionGrant->fresh()?->custom_permissions)->toContain('app:read', 'deploy:run', 'node:read')
-        ->not->toContain(
-            '*',
-            'workspace:*',
-            'workspace:read',
-            'workspace:setup',
-        )->and($productionConsumerGrant->fresh()?->permissions)->toContain('app:read', 'deploy:run', 'node:read')
-        ->not->toContain(
-            '*',
-            'workspace:*',
-            'workspace:read',
-            'workspace:setup',
-        )->and($productionConsumerGrant->fresh()?->custom_permissions)->toContain('app:read', 'deploy:run', 'node:read')
-        ->not->toContain(
-            '*',
-            'workspace:*',
-            'workspace:read',
-            'workspace:setup',
-        )->and($developmentGrant->fresh()?->permissions)->toBe([
-            'app:read',
-            'workspace:read',
-        ])->and($developmentGrant->fresh()?->custom_permissions)->toBe(['workspace:read']);
+        ->toBe(['app:read', '*', 'workspace:read', 'workspace:setup'])
+        ->and($developmentGrant->fresh()?->permissions)
+        ->toBe(['app:read', 'workspace:read']);
 });
 
-it('fails closed when persisted workspace ownership points at app production', function (): void {
+it('does not re-check production ownership after cutover when app_instances is gone', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = Project::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $productionNode->id,
             node: $productionNode->name,
             path: '/srv/docs',
@@ -124,32 +107,39 @@ it('fails closed when persisted workspace ownership points at app production', f
     ]);
     $workspace = Workspace::factory()->for($app)->create([
         'name' => 'legacy-workspace',
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
     ]);
 
+    expect(Schema::hasTable('app_instances'))->toBeFalse();
+
+    // No-op: historical join target is gone; fail-closed proof lived on pre-cutover schema.
     expect(fn () => run_restrict_workspaces_to_app_development_nodes_migration())
-        ->toThrow(RuntimeException::class, 'app-prod-1');
+        ->not
+        ->toThrow(RuntimeException::class);
 
     expect($workspace->fresh())->not->toBeNull();
 });
 
-it('fails closed when name-only workspace ownership points at app production', function (): void {
+it('does not re-check name-only production ownership after cutover when app_instances is gone', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-name-only']);
-    $app = Project::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node: $productionNode->name,
             path: '/srv/docs',
         ),
     ]);
     $workspace = Workspace::factory()->for($app)->create([
         'name' => 'legacy-name-only-workspace',
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
     ]);
 
+    expect(Schema::hasTable('app_instances'))->toBeFalse();
+
     expect(fn () => run_restrict_workspaces_to_app_development_nodes_migration())
-        ->toThrow(RuntimeException::class, 'app-prod-name-only');
+        ->not
+        ->toThrow(RuntimeException::class);
 
     expect($workspace->fresh())->not->toBeNull();
 });

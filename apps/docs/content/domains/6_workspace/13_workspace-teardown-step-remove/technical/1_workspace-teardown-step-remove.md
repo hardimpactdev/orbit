@@ -20,7 +20,7 @@ behavior, and failure semantics.
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:remove --step=<id> [--instance=<project.instance>] [--force] [--json]
+orbit workspace-teardown-step:remove --step=<id> [--instance=<app.instance>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -31,7 +31,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved instance and `phase=teardown`. |
-| `instance` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare project slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
+| `instance` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare app slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
@@ -41,12 +41,12 @@ This command follows the shared
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md)
    precedence chain:
-   - Explicit `--instance=<project.instance>`, which must be a dotted instance
+   - Explicit `--instance=<app.instance>`, which must be a dotted instance
      selector such as `happie.nmbp`.
    - `.orbit/config` marker on the caller filesystem that names the owning app
      slug.
    - Gateway path-ownership lookup keyed on `(caller node identity,
-     absolute cwd)` that returns the project slug whose registered app path or any
+     absolute cwd)` that returns the app slug whose registered app path or any
      registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.
@@ -108,7 +108,6 @@ configuration. Nodes are not contacted.
 `workspace-teardown-step:remove` must not:
 
 - Block on, wait for, or fail because of an active `workspace:remove` or
-  `instance:prune` for the same app. The mutation is gateway-configuration only
   and takes effect for future runs. In-flight runs continue executing the ordered step
   list they snapshotted at `phase=teardown_steps` entry. The snapshot
   obligation is owned by [`workspace:remove`](../../5_workspace-remove/workspace-remove.md)
@@ -134,9 +133,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
-| Instance required | Bare project slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
+| Instance required | Bare app slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
 | Step not found | No teardown-step record matches `(step_id, instance, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
-| Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=workspace.instance_not_found`, `error.meta.instance`). |
+| Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=instance.not_found`, `error.meta.instance`). |
 | Instance unresolved | A concrete instance cannot be resolved from `--instance`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=instance`). |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) before policy deletion. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

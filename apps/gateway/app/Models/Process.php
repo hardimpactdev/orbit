@@ -25,8 +25,9 @@ use Override;
  * @property int $node_id
  * @property string $owner_type
  * @property int $owner_id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property string $name
+ * @property string $label
  * @property string $command
  * @property ProcessRestartPolicy $restart_policy
  * @property ProcessCrashNotification $crash_notification
@@ -38,8 +39,8 @@ use Override;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Model|null $owner
- * @property-read Project|null $app
- * @property-read AppInstance|null $appInstance
+ * @property-read App|null $app
+ * @property-read Instance|null $instance
  * @property-read Node|null $node
  * @property-read Collection<int, ProcessEvent> $events
  *
@@ -54,6 +55,12 @@ class Process extends Model
     protected static function booted(): void
     {
         static::saving(function (Process $process): void {
+            // Default display label to the identity key only when unset/empty.
+            // Identity renames must not rewrite an existing (defaulted or custom) label.
+            if ($process->label === null || $process->label === '') {
+                $process->label = $process->name;
+            }
+
             $nodeId = $process->nodeIdForOwner();
 
             if ($nodeId === null) {
@@ -75,8 +82,9 @@ class Process extends Model
         'node_id',
         'owner_type',
         'owner_id',
-        'app_instance_id',
+        'instance_id',
         'name',
+        'label',
         'command',
         'restart_policy',
         'crash_notification',
@@ -122,11 +130,11 @@ class Process extends Model
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     /**
@@ -150,11 +158,11 @@ class Process extends Model
         return $query->whereIn('runtime_config->service', $services);
     }
 
-    public function ownerApp(): ?Project
+    public function ownerApp(): ?App
     {
         $this->loadMissing('owner');
 
-        if ($this->owner instanceof Project) {
+        if ($this->owner instanceof App) {
             return $this->owner;
         }
 
@@ -167,7 +175,7 @@ class Process extends Model
         return null;
     }
 
-    public function getAppAttribute(): ?Project
+    public function getAppAttribute(): ?App
     {
         return $this->ownerApp();
     }
@@ -184,8 +192,8 @@ class Process extends Model
             return (int) $this->owner_id;
         }
 
-        if ($ownerClass === Project::class) {
-            return $this->appInstanceNodeIdForApp((int) $this->owner_id);
+        if ($ownerClass === App::class) {
+            return $this->instanceNodeIdForApp((int) $this->owner_id);
         }
 
         if ($ownerClass === Workspace::class) {
@@ -195,13 +203,13 @@ class Process extends Model
                 throw new InvalidArgumentException('Process workspace owner does not exist.');
             }
 
-            if ($this->app_instance_id !== null && $workspace->app_instance_id !== $this->app_instance_id) {
+            if ($this->instance_id !== null && $workspace->instance_id !== $this->instance_id) {
                 throw new InvalidArgumentException(
                     "Process '{$this->name}' instance does not match its workspace owner.",
                 );
             }
 
-            return $this->appInstanceNodeIdForApp($workspace->app_id);
+            return $this->instanceNodeIdForApp($workspace->app_id);
         }
 
         if ($ownerClass === NodeRoleAssignment::class) {
@@ -213,17 +221,17 @@ class Process extends Model
         return null;
     }
 
-    private function appInstanceNodeIdForApp(int $appId): ?int
+    private function instanceNodeIdForApp(int $appId): ?int
     {
-        if ($this->app_instance_id === null) {
+        if ($this->instance_id === null) {
             throw new InvalidArgumentException(
                 "Process '{$this->name}' requires concrete instance ownership.",
             );
         }
 
-        $instance = AppInstance::query()->find($this->app_instance_id);
+        $instance = Instance::query()->find($this->instance_id);
 
-        if (! $instance instanceof AppInstance || $instance->app_id !== $appId) {
+        if (! $instance instanceof Instance || $instance->app_id !== $appId) {
             throw new InvalidArgumentException(
                 "Process '{$this->name}' instance does not belong to its app owner.",
             );

@@ -25,7 +25,7 @@ function workspaceStepAddSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -36,7 +36,7 @@ function workspaceStepAddSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        \App\Models\Project::query()->create([
+        \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -108,7 +108,7 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         expect($composerPayload['success']['data']['result'])
             ->toBe(['action' => 'added'])
-            ->and($composerStep['project'])
+            ->and($composerStep['app'])
             ->toBe('docs')
             ->and($composerStep['command'])
             ->toBe('composer install')

@@ -12,6 +12,7 @@ use App\Services\Nodes\NodeContainerScope;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
+use Orbit\Core\Php\PhpCliVariant;
 
 class NodeToolBaselineConfigRenderer
 {
@@ -20,6 +21,12 @@ class NodeToolBaselineConfigRenderer
      */
     public function render(string $tool, Node $node): ?array
     {
+        if ($tool === 'php-cli') {
+            return [
+                'variant' => $this->phpCliVariantForNode($node)->value,
+            ];
+        }
+
         if ($tool !== 'caddy') {
             return null;
         }
@@ -27,6 +34,31 @@ class NodeToolBaselineConfigRenderer
         return [
             'container' => $this->defaultOrbitCaddyContainer($node)->spec(),
         ];
+    }
+
+    private function phpCliVariantForNode(Node $node): PhpCliVariant
+    {
+        if ($this->nodeHasAppDevelopmentRole($node)) {
+            return PhpCliVariant::Coverage;
+        }
+
+        if ($this->nodeHasAppProductionRole($node)) {
+            return PhpCliVariant::Standard;
+        }
+
+        return PhpCliVariant::Coverage;
+    }
+
+    private function nodeHasAppProductionRole(Node $node): bool
+    {
+        return NodeRoleAssignment::query()
+            ->where('node_id', $node->id)
+            ->where('role', NodeRoleName::AppProduction->value)
+            ->whereIn('status', [
+                NodeRoleStatus::Pending->value,
+                NodeRoleStatus::Active->value,
+            ])
+            ->exists();
     }
 
     private function defaultOrbitCaddyContainer(Node $node): OrbitCaddyContainer

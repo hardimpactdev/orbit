@@ -19,7 +19,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     protected $signature = 'workspace:env
         {action? : Action to perform (list|set|render)}
         {name? : Workspace name}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--key= : Env key for set}
         {--value= : Env value for set}
         {--apply : Persist and apply set values to the workspace runtime}
@@ -265,7 +265,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     private function renderTargetOutcome(array $data): void
     {
         $this->line('Scope: workspace');
-        $this->line('Project: '.$this->stringValue($data, 'project'));
+        $this->line('App: '.$this->stringValue($data, 'app'));
         $this->line('Instance: '.$this->stringValue($data, 'instance'));
         $this->line('Workspace: '.$this->stringValue($data, 'workspace'));
         $this->line('Path: '.$this->stringValue($data, 'path'));
@@ -279,14 +279,14 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
      */
     private function instanceSelector(array $data): ?string
     {
-        $project = is_string($data['project'] ?? null) ? $data['project'] : null;
+        $app = is_string($data['app'] ?? null) ? $data['app'] : null;
         $instance = is_string($data['instance'] ?? null) ? $data['instance'] : null;
 
-        if ($project === null || $instance === null) {
+        if ($app === null || $instance === null) {
             return null;
         }
 
-        return "{$project}.{$instance}";
+        return "{$app}.{$instance}";
     }
 
     /**

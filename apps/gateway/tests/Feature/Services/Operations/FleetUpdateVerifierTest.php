@@ -16,9 +16,11 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
 use App\Services\RemoteShell\RemoteShellMetadata;
+use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -168,6 +170,66 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'images' => [
                 'caddy:2-alpine',
                 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+            ],
+        ], JSON_THROW_ON_ERROR));
+});
+
+it('verifies the stable runtime alias for a topology candidate', function (): void {
+    fleet_update_verifier_use_agent_push();
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    $candidateImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-test@sha256:'
+    .str_repeat(
+        'e',
+        times: 64,
+    );
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(
+            roleImages: [
+                'orbit-caddy' => 'caddy:2-alpine',
+                'orbit-frankenphp' => $candidateImage,
+            ],
+            manifestSource: 'topology-candidate',
+        ),
+    );
+
+    app(FleetUpdateVerifier::class)->verify($run, $plan);
+
+    $requests = fleet_verifier_agent_requests();
+
+    expect($requests)
+        ->toHaveCount(2)
+        ->and($requests[1]['argv'])
+        ->toMatchArray([
+            'internal:fleet-update:verify',
+            'role-images',
+        ])
+        ->and($requests[1]['input'])
+        ->toBe(json_encode([
+            'images' => [
+                'caddy:2-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             ],
         ], JSON_THROW_ON_ERROR));
 });
@@ -541,6 +603,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['migrations',           'done'],
             ['gateway.host-cli',     'running'],
             ['gateway.host-cli',     'done'],
+            ['gateway.leaf',         'running'],
+            ['gateway.leaf',         'done'],
             ['gateway.service',      'running'],
             ['gateway.service',      'done'],
             ['scheduler.start',      'running'],
@@ -549,6 +613,7 @@ it('emits terminal success only after runner verification passes', function (): 
             ['gateway.stack',        'done'],
             ['gateway',              'done'],
             ['workload-nodes',       'running'],
+            ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'running'],
             ['workload.app-dev-1',   'running'],
@@ -664,6 +729,7 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service update --detach=true --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
+        ...array_fill_keys(fleet_verifier_gateway_leaf_converge_commands(), Process::result()),
         fleet_verifier_gateway_stack_deploy_command() => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
@@ -678,6 +744,37 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
             output: "{$gatewayImage}\n",
         ),
     ]);
+}
+
+/**
+ * @return list<string>
+ */
+function fleet_verifier_gateway_leaf_converge_commands(): array
+{
+    $configRoot = config(key: 'orbit.paths.config_root');
+
+    if (! is_string($configRoot) || trim($configRoot) === '') {
+        throw new RuntimeException('Test config root is not configured.');
+    }
+
+    $configRoot = rtrim($configRoot, characters: '/');
+
+    return [
+        'sudo install -d -m 0755 '.escapeshellarg('/etc/orbit/certs'),
+        'sudo install -m 0644 '
+            .escapeshellarg("{$configRoot}/certs/gateway.crt")
+            .' '
+            .escapeshellarg('/etc/orbit/certs/gateway.crt'),
+        'sudo install -m 0600 '
+            .escapeshellarg("{$configRoot}/certs/gateway.key")
+            .' '
+            .escapeshellarg('/etc/orbit/certs/gateway.key'),
+        'sudo install -d -m 0755 '.escapeshellarg('/etc/caddy/orbit'),
+        'sudo tee '.escapeshellarg('/etc/caddy/orbit/orbit-gateway.caddy').' > /dev/null',
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.crt'",
+        "docker exec 'orbit-caddy' test -r '/etc/orbit/certs/gateway.key'",
+        CaddyTool::restartCommand('orbit-caddy'),
+    ];
 }
 
 function fleet_verifier_root_ca_subject_command(): string
@@ -808,6 +905,31 @@ readonly class FleetVerifierFakeCa extends OrbitCaService
     {
         return "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
     }
+
+    /**
+     * @param  list<string>  $additionalSans
+     * @return array{cert: string, key: string}
+     */
+    #[Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $configRoot = config(key: 'orbit.paths.config_root');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            throw new RuntimeException('Test config root is not configured.');
+        }
+
+        $certsDir = rtrim($configRoot, characters: '/').'/certs';
+        File::ensureDirectoryExists($certsDir);
+        File::put("{$certsDir}/{$host}.crt", "issued-cert\n");
+        File::put("{$certsDir}/{$host}.key", "issued-key\n");
+        File::put("{$certsDir}/{$host}.sans", implode("\n", [$host, ...$additionalSans])."\n");
+
+        return [
+            'cert' => "{$certsDir}/{$host}.crt",
+            'key' => "{$certsDir}/{$host}.key",
+        ];
+    }
 }
 
 function fleet_verifier_install_success_envelope(): string
@@ -897,6 +1019,7 @@ function fleetVerifierSnapshot(
     array $cliArtifacts = [],
     array $agentArtifacts = [],
     array $roleImages = [],
+    string $manifestSource = 'github-release',
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifacts = $cliArtifacts === []
@@ -916,11 +1039,12 @@ function fleetVerifierSnapshot(
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
         gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
+        manifestSource: $manifestSource,
         manifestVersion: $targetVersion,
         manifestSnapshot: [
             'version' => $targetVersion,
-            'source' => 'github-release',
+            'source' => $manifestSource,
+            ...($manifestSource === 'topology-candidate' ? ['build_id' => 'candidate-test'] : []),
             'images' => [
                 'gateway' => $gatewayImage,
             ],

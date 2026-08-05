@@ -4,17 +4,32 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class DatabaseConnectionRestorer
 {
+    /**
+     * Codes applyDatabaseConnectionIssue can restore when target identity is present.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            'database_connection.env_missing',
+            'database_connection.env_mismatch',
+            'database_connection.target_missing',
+        ]);
+    }
+
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
@@ -76,10 +91,10 @@ final readonly class DatabaseConnectionRestorer
 
     private function envPath(DatabaseConnectionTarget $target): ?string
     {
-        if ($target->appInstance instanceof AppInstance) {
-            $config = $target->appInstance->driver_config;
+        if ($target->instance instanceof Instance) {
+            $config = $target->instance->driver_config;
 
-            return $config instanceof OrbitAppInstanceDriverConfigData && is_string($config->path)
+            return $config instanceof OrbitInstanceDriverConfigData && is_string($config->path)
                 ? rtrim($config->path, '/').'/.env'
                 : null;
         }
@@ -100,8 +115,8 @@ final readonly class DatabaseConnectionRestorer
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->appInstance instanceof AppInstance) {
-            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+        if ($target->instance instanceof Instance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->instance);
 
             if ($node instanceof Node) {
                 return $node;

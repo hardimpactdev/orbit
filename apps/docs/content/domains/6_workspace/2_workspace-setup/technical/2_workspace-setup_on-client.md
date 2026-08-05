@@ -11,11 +11,11 @@ This contract defines behavior when `workspace:setup` is invoked from a
   HTTPS through WireGuard when configured and authorized.
 - **Identity**: Uses the client's authorized identity to authenticate
   with the gateway.
-- **Local context resolution**: Attempts to resolve the parent project and
+- **Local context resolution**: Attempts to resolve the parent app and
   workspace identity from local Orbit configuration, current directory, or
   structured Codex Git-worktree metadata for an explicit Codex `--path` before
-  forwarding configuration. This local metadata resolution is not an Agent IDE
-  adapter.
+  forwarding configuration. This local metadata resolution is not a workspace
+  source driver.
 - **Progress streaming**: Streams the step tree and apply progress from
   the gateway to the local TTY.
 - **Local config update**: If successful and the workspace is absent from local

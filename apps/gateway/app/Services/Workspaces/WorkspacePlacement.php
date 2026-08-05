@@ -4,29 +4,29 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 
 final class WorkspacePlacement
 {
-    public function instanceForWorkspace(Workspace $workspace): ?AppInstance
+    public function instanceForWorkspace(Workspace $workspace): ?Instance
     {
-        $workspace->loadMissing('appInstance');
+        $workspace->loadMissing('instance');
 
-        return $workspace->appInstance instanceof AppInstance ? $workspace->appInstance : null;
+        return $workspace->instance instanceof Instance ? $workspace->instance : null;
     }
 
     public function nodeForWorkspace(Workspace $workspace): ?Node
     {
-        $workspace->loadMissing(['app.node', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'instance']);
 
         $instance = $this->instanceForWorkspace($workspace);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $node = $this->nodeForInstance($instance);
 
             if ($node instanceof Node) {
@@ -37,11 +37,11 @@ final class WorkspacePlacement
         return null;
     }
 
-    public function nodeForInstance(AppInstance $instance): ?Node
+    public function nodeForInstance(Instance $instance): ?Node
     {
         $config = $instance->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
             return null;
         }
 
@@ -68,7 +68,7 @@ final class WorkspacePlacement
         $instance = $this->instanceForWorkspace($workspace);
         $config = $instance?->driver_config;
 
-        if ($config instanceof OrbitAppInstanceDriverConfigData && is_string($config->path) && $config->path !== '') {
+        if ($config instanceof OrbitInstanceDriverConfigData && is_string($config->path) && $config->path !== '') {
             return $config->path;
         }
 
@@ -82,7 +82,7 @@ final class WorkspacePlacement
         $config = $instance?->driver_config;
 
         if (
-            $config instanceof OrbitAppInstanceDriverConfigData
+            $config instanceof OrbitInstanceDriverConfigData
             && is_string($config->document_root)
             && $config->document_root !== ''
         ) {
@@ -97,7 +97,7 @@ final class WorkspacePlacement
         $workspace->loadMissing('app.node');
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return $workspace->name;
         }
 
@@ -110,11 +110,11 @@ final class WorkspacePlacement
         return "{$workspace->name}.{$host}";
     }
 
-    public function baseUrlHost(Workspace $workspace, Project $app): string
+    public function baseUrlHost(Workspace $workspace, App $app): string
     {
         $instance = $this->instanceForWorkspace($workspace);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $host = $this->instanceUrlHost($instance, $app);
 
             if ($host !== '') {
@@ -125,11 +125,11 @@ final class WorkspacePlacement
         return '';
     }
 
-    public function instanceUrlHost(AppInstance $instance, Project $app): string
+    public function instanceUrlHost(Instance $instance, App $app): string
     {
         $config = $instance->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
             return '';
         }
 
@@ -147,7 +147,7 @@ final class WorkspacePlacement
         return "{$app->name}.{$tld}";
     }
 
-    public function matchingOrbitInstanceForPath(Project $app, string $path): ?AppInstance
+    public function matchingOrbitInstanceForPath(App $app, string $path): ?Instance
     {
         $path = rtrim($path, '/');
 
@@ -167,7 +167,7 @@ final class WorkspacePlacement
 
             $config = $instance->driver_config;
 
-            if (! $config instanceof OrbitAppInstanceDriverConfigData || ! is_string($config->path)) {
+            if (! $config instanceof OrbitInstanceDriverConfigData || ! is_string($config->path)) {
                 continue;
             }
 
@@ -182,15 +182,15 @@ final class WorkspacePlacement
         return $bestMatch;
     }
 
-    public function instanceContainsPath(AppInstance $instance, string $path): bool
+    public function instanceContainsPath(Instance $instance, string $path): bool
     {
-        if ($instance->driver !== AppInstanceDriver::Orbit) {
+        if ($instance->driver !== InstanceDriver::Orbit) {
             return false;
         }
 
         $config = $instance->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData || ! is_string($config->path)) {
+        if (! $config instanceof OrbitInstanceDriverConfigData || ! is_string($config->path)) {
             return false;
         }
 
@@ -206,10 +206,10 @@ final class WorkspacePlacement
     }
 
     public function instanceMatchesSelector(
-        AppInstance $instance,
+        Instance $instance,
         string $selector,
         ?string $fullSelector = null,
-        ?Project $app = null,
+        ?App $app = null,
     ): bool {
         $needle = mb_strtolower(trim($selector));
         $fullNeedle = $fullSelector !== null ? mb_strtolower(trim($fullSelector)) : null;
@@ -224,7 +224,7 @@ final class WorkspacePlacement
 
         $config = $instance->driver_config;
 
-        if ($config instanceof OrbitAppInstanceDriverConfigData) {
+        if ($config instanceof OrbitInstanceDriverConfigData) {
             if (is_string($config->domain)) {
                 $domain = mb_strtolower(trim($config->domain));
 
@@ -252,7 +252,7 @@ final class WorkspacePlacement
             }
         }
 
-        if ($app instanceof Project && $fullNeedle !== null) {
+        if ($app instanceof App && $fullNeedle !== null) {
             return mb_strtolower("{$app->name}.{$instance->name}") === $fullNeedle;
         }
 

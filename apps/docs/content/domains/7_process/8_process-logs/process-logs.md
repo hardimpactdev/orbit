@@ -15,7 +15,7 @@ durable operations WebSocket plane. There is no Orbit-managed SSH path.
 ```bash
 orbit process:logs vite --instance=docs.production
 orbit process:logs vite --instance=docs.development --workspace=feature-docs --follow
-orbit process:logs opencode-server --node=app-dev-1 --lines=200
+orbit process:logs orbit-hermes-dashboard --node=app-dev-1 --lines=200
 orbit process:logs queue --instance=docs.production --lines=200 --json
 ```
 
@@ -23,7 +23,7 @@ orbit process:logs queue --instance=docs.production --lines=200 --json
 
 Use this command to read or stream logs for a resolved process runtime context.
 
-- **Context Resolution**: Resolves the process and node/instance/workspace runtime context. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
+- **Context Resolution**: Resolves the process and node/instance/workspace runtime context. Prefer `<app.instance>`; a bare app slug is accepted only when that app has exactly one instance.
 - **Placement**: Instance and workspace logs are read from the instance's serving node.
 - **Log Streaming**: Streams or returns logs from the selected process runtime
   backend through the gateway.

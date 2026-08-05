@@ -31,22 +31,22 @@ owning family concept document.
 - **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one SeaweedFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active Ubuntu workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
-- **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+- **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active Ubuntu workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
+- **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/20_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own project files, FrankenPHP instance runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
-- **Instance WebSocket binding** — gateway-owned instance configuration that enables one instance to use the fleet websocket service, including Reverb app credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Reverb app credentials** — Reverb application id, key, and secret material owned by an instance WebSocket binding. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP instance runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Instance WebSocket binding** — gateway-owned instance configuration that enables one instance to use the fleet websocket service, including Reverb app credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Reverb app credentials** — Reverb application id, key, and secret material owned by an instance WebSocket binding. See [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
-- **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/19_s3/s3-concepts.md).
-- **SeaweedFS backend** — the SeaweedFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/19_s3/s3-concepts.md).
-- **S3 public host** — operator-published HTTPS hostname such as `s3.example.com` that `ingress` forwards to `router` for S3 traffic. See [S3 Concepts](domains/19_s3/s3-concepts.md).
-- **S3 service credentials** — service-level SeaweedFS access key and secret material stored on the `seaweedfs` tool row. See [S3 Concepts](domains/19_s3/s3-concepts.md).
-- **Metrics service endpoint** — stable router-owned private HTTPS endpoint `https://metrics.orbit` for Grafana. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
-- **Metrics backend** — process-owned Prometheus, Grafana, and node-exporter runtime coordinated by the `metrics` role baseline, with node-exporter host binary capability tracked by the tool family. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
-- **Grafana admin credentials** — generated service-level Grafana admin username and password exposed through `metrics:credentials`. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
-- **Private analytics endpoint** — stable router-owned private HTTPS endpoint `https://analytics.orbit` for the Plausible dashboard and admin UI. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
-- **Instance analytics binding** — gateway-owned instance configuration that enables public tracking hosts for one instance without provisioning Plausible sites or injecting scripts. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+- **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/18_s3/s3-concepts.md).
+- **SeaweedFS backend** — the SeaweedFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/18_s3/s3-concepts.md).
+- **S3 public host** — operator-published HTTPS hostname such as `s3.example.com` that `ingress` forwards to `router` for S3 traffic. See [S3 Concepts](domains/18_s3/s3-concepts.md).
+- **S3 service credentials** — service-level SeaweedFS access key and secret material stored on the `seaweedfs` tool row. See [S3 Concepts](domains/18_s3/s3-concepts.md).
+- **Metrics service endpoint** — stable router-owned private HTTPS endpoint `https://metrics.orbit` for Grafana. See [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
+- **Metrics backend** — process-owned Prometheus, Grafana, and node-exporter runtime coordinated by the `metrics` role baseline, with node-exporter host binary capability tracked by the tool family. See [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
+- **Grafana admin credentials** — generated service-level Grafana admin username and password exposed through `metrics:credentials`. See [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
+- **Private analytics endpoint** — stable router-owned private HTTPS endpoint `https://analytics.orbit` for the Plausible dashboard and admin UI. See [Analytics Concepts](domains/20_analytics/analytics-concepts.md).
+- **Instance analytics binding** — gateway-owned instance configuration that enables public tracking hosts for one instance without provisioning Plausible sites or injecting scripts. See [Analytics Concepts](domains/20_analytics/analytics-concepts.md).
 - **Orbit launcher** — host `orbit` entry point. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. Mutable node-local Orbit state lives under `~/.config/orbit`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -57,10 +57,10 @@ owning family concept document.
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
-- **App runtime container** — dedicated Docker container for one PHP project instance or workspace runtime, represented as a process-backed runtime unit. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **FrankenPHP app runtime** — the PHP web runtime used by instance and workspace containers. Classic mode is the default; worker mode is opt-in. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel project in memory. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP app instance or workspace runtime, represented as a process-backed runtime unit. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **FrankenPHP app runtime** — the PHP web runtime used by instance and workspace containers. Classic mode is the default; worker mode is opt-in. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel project in memory. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **Process runtime** — backend selection for process units scoped to a node, instance, or workspace; supported runtime families are `systemd`, `launchd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, instances, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -76,12 +76,11 @@ owning family concept document.
 - **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `instance.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
-- **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-instance override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
 - **Public command ownership** — public operator commands are owned by the `apps/cli` application; gateway Artisan is gateway maintenance and internal automation only, and moved public commands are not gateway command targets. See [Architecture: CLI](architecture.md#cli).
 - **E2E verification ownership** — E2E is root-owned monorepo verification run through root Composer scripts and implemented by the dedicated external `apps/e2e` black-box/gray-box runner (the harness, support layer, test suites, and `e2e:*` runner commands all live in `apps/e2e`); there is no gateway-owned E2E runner. New S3/SeaweedFS E2E coverage is added under `apps/e2e`. See [Testing](testing/README.md).
-- **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected instance or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
-- **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected instance or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
+- **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected instance or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/17_database/database-doctor.md).
+- **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected instance or workspace `.env` and records them into gateway state. See [Database Doctor](domains/17_database/database-doctor.md).
 
 ## Product Families
 
@@ -187,6 +186,7 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Configured gateway endpoint**
 - **Active gateway**
 - **Gateway WireGuard API address**
+- **Browser Gateway hostname**
 - **Gateway API runtime**
 - **Local gateway configuration**
 - **Gateway root CA**
@@ -202,24 +202,24 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Gateway-domain boundaries**
 <!-- /concept-index -->
 
-## Project and Instance Concepts
+## App and Instance Concepts
 
-Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
+Source: [App and Instance Concepts](domains/5_app/app-concepts.md).
 
-<!-- concept-index:domains/5_project/project-concepts.md -->
-- **Project**
+<!-- concept-index:domains/5_app/app-concepts.md -->
+- **App**
 - **Instance**
 - **Instance driver**
 - **Driver config**
 - **Initial instance**
-- **Project identity slug**
-- **Project name argument**
+- **App identity slug**
+- **App name argument**
 - **Instance selector argument**
 - **Orbit instance serving node**
 - **Development instance**
 - **Production instance**
-- **Project PHP version**
-- **Project runtime kind**
+- **App PHP version**
+- **App runtime kind**
 - **App runtime container**
 - **Development packages mount**
 - **Instance runtime mount**
@@ -235,19 +235,17 @@ Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
 - **Instance WebSocket binding**
 - **Instance analytics binding**
 - **Reverb app credentials**
-- **Instance agent IDE adapter**
-- **Project dependency audit posture**
+- **App dependency audit posture**
 - **Dependency audit manager**
 - **Dependency audit status**
 - **Dependency audit severity bands**
 - **Instance registration**
 - **Instance adoption**
 - **Instance adoption flag**
-- **Instance pruning**
 - **Instance setup pipeline**
 - **Instance setup run**
 - **Instance-owned route**
-- **Project and instance boundaries**
+- **App and instance boundaries**
 - **Setup boundary**
 <!-- /concept-index -->
 
@@ -267,8 +265,6 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Host cwd context**
 - **Workspace PHP override**
 - **Workspace PHP inheritance flag**
-- **Workspace agent IDE adapter**
-- **Workspace agent IDE identifier**
 - **Setup step definition**
 - **Setup steps phase**
 - **Teardown step definition**
@@ -286,10 +282,14 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 
 <!-- concept-index:domains/7_process/process-concepts.md -->
 - **Process definition**
-- **Process identity slug**
+- **Process identity slug (`key`)**
+- **Process display label (`label`)**
 - **Process scope**
 - **Instance selector**
-- **Canonical project identity**
+- **App hostname selector**
+- **Browser process CORS admission**
+- **Browser process SSE**
+- **Canonical app identity**
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**
@@ -312,6 +312,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Crash notification policy**
 - **Process runtime selection**
 - **Process event**
+- **Process status**
 - **Crash event**
 - **Process-family boundaries**
 <!-- /concept-index -->
@@ -324,14 +325,14 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Proxy route**
 - **Route owner**
 - **Route kind**
-- **Project route**
+- **App route**
 - **Workspace route**
 - **Internal route**
 - **Custom route**
 - **Redirect route**
 - **Tool-owned route**
 - **Instance WebSocket route**
-- **Project analytics route**
+- **App analytics route**
 - **Analytics service route**
 - **WebSocket service route**
 - **Public S3 route**
@@ -354,7 +355,7 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Intermediate CA certificate**
 - **TLS authority boundary**
 - **Hostname compatibility material**
-- **Project ingress baseline**
+- **App ingress baseline**
 - **Document-root policy**
 - **Development runtime wake gate**
 - **Development runtime activity**
@@ -389,9 +390,9 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 
 ## Database Concepts
 
-Source: [Database Concepts](domains/18_database/database-concepts.md).
+Source: [Database Concepts](domains/17_database/database-concepts.md).
 
-<!-- concept-index:domains/18_database/database-concepts.md -->
+<!-- concept-index:domains/17_database/database-concepts.md -->
 - **Database connection**
 - **Database connection target**
 - **Environment prefix**
@@ -407,9 +408,9 @@ Source: [Database Concepts](domains/18_database/database-concepts.md).
 
 ## S3 Concepts
 
-Source: [S3 Concepts](domains/19_s3/s3-concepts.md).
+Source: [S3 Concepts](domains/18_s3/s3-concepts.md).
 
-<!-- concept-index:domains/19_s3/s3-concepts.md -->
+<!-- concept-index:domains/18_s3/s3-concepts.md -->
 - **S3 command domain**
 - **S3 role**
 - **SeaweedFS backend**
@@ -426,9 +427,9 @@ Source: [S3 Concepts](domains/19_s3/s3-concepts.md).
 
 ## Metrics Concepts
 
-Source: [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
+Source: [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
 
-<!-- concept-index:domains/20_metrics/metrics-concepts.md -->
+<!-- concept-index:domains/19_metrics/metrics-concepts.md -->
 - **Metrics command domain**
 - **Metrics role**
 - **Metrics backend**
@@ -441,14 +442,13 @@ Source: [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Grafana admin credentials**
 - **Metrics-domain boundaries**
 - **Metrics-domain exclusions**
-
 <!-- /concept-index -->
 
 ## Analytics Concepts
 
-Source: [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+Source: [Analytics Concepts](domains/20_analytics/analytics-concepts.md).
 
-<!-- concept-index:domains/21_analytics/analytics-concepts.md -->
+<!-- concept-index:domains/20_analytics/analytics-concepts.md -->
 - **Analytics role**
 - **Plausible CE process**
 - **Analytics backing database**
@@ -464,7 +464,7 @@ Source: [Deploy Concepts](domains/10_deploy/deploy-concepts.md).
 
 <!-- concept-index:domains/10_deploy/deploy-concepts.md -->
 - **Deploy command domain**
-- **Production project deployment**
+- **Production app deployment**
 - **Deployment policy**
 - **Deployment pipeline**
 - **Deployment step definition**
@@ -598,11 +598,12 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
-- **Project PHP runtime policy**
+- **App PHP runtime policy**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
 - **Runtime PHP binary**
+- **Host PHP CLI variant**
 - **PHP runtime container artifact**
 - **PHP runtime target**
 - **Partial PHP application warning**
@@ -668,34 +669,11 @@ Source: [Firewall Concepts](domains/4_firewall/firewall-concepts.md).
 - **Firewall-family boundaries**
 <!-- /concept-index -->
 
-## Agent IDE Concepts
-
-Source: [Agent IDE Concepts](domains/15_agent-ide/agent-ide-concepts.md).
-
-<!-- concept-index:domains/15_agent-ide/agent-ide-concepts.md -->
-- **Agent IDE integration**
-- **Agent IDE adapter**
-- **Agent IDE adapter registry**
-- **Agent IDE adapter registry model**
-- **Agent IDE adapter choices API**
-- **Active Agent IDE session**
-- **Workspace discovery capability**
-- **Workspace path resolution capability**
-- **Node Agent IDE default**
-- **Instance Agent IDE override**
-- **Effective Agent IDE adapter**
-- **Agent IDE input token**
-- **Agent IDE message**
-- **Agent IDE launcher context**
-- **Agent-IDE-domain boundaries**
-- **Registry boundary**
-<!-- /concept-index -->
-
 ## DNS Concepts
 
-Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
+Source: [DNS Concepts](domains/15_dns/dns-concepts.md).
 
-<!-- concept-index:domains/16_dns/dns-concepts.md -->
+<!-- concept-index:domains/15_dns/dns-concepts.md -->
 - **DNS command domain**
 - **Caller-local DNS administration**
 - **Caller-local resolver override**
@@ -719,9 +697,9 @@ Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 
 ## Activity Concepts
 
-Source: [Activity Concepts](domains/17_activity/activity-concepts.md).
+Source: [Activity Concepts](domains/16_activity/activity-concepts.md).
 
-<!-- concept-index:domains/17_activity/activity-concepts.md -->
+<!-- concept-index:domains/16_activity/activity-concepts.md -->
 - **Activity command domain**
 - **Gateway activity history**
 - **Activity entry**

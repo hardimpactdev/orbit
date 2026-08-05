@@ -211,18 +211,6 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "src/Requests/AgentIde/ListAgentIdeAdaptersRequest.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
-count = 1
-
-[[issues]]
-file = "src/Requests/AgentIde/SendAgentIdeMessageRequest.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
 file = "src/Requests/Cloudflare/CloudflareRequest.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
@@ -445,19 +433,19 @@ message = "Use of the `isset` construct."
 count = 2
 
 [[issues]]
-file = "src/Requests/Projects/CreateProjectRequest.php"
+file = "src/Requests/Apps/CreateAppRequest.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
 count = 1
 
 [[issues]]
-file = "src/Requests/Projects/CreateProjectRequest.php"
+file = "src/Requests/Apps/CreateAppRequest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
-file = "src/Requests/Projects/RemoveProjectRequest.php"
+file = "src/Requests/Apps/RemoveAppRequest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 2
@@ -664,12 +652,6 @@ count = 1
 file = "src/Requests/Workspaces/ShowWorkspaceRequest.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
 count = 1
 
 [[issues]]

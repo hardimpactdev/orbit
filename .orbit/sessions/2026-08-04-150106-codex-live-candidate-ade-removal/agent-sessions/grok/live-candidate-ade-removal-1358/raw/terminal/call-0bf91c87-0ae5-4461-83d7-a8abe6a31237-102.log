@@ -1,0 +1,16 @@
+ INFO Formatted 1 file(s) successfully.
+ INFO Your baseline file contains 7310 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO No issues found.
+ INFO Formatted 1 file(s) successfully.
+ INFO Your baseline file contains 2176 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO Filtered out 17 issues based on the baseline file.
+ INFO No issues found.
+## codex/live-candidate-ade-removal
+M  apps/e2e/app/E2E/Support/E2EArtifactBuildFingerprint.php
+M  apps/e2e/app/E2E/Support/E2EProvisionFingerprint.php
+M  apps/e2e/tests/Feature/E2ESupport/E2EArtifactBuildFingerprintTest.php
+M  apps/gateway/tests/Feature/Runtime/OrbitGatewayImageContractTest.php
+[codex/live-candidate-ade-removal 8ae06ade9] Drop stale node-scripts fingerprint paths and harden COPY test
+ 4 files changed, 18 insertions(+), 3 deletions(-)
+8ae06ade95405b5c08eccbc6056d74ee1f5b334a
+## codex/live-candidate-ade-removal

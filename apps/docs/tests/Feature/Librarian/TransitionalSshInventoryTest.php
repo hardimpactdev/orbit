@@ -30,6 +30,7 @@ it('keeps SSH limited to the provisioning and bootstrap lane', function (): void
             'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.enforce-for-node',
             'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.ssh',
             'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php#ssh-builder.enforce-for-node',
+            'apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php#remote-host-executor.run',
             'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php#remote-host-executor.run',
             'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php#remote-host-executor.start',
             'apps/gateway/app/Services/Security/SecurityInstallerTransport.php#remote-shell.run',

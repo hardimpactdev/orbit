@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit workspace:list [--instance=<project.instance>] [--node=<slug>] [--json]
+orbit workspace:list [--instance=<app.instance>] [--node=<slug>] [--json]
 ```
 
 ## Input Contract
@@ -26,12 +26,12 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `--instance` | Optional. | Never. | None. | Parent project slug or instance selector present in the gateway registry. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single instance selector. Unknown selectors fail before side effects. |
+| `instance` | `--instance` | Optional. | Never. | None. | Parent app slug or instance selector present in the gateway registry. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single instance selector. Unknown selectors fail before side effects. |
 | `node` | `--node` | Optional. | Never. | None. | Instance-serving node slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--instance` and `--node` are scalar filters. Multi-value semantics are not part of
-the initial contract. Operators who need to query multiple projects, instance
+the initial contract. Operators who need to query multiple apps, instance
 instances, or nodes at once should run `workspace:list --json` without that
 filter and post-filter the result, or run separate scoped invocations.
 
@@ -65,7 +65,7 @@ identity is authorized to see.
    workspaces whose effective workspace node is that node. Filters combine
    with AND semantics.
 3. **Sort results.** Workspaces are sorted by owning node name (ascending,
-   case-insensitive), then by parent project name (ascending, case-insensitive), then
+   case-insensitive), then by parent app name (ascending, case-insensitive), then
    by workspace name (ascending, case-insensitive). Every output renderer uses
    this single ordering.
 4. **Render output.** Return the filtered workspace list through the selected

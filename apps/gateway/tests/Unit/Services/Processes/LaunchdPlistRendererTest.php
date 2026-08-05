@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Services\Processes\LaunchdPlistRenderer;
 use Database\Factories\ProcessFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,12 +25,12 @@ it('renders user LaunchAgent plist content with Orbit labels logs and escaped va
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/Users/nckrtl/apps/docs & api',
     ]);
-    if (! $app instanceof Project) {
+    if (! $app instanceof App) {
         throw new RuntimeException('App factory did not return an App.');
     }
 
@@ -86,7 +86,7 @@ it('keeps node-owned launch agents configured to run at load', function (): void
             'platform' => 'macos_14',
             'user' => 'nckrtl',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/Users/nckrtl/apps/docs',
     ]);
@@ -101,6 +101,74 @@ it('keeps node-owned launch agents configured to run at load', function (): void
         ->toContain("<key>RunAtLoad</key>\n    <true/>");
 });
 
+it('renders only PATH and HOME for node-owned launchd processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'gateway',
+        'platform' => 'macos_14',
+        'user' => 'orbit',
+        'tld' => 'gateway',
+        'status' => 'active',
+    ]);
+    $surrogateApp = App::factory()->for($node, 'node')->create([
+        'name' => 'gateway',
+        'path' => '/Users/orbit',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'node-exporter',
+            'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+    $plist = app(LaunchdPlistRenderer::class)->render($node, $surrogateApp, $process);
+
+    expect($plist)
+        ->toContain('<key>PATH</key>')
+        ->toContain('<key>HOME</key>')
+        ->toContain('<string>/Users/orbit</string>')
+        ->not->toContain('<key>APP_URL</key>')
+        ->not->toContain('<key>VITE_APP_URL</key>')
+        ->not->toContain('<key>VITE_VALET_HOST</key>')
+        ->not->toContain('<key>VITE_DEV_SERVER_KEY</key>')
+        ->not->toContain('<key>VITE_DEV_SERVER_CERT</key>')
+        ->not->toContain('https://gateway')
+        ->not->toContain('gateway.gateway');
+});
+
+it('still renders Laravel Vite URL and TLS variables for app-owned launchd processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'mac-app',
+        'platform' => 'macos_14',
+        'user' => 'nckrtl',
+        'tld' => 'test',
+        'status' => 'active',
+    ]);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/Users/nckrtl/apps/docs',
+        'domain' => 'docs.test',
+    ]);
+    $process = OrbitProcess::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'command' => 'npm run dev -- --host=0.0.0.0',
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+    $plist = app(LaunchdPlistRenderer::class)->render($node, $app, $process);
+
+    expect($plist)
+        ->toContain('<key>PATH</key>')
+        ->toContain('<key>HOME</key>')
+        ->toContain('<key>APP_URL</key>')
+        ->toContain('<key>VITE_APP_URL</key>')
+        ->toContain('<key>VITE_VALET_HOST</key>')
+        ->toContain('<key>VITE_DEV_SERVER_KEY</key>')
+        ->toContain('<key>VITE_DEV_SERVER_CERT</key>');
+});
+
 it('keeps app-prod launch agents configured to run at load', function (): void {
     $node = Node::factory()
         ->appProd()
@@ -109,7 +177,7 @@ it('keeps app-prod launch agents configured to run at load', function (): void {
             'platform' => 'macos_14',
             'user' => 'nckrtl',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/Users/nckrtl/apps/docs',
     ]);
@@ -135,13 +203,13 @@ it('renders Vite launch agents with dynamic host and certificate environment', f
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'happie-nmbp',
         'domain' => 'happie.nmbp',
         'node_id' => $node->id,
         'path' => '/Users/nckrtl/apps/happie',
     ]);
-    if (! $app instanceof Project) {
+    if (! $app instanceof App) {
         throw new RuntimeException('App factory did not return an App.');
     }
 

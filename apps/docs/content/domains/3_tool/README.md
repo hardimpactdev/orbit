@@ -43,7 +43,7 @@ These rules govern what the tool command family owns and what it may not touch.
   routes. TCP endpoints for runnable services such as databases and caches
   belong to process definitions, not tool rows.
 - Tools supply capabilities that other domains depend on, but they do not own
-  projects, instances, workspaces, processes, schedules, custom proxy routes, or non-tool
+  apps, instances, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
 - Processes are the lifecycle-managed long-running units. A process may
   reference a tool with a canonical `tool` dependency when it needs that
@@ -77,33 +77,33 @@ These rules govern what the tool command family owns and what it may not touch.
 ## Supported Tool Catalog
 
 Orbit supports only the catalogued tool slugs below. A syntactically valid tool
-name that is not present in this catalog fails as an unsupported tool. Detailed
-tool-specific contracts live in [`catalog/`](catalog/README.md).
+name that is not present in this catalog fails as an unsupported tool. The only
+exception is a removal-only residual slug that `tool:remove` still accepts.
+The closed residual set is listed only on the public `tool:remove` contract;
+those slugs are not catalog members and have no install or update surface.
+Detailed tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
 | [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | reconfigure, update, fix, adopt, reload, logs |
 | [`docker`](catalog/docker.md) | Docker | system service on Linux; Docker-compatible provider on macOS | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Optional observational runtime inventory; no role baseline requirement | `runtime` | probe, explicit adopt |
-| [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
+| [`php-cli`](catalog/php-cli.md) | PHP CLI | Orbit-owned static host binaries (`coverage` on app-dev, `standard` on app-prod) | Installable/updatable/removable host toolchain on `app-dev` and `app-prod` | `runtime` | install, remove, update, probe, adopt |
 | [`git`](catalog/git.md) | Git | system binary | Role baseline tool for the `app-dev`, `app-prod`, and `agent` roles (repository clone and checkout workflows) | `runtime` | install, update, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | host binary (`/usr/local/bin/composer`) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, adopt |
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |
-| [`claude-code`](catalog/claude-code.md) | Claude Code | Anthropic native installer (`https://claude.ai/install.sh`) | Installable runtime CLI on authorized active non-gateway Linux nodes; no required node role | `runtime` | install |
+| [`claude-code`](catalog/claude-code.md) | Claude Code | Anthropic native installer (`https://claude.ai/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; no required node role | `runtime` | install |
 | [`codex-cli`](catalog/codex-cli.md) | Codex CLI | OpenAI standalone installer (`https://chatgpt.com/codex/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`grok-cli`](catalog/grok-cli.md) | Grok CLI | xAI Grok Build installer (`https://x.ai/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`antigravity-cli`](catalog/antigravity-cli.md) | Antigravity CLI | Google Antigravity installer (`https://antigravity.google/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; supersedes outdated Gemini CLI support | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`cursor-cli`](catalog/cursor-cli.md) | Cursor CLI | Cursor Agent installer (`https://cursor.com/install`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`dns`](catalog/dns.md) | DNS | Gateway-local Docker service | Required infrastructure tool, kept converged on the gateway | `infrastructure` | update, restore, restart, logs; no adopt/start/stop/reload |
-| [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
+| [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, remove (registry only), fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
-| [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`node-exporter`](catalog/node-exporter.md) | node-exporter | host binary (`/usr/local/bin/node_exporter`) | Role baseline tool for the `metrics` role and active Ubuntu workload nodes scraped by metrics | `observability` | install, remove, update, fix, adopt; lifecycle and logs through `process:*` |
-| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope-server` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt, start, stop, restart, logs through its exact process row |
-| [`opencode-cli`](catalog/opencode-cli.md) | OpenCode CLI | Installed OpenCode CLI with related `opencode-server` `systemd` process (`tool=opencode-cli`) | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, start, stop, restart, logs through its exact process row |
-| [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
-| [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`hermes`](catalog/hermes.md) | Hermes | Host-managed runtime as `agent` with default web port `8080` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
 | [`orbstack`](catalog/orbstack.md) | OrbStack | macOS application and CLI (`orb`, `orbctl`) | Installable macOS runtime-provider capability | `infrastructure` | install, update, probe, safe adopt, start, stop, restart |
 
@@ -157,7 +157,7 @@ the entity in the command result.
 | `version` | string \| null | Gateway-owned intended or registry-known version when the tool definition tracks versions. |
 | `observed_version` | string \| null | Live observed version when a command performs an explicit probe; otherwise `null`. The key remains present in canonical tool entities. |
 | `managed` | boolean | Whether Orbit owns capability configuration for this tool on the node. |
-| `endpoints` | array | Non-secret endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no endpoint. |
+| `endpoints` | array | Non-secret endpoint metadata. Autonomous-agent tools derive consumer HTTPS endpoints from catalog category + node TLD + proxy contract (for example `https://hermes.agent`) instead of requiring persisted endpoint copies on the tool row. Canonical agent endpoint objects use `{name, kind, url, host, port, upstream_port}` where `url` is the operator-facing consumer address, `port` is public HTTPS `443`, and `upstream_port` is the proxy loopback listen port from the proxy contract. Other tools may still surface definition- or config-declared endpoints. Omit or return an empty array when the tool has no endpoint. |
 
 ## Commands
 

@@ -1,0 +1,13 @@
+=== https://openclaw.agent ===
+http_code=000curl_fail
+
+HAS_OPENCLAW_CONTROL=no
+
+=== http://10.6.0.11:18789 ===
+http_code=000curl_fail
+
+HAS_OPENCLAW_CONTROL=no
+*   Trying 10.6.0.11:18789...
+* connect to 10.6.0.11 port 18789 from 10.6.0.3 port 55133 failed: Connection refused
+* Failed to connect to 10.6.0.11 port 18789 after 20 ms: Couldn't connect to server
+* Closing connection

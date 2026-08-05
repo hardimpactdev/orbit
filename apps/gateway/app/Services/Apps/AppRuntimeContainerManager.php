@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Contracts\ConvergesAppRuntimeContainers;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
@@ -18,7 +19,7 @@ use JsonException;
 use RuntimeException;
 use Throwable;
 
-final readonly class AppRuntimeContainerManager
+final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeContainers
 {
     /**
      * @mago-expect lint:excessive-parameter-list

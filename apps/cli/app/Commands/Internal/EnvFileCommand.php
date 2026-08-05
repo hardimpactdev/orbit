@@ -8,7 +8,6 @@ use App\Services\EnvFiles\LocalEnvFileAction;
 use App\Services\EnvFiles\LocalEnvFileFailure;
 use InvalidArgumentException;
 use JsonException;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class EnvFileCommand extends InternalExecutorCommand
 {
@@ -63,16 +62,5 @@ final class EnvFileCommand extends InternalExecutorCommand
     private function hasOnlyStringKeys(array $payload): bool
     {
         return array_all(array_keys($payload), fn ($key) => is_string($key));
-    }
-
-    private function stdin(): string
-    {
-        $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-
-        if (is_resource($stream)) {
-            return (string) stream_get_contents($stream);
-        }
-
-        return (string) stream_get_contents(STDIN);
     }
 }

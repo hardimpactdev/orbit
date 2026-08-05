@@ -24,7 +24,7 @@ function workspaceShowE2ESeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -35,7 +35,7 @@ function workspaceShowE2ESeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -114,7 +114,7 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
             ->toBeArray()
             ->and($workspace['name'])
             ->toBe('feature-docs')
-            ->and($workspace['project'])
+            ->and($workspace['app'])
             ->toBe('docs')
             ->and($payload['success']['meta']['registry_only'])
             ->toBeTrue()

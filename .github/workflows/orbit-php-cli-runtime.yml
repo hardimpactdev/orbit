@@ -1,0 +1,539 @@
+name: Orbit PHP CLI Runtime
+
+# Artifact release lane for the fleet-scoped Orbit-owned php-cli matrix
+# (9 cells: each of 8.3.31/8.4.21/8.5.8 × coverage linux-x86_64, coverage
+# macos-aarch64, standard linux-x86_64). Not a full OS/arch cross-product.
+#
+# This is NOT default feature CI. Ordinary PR/push validation is static Pest
+# coverage of the workflow YAML, builder script, catalogs, and install contracts.
+#
+# Trigger only via workflow_dispatch when intentionally producing release
+# artifacts. Object-storage publication remains a separate opt-in input and
+# requires ORBIT_ARTIFACTS_* repository secrets (never embedded).
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to_object_storage:
+        description: "After the matrix build (or from a prior assembled run), upload the 9 immutable tarballs to Orbit object storage, verify objects, then run catalog handoff + runtime promotion draft. Leave false to only assemble GitHub Actions artifacts."
+        required: false
+        default: false
+        type: boolean
+      publish_from_run_id:
+        description: "Publication-only retry: numeric workflow run id that already produced php-cli-matrix-handoff (e.g. 30494484244). Skips all matrix builds and assembly; requires publish_to_object_storage=true."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # Immutable object key prefix relative to the artifacts bucket (bucket is separate:
+  # secrets.ORBIT_ARTIFACTS_BUCKET, typically `orbit`). Do not prefix with the bucket
+  # name — public consumer URL already uses https://…/orbit/<this-prefix>/….
+  # No moving `latest`.
+  ORBIT_PHP_CLI_OBJECT_PREFIX: runtimes/php-cli/sqlite-3.44.6
+
+jobs:
+  build:
+    name: "php-cli ${{ matrix.php_version }} ${{ matrix.variant }} (${{ matrix.runner }})"
+    # Publication-only retry reuses a prior assemble artifact; skip rebuilds.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_from_run_id == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Fleet-scoped 9 cells only (no linux-aarch64, macos-x86_64, or standard macOS).
+          - php_version: "8.5.8"
+            variant: coverage
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.5.8"
+            variant: standard
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.5.8"
+            variant: coverage
+            runner: macos-15
+            platform: macos-aarch64
+          - php_version: "8.4.21"
+            variant: coverage
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.4.21"
+            variant: standard
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.4.21"
+            variant: coverage
+            runner: macos-15
+            platform: macos-aarch64
+          - php_version: "8.3.31"
+            variant: coverage
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.3.31"
+            variant: standard
+            runner: ubuntu-24.04
+            platform: linux-x86_64
+          - php_version: "8.3.31"
+            variant: coverage
+            runner: macos-15
+            platform: macos-aarch64
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Host PHP is required by bin/orbit-build-php-cli-runtime (catalog JSON via php -r).
+      # macOS GitHub-hosted images (especially macos-15 arm64) may not ship PHP; pin it
+      # with the same setup-php pattern used by orbit-cli-binary / orbit-release.
+      # This is the builder host runtime only — not the static php-cli artifact under build.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          coverage: none
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            autoconf automake bison build-essential cmake curl flex git \
+            libtool pkg-config re2c tcl unzip xz-utils
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          brew update
+          brew install autoconf automake bison cmake flex libtool pkg-config re2c
+
+      # static-php-cli 2.8.5 reads GITHUB_TOKEN (Bearer) for api.github.com downloads
+      # (e.g. static-php/static-php-cli-hosted releases). Unauthenticated calls 403 under
+      # shared runner rate limits. Pass the workflow token only on this step — not job-
+      # or workflow-global env — and never echo it.
+      - name: Build php-cli runtime
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/php-cli"
+          bin/orbit-build-php-cli-runtime \
+            --php-version "${{ matrix.php_version }}" \
+            --variant "${{ matrix.variant }}" \
+            --output-directory "artifacts/php-cli" \
+            --platform "${{ matrix.platform }}"
+
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-cli-${{ matrix.php_version }}-${{ matrix.variant }}-${{ matrix.platform }}
+          path: |
+            artifacts/php-cli/php-${{ matrix.php_version }}-cli-${{ matrix.variant }}-${{ matrix.platform }}.tar.gz
+            artifacts/php-cli/php-${{ matrix.php_version }}-cli-${{ matrix.variant }}-${{ matrix.platform }}.manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  assemble-manifest:
+    name: Assemble matrix checksums
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_from_run_id == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all php-cli artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assembled
+          pattern: php-cli-*
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS and collect manifests (no catalog mutation)
+        run: |
+          set -euo pipefail
+          mkdir -p assembled/manifests assembled/tarballs
+          find assembled -name '*.manifest.json' -print0 | while IFS= read -r -d '' manifest; do
+            cp "$manifest" assembled/manifests/
+          done
+          find assembled -name 'php-*.tar.gz' -print0 | while IFS= read -r -d '' tarball; do
+            cp "$tarball" assembled/tarballs/
+          done
+          (
+            cd assembled/tarballs
+            find . -name 'php-*.tar.gz' -print0 | sort -z | xargs -0 shasum -a 256
+          ) > assembled/SHA256SUMS
+          cell_count="$(find assembled/manifests -name '*.manifest.json' | wc -l | tr -d ' ')"
+          test "$cell_count" = "9"
+          {
+            echo "### php-cli matrix assemble"
+            echo
+            echo "Built \`${cell_count}\` fleet-scoped cells. Object-storage publication is opt-in via"
+            echo "\`workflow_dispatch\` input \`publish_to_object_storage\` and requires"
+            echo "\`ORBIT_ARTIFACTS_*\` secrets. Catalog handoff runs only after successful upload."
+          } > assembled/HANDOFF.md
+          cat assembled/HANDOFF.md
+
+      - name: Upload assembled matrix package
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-cli-matrix-handoff
+          path: |
+            assembled/SHA256SUMS
+            assembled/HANDOFF.md
+            assembled/manifests/
+            assembled/tarballs/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-object-storage:
+    name: Publish immutable objects + catalog handoff
+    needs: assemble-manifest
+    # always(): publication-only retries skip assemble (result=skipped) but still publish.
+    if: >-
+      always()
+      && github.event_name == 'workflow_dispatch'
+      && inputs.publish_to_object_storage
+      && (
+        (inputs.publish_from_run_id != '' && needs.assemble-manifest.result == 'skipped')
+        || (inputs.publish_from_run_id == '' && needs.assemble-manifest.result == 'success')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Prior-run artifact download via gh API (publication-only retry).
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require Orbit artifact credentials
+        env:
+          ORBIT_ARTIFACTS_ACCESS_KEY: ${{ secrets.ORBIT_ARTIFACTS_ACCESS_KEY }}
+          ORBIT_ARTIFACTS_SECRET_KEY: ${{ secrets.ORBIT_ARTIFACTS_SECRET_KEY }}
+          ORBIT_ARTIFACTS_BUCKET: ${{ secrets.ORBIT_ARTIFACTS_BUCKET }}
+          ORBIT_ARTIFACTS_ENDPOINT: ${{ secrets.ORBIT_ARTIFACTS_ENDPOINT }}
+          ORBIT_ARTIFACTS_REGION: ${{ secrets.ORBIT_ARTIFACTS_REGION }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ORBIT_ARTIFACTS_ACCESS_KEY ORBIT_ARTIFACTS_SECRET_KEY ORBIT_ARTIFACTS_BUCKET ORBIT_ARTIFACTS_ENDPOINT; do
+            if [ -z "${!name:-}" ]; then
+              echo "missing secret/config: ${name}" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "publish_to_object_storage requested but Orbit artifact credentials are not configured." >&2
+            echo "Set repository secrets ORBIT_ARTIFACTS_ACCESS_KEY, ORBIT_ARTIFACTS_SECRET_KEY," >&2
+            echo "ORBIT_ARTIFACTS_BUCKET, ORBIT_ARTIFACTS_ENDPOINT, and optionally ORBIT_ARTIFACTS_REGION." >&2
+            exit 1
+          fi
+
+      - name: Download assembled matrix package (this run)
+        if: inputs.publish_from_run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: php-cli-matrix-handoff
+          path: assembled
+
+      - name: Download assembled matrix package (prior run publication-only retry)
+        if: inputs.publish_from_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.publish_from_run_id }}
+        run: |
+          set -euo pipefail
+          source_run_id="$(printf '%s' "${SOURCE_RUN_ID}" | tr -d '[:space:]')"
+          if ! [[ "${source_run_id}" =~ ^[0-9]+$ ]]; then
+            echo "publish_from_run_id must be a numeric workflow run id, got: [${SOURCE_RUN_ID}]" >&2
+            exit 1
+          fi
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}")" || {
+            echo "failed to fetch workflow run ${source_run_id}; check the id exists in ${GITHUB_REPOSITORY}." >&2
+            exit 1
+          }
+
+          workflow_path="$(
+            printf '%s' "$run_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $path = $d["path"] ?? "";
+              echo is_string($path) ? $path : "";
+            '
+          )"
+          if [ "$workflow_path" != ".github/workflows/orbit-php-cli-runtime.yml" ]; then
+            echo "publish_from_run_id ${source_run_id} is not an Orbit PHP CLI Runtime run (path=${workflow_path:-unknown})." >&2
+            exit 1
+          fi
+
+          head_branch="$(
+            printf '%s' "$run_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $b = $d["head_branch"] ?? "";
+              echo is_string($b) ? $b : "";
+            '
+          )"
+          echo "Using prior run ${source_run_id} (workflow=${workflow_path}, head_branch=${head_branch}) for publication-only retry."
+
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${source_run_id}/artifacts?per_page=100")"
+          has_handoff="$(
+            printf '%s' "$artifacts_json" | php -r '
+              $d = json_decode(stream_get_contents(STDIN), true);
+              $artifacts = is_array($d["artifacts"] ?? null) ? $d["artifacts"] : [];
+              foreach ($artifacts as $artifact) {
+                  if (($artifact["name"] ?? null) === "php-cli-matrix-handoff" && empty($artifact["expired"])) {
+                      echo "1";
+                      exit(0);
+                  }
+              }
+              echo "0";
+            '
+          )"
+          if [ "$has_handoff" != "1" ]; then
+            echo "prior run ${source_run_id} has no non-expired artifact named php-cli-matrix-handoff." >&2
+            exit 1
+          fi
+
+          mkdir -p assembled
+          # Download only the assembled handoff package; never rebuild matrix cells.
+          gh run download "${source_run_id}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name php-cli-matrix-handoff \
+            --dir assembled
+
+          if [ ! -f assembled/SHA256SUMS ]; then
+            echo "prior-run artifact php-cli-matrix-handoff is missing assembled/SHA256SUMS after download." >&2
+            exit 1
+          fi
+          tarball_count="$(find assembled/tarballs -name 'php-*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')"
+          manifest_count="$(find assembled/manifests -name '*.manifest.json' 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$tarball_count" != "9" ] || [ "$manifest_count" != "9" ]; then
+            echo "prior-run handoff must contain exactly 9 tarballs and 9 manifests (got tarballs=${tarball_count}, manifests=${manifest_count})." >&2
+            exit 1
+          fi
+          echo "Downloaded fleet-scoped 9-cell handoff from run ${source_run_id}."
+
+      - name: Require AWS CLI v2
+        run: |
+          set -euo pipefail
+          if ! command -v aws >/dev/null 2>&1; then
+            echo "aws CLI is not available on the runner; install AWS CLI v2 before publishing." >&2
+            exit 1
+          fi
+          aws --version
+
+      - name: Upload tarballs immutably, verify public consumer URLs, then catalog handoff
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.ORBIT_ARTIFACTS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ORBIT_ARTIFACTS_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.ORBIT_ARTIFACTS_REGION || 'us-east-1' }}
+          AWS_ENDPOINT_URL: ${{ secrets.ORBIT_ARTIFACTS_ENDPOINT }}
+          ORBIT_ARTIFACTS_BUCKET: ${{ secrets.ORBIT_ARTIFACTS_BUCKET }}
+          # Avoid AWS CLI v2 flexible-checksum multipart mismatches on S3-compatible storage.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          prefix="${ORBIT_PHP_CLI_OBJECT_PREFIX}"
+          bucket="${ORBIT_ARTIFACTS_BUCKET}"
+          endpoint_args=(--endpoint-url "${AWS_ENDPOINT_URL}")
+          # Exact unauthenticated base URL install/update consumers use after promotion.
+          artifact_base_url="$(
+            php -r '
+              $d = json_decode((string) file_get_contents("packages/core/resources/php-cli/artifact-catalog.build.json"), true, flags: JSON_THROW_ON_ERROR);
+              $base = $d["artifact_base_url"] ?? "";
+              if (! is_string($base) || trim($base) === "") {
+                  fwrite(STDERR, "build catalog missing artifact_base_url\n");
+                  exit(1);
+              }
+              echo rtrim($base, "/");
+            '
+          )"
+
+          # Fetch unauthenticated consumer URL and compare SHA-256 to expected.
+          # Returns 0 on match, 1 on fetch/hash failure (caller may retry or fail).
+          verify_public_sha() {
+            local public_url="$1"
+            local expected_sha="$2"
+            local tmp public_sha attempt
+            tmp="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              if curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
+                "$public_url" -o "$tmp"
+              then
+                public_sha="$(shasum -a 256 "$tmp" | awk '{print $1}')"
+                if [ "$public_sha" = "$expected_sha" ]; then
+                  rm -f "$tmp"
+                  return 0
+                fi
+                echo "public URL hash mismatch for ${public_url} (attempt ${attempt}): got ${public_sha}, expected ${expected_sha}" >&2
+              else
+                echo "public URL fetch failed for ${public_url} (attempt ${attempt})" >&2
+              fi
+              sleep 2
+            done
+            rm -f "$tmp"
+            return 1
+          }
+
+          # head-object: 0=exists, 1=definite absence (404/NotFound/NoSuchKey only),
+          # 2=ambiguous failure (auth/network/5xx/AccessDenied/etc) — must fail closed.
+          # Prints Metadata.sha256 (or empty) on stdout when exists. Captures stderr always.
+          head_object_metadata_sha() {
+            local object_key="$1"
+            local err head_json meta_sha
+            err="$(mktemp)"
+            if head_json="$(
+              aws "${endpoint_args[@]}" s3api head-object \
+                --bucket "$bucket" \
+                --key "$object_key" \
+                --output json 2>"$err"
+            )"
+            then
+              meta_sha="$(
+                printf '%s' "$head_json" | php -r '
+                  $d = json_decode(stream_get_contents(STDIN), true);
+                  $m = is_array($d["Metadata"] ?? null) ? $d["Metadata"] : [];
+                  // S3 lowercases user metadata keys.
+                  $sha = $m["sha256"] ?? $m["Sha256"] ?? "";
+                  echo is_string($sha) ? $sha : "";
+                '
+              )"
+              rm -f "$err"
+              printf '%s' "$meta_sha"
+              return 0
+            fi
+            # Only a definite missing-object signal may be treated as absence.
+            # Never treat AccessDenied, 403, 5xx, timeouts, network, or credential
+            # errors as absence — those would open an overwrite path via put-object.
+            if grep -Eqi \
+              'An error occurred \(404\)|An error occurred \(NotFound\)|An error occurred \(NoSuchKey\)|HeadObject operation: Not Found|HeadObject operation: The specified key does not exist|NoSuchKey' \
+              "$err"
+            then
+              rm -f "$err"
+              return 1
+            fi
+            echo "IMMUTABLE HEAD AMBIGUOUS: head-object failed for s3://${bucket}/${object_key} (not a definite 404/NotFound/NoSuchKey). Refusing upload — auth/network/5xx must not be treated as absence." >&2
+            cat "$err" >&2 || true
+            rm -f "$err"
+            return 2
+          }
+
+          mapfile -t tarballs < <(find assembled/tarballs -name 'php-*.tar.gz' | sort)
+          test "${#tarballs[@]}" -eq 9
+
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            expected_sha="$(echo "$line" | awk '{print $1}')"
+            relative="$(echo "$line" | awk '{print $2}' | sed 's#^\./##')"
+            local_path="assembled/tarballs/${relative}"
+            filename="$(basename "$local_path")"
+            object_key="${prefix}/${filename}"
+            public_url="${artifact_base_url}/${filename}"
+            actual_sha="$(shasum -a 256 "$local_path" | awk '{print $1}')"
+            test "$actual_sha" = "$expected_sha"
+
+            # Immutable fixed version/variant/platform keys:
+            # - definite absence (head_rc=1)  => single-object put-object once, then verify public URL
+            # - present + same hash           => skip idempotently (never put-object)
+            # - present + different hash      => exit BEFORE any put-object; require new prefix/pin
+            # - ambiguous head failure (head_rc!=0,1) => exit BEFORE any put-object (fail closed)
+            meta_sha=""
+            head_rc=0
+            meta_sha="$(head_object_metadata_sha "$object_key")" && head_rc=0 || head_rc=$?
+
+            if [ "$head_rc" -eq 0 ]; then
+              # Object already exists — never overwrite.
+              if [ -n "$meta_sha" ] && [ "$meta_sha" = "$expected_sha" ]; then
+                if verify_public_sha "$public_url" "$expected_sha"; then
+                  echo "immutable key already present with matching metadata+public SHA; skipping upload for ${public_url}"
+                  continue
+                fi
+                # Metadata claims match but public bytes differ — treat as conflict.
+                echo "IMMUTABLE OBJECT CONFLICT: s3://${bucket}/${object_key} metadata sha256 matches but public consumer SHA does not (${expected_sha})." >&2
+                echo "Never overwrite a different artifact at a fixed version/variant/platform key." >&2
+                echo "Publish under a new versioned prefix/pin (update ORBIT_PHP_CLI_OBJECT_PREFIX and catalog artifact_base_url), then retry." >&2
+                exit 1
+              fi
+
+              if [ -n "$meta_sha" ] && [ "$meta_sha" != "$expected_sha" ]; then
+                echo "IMMUTABLE OBJECT CONFLICT: s3://${bucket}/${object_key} already exists with metadata sha256=${meta_sha}, expected ${expected_sha}." >&2
+                echo "Never overwrite a different artifact at a fixed version/variant/platform key." >&2
+                echo "Publish under a new versioned prefix/pin (update ORBIT_PHP_CLI_OBJECT_PREFIX and catalog artifact_base_url), then retry." >&2
+                exit 1
+              fi
+
+              # No usable metadata — compare public consumer bytes only.
+              if verify_public_sha "$public_url" "$expected_sha"; then
+                echo "immutable key already present with matching public SHA; skipping upload for ${public_url}"
+                continue
+              fi
+
+              echo "IMMUTABLE OBJECT CONFLICT: s3://${bucket}/${object_key} already exists but its public consumer SHA does not match this build (${expected_sha})." >&2
+              echo "Never overwrite a different artifact at a fixed version/variant/platform key." >&2
+              echo "Publish under a new versioned prefix/pin (update ORBIT_PHP_CLI_OBJECT_PREFIX and catalog artifact_base_url), then retry." >&2
+              exit 1
+            elif [ "$head_rc" -eq 1 ]; then
+              # Definite absence only — sole path that may call put-object.
+              # Single-object PUT for sub-5GB tarballs: avoids multipart upload
+              # XAmzContentSHA256Mismatch failures on S3-compatible object storage.
+              # public-read ACL: AllUsers READ so unauthenticated consumer URL
+              # (verify_public_sha / install-update download) succeeds; owner-only
+              # FULL_CONTROL yields 403 on the public path.
+              aws "${endpoint_args[@]}" s3api put-object \
+                --bucket "$bucket" \
+                --key "$object_key" \
+                --body "$local_path" \
+                --content-type "application/gzip" \
+                --acl public-read \
+                --metadata "sha256=${actual_sha},tool=php-cli"
+
+              if ! verify_public_sha "$public_url" "$expected_sha"; then
+                echo "failed to verify public consumer URL ${public_url}" >&2
+                exit 1
+              fi
+              echo "published and public-URL-verified ${public_url}"
+            else
+              # Ambiguous head-object (auth/network/5xx/AccessDenied/unknown): never treat as absence.
+              echo "IMMUTABLE HEAD AMBIGUOUS: refusing put-object for s3://${bucket}/${object_key} after non-404 head-object failure (head_rc=${head_rc})." >&2
+              exit 1
+            fi
+          done < assembled/SHA256SUMS
+
+          # Handoff only after every public consumer URL verifies (new or pre-existing).
+          bin/orbit-php-cli-catalog-handoff \
+            --manifest-dir assembled/manifests \
+            --catalog packages/core/resources/php-cli/artifact-catalog.build.json \
+            --promote-runtime
+
+          mkdir -p assembled/published
+          cp packages/core/resources/php-cli/artifact-catalog.build.json assembled/published/
+          cp packages/core/resources/php-cli/artifact-catalog.json assembled/published/artifact-catalog.runtime.json
+          {
+            echo "### php-cli publication complete"
+            echo
+            echo "Published or idempotently verified 9 immutable public consumer URLs under \`${artifact_base_url}/\`"
+            echo "Existing keys with matching SHA were skipped; conflicting keys fail closed (new versioned prefix required)."
+            echo "Updated build catalog and promoted runtime catalog to install_contract=matrix."
+            echo "Commit the catalog files from this artifact to land production cutover."
+          } > assembled/published/PUBLISH.md
+
+      - name: Upload publication handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-cli-publication-handoff
+          path: |
+            assembled/published/
+            packages/core/resources/php-cli/artifact-catalog.build.json
+            packages/core/resources/php-cli/artifact-catalog.json
+          if-no-files-found: error
+          retention-days: 30

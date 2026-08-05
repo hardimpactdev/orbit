@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteFixer;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -19,6 +20,7 @@ final readonly class StaleToolIntentRemover
         private ToolCatalog $catalog,
         private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private ProxyRouteFixer $proxyRouteFixer,
     ) {}
 
     /**
@@ -36,7 +38,7 @@ final readonly class StaleToolIntentRemover
             return null;
         }
 
-        $removedRoutes = $this->removeOwnedProxyRoutes($tool, $targetNode);
+        $removedRoutes = $this->removeOwnedProxyRoutesFor($tool, $targetNode);
 
         if ($removedRoutes === 0) {
             return null;
@@ -56,7 +58,7 @@ final readonly class StaleToolIntentRemover
     public function withRecord(string $tool, NodeTool $model): array
     {
         $node = $model->node;
-        $removedRoutes = $node instanceof Node ? $this->removeOwnedProxyRoutes($tool, $node) : 0;
+        $removedRoutes = $node instanceof Node ? $this->removeOwnedProxyRoutesFor($tool, $node) : 0;
 
         $model->credentials = null;
         $model->save();
@@ -68,6 +70,33 @@ final readonly class StaleToolIntentRemover
             'stale_record' => true,
             'stale_routes_removed' => $removedRoutes,
         ];
+    }
+
+    /**
+     * Remove backend/TLS for tool-owned proxy routes, then delete registry rows.
+     * Order matches proxy:remove --force so a failed cleanup leaves intent for retry.
+     */
+    public function removeOwnedProxyRoutesFor(string $tool, Node $node): int
+    {
+        $removed = 0;
+
+        foreach (ProxyRoute::query()
+            ->where('node_id', $node->id)
+            ->where('owner_type', 'tool')
+            ->get() as $route) {
+            $config = is_array($route->config) ? $route->config : [];
+
+            if (($config['owner_name'] ?? null) !== $tool) {
+                continue;
+            }
+
+            // Backend/TLS first (same ordering as ProxyRouteIntent::remove).
+            $this->proxyRouteFixer->removeExtra($node, $route->domain);
+            $route->delete();
+            $removed++;
+        }
+
+        return $removed;
     }
 
     private function targetNode(?string $node, ?string $app): ?Node
@@ -87,28 +116,6 @@ final readonly class StaleToolIntentRemover
         }
 
         return $this->instanceNodes->resolve($app);
-    }
-
-    private function removeOwnedProxyRoutes(string $tool, Node $node): int
-    {
-        $removed = 0;
-
-        ProxyRoute::query()
-            ->where('node_id', $node->id)
-            ->where('owner_type', 'tool')
-            ->get()
-            ->each(static function (ProxyRoute $route) use ($tool, &$removed): void {
-                $config = is_array($route->config) ? $route->config : [];
-
-                if (($config['owner_name'] ?? null) !== $tool) {
-                    return;
-                }
-
-                $route->delete();
-                $removed++;
-            });
-
-        return $removed;
     }
 
     /**

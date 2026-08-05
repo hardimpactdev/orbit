@@ -18,10 +18,14 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Tools\PhpCliTool;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
 use InvalidArgumentException;
 use JsonException;
+use Orbit\Core\Php\PhpCliArtifactCatalog;
+use Orbit\Core\Php\PhpCliRuntimeClassifier;
+use Orbit\Core\Php\PhpCliVariant;
 use Throwable;
 
 final readonly class ToolsProbe
@@ -32,6 +36,7 @@ final readonly class ToolsProbe
         private ?ToolCatalog $catalog = null,
         private ?RunsInternalCommands $localExecutor = null,
         private ?ToolScriptDispatcher $scripts = null,
+        private ?AgentToolConsumerUrlProbe $agentConsumerUrlProbe = null,
     ) {}
 
     public function key(): string
@@ -59,6 +64,10 @@ final readonly class ToolsProbe
             return $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
         }
 
+        if (($metadata['probe'] ?? null) === 'php_cli_runtimes') {
+            return $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
+        }
+
         $binary = is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
@@ -66,6 +75,7 @@ final readonly class ToolsProbe
         $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
         $script = $this->toolCapabilityProbeScript(
             binary: $binary,
+            binaryAsUser: $this->binaryAsUserFromMetadata($metadata),
             versionCommand: is_string($versionCommand) ? $versionCommand : '',
             service: is_string($service) ? $service : '',
             providerCommand: is_string($providerCommand) ? $providerCommand : '',
@@ -128,6 +138,12 @@ final readonly class ToolsProbe
                 continue;
             }
 
+            if (($metadata['probe'] ?? null) === 'php_cli_runtimes') {
+                $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
+
+                continue;
+            }
+
             if ($node !== null && $node->id !== $toolNode->id) {
                 $snapshots[$tool->name] = $this->introspect($tool);
 
@@ -137,6 +153,7 @@ final readonly class ToolsProbe
             $node = $toolNode;
             $batch[$tool->name] = [
                 'binary' => is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name,
+                'binary_as_user' => $this->binaryAsUserFromMetadata($metadata),
                 'version_command' => is_string($metadata['version_command'] ?? null)
                     ? $metadata['version_command']
                     : '',
@@ -197,6 +214,7 @@ final readonly class ToolsProbe
 
     private function toolCapabilityProbeScript(
         string $binary,
+        string $binaryAsUser,
         string $versionCommand,
         string $service,
         string $providerCommand,
@@ -208,6 +226,7 @@ final readonly class ToolsProbe
             # orbit-tool-probe:capability
 
             binary=__BINARY__
+            binary_as_user=__BINARY_AS_USER__
             version_command=__VERSION_COMMAND__
             service=__SERVICE__
             provider_command=__PROVIDER_COMMAND__
@@ -229,7 +248,11 @@ final readonly class ToolsProbe
 
             case "$binary" in
                 */*)
-                    if [ -x "$binary" ]; then
+                    if [ -n "$binary_as_user" ]; then
+                        if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+                            path=$binary
+                        fi
+                    elif [ -x "$binary" ]; then
                         path=$binary
                     fi
                     ;;
@@ -291,12 +314,21 @@ final readonly class ToolsProbe
 
         return strtr($script, [
             '__BINARY__' => escapeshellarg($binary),
+            '__BINARY_AS_USER__' => escapeshellarg($binaryAsUser),
             '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
             '__SERVICE__' => escapeshellarg($service),
             '__PROVIDER_COMMAND__' => escapeshellarg($providerCommand),
             '__CONTAINER__' => escapeshellarg($container),
             '__EXTRA_PROBE__' => escapeshellarg($extraProbe),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function binaryAsUserFromMetadata(array $metadata): string
+    {
+        return UserScopedCliUsers::normalize($metadata['binary_as_user'] ?? null) ?? '';
     }
 
     /**
@@ -375,7 +407,7 @@ final readonly class ToolsProbe
     }
 
     /**
-     * @param  array<string, array{binary: mixed, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
+     * @param  array<string, array{binary: mixed, binary_as_user: string, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
      */
     private function batchedToolCapabilityProbeScript(array $batch): string
     {
@@ -387,6 +419,7 @@ final readonly class ToolsProbe
             $cases[] = implode("\n", [
                 '        '.escapeshellarg($name).')',
                 '            binary='.escapeshellarg((string) ($tool['binary'] ?? '')),
+                '            binary_as_user='.escapeshellarg($tool['binary_as_user']),
                 '            version_command='.escapeshellarg($tool['version_command']),
                 '            service='.escapeshellarg($tool['service']),
                 '            provider_command='.escapeshellarg($tool['provider_command']),
@@ -418,6 +451,7 @@ final readonly class ToolsProbe
                 fi
 
                 binary=''
+                binary_as_user=''
                 version_command=''
                 service=''
                 provider_command=''
@@ -442,7 +476,11 @@ final readonly class ToolsProbe
 
                 case "$binary" in
                     */*)
-                        if [ -x "$binary" ]; then
+                        if [ -n "$binary_as_user" ]; then
+                            if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
+                                path=$binary
+                            fi
+                        elif [ -x "$binary" ]; then
                             path=$binary
                         fi
                         ;;
@@ -523,6 +561,279 @@ final readonly class ToolsProbe
         ]);
     }
 
+    private function introspectPhpCliRuntimes(NodeTool $tool): ProbeSnapshot
+    {
+        $node = $tool->node;
+
+        if (! $node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        $desiredVariant = $this->phpCliVariantForTool($tool);
+        // During compatibility, nodes intentionally run the retained standard runtime
+        // even when role desire is coverage. Classify against that effective runtime
+        // so doctor does not permanently emit coverage_missing / reinstall loops.
+        $runtimeCatalog = PhpCliArtifactCatalog::load();
+        $effectiveVariant = $runtimeCatalog->usesCompatibilityContract()
+            ? PhpCliVariant::Standard
+            : $desiredVariant;
+        $definition = $this->catalog?->definition('php-cli') ?? app(ToolCatalog::class)->definition('php-cli');
+
+        if (! $definition instanceof PhpCliTool) {
+            return new ProbeSnapshot([]);
+        }
+
+        $script = $definition->runtimeProbeScript($effectiveVariant);
+        $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe-php-cli', $script);
+        $minors = [];
+        $classifier = new PhpCliRuntimeClassifier;
+        $allOk = true;
+        $anyPresent = false;
+
+        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode('|', $line);
+
+            if (count($parts) < 8) {
+                continue;
+            }
+
+            [
+                $minor,
+                $expectedPatch,
+                $presentRaw,
+                $patch,
+                $pcovLoadedRaw,
+                $pcovStartRaw,
+                $pcovEnabledRaw,
+                $riOkRaw,
+            ] = $parts;
+
+            $observed = [
+                'present' => $presentRaw === '1',
+                'patch' => $patch !== '' ? $patch : null,
+                'expected_patch' => $expectedPatch,
+                'extension_loaded_pcov' => $pcovLoadedRaw === '1',
+                'function_exists_pcov_start' => $pcovStartRaw === '1',
+                'pcov_enabled' => $pcovEnabledRaw === '1',
+                'ri_pcov_ok' => $riOkRaw === '1',
+            ];
+            $classification = $classifier->classify($effectiveVariant, $observed);
+            $minors[$minor] = [
+                ...$observed,
+                'classification' => $classification['kind'],
+                'ok' => $classification['ok'],
+                'summary' => $classification['summary'],
+            ];
+            $anyPresent = $anyPresent || $observed['present'];
+            $allOk = $allOk && $classification['ok'];
+        }
+
+        $default = $minors['8.5'] ?? null;
+        $defaultPath = '/opt/orbit/php/8.5/bin/php';
+        $defaultPresent = ($default['present'] ?? false) === true;
+        $complete = $this->phpCliMinorSnapshotIsComplete($minors);
+        $probeOk = $result->successful() && $complete && $allOk;
+        $matrixCutoverPending =
+            $runtimeCatalog->usesCompatibilityContract() && $desiredVariant === PhpCliVariant::Coverage;
+
+        return new ProbeSnapshot([
+            $tool->name => [
+                // Presence of the default binary is the capability signal.
+                // Per-minor and PCOV classification are reported separately.
+                'installed' => $probeOk && $defaultPresent,
+                'path' => $defaultPresent ? $defaultPath : null,
+                'version' => is_string($default['patch'] ?? null) ? $default['patch'] : null,
+                'state' => null,
+                'variant' => $desiredVariant->value,
+                'desired_variant' => $desiredVariant->value,
+                'effective_variant' => $effectiveVariant->value,
+                'install_contract' => $runtimeCatalog->installContract(),
+                'matrix_cutover_pending' => $matrixCutoverPending,
+                'minors' => $minors,
+                'php_cli_probe_ok' => $probeOk,
+                'php_cli_any_present' => $anyPresent,
+                'php_cli_minors_complete' => $complete,
+                'config_exists' => null,
+                'config_hash' => null,
+                'secret_exists' => null,
+                'secret_hash' => null,
+            ],
+        ]);
+    }
+
+    private function phpCliVariantForTool(NodeTool $tool): PhpCliVariant
+    {
+        return app(PhpCliVariantResolver::class)->forTool($tool);
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkPhpCliRuntimeState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        if ($tool->name !== 'php-cli' || $tool->expected_state === 'absent') {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name) ?? [];
+        $minors = is_array($observed['minors'] ?? null) ? $observed['minors'] : null;
+
+        // No php-cli probe shape at all — generic capability presence owns the check.
+        if ($minors === null) {
+            return [];
+        }
+
+        $desiredVariant = is_string($observed['desired_variant'] ?? null)
+            ? PhpCliVariant::tryFromMixed($observed['desired_variant'])
+            : null;
+        $desiredVariant ??= $this->phpCliVariantForTool($tool);
+        $effectiveVariant = is_string($observed['effective_variant'] ?? null)
+            ? PhpCliVariant::tryFromMixed($observed['effective_variant'])
+            : null;
+        $effectiveVariant ??= $desiredVariant;
+        $installContract = is_string($observed['install_contract'] ?? null)
+            ? $observed['install_contract']
+            : PhpCliArtifactCatalog::load()->installContract();
+        $matrixCutoverPending =
+            ($observed['matrix_cutover_pending'] ?? false) === true
+            || $installContract === PhpCliArtifactCatalog::INSTALL_CONTRACT_COMPATIBILITY
+            && $desiredVariant === PhpCliVariant::Coverage;
+
+        // Failed probe, empty stdout, or malformed lines leave minors empty/incomplete.
+        // That must never look like "no drift".
+        if (! $this->phpCliMinorSnapshotIsComplete($minors)) {
+            $observedMinors = array_values(array_filter(
+                array_keys($minors),
+                static fn (mixed $key): bool => is_string($key) && $key !== '',
+            ));
+
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.capability_missing',
+                    kind: DriftKind::Missing,
+                    summary: 'Tool php-cli probe failed or returned incomplete runtime evidence for supported minors.',
+                    detail: [
+                        'tool' => $tool->name,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                        'reason' => 'probe_incomplete',
+                        'php_cli_probe_ok' => $observed['php_cli_probe_ok'] ?? false,
+                        'observed_minors' => $observedMinors,
+                        'expected_minors' => PhpCliArtifactCatalog::SUPPORTED_MINORS,
+                    ],
+                ),
+            ];
+        }
+
+        $issues = [];
+
+        foreach ($minors as $minor => $state) {
+            if (! is_string($minor) || ! is_array($state)) {
+                continue;
+            }
+
+            if (($state['present'] ?? false) !== true) {
+                $issues[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.capability_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool php-cli minor {$minor} is missing on the target node.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'minor' => $minor,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                    ],
+                );
+
+                continue;
+            }
+
+            if (($state['ok'] ?? false) === true) {
+                continue;
+            }
+
+            $classification = is_string($state['classification'] ?? null) ? $state['classification'] : '';
+
+            // Only enforce coverage/PCOV after matrix promotion. In compatibility mode the
+            // effective runtime is standard, so coverage_missing would false-positive forever.
+            if (
+                $effectiveVariant === PhpCliVariant::Coverage
+                && $classification === PhpCliRuntimeClassifier::KIND_COVERAGE_BROKEN
+            ) {
+                $issues[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.php_cli_coverage_missing',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool php-cli coverage capability is missing or broken for PHP {$minor}.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'minor' => $minor,
+                        'variant' => $desiredVariant->value,
+                        'desired_variant' => $desiredVariant->value,
+                        'effective_variant' => $effectiveVariant->value,
+                        'install_contract' => $installContract,
+                        'matrix_cutover_pending' => $matrixCutoverPending,
+                        'observed_patch' => $state['patch'] ?? null,
+                        'expected_patch' => $state['expected_patch'] ?? null,
+                        'extension_loaded_pcov' => $state['extension_loaded_pcov'] ?? null,
+                        'function_exists_pcov_start' => $state['function_exists_pcov_start'] ?? null,
+                        'pcov_enabled' => $state['pcov_enabled'] ?? null,
+                        'ri_pcov_ok' => $state['ri_pcov_ok'] ?? null,
+                    ],
+                );
+
+                continue;
+            }
+
+            $issues[] = new DriftEntry(
+                family: $this->key(),
+                key: 'tool.version_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Tool php-cli minor {$minor} does not match gateway intent.",
+                detail: [
+                    'tool' => $tool->name,
+                    'minor' => $minor,
+                    'variant' => $desiredVariant->value,
+                    'desired_variant' => $desiredVariant->value,
+                    'effective_variant' => $effectiveVariant->value,
+                    'install_contract' => $installContract,
+                    'matrix_cutover_pending' => $matrixCutoverPending,
+                    'classification' => $classification,
+                    'observed_patch' => $state['patch'] ?? null,
+                    'expected_patch' => $state['expected_patch'] ?? null,
+                ],
+            );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * A complete per-minor php-cli snapshot includes every supported minor with a state array.
+     *
+     * @param  array<array-key, mixed>  $minors
+     */
+    private function phpCliMinorSnapshotIsComplete(array $minors): bool
+    {
+        if ($minors === []) {
+            return false;
+        }
+
+        return array_all(PhpCliArtifactCatalog::SUPPORTED_MINORS, fn ($minor) => is_array($minors[$minor] ?? null));
+    }
+
     /**
      * @param  array<string, mixed>  $metadata
      */
@@ -560,7 +871,7 @@ final readonly class ToolsProbe
         $catalog = app(PhpRuntimeCatalog::class);
         $observedImages = array_values(array_filter(
             preg_split('/\R/', trim($result->stdout)) ?: [],
-            fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
+            static fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
         ));
         $versions = array_values(array_map(
             $catalog->versionForImage(...),
@@ -595,6 +906,7 @@ final readonly class ToolsProbe
             ...$this->checkNodeEligibility($tool, $allowProvisioning),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
+            ...$this->checkPhpCliRuntimeState($tool, $snapshot),
             ...$this->checkDockerProviderReachability($tool, $snapshot),
             ...$this->checkContainerState($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
@@ -602,6 +914,7 @@ final readonly class ToolsProbe
             ...$this->checkCredentialState($tool, $snapshot),
             ...$this->checkAgentCredentials($tool),
             ...$this->checkAgentUser($tool),
+            ...($this->agentConsumerUrlProbe ?? app(AgentToolConsumerUrlProbe::class))->check($tool, $snapshot),
         ];
     }
 
@@ -743,6 +1056,22 @@ final readonly class ToolsProbe
     {
         if ($tool->expected_state === 'absent') {
             return [];
+        }
+
+        // Only suppress the generic check when checkPhpCliRuntimeState has a complete
+        // per-minor snapshot to classify. Empty/malformed minors must not look healthy.
+        if ($tool->name === 'php-cli') {
+            $minors = $snapshot->get($tool->name)['minors'] ?? null;
+
+            if (is_array($minors) && $this->phpCliMinorSnapshotIsComplete($minors)) {
+                return [];
+            }
+
+            // Incomplete or empty minors: checkPhpCliRuntimeState emits probe_incomplete.
+            // Skip the generic path to avoid double-reporting the same failure.
+            if (is_array($minors)) {
+                return [];
+            }
         }
 
         $observed = $snapshot->get($tool->name);
@@ -1337,42 +1666,112 @@ final readonly class ToolsProbe
                     'throw' => false,
                 ],
             );
-            $data = $this->successData($result->stdout);
+        } catch (Throwable $exception) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'exception',
+                    error: $exception->getMessage(),
+                ),
+            ];
+        }
 
-            if (($data['runtime_user'] ?? null) !== true) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'tool.agent_user_missing',
-                        kind: DriftKind::Missing,
-                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
-                        detail: [
-                            'tool' => $tool->name,
-                            'node' => $tool->node->name,
-                        ],
-                    ),
-                ];
-            }
+        if (! $result->successful()) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'non_success',
+                    error: $this->summarizeDiagnostic($result->stderr !== '' ? $result->stderr : $result->stdout),
+                    exitCode: $result->exitCode,
+                ),
+            ];
+        }
 
-            if (($data['orbit_cli'] ?? null) !== true) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'tool.agent_orbit_cli_inaccessible',
-                        kind: DriftKind::Divergent,
-                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
-                        detail: [
-                            'tool' => $tool->name,
-                            'node' => $tool->node->name,
-                        ],
-                    ),
-                ];
-            }
-        } catch (Throwable) {
-            return [];
+        $data = $this->successData($result->stdout);
+
+        if ($data === []) {
+            return [
+                $this->agentRuntimeProbeFailed(
+                    $tool,
+                    reason: 'malformed_payload',
+                    error: 'empty or malformed agent runtime probe payload',
+                    exitCode: $result->exitCode,
+                ),
+            ];
+        }
+
+        if (($data['runtime_user'] ?? null) !== true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_user_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                    ],
+                ),
+            ];
+        }
+
+        if (($data['orbit_cli'] ?? null) !== true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.agent_orbit_cli_inaccessible',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'node' => $tool->node->name,
+                    ],
+                ),
+            ];
         }
 
         return [];
+    }
+
+    private function agentRuntimeProbeFailed(
+        NodeTool $tool,
+        string $reason,
+        string $error,
+        ?int $exitCode = null,
+    ): DriftEntry {
+        $detail = [
+            'tool' => $tool->name,
+            'node' => $tool->node?->name,
+            'reason' => $reason,
+            'error' => $this->summarizeDiagnostic($error),
+        ];
+
+        if ($exitCode !== null) {
+            $detail['exit_code'] = $exitCode;
+        }
+
+        return new DriftEntry(
+            family: $this->key(),
+            key: 'tool.agent_runtime_probe_failed',
+            kind: DriftKind::Unverifiable,
+            summary: "Tool {$tool->name} agent runtime could not be inspected.",
+            detail: $detail,
+        );
+    }
+
+    private function summarizeDiagnostic(string $value): string
+    {
+        $normalized = trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+
+        if ($normalized === '') {
+            return 'probe failed';
+        }
+
+        if (strlen($normalized) > 240) {
+            return substr($normalized, 0, 237).'...';
+        }
+
+        return $normalized;
     }
 
     private function localExecutor(): RunsInternalCommands
@@ -1401,6 +1800,11 @@ final readonly class ToolsProbe
             return [];
         }
 
+        // Failure envelopes must never be read as empty healthy success data.
+        if (array_key_exists('error', $payload)) {
+            return [];
+        }
+
         /** @var mixed $success */
         $success = $payload['success'] ?? null;
 
@@ -1411,7 +1815,7 @@ final readonly class ToolsProbe
         /** @var mixed $data */
         $data = $success['data'] ?? null;
 
-        if (! is_array($data)) {
+        if (! is_array($data) || $data === []) {
             return [];
         }
 

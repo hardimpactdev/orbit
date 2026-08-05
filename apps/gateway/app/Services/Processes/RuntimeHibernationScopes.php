@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -22,7 +22,7 @@ final readonly class RuntimeHibernationScopes
     public function resolve(string $type, int $id): ?RuntimeHibernationScope
     {
         return match ($type) {
-            'app-instance' => $this->resolveAppInstance($id),
+            'app-instance' => $this->resolveInstance($id),
             'workspace' => $this->resolveWorkspace($id),
             default => null,
         };
@@ -34,8 +34,8 @@ final readonly class RuntimeHibernationScopes
             return $this->resolveWorkspace($context->workspace->id);
         }
 
-        if ($context->appInstance instanceof AppInstance) {
-            return $this->resolveAppInstance($context->appInstance->id);
+        if ($context->instance instanceof Instance) {
+            return $this->resolveInstance($context->instance->id);
         }
 
         return null;
@@ -53,15 +53,15 @@ final readonly class RuntimeHibernationScopes
     {
         $scopes = [];
 
-        foreach (AppInstance::query()->with('app.node')->get() as $instance) {
-            $scope = $this->resolveAppInstance($instance->id);
+        foreach (Instance::query()->with('app.node')->get() as $instance) {
+            $scope = $this->resolveInstance($instance->id);
 
             if ($scope instanceof RuntimeHibernationScope && $this->isDevelopmentNode($scope->node)) {
                 $scopes[$scope->node->id][] = $scope;
             }
         }
 
-        foreach (Workspace::query()->with(['app.node', 'appInstance'])->get() as $workspace) {
+        foreach (Workspace::query()->with(['app.node', 'instance'])->get() as $workspace) {
             $scope = $this->resolveWorkspace($workspace->id);
 
             if ($scope instanceof RuntimeHibernationScope && $this->isDevelopmentNode($scope->node)) {
@@ -72,17 +72,17 @@ final readonly class RuntimeHibernationScopes
         return $scopes;
     }
 
-    private function resolveAppInstance(int $id): ?RuntimeHibernationScope
+    private function resolveInstance(int $id): ?RuntimeHibernationScope
     {
-        $instance = AppInstance::query()
+        $instance = Instance::query()
             ->with('app.node')
             ->find($id);
         $app = $instance?->app;
-        $node = $instance instanceof AppInstance
+        $node = $instance instanceof Instance
             ? $this->placement->nodeForInstance($instance)
             : null;
 
-        if (! $instance instanceof AppInstance || ! $app instanceof Project || ! $node instanceof Node) {
+        if (! $instance instanceof Instance || ! $app instanceof App || ! $node instanceof Node) {
             return null;
         }
 
@@ -95,7 +95,7 @@ final readonly class RuntimeHibernationScopes
                 app: $app,
                 workspace: null,
                 owner: $app,
-                appInstance: $instance,
+                instance: $instance,
             ),
         );
     }
@@ -103,18 +103,18 @@ final readonly class RuntimeHibernationScopes
     private function resolveWorkspace(int $id): ?RuntimeHibernationScope
     {
         $workspace = Workspace::query()
-            ->with(['app.node', 'appInstance'])
+            ->with(['app.node', 'instance'])
             ->find($id);
         $app = $workspace?->app;
-        $instance = $workspace?->appInstance;
+        $instance = $workspace?->instance;
         $node = $workspace instanceof Workspace
             ? $this->placement->nodeForWorkspace($workspace)
             : null;
 
         if (
             ! $workspace instanceof Workspace
-            || ! $app instanceof Project
-            || ! $instance instanceof AppInstance
+            || ! $app instanceof App
+            || ! $instance instanceof Instance
             || ! $node instanceof Node
         ) {
             return null;
@@ -129,7 +129,7 @@ final readonly class RuntimeHibernationScopes
                 app: $app,
                 workspace: $workspace,
                 owner: $workspace,
-                appInstance: $instance,
+                instance: $instance,
             ),
         );
     }

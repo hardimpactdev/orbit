@@ -9,6 +9,7 @@ use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Throwable;
 
@@ -17,6 +18,17 @@ final readonly class AnalyticsProxyDoctorProbe
     public const string RouterRouteKey = 'proxy.analytics.router_route_missing';
 
     public const string RouterRouteOrphanedKey = 'proxy.analytics.router_route_orphaned';
+
+    /**
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
+    {
+        return DoctorRestoreActionId::map([
+            self::RouterRouteKey,
+            self::RouterRouteOrphanedKey,
+        ]);
+    }
 
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,

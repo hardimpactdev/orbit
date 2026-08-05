@@ -19,9 +19,9 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionRegistry;
-use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Nodes\Roles\NodeRoleActivator;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -49,7 +49,6 @@ final readonly class NodesProbe
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
-        private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
         private ?NodeRoleActivator $nodeRoleActivator = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
@@ -84,7 +83,6 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkRoleAssignments($node));
         $drift = array_merge($drift, $this->checkAgentIntent($node));
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
-        $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
         $drift = array_merge($drift, $this->checkAccessGrants($node));
         $drift = array_merge($drift, $this->checkWireguardIdentity($node));
         $drift = array_merge($drift, $this->checkPlatformReality($node));
@@ -551,44 +549,6 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkAgentIdeDefault(Node $node): array
-    {
-        $config = $node->agent_ide_config ?? [];
-
-        if (! is_array($config) || $config === []) {
-            return [];
-        }
-
-        foreach ($config as $key => $value) {
-            if ($key === 'adapter') {
-                if (! in_array($value, $this->agentIdeDefaults()->supportedAdapters(), true)) {
-                    return [
-                        new DriftEntry(
-                            family: $this->key(),
-                            key: 'node.agent_ide_default_invalid',
-                            kind: DriftKind::Divergent,
-                            summary: "Node agent IDE adapter '{$value}' is not supported.",
-                        ),
-                    ];
-                }
-            } elseif (! in_array($key, $this->agentIdeDefaults()->supportedAdapters(), true)) {
-                return [
-                    new DriftEntry(
-                        family: $this->key(),
-                        key: 'node.agent_ide_default_invalid',
-                        kind: DriftKind::Divergent,
-                        summary: "Node agent IDE configuration key '{$key}' is not a supported adapter.",
-                    ),
-                ];
-            }
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
     private function checkAccessGrants(Node $node): array
     {
         $drift = [];
@@ -639,7 +599,7 @@ final readonly class NodesProbe
 
         foreach ($grants as $grant) {
             /** @var list<string> $permissions */
-            $permissions = app(ProjectInstancePermissionMigrator::class)->current($grant->permissions ?? []);
+            $permissions = is_array($grant->permissions) ? $grant->permissions : [];
 
             if ($permissions === []) {
                 continue;
@@ -969,11 +929,6 @@ final readonly class NodesProbe
         );
     }
 
-    private function agentIdeDefaults(): NodeAgentIdeDefaults
-    {
-        return $this->agentIdeDefaults ?? app(NodeAgentIdeDefaults::class);
-    }
-
     /**
      * @return list<DriftEntry>
      */
@@ -992,19 +947,15 @@ final readonly class NodesProbe
         return true;
     }
 
-    public function reconcile(Node $node, DriftEntry $entry): void
+    /**
+     * Codes this probe's reconcile path can restore. DoctorRestoreSupport and
+     * catalog restorable flags aggregate this map — do not duplicate elsewhere.
+     *
+     * @return array<string, string> code => restore_action
+     */
+    public static function restoreSupport(): array
     {
-        if ($entry->key === 'node.updates') {
-            if ($this->updateIssueCode($entry) === 'node.updates_reboot_required') {
-                throw new RuntimeException('Node update reboot-required drift is not restorable.');
-            }
-
-            $this->reconcileUpdates($node);
-
-            return;
-        }
-
-        $fixableKeys = [
+        $map = DoctorRestoreActionId::map([
             'node.managed_agent_intent_invalid',
             'node.agent_expectation_stale',
             'node.wireguard_peer_missing',
@@ -1019,7 +970,40 @@ final readonly class NodesProbe
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
             'node.security.sysctl',
-        ];
+            'node.security.home_perms',
+        ]);
+
+        // Emitted as key node.updates with detail.code variants; one restorer.
+        foreach ([
+            'node.updates',
+            'node.updates_config_missing',
+            'node.updates_config_mismatch',
+            'node.updates_dry_run_failed',
+            'node.updates_last_run_failed',
+            'node.updates_unverifiable',
+        ] as $code) {
+            $map[$code] = 'restore_node_updates';
+        }
+
+        return $map;
+    }
+
+    public function reconcile(Node $node, DriftEntry $entry): void
+    {
+        if ($entry->key === 'node.updates') {
+            if ($this->updateIssueCode($entry) === 'node.updates_reboot_required') {
+                throw new RuntimeException('Node update reboot-required drift is not restorable.');
+            }
+
+            $this->reconcileUpdates($node);
+
+            return;
+        }
+
+        $fixableKeys = array_values(array_filter(
+            array_keys(self::restoreSupport()),
+            static fn (string $code): bool => ! str_starts_with($code, 'node.updates'),
+        ));
 
         if (! in_array($entry->key, $fixableKeys, true)) {
             throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'.");

@@ -46,6 +46,22 @@ function createToolsProbeAppHostNode(array $attributes = []): Node
     ]);
 }
 
+function toolsProbeOrbitRootCaPath(): string
+{
+    $configRoot = config('orbit.paths.config_root');
+    expect($configRoot)->toBeString();
+    $caDir = rtrim((string) $configRoot, '/').'/ca';
+    if (! is_dir($caDir)) {
+        mkdir($caDir, 0o755, true);
+    }
+    $path = $caDir.'/root.crt';
+    if (! is_file($path)) {
+        file_put_contents($path, "-----BEGIN CERTIFICATE-----\ntest-orbit-root\n-----END CERTIFICATE-----\n");
+    }
+
+    return $path;
+}
+
 function createToolsProbeAgentNode(): Node
 {
     $node = Node::factory()->create([
@@ -104,7 +120,8 @@ function toolsProbeLocalExecutor(): RemoteLocalExecutor
  */
 function toolsProbeAgentRouteConfig(string $tool): array
 {
-    $upstream = 'http://host.docker.internal:8080';
+    $port = 8080;
+    $upstream = "http://host.docker.internal:{$port}";
 
     return [
         'target' => ['type' => 'upstream', 'value' => $upstream],
@@ -127,6 +144,136 @@ function toolsProbeAgentRouteSourceHash(Node $node, string $tool): string
 function toolsProbeCapabilityStdout(string $path, string $version = '', string $state = 'running'): string
 {
     return implode("\t", [$path, $version, $state, '', '', '', '', '', '', ''])."\n";
+}
+
+/**
+ * Absolute path that does not exist on the test host so bare `[ -x "$binary" ]` fails.
+ */
+function toolsProbeInaccessibleOwnerBinaryPath(): string
+{
+    return '/home/agent/.hermes/bin/hermes-owner-probe-'.bin2hex(random_bytes(4));
+}
+
+/**
+ * Install a PATH-first fake `sudo` that only supports owner-scoped probe shapes.
+ *
+ * @param  array{allow_user?: string, test_x_ok?: bool, binary?: string, version_line?: string}  $config
+ * @return array{dir: string, path_prefix: string}
+ */
+function toolsProbeInstallFakeSudo(array $config = []): array
+{
+    $dir = sys_get_temp_dir().'/orbit-fake-sudo-'.bin2hex(random_bytes(8));
+    mkdir($dir, 0o700, true);
+
+    $allowUser = $config['allow_user'] ?? 'agent';
+    $testXOk = $config['test_x_ok'] ?? true ? '1' : '0';
+    $binary = $config['binary'] ?? '';
+    $versionLine = $config['version_line'] ?? 'Hermes 2026.7.1-2 (owner-probe)';
+
+    $script = <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        user=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -u)
+                    user="${2:-}"
+                    shift 2
+                    ;;
+                -H|-n|-S|-k|-E|-A)
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -*)
+                    shift
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        expected_user="${ORBIT_FAKE_SUDO_ALLOW_USER:-agent}"
+        if [ "$user" != "$expected_user" ]; then
+            printf 'fake-sudo: unexpected user %s\n' "$user" >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = "test" ] && [ "${2:-}" = "-x" ]; then
+            target="${3:-}"
+            if [ "${ORBIT_FAKE_SUDO_TEST_X_OK:-1}" != "1" ]; then
+                exit 1
+            fi
+            if [ -n "${ORBIT_FAKE_SUDO_BINARY:-}" ] && [ "$target" != "${ORBIT_FAKE_SUDO_BINARY}" ]; then
+                exit 1
+            fi
+            if [ -z "$target" ]; then
+                exit 1
+            fi
+            exit 0
+        fi
+
+        if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-lc" ]; then
+            cmd="${3:-}"
+            case "$cmd" in
+                *--version*)
+                    printf '%s\n' "${ORBIT_FAKE_SUDO_VERSION_LINE:-Hermes 1.0.0}"
+                    exit 0
+                    ;;
+            esac
+            exit 0
+        fi
+
+        printf 'fake-sudo: unsupported argv: %s\n' "$*" >&2
+        exit 1
+        BASH;
+
+    $path = $dir.'/sudo';
+    file_put_contents($path, $script);
+    chmod($path, 0o755);
+
+    return [
+        'dir' => $dir,
+        'path_prefix' => $dir,
+        'env' => [
+            'ORBIT_FAKE_SUDO_ALLOW_USER' => $allowUser,
+            'ORBIT_FAKE_SUDO_TEST_X_OK' => $testXOk,
+            'ORBIT_FAKE_SUDO_BINARY' => $binary,
+            'ORBIT_FAKE_SUDO_VERSION_LINE' => $versionLine,
+        ],
+    ];
+}
+
+/**
+ * @param  array{binary: string, binary_as_user?: string, version_command?: string}  $metadata
+ */
+function toolsProbeOwnerScopedCatalog(string $slug, array $metadata): ToolCatalog
+{
+    return new ToolCatalog(new ToolDefinitionRegistry([
+        new class($slug, $metadata) extends BaseTool {
+            /**
+             * @param  array{binary: string, binary_as_user?: string, version_command?: string}  $metadata
+             */
+            public function __construct(
+                private string $toolSlug,
+                private array $metadata,
+            ) {}
+
+            public function slug(): string
+            {
+                return $this->toolSlug;
+            }
+
+            public function probeMetadata(): array
+            {
+                return $this->metadata;
+            }
+        },
+    ]));
 }
 
 function toolsProbeDockerProviderStdout(
@@ -340,16 +487,20 @@ describe('ToolsProbe', function (): void {
 
         $probe->introspect($tool);
 
+        // php-cli uses the dedicated php_cli_runtimes probe: absolute paths are
+        // passed as quoted literals to probe_minor (not a PATH-style binary= assignment).
         expect($shell->script)
-            ->toContain("binary='/opt/orbit/php/8.5/bin/php'")
-            ->and($shell->script)
             ->toStartWith('set -eu')
             ->and($shell->script)
-            ->toContain('case "$binary" in')
+            ->toContain('probe_minor')
+            ->and($shell->script)
+            ->toContain('probe_minor "8.5" "8.5.8" "/opt/orbit/php/8.5/bin/php"')
+            ->and($shell->script)
+            ->toContain('binary="$3"')
             ->and($shell->script)
             ->toContain('[ -x "$binary" ]')
             ->and($shell->script)
-            ->toContain('command -v');
+            ->not->toContain('command -v');
     });
 
     it('probes Claude Code through the persisted default install user', function (): void {
@@ -512,6 +663,167 @@ describe('ToolsProbe', function (): void {
             ->toMatchArray([
                 'installed' => false,
             ]);
+    });
+
+    it('observes owner-scoped absolute binaries via sudo -u test -x in single capability probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $version = 'Hermes 2026.7.1-2 (owner-probe-single)';
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => true,
+            'binary' => $binary,
+            'version_line' => $version,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $shell = new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']);
+        $probe = toolsProbeWithRemoteShell($shell, $catalog);
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($snapshot->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => $binary,
+                'version' => $version,
+            ]);
+    });
+
+    it('marks owner-scoped absolute binaries absent when sudo -u test -x fails in single probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => false,
+            'binary' => $binary,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($snapshot->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
+    it('observes owner-scoped absolute binaries via sudo -u test -x in batch capability probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $version = 'Hermes 2026.7.1-2 (owner-probe-batch)';
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => true,
+            'binary' => $binary,
+            'version_line' => $version,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshots = $probe->introspectMany([$tool]);
+
+        expect($snapshots['owner-probe-tool']->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => $binary,
+                'version' => $version,
+            ]);
+    });
+
+    it('marks owner-scoped absolute binaries absent when sudo -u test -x fails in batch probes', function (): void {
+        $binary = toolsProbeInaccessibleOwnerBinaryPath();
+        $fake = toolsProbeInstallFakeSudo([
+            'allow_user' => 'agent',
+            'test_x_ok' => false,
+            'binary' => $binary,
+        ]);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'owner-probe-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('owner-probe-tool', [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => 'sudo -u agent -H bash -lc '.escapeshellarg("{$binary} --version"),
+        ]);
+        $probe = toolsProbeWithRemoteShell(
+            new PathPrefixedExecutingToolsProbeRemoteShell($fake['path_prefix'], $fake['env']),
+            $catalog,
+        );
+
+        $snapshots = $probe->introspectMany([$tool]);
+
+        expect($snapshots['owner-probe-tool']->get('owner-probe-tool'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
+    it('emits owner-scoped test -x for absolute binaries with binary_as_user in single and batch scripts', function (): void {
+        $binary = '/home/agent/.hermes/bin/hermes';
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'hermes']);
+        $catalog = toolsProbeOwnerScopedCatalog(slug: 'hermes', metadata: [
+            'binary' => $binary,
+            'binary_as_user' => 'agent',
+            'version_command' => "sudo -u agent -H bash -lc '{$binary} --version'",
+        ]);
+
+        $singleShell = new RecordingToolsProbeRemoteShell(exitCode: 1, stdout: '');
+        toolsProbeWithRemoteShell($singleShell, $catalog)->introspect($tool);
+
+        expect($singleShell->script)
+            ->toContain('# orbit-tool-probe:capability')
+            ->toContain('binary_as_user=')
+            ->toContain('sudo -u')
+            ->toContain('test -x')
+            ->toContain($binary);
+
+        $batchShell = new RecordingToolsProbeRemoteShell;
+        toolsProbeWithRemoteShell($batchShell, $catalog)->introspectMany([$tool]);
+
+        expect($batchShell->script)
+            ->toContain('# orbit-tool-probe:capability-batch')
+            ->toContain('binary_as_user=')
+            ->toContain('sudo -u')
+            ->toContain('test -x')
+            ->toContain($binary);
+    });
+
+    it('keeps bare absolute [ -x ] when binary_as_user is absent', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'bare-abs-tool']);
+        $catalog = toolsProbeOwnerScopedCatalog('bare-abs-tool', [
+            'binary' => '/usr/local/bin/example-tool',
+            'version_command' => '/usr/local/bin/example-tool --version',
+        ]);
+        $shell = new RecordingToolsProbeRemoteShell(exitCode: 1, stdout: '');
+        toolsProbeWithRemoteShell($shell, $catalog)->introspect($tool);
+
+        expect($shell->script)
+            ->toContain('[ -x "$binary" ]')
+            ->and($shell->script)
+            ->not->toMatch('/binary_as_user=\'[a-z]/');
     });
 
     it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
@@ -1431,7 +1743,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
 
@@ -1444,16 +1756,16 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
-            'source_hash' => toolsProbeAgentRouteSourceHash($node, 'openclaw'),
-            'config' => toolsProbeAgentRouteConfig('openclaw'),
+            'source_hash' => toolsProbeAgentRouteSourceHash($node, tool: 'hermes'),
+            'config' => toolsProbeAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
@@ -1465,12 +1777,12 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'config' => ['owner_name' => 'hermes'],
         ]);
@@ -1484,16 +1796,16 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'upstream',
             'source_hash' => str_repeat('a', 64),
-            'config' => toolsProbeAgentRouteConfig('openclaw'),
+            'config' => toolsProbeAgentRouteConfig(tool: 'hermes'),
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
@@ -1505,19 +1817,19 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
+            'domain' => 'hermes.agent',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'source_hash' => str_repeat('b', 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
                 'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
+                'owner_name' => 'hermes',
             ],
         ]);
 
@@ -1530,7 +1842,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
             'credentials' => null,
         ]);
@@ -1544,13 +1856,13 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAgentNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
-            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+            'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing'))->toBeNull();
@@ -1571,7 +1883,7 @@ describe('ToolsProbe', function (): void {
         ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
         $probe = toolsProbeWithAgentPush(new ToolsProbeRemoteShell(exitCode: 1));
@@ -1602,14 +1914,14 @@ describe('ToolsProbe', function (): void {
         ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'openclaw',
+            'name' => 'hermes',
             'expected_state' => 'installed',
-            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+            'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
         ]);
         $probe = toolsProbeWithAgentPush(new QueuedToolsProbeRemoteShell);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
-            'openclaw' => ['installed' => true],
+            'hermes' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_orbit_cli_inaccessible')?->kind)->toBe(DriftKind::Divergent);
@@ -1619,6 +1931,154 @@ describe('ToolsProbe', function (): void {
                 url: 'http://10.44.0.84:9477/v1/commands',
             ),
         );
+    });
+
+    it('reports unverifiable agent runtime when inspection raises', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                throw new RuntimeException('agent runtime unavailable');
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'hermes' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail)
+            ->toMatchArray([
+                'tool' => 'hermes',
+                'reason' => 'exception',
+                'error' => 'agent runtime unavailable',
+            ]);
+    });
+
+    it('reports unverifiable agent runtime when inspection returns non-success', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 3,
+                    stdout: '',
+                    stderr: 'id: agent: no such user',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'hermes' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail)
+            ->toMatchArray([
+                'reason' => 'non_success',
+                'error' => 'id: agent: no such user',
+                'exit_code' => 3,
+            ]);
+    });
+
+    it('reports unverifiable agent runtime when inspection payload is empty or malformed', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '{not-valid',
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'hermes' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->detail['reason'] ?? null)
+            ->toBe('malformed_payload');
+    });
+
+    it('reports unverifiable agent runtime for failure JSON envelopes with exit zero', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            public function runInternal(
+                \App\Models\Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: json_encode([
+                        'error' => [
+                            'code' => 'probe_failed',
+                            'message' => 'runtime probe refused',
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        };
+        $probe = new ToolsProbe(localExecutor: $executor);
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'hermes' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_runtime_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.agent_user_missing'))
+            ->toBeNull();
     });
 });
 
@@ -1762,3 +2222,117 @@ final class ExecutingToolsProbeRemoteShell implements RemoteShell
         );
     }
 }
+
+final class PathPrefixedExecutingToolsProbeRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, string>  $env
+     */
+    public function __construct(
+        private string $pathPrefix,
+        private array $env = [],
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $path = $this->pathPrefix.':'.(getenv('PATH') ?: '/usr/bin:/bin:/usr/sbin:/sbin');
+        $lines = ['export PATH='.escapeshellarg($path)];
+
+        foreach ($this->env as $key => $value) {
+            $lines[] = 'export '.escapeshellarg($key).'='.escapeshellarg($value);
+        }
+
+        $lines[] = $script;
+        $result = Process::run(['bash', '-c', implode("\n", $lines)]);
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode(),
+            stdout: $result->output(),
+            stderr: $result->errorOutput(),
+            durationMs: 1,
+        );
+    }
+}
+
+it('flags unreachable autonomous-agent consumer https urls for installed agent tools', function (): void {
+    toolsProbeOrbitRootCaPath();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://hermes.agent' => Http::response('bad gateway', 502),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'hermes',
+        'expected_state' => 'installed',
+        'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'hermes' => ['installed' => true],
+    ]));
+
+    $issue = toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable');
+
+    expect($issue)
+        ->not
+        ->toBeNull()
+        ->and($issue?->kind)
+        ->toBe(DriftKind::Divergent)
+        ->and($issue?->detail['expected_url'] ?? null)
+        ->toBe('https://hermes.agent')
+        ->and($issue?->detail['observed'] ?? null)
+        ->toBe('HTTP 502')
+        ->and($issue?->detail['next_command'] ?? null)
+        ->toContain('--family=proxy');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://hermes.agent');
+});
+
+it('treats http 404 consumer responses as unreachable', function (): void {
+    toolsProbeOrbitRootCaPath();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://hermes.agent' => Http::response('missing', 404),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'hermes',
+        'expected_state' => 'installed',
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'hermes' => ['installed' => true],
+    ]));
+
+    expect(toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable')?->detail['observed'] ?? null)
+        ->toBe('HTTP 404');
+});
+
+it('accepts 2xx autonomous-agent consumer https urls', function (): void {
+    toolsProbeOrbitRootCaPath();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://hermes.agent' => Http::response('ok', 200),
+    ]);
+
+    $node = createToolsProbeAgentNode();
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'hermes',
+        'expected_state' => 'installed',
+        'credentials' => ['fields' => ['url' => 'https://hermes.agent']],
+    ]);
+
+    $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+        'hermes' => ['installed' => true],
+    ]));
+
+    expect(toolProbeIssue($drift, 'tool.agent_consumer_url_unreachable'))->toBeNull();
+});

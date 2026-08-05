@@ -175,70 +175,56 @@ Input mode behavior is split out of the canonical command contract:
 
 ### Configuration Delta Rules
 
-- Compare each supplied field with the current stored value.
-- Fields that match the current value are no-ops and do not appear in
-  `changed`.
-- Update the node record with the new values for changed fields.
-- Changing `tld` updates the mandatory node identity for an active node. The
-  node family reconciles its concrete `orbit.<node-tld>` record for every role
-  and reconciles wildcard/local directives only when the node carries
-  `app-dev` or `agent`. Repair after that metadata write belongs to the
-  node-family Doctor path.
-- Changing `gateway_endpoint` updates the endpoint stored at node level. The
-  changed field triggers node-owned artifact re-applying for workload-role
-  targets.
-- Changing `user` updates the Orbit owner/runtime user stored at node level.
-  The changed field affects subsequent Agent-push execution context and may
-  trigger node-owned artifact re-applying where artifacts depend on that user.
-- Changing `public_ipv4` on an `app-dev` node may change the managed
-  `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
-  LAN address. The private backend port remains WireGuard-only.
-- Changing `managed` records explicit roleless-operator Agent intent. Workload
-  role intent remains derived. The changed field appears in `changed` when the
-  supplied boolean differs from the stored value.
+- Compare each supplied field with the current stored value. Matching values are
+  no-ops and do not appear in `changed`. Update the node record only for
+  changed fields.
+- Field-specific effects for changed values:
+  - `tld` updates mandatory node identity and reconciles `orbit.<node-tld>`
+    (plus `app-dev`/`agent` wildcards). Later repair belongs on the node-family
+    Doctor path.
+  - `gateway_endpoint` stores the endpoint and may re-apply workload-role
+    artifacts.
+  - `user` updates the Orbit owner/runtime user for later Agent-push context.
+  - `public_ipv4` on `app-dev` may retarget managed `orbit-caddy` LAN HTTP/HTTPS
+    bindings. The private backend stays WireGuard-only.
+  - `managed` records explicit roleless-operator Agent intent. Workload intent
+    remains derived.
 
 ### Artifact Re-applying Rules
 
 - When a changed field has node-side effects, re-apply the node-owned host
-  artifacts associated with that changed field.
-- The set of fields that triggers node-side re-applying is implementation
-  detail; the contract only promises that any drift after a successful
-  configuration write surfaces under the warning channel.
+  artifacts associated with that field. Which fields trigger re-applying is an
+  implementation detail; any drift after a successful configuration write must
+  surface under the warning channel.
 
 ### Drift Warning Rules
 
-- If artifact applying fails after configuration was committed, the command
-  result remains a top-level `success` because gateway-owned configuration was
-  written.
-- The remaining node-side artifact drift is node-family drift owned by
-  `doctor --family=node`.
-- The selected output renderer reports the warning with the recovery path
-  `doctor --family=node --restore`.
-- Renderer contracts own the exact warning shape.
-- Return the updated node name, the `changed` array, and any drift warnings.
+- If artifact applying fails after configuration was committed, the result
+  remains top-level `success` because gateway-owned configuration was written.
+  Remaining node-side drift belongs to `doctor --family=node`, and the selected
+  renderer reports the warning with recovery path
+  `doctor --family=node --restore`. Renderer contracts own the exact warning
+  shape. Return the updated node name, the `changed` array, and any warnings.
 
 ### Scope Boundaries
 
 `node:update` must not:
-- Change the target node's role. Role change is an identity migration and is
-  outside `node:update` scope. There is no `--role` input flag and no future
-  migration command is named yet; a future explicit role-migration contract
-  will own that flow.
-- Update operating system packages, Orbit installations, tools, or system
-  services beyond the artifacts that the node owns and that are directly affected by the changed field.
-- Update app runtime policy, tool state, firewall policy, proxy routes,
-  processes, schedules, or deployment pipelines.
+- Change the target node's role assignments. There is no `--role` input flag on
+  `node:update`; use
+  [`node role:remove`](../../14_node-role-remove/node-role-remove.md) and
+  [`node role:add`](../../12_node-role-add/node-role-add.md) for role-assignment
+  changes.
+- Update OS packages, Orbit installs, tools, system services, app runtime
+  policy, firewall policy, proxy routes, processes, schedules, or deployment
+  pipelines beyond artifacts the node owns that the changed field affects.
 - Use SSH for steady-state artifact re-applying. Gateway work must remain local;
-  non-gateway node-local work uses Agent push.
-- Mint identity, write peer material, or grant access.
-- Treat an unchanged-value update as a failure.
-- Install, start, update, restart, or uninstall the Orbit Agent process.
-- Persist inferred role-derived intent in the `managed` column of the `nodes`
-  table; workload roles are evaluated dynamically, while only roleless
-  `--managed` opt-in is stored.
-- Re-apply node-owned artifacts when configuration did not change. Re-applying
-  unchanged gateway-tracked configuration is owned by
-  `doctor --family=node --restore`, not `node:update`.
+  non-gateway node-local work uses Agent push. Do not mint identity, write peer
+  material, or grant access.
+- Treat an unchanged-value update as a failure, install or lifecycle-manage the
+  Orbit Agent process, persist inferred role-derived intent in the `managed`
+  column (only roleless `--managed` opt-in is stored), or re-apply node-owned
+  artifacts when configuration did not change (that belongs to
+  `doctor --family=node --restore`).
 
 No-op updates where all supplied values equal the current stored values return
 success with an empty `changed` array. The `changed` array represents the
@@ -283,7 +269,7 @@ under `success.meta.warnings[]`. See the
   drift created by failed artifact re-applying.
 - `node:update` does not probe, infer, validate, restore, adopt, or drift-check
   public IPv4/IPv6 metadata. See [`node-doctor.md`](../../node-doctor.md).
-- Broader drift in tools, firewall rules, projects, instances, workspaces, processes,
+- Broader drift in tools, firewall rules, apps, instances, workspaces, processes,
   schedules, and proxy routes is verified by those family contracts.
 
 ## Activity Logging

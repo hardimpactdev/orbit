@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDashboardSummary, createEndpointStatus } from './dashboard-data.ts';
 
-test('groups project instances, processes, and tools by node', () => {
+test('groups app instances, processes, and tools by node', () => {
     const summary = createDashboardSummary(
         {
             nodes: {
@@ -24,9 +24,9 @@ test('groups project instances, processes, and tools by node', () => {
                     ],
                 },
             },
-            projects: {
+            apps: {
                 data: {
-                    projects: [
+                    apps: [
                         {
                             name: 'orbit-docs',
                             instances: [{ name: 'local', node: 'mini', environment: 'dev', status: 'ready' }],
@@ -44,7 +44,7 @@ test('groups project instances, processes, and tools by node', () => {
                         {
                             name: 'queue',
                             node_name: 'mini',
-                            project_name: 'orbit-docs',
+                            app_name: 'orbit-docs',
                             runtime: 'launchd',
                             status: 'running',
                         },
@@ -64,7 +64,7 @@ test('groups project instances, processes, and tools by node', () => {
     );
 
     assert.equal(summary.totals.nodes, 2);
-    assert.equal(summary.totals.projects, 2);
+    assert.equal(summary.totals.apps, 2);
     assert.equal(summary.totals.instances, 2);
     assert.equal(summary.totals.databases, 1);
     assert.equal(summary.totals.processes, 1);
@@ -74,7 +74,7 @@ test('groups project instances, processes, and tools by node', () => {
     assert.equal(summary.apiStatuses.every(status => status.status === 'loaded'), true);
 
     const mini = summary.nodeGroups.find(group => group.node.name === 'mini');
-    assert.equal(mini?.instances[0]?.project, 'orbit-docs');
+    assert.equal(mini?.instances[0]?.app, 'orbit-docs');
     assert.equal(mini?.instances[0]?.name, 'local');
     assert.equal(mini?.databases[0]?.name, 'mini');
     assert.deepEqual(mini?.node.roles, ['app-dev', 'database']);
@@ -83,7 +83,7 @@ test('groups project instances, processes, and tools by node', () => {
     assert.equal(mini?.statusTone, 'healthy');
 
     const production = summary.nodeGroups.find(group => group.node.name === 'prod-1');
-    assert.equal(production?.instances[0]?.project, 'billing');
+    assert.equal(production?.instances[0]?.app, 'billing');
     assert.equal(production?.tools[0]?.status, 'missing');
     assert.equal(production?.statusTone, 'offline');
 });
@@ -91,7 +91,7 @@ test('groups project instances, processes, and tools by node', () => {
 test('detects Valkey but not Redis as database inventory', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [{ name: 'storage-1', status: 'active' }] } },
-        projects: { data: { projects: [] } },
+        apps: { data: { apps: [] } },
         processes: { data: { processes: [] } },
         tools: {
             data: {
@@ -123,7 +123,7 @@ test('reads Scramble node role payloads', () => {
                 },
             },
         },
-        projects: { success: { data: { projects: [] } } },
+        apps: { success: { data: { apps: [] } } },
         processes: { success: { data: { processes: [] } } },
         tools: { success: { data: { tools: [] } } },
     });
@@ -134,14 +134,14 @@ test('reads Scramble node role payloads', () => {
 test('preserves endpoint failures next to partial inventory', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [{ name: 'mini', status: 'active' }] } },
-        projects: undefined,
+        apps: undefined,
         processes: { data: { processes: [{ name: 'queue', node_name: 'mini' }] } },
         tools: undefined,
         apiStatuses: [
             createEndpointStatus('nodes', 'loaded', 'Loaded'),
-            createEndpointStatus('projects', 'failed', 'A node, project, instance, or workspace context is required.'),
+            createEndpointStatus('apps', 'failed', 'A node, app, instance, or workspace context is required.'),
             createEndpointStatus('processes', 'loaded', 'Loaded'),
-            createEndpointStatus('tools', 'failed', 'A node, project, instance, or workspace context is required.'),
+            createEndpointStatus('tools', 'failed', 'A node, app, instance, or workspace context is required.'),
         ],
     });
 
@@ -153,9 +153,9 @@ test('preserves endpoint failures next to partial inventory', () => {
 test('keeps runtime records visible when the node list omits their node', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [] } },
-        projects: {
+        apps: {
             data: {
-                projects: [{
+                apps: [{
                     name: 'orphan-project',
                     instances: [{ name: 'production', node: 'missing-node' }],
                 }],
@@ -167,6 +167,6 @@ test('keeps runtime records visible when the node list omits their node', () => 
 
     assert.equal(summary.nodeGroups.length, 1);
     assert.equal(summary.nodeGroups[0]?.node.name, 'missing-node');
-    assert.equal(summary.nodeGroups[0]?.instances[0]?.project, 'orphan-project');
+    assert.equal(summary.nodeGroups[0]?.instances[0]?.app, 'orphan-project');
     assert.equal(summary.nodeGroups[0]?.hasRuntimeInventory, true);
 });

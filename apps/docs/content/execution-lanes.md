@@ -39,7 +39,7 @@ host Python, host SQLite, or host database client binaries. The
 CLI/local-executor artifact runs in the binary's embedded PHP in production
 installs. Source-mounted Docker/Incus development and E2E nodes invoke
 `<source>/apps/cli/orbit`. Host PHP/PHP-FPM is not the app/workspace *web*
-runtime — FrankenPHP containers serve applications. Project-source CLI (`php`, `composer`,
+runtime — FrankenPHP containers serve applications. App-source CLI (`php`, `composer`,
 `artisan`, the Laravel installer) runs on the app node's host PHP toolchain
 through an Agent-pushed allowlisted executor.
 
@@ -150,12 +150,19 @@ Operation tokens are signed with the gateway's dedicated operation-token key,
 carry a key id for rotation, bind the exact per-attempt operation-run id, target
 node, command, and
 canonical hash of the dispatched `argv`, `cwd`, environment, and input, and are
-checked for not-before/expiry before use. Verification consumes the
-corresponding operation-run row; a second verification for the same attempt id
-returns a distinct already-dispatched denial instead of authorizing another
-node-local execution. The row's `operation_id` remains the logical grouping key
-for retries or concurrent fan-out that share caller metadata; consuming one
-attempt never consumes sibling rows in that logical group.
+checked for not-before/expiry before use. The bound environment is the shared
+allowlisted set defined by core `OperationTokenEnvironment`
+(`APP_KEY`, `HOME`, `ORBIT_BIN_PATH`, `ORBIT_CONFIG_PATH`,
+`ORBIT_INSTALL_METADATA_PATH`, `ORBIT_WG_EASY_DB_PATH`). Gateway minting and CLI
+`OperationTokenGuard` verification both filter through that helper so the
+minted hash matches the verification reconstruction. `force_remote_host` further
+collapses the bound environment to `HOME` only and unsets the other allowlisted
+keys on the host process. Verification consumes the corresponding operation-run
+row; a second verification for the same attempt id returns a distinct
+already-dispatched denial instead of authorizing another node-local execution.
+The row's `operation_id` remains the logical grouping key for retries or
+concurrent fan-out that share caller metadata; consuming one attempt never
+consumes sibling rows in that logical group.
 
 Gateway API requests normally authenticate by WireGuard peer identity. The
 `/api/internal-executor/token/verify` endpoint has one scoped exception for
@@ -193,26 +200,37 @@ topologies may supply their own explicit container name.
 #### Result-boundary redaction patterns
 
 Activity rows, operation_runs rows, internal-command JSON results, and
-exception messages must never contain raw secret material. Every redaction
-layer (the internal command's own pre-serialization scan, the gateway-side
-`OperationResultHandler`, and `RemoteLocalExecutor`'s exception sanitizer)
-scrubs values matching this pattern set:
+exception messages must never contain raw secret material. Orbit uses two
+intentional semantics — strict rejection at typed result/progress boundaries,
+and best-effort scrubbing at activity/operation persistence. Defense in depth
+does not license callers to emit secrets; Loggable properties and typed
+results must still be secret-free by contract.
 
-- `--operation-token=...` arguments (with or without whitespace around `=`)
-  and the exact minted token value
-- keys named `operation_token`, `executor_secret`, `password`, `bearer`,
-  `secret`, `_token`, `api_key`
-- substrings matching PEM blocks
+**Strict typed result and progress boundaries** (`ResultBoundaryRedactionPolicy`
+via internal-command pre-serialization, `OperationResultHandler`, and framed
+progress recognition) reject the payload before persistence when:
+
+- any key name contains a forbidden fragment: `operation_token`,
+  `executor_secret`, `password`, `bearer`, `secret`, `_token`, `api_key`
+- any leaf string embeds a PEM block
   (`-----BEGIN [A-Z ]+-----` through `-----END [A-Z ]+-----`)
+- an unknown key appears for a declared typed operation contract (fail closed)
 
-Redaction is applied at both the internal-command result boundary (before
-JSON serialization) and the gateway `OperationResultHandler` (before
-persistence). Tests assert both layers for every pattern.
+**Persistence safety net** (`SecretSummaryRedactor` on `ActivityLogger` for
+final merged properties and description, and on `OperationRunRecorder` for
+result/error/summaries) redacts rather than rejects. It covers key-shaped
+APP_KEY / application key, password / password-hash, secret, token, API /
+access / refresh / operation tokens, executor secret, private / pre-shared
+keys, bearer, and compound or hyphen variants across nested properties,
+summaries, and descriptions. It also scrubs complete PEM blocks and real
+authorization syntax (`Authorization: Bearer …`, `Proxy-Authorization: …`,
+standalone `Bearer <credential>`). `RemoteLocalExecutor` still redacts minted
+operation-token literals and explicit `redact_command_options` values in
+exception text and audit lines, because those are not always recoverable from
+key shape alone.
 
 Required work:
 
-- Workspace adapter SQLite lookups for Polyscope and OpenCode when the adapter
-  database lives in a node-local host path.
 - SQLite database query helpers for app, workspace, or database-role files
   resolved by the gateway but executed on the owning node's host path.
 - Wg-easy SQLite state updates and ownership checks that must preserve
@@ -246,16 +264,41 @@ command, and token without spending the single-use verify token twice.
 
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
 gateway-owned internal activity records on the canonical `api` channel with
-`properties.lane = internal` and `properties.transport = local_executor`:
+`properties.lane = internal` and `properties.transport` set to the intended
+audit lane (gateway role + normalized `force_remote_host`, before selector
+execution). Selector failure still records a dispatching/completed pair on that
+intended lane.
 
-- `local_executor.dispatching` before transport dispatch, after command
-  validation and token minting. It records the operation id,
+| Intended lane | `properties.transport` | Event types |
+| --- | --- | --- |
+| Agent push | `agent_push` | `agent_push.dispatching`, `agent_push.completed` |
+| Gateway container-local | `gateway_local` | `gateway_local.dispatching`, `gateway_local.completed` |
+| Gateway host boundary (`force_remote_host`) | `force_remote_host` | `force_remote_host.dispatching`, `force_remote_host.completed` |
+
+- `{transport}.dispatching` after command validation and token minting, and
+  before transport selection/execution. It records the operation id,
   target node id and name, internal command name, scalar arguments/options, and
   the `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
-- `local_executor.completed` after the transport returns or throws. It records
-  the same operation id, target node, command name, success/failure status, exit
-  code when available, duration, and stdout/stderr summaries capped at 4 KiB
-  with a `[truncated]` suffix.
+- `{transport}.completed` after the transport returns or throws (including
+  selector unavailability). It records the same operation id, target node,
+  command name, success/failure status, exit code when available, duration, and
+  stdout/stderr summaries capped at 4 KiB with a `[truncated]` suffix.
+
+Shell audit rows from substrate executors may interleave between that pair.
+They are separate executor substrate records (same channel,
+`properties.lane = internal`) and are not the RemoteLocalExecutor
+dispatching/completed pair:
+
+- gateway container-local execution: `gateway_local.dispatching` →
+  `gateway_local.run` / `gateway_local.start` (shell audit from
+  `RemoteOrbitGatewayExecutor`) → `gateway_local.completed`
+- force host boundary: `force_remote_host.dispatching` → `ssh_bootstrap.run` /
+  `ssh_bootstrap.start` (shell audit from `RemoteHostExecutor`) →
+  `force_remote_host.completed`
+
+The shared `gateway_local` prefix on shell `run`/`start` rows is intentional and
+unambiguous for operators: exclusion is `properties.lane = internal`, not event
+name alone. No consumer filters those intermediate event names as the lane pair.
 
 `RemoteLocalExecutor::streamInternal()` uses the same dispatch/completion
 activity shape for approved raw streams, but it does not buffer streamed payload
@@ -287,8 +330,6 @@ Current allowed hidden CLI commands:
 | `internal:database-query-local` | `app-dev`, `app-prod`, `database` |
 | `internal:process-logs` | `app-dev`, `app-prod`, `database`, `agent` |
 | `internal:schedule:run` | active managed node roles |
-| `internal:workspace-adapter:lookup` | `app-dev` |
-| `internal:workspace-adapter:update` | `app-dev` |
 
 Callers that need arguments or command options use:
 
@@ -339,7 +380,7 @@ Use these rules for every new or migrated gateway-to-node execution path.
   but it must validate the gateway-issued operation token before side effects
   and must not become a public authority path.
 - Running **Orbit's own framework** PHP/Composer/Artisan on the host is not
-  valid on managed nodes. Project-source CLI on instance-role nodes runs on the host
+  valid on managed nodes. App-source CLI on instance-role nodes runs on the host
   PHP toolchain through an Agent-pushed executor.
 
 ## Orbit Caddy Isolation

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
@@ -35,7 +35,7 @@ final readonly class WorkspaceSetupStepRunner
         string $path,
         array $env,
         Node $node,
-        ?Project $app = null,
+        ?App $app = null,
         ?callable $onProgress = null,
     ): bool {
         $run->update(['status' => 'running']);
@@ -57,7 +57,7 @@ final readonly class WorkspaceSetupStepRunner
             if ($this->envInheritanceGuard->consumesParentEnv($step->command)) {
                 $runStep->update([
                     'exit_code' => 1,
-                    'output' => 'Workspace lifecycle steps cannot read or copy the parent project .env file.',
+                    'output' => 'Workspace lifecycle steps cannot read or copy the parent app .env file.',
                     'completed_at' => now(),
                 ]);
 
@@ -70,7 +70,7 @@ final readonly class WorkspaceSetupStepRunner
                 return false;
             }
 
-            $command = $app instanceof Project
+            $command = $app instanceof App
                 ? $this->commandRouter->routeLifecycleForNodePath($app, $node, $step->command, $path, $env)
                 : $step->command;
 

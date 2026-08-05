@@ -32,11 +32,16 @@ afterEach(function (): void {
     m::close();
 });
 
-function currentCheckoutProcessResult(bool $successful = true): ProcessResult
+function currentCheckoutTestRootCaPem(): string
+{
+    return "-----BEGIN CERTIFICATE-----\nTESTGATEWAYROOTCA\n-----END CERTIFICATE-----\n";
+}
+
+function currentCheckoutProcessResult(bool $successful = true, string $output = ''): ProcessResult
 {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($successful);
-    $result->shouldReceive('output')->andReturn('');
+    $result->shouldReceive('output')->andReturn($output);
     $result->shouldReceive('errorOutput')->andReturn('');
 
     return $result;
@@ -107,6 +112,10 @@ function currentCheckoutFakeInstance(
             $this->commands[] = $command;
             $this->timeouts[] = $timeoutSeconds;
 
+            if (str_contains($command, 'ca/root.crt') && str_contains($command, 'cat ')) {
+                return currentCheckoutProcessResult(output: currentCheckoutTestRootCaPem());
+            }
+
             return currentCheckoutProcessResult();
         }
 
@@ -172,6 +181,10 @@ function currentCheckoutFakeSourceMountedInstance(
         ): ProcessResult {
             $this->commands[] = $command;
             $this->timeouts[] = $timeoutSeconds;
+
+            if (str_contains($command, 'ca/root.crt') && str_contains($command, 'cat ')) {
+                return currentCheckoutProcessResult(output: currentCheckoutTestRootCaPem());
+            }
 
             return currentCheckoutProcessResult();
         }
@@ -422,31 +435,40 @@ it('refreshes source-mounted Incus gateway settings and CLI trust config', funct
 
     E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev']);
 
-    expect(implode("\n", $operatorCommands))
+    $operatorJoined = implode("\n", $operatorCommands);
+    $gatewayJoined = implode("\n", $gatewayCommands);
+    $devJoined = implode("\n", $devCommands);
+
+    // Gateway completes first (local public root.crt), dependents receive gateway-derived PEM.
+    expect($gatewayJoined)
         ->toContain('LocalGatewaySettings::current()')
         ->toContain('https://10.6.0.2')
-        ->toContain('http://{$gatewayIp}/api/ca/root')
-        ->toContain('/.config/orbit')
+        ->toContain('/.config/orbit/ca/root.crt')
         ->toContain('/gateways/default')
         ->toContain('/config.json')
         ->toContain('/ca.pem')
         ->toContain('wireguard_https')
         ->toContain('e2e-current-checkout')
-        ->not->toContain('gateway:add')->and(implode("\n", $gatewayCommands))->toContain(
-            'LocalGatewaySettings::current()',
-        )->toContain('https://10.6.0.2')->toContain('http://{$gatewayIp}/api/ca/root')->toContain(
-            '/.config/orbit',
-        )->toContain('/gateways/default')->toContain('/config.json')->toContain('/ca.pem')->toContain(
-            'wireguard_https',
-        )->toContain('e2e-current-checkout')
-        ->not->toContain('gateway:add')->and(implode("\n", $devCommands))->toContain(
-            'LocalGatewaySettings::current()',
-        )->toContain('https://10.6.0.2')->toContain('http://{$gatewayIp}/api/ca/root')->toContain(
-            '/.config/orbit',
-        )->toContain('/gateways/default')->toContain('/config.json')->toContain('/ca.pem')->toContain(
-            'wireguard_https',
-        )->toContain('e2e-current-checkout')
+        ->toContain('cat ')
+        ->toContain('ca/root.crt')
+        ->not->toContain('/api/ca/root')
         ->not->toContain('gateway:add');
+
+    foreach ([$operatorJoined, $devJoined] as $dependentJoined) {
+        expect($dependentJoined)
+            ->toContain('LocalGatewaySettings::current()')
+            ->toContain('https://10.6.0.2')
+            ->toContain('TESTGATEWAYROOTCA')
+            ->toContain('/.config/orbit')
+            ->toContain('/gateways/default')
+            ->toContain('/config.json')
+            ->toContain('/ca.pem')
+            ->toContain('wireguard_https')
+            ->toContain('e2e-current-checkout')
+            ->not->toContain('/api/ca/root')
+            ->not->toContain('file_get_contents("http://')
+            ->not->toContain('gateway:add');
+    }
 });
 
 it('writes source-mounted gateway state under the node config root instead of the mounted source tree', function (): void {
@@ -1044,7 +1066,12 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
-        $commands[] = (string) $process->command;
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'ca/root.crt') && str_contains($command, 'cat ')) {
+            return Process::result(output: currentCheckoutTestRootCaPem());
+        }
 
         return Process::result();
     });
@@ -1126,18 +1153,26 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
             'composer --working-dir=apps/cli dump-autoload --no-interaction --optimize',
         )->toContain("cp '\\''/home/orbit/orbit/apps/cli/.env'\\'' apps/cli/.env")
         ->not->toContain('orbit-e2e-run123-dev-orbit-gateway');
-    expect($paths)->toBe([
-        'operator' => '/home/orbit/orbit-current',
-        'gateway' => '/home/orbit/orbit-current',
-        'dev' => '/home/orbit/orbit-current',
-    ]);
+    expect($paths)
+        ->toMatchArray([
+            'operator' => '/home/orbit/orbit-current',
+            'gateway' => '/home/orbit/orbit-current',
+            'dev' => '/home/orbit/orbit-current',
+        ])
+        ->and(array_key_first($paths))
+        ->toBe('gateway');
 });
 
 it('refreshes Docker gateway checkout host keys through explicit host Artisan', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
-        $commands[] = (string) $process->command;
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'ca/root.crt') && str_contains($command, 'cat ')) {
+            return Process::result(output: currentCheckoutTestRootCaPem());
+        }
 
         return Process::result();
     });
@@ -1424,13 +1459,16 @@ it('can install the current checkout on selected topology roles', function (): v
 
     $paths = E2ECurrentCheckout::installOnTopology($topology, roles: ['operator', 'gateway', 'dev', 'prod', 'agent']);
 
-    expect($paths)->toBe([
-        'operator' => '/home/orbit/orbit-current',
-        'gateway' => '/home/orbit/orbit-current',
-        'dev' => '/home/orbit/orbit-current',
-        'prod' => '/home/orbit/orbit-current',
-        'agent' => '/home/orbit/orbit-current',
-    ]);
+    expect($paths)
+        ->toMatchArray([
+            'operator' => '/home/orbit/orbit-current',
+            'gateway' => '/home/orbit/orbit-current',
+            'dev' => '/home/orbit/orbit-current',
+            'prod' => '/home/orbit/orbit-current',
+            'agent' => '/home/orbit/orbit-current',
+        ])
+        ->and(array_key_first($paths))
+        ->toBe('gateway');
 
     expect(implode("\n", $operatorCommands))->toContain('/home/orbit/.config/orbit/.env');
     expect(implode("\n", $operatorCommands))->toContain('LocalGatewaySettings::current()');
@@ -1524,19 +1562,41 @@ it('installs source-mounted topology roles concurrently when fork workers are av
     }
 
     $starts = array_values(array_filter($lines, fn (string $line): bool => str_contains($line, ':start:')));
+    $gatewayStart = null;
+    $otherStarts = [];
+
+    foreach ($lines as $line) {
+        if (! str_contains($line, ':start:')) {
+            continue;
+        }
+
+        [$role, , $stamp] = explode(':', $line, 3);
+        $time = (float) $stamp;
+
+        if ($role === 'gateway') {
+            $gatewayStart = $time;
+        } else {
+            $otherStarts[] = $time;
+        }
+    }
 
     expect($paths)
-        ->toBe([
+        ->toMatchArray([
             'operator' => '/home/orbit/orbit-run-operator',
             'gateway' => '/home/orbit/orbit-run-gateway',
             'dev' => '/home/orbit/orbit-run-dev',
         ])
         ->and($starts)
         ->toHaveCount(3)
-        ->and($elapsed)
-        ->toBeLessThan(0.65)
-        ->and(array_column($timer->events(), 'name'))
-        ->toContain('operator checkout.test-worker', 'gateway checkout.test-worker', 'dev checkout.test-worker');
+        ->and($gatewayStart)
+        ->not->toBeNull()->and($otherStarts)
+        ->not->toBeEmpty()->and(min($otherStarts))->toBeGreaterThanOrEqual($gatewayStart)->and($elapsed)->toBeLessThan(
+            0.75,
+        )->and(array_column($timer->events(), 'name'))->toContain(
+            'operator checkout.test-worker',
+            'gateway checkout.test-worker',
+            'dev checkout.test-worker',
+        );
 });
 
 it('does not install topology roles concurrently when they share a target instance', function (): void {

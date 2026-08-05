@@ -98,7 +98,7 @@ The `gateway` role is Orbit's singleton authority. It owns durable Orbit
 state, the typed API, root CA material, access policy, and convergence
 decisions.
 
-The gateway is the central store of everything Orbit knows: projects, instances, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
+The gateway is the central store of everything Orbit knows: apps, instances, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
 
 The gateway exposes the typed API that the CLI talks to. The managed execution
 model has two normal paths: gateway-owned work stays gateway-only, and
@@ -125,8 +125,11 @@ Gateway HTTPS exposure has two modes:
   attachable overlay `orbit-network` by the `orbit-gateway` service alias.
 - `gateway-direct`: when the router role lives elsewhere, `orbit-gateway`
   publishes gateway HTTPS directly on the gateway host. The gateway leaf
-  certificate still chains to the Orbit root CA. Orbit configures Docker's
-  firewall path so only Orbit/WireGuard peers can reach TCP/443 or UDP/443.
+  certificate still chains to the Orbit root CA and must cover the short host
+  `gateway`, the configured browser Gateway hostname (default `gateway.orbit`),
+  and the gateway WireGuard API IP so CLI, SDK, and browser callers can verify
+  TLS without disabling verification. Orbit configures Docker's firewall path
+  so only Orbit/WireGuard peers can reach TCP/443 or UDP/443.
 
 Workload nodes run the public Orbit CLI as a gateway client and run workloads
 in role-specific runtime containers. Moving the API into Docker does not make
@@ -189,17 +192,34 @@ newest activity across every owning scope so one active owner protects the
 dependencies for all of them. Once a scope is marked cold, later hibernation
 sweeps do not inspect or prune it again; only activation may change that state.
 
-A request for a cold scope creates or follows one serialized activation
-operation. The gateway returns a minimal auto-refreshing progress response
-through the existing stock-Caddy wake pre-check while the operation restores
-only the missing dependency families and starts the scope's configured
-processes. The response shows the Orbit mark and one aggregate progress bar
-derived from the operation plan. The bar smoothly advances between newly
-reported completion values without exposing individual dependency or process
-rows. Once activation succeeds, the refreshed original request passes through
-to the application. A failed or partially completed prune remains cold. Each
-detached runner atomically claims its operation once and heartbeats the operation
-journal while it works.
+A request for an asleep (soft) or cold scope creates or follows one serialized
+activation operation. Through the existing stock-Caddy wake pre-check, the
+gateway returns a minimal boot response immediately without starting processes
+or restoring dependencies inline. Soft and cold share that page and operation
+machinery; the plan records the mode. Soft runners only fence process
+activation and start every configured lifecycle process concurrently. Cold
+runners restore and verify only the missing dependency families first, then use
+the same concurrent process-start phase, and clear that scope's cold marker only
+after ready. After concurrent starts resolve, the runner performs a bounded
+aggregate readiness check of the full expected process set and marks the scope
+awake only when every expected runtime unit is observed running; a start-command
+exit alone is insufficient. Any start or readiness failure keeps the scope
+asleep, retains current wake failure cleanup, and does not introduce a
+process-dependency model. The response presents one indeterminate animated
+Orbit mark only (no soft/cold copy, progress bar, step rows, or diagnostics).
+While activation is pending, the page stays mounted and, after one second,
+probes the original same-origin path and query with non-overlapping background
+fetches (credentials same-origin, cache no-store, redirect manual). Orbit
+pending and failed responses set `X-Orbit-Runtime-Activation-State` (`pending`
+or `failed`) so the client does not treat application HTTP status alone as Orbit
+pending. Pending keeps the page mounted; network errors retry after one second;
+failed is terminal and keeps the existing retry experience; any response without
+that header (including opaque redirects from awake applications) means Caddy has
+handed off to the application and the browser navigates once to the original
+URI. Mode, steps, and determinate progress remain internal to the
+operation. A failed or partially completed prune remains cold. Each detached
+runner atomically claims its operation once and heartbeats the operation journal
+while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
 once. A dependency waiter uses the full bounded activation-fence duration
@@ -208,8 +228,8 @@ finish before the sibling re-inspects. Process activation and cold-marker
 transitions remain fenced per scope.
 Stale takeover acquires both fences before replacing a runner, and each scope
 clears only its own cold marker after dependency restoration and process
-startup succeed. Failures therefore keep that scope's progress page and retry
-path available.
+startup succeed. Failures therefore keep that scope's boot page and retry path
+available.
 
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access
@@ -249,14 +269,18 @@ The `analytics` role is a private workload role for Orbit-managed Plausible CE
 analytics. An analytics node runs Plausible CE as a process-owned Docker
 container, publishes it only on the node's WireGuard address, and receives
 dashboard and tracking traffic through router-owned private service routes. The private
-dashboard/admin endpoint is `analytics.orbit`. Project-owned public analytics hosts
+dashboard/admin endpoint is `analytics.orbit`. Instance-owned public analytics hosts
 such as `analytics.example.com` enter through `ingress`, flow to `router`, and
 proxy only Plausible script and event-ingest paths to the analytics backend.
 The role depends on one explicitly identified PostgreSQL process and a
 ClickHouse Docker service process selected from active `database` role nodes.
-The PostgreSQL process identity is stored in the analytics role settings; a
-legacy assignment with one candidate remains compatible, while multiple
-candidates without a stored identity fail as ambiguous. Those services publish
+The PostgreSQL process identity is stored in the analytics role settings.
+Assignment-time creation requires a stored PostgreSQL process identity. A
+one-time migration may backfill that identity from an unambiguous fleet row.
+Multiple candidates without a stored identity fail as ambiguous. A residual
+runtime single-candidate fallback still exists when stored identity is absent
+and exactly one PostgreSQL candidate is visible; that fallback remains until
+removed and is not the assignment-time contract. Those services publish
 only on their database nodes' WireGuard addresses and keep generated
 credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that
@@ -269,7 +293,7 @@ assignment succeeds. Proxy doctor owns route and certificate drift repair.
 Removing the analytics role removes both the runtime and the private route with
 its rendered artifacts and TLS material.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under that node's node-owned TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `agent` role runs first-party autonomous agent tools — Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under that node's node-owned TLD (for example `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
 and `router` are coupled to each other, but the `metrics` role may be added to
@@ -541,7 +565,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the instances it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own project and instance registry rows through `project:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant project or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node project, instance, or process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app and instance registry rows through `app:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant app or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node app, instance, or process visibility.
 
 Workspace permission policy applies to both endpoints of every grant. A
 permission set containing `*` or `workspace:*` is rejected when its consuming
@@ -552,7 +576,9 @@ cannot let a production app service operate another node's workspace.
 Authority is revocable through the lever that owns its class: remove a grant or
 permission, remove the gateway role, or disable the peer. `node:grant` creates
 the initial grant edge and permissions; long-term editing belongs to
-`node:permissions`, which is itself a gateway-admin-only surface.
+`node:permissions`. Read mode requires `node:read` or `*`; write mode requires
+`node:permissions` or `*`. Gateway-admin grants satisfy those permissions, but
+scoped callers with the matching grant may also use the command.
 
 #### Self-grants and self-serving
 
@@ -571,8 +597,8 @@ only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
 This is why `workspace:setup` works for app-dev workspaces placed on the
-self-granted app-dev node, why `project:list` includes projects with at least
-one instance on that node, and why `project:show` can inspect projects served there.
+self-granted app-dev node, why `app:list` includes apps with at least
+one instance on that node, and why `app:show` can inspect apps served there.
 Production app nodes never create, own, set up, remove, diagnose, or execute
 workspaces. It is also why
 `instance:register`, `process:add`, `process:update`, and `process:remove` work from
@@ -623,7 +649,7 @@ Direct API consumers — including Solo orchestration agents, Codex/loop roles, 
 
 The gateway database is Orbit's source of truth. It stores four kinds of records:
 
-- **Registry** — what exists (nodes, projects, instances).
+- **Registry** — what exists (nodes, apps, instances).
 - **Configuration** — how things should be set up (processes, schedules, proxy routes, tools, firewall rules).
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
@@ -645,14 +671,14 @@ Orbit has nine state families:
 | Family | Owns | Concept doc |
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
-| `instance` | Project and instance config, runtime policy, deploy steps, instance health | [Project and Instance Concepts](domains/5_project/project-concepts.md) |
+| `instance` | App and instance config, runtime policy, deploy steps, instance health | [App and Instance Concepts](domains/5_app/app-concepts.md) |
 | `workspace` | Workspace config, URL, runtime policy, setup/teardown policy | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
 | `process` | Lifecycle-managed long-running units scoped to nodes, instances, or workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
 | `schedule` | Recurring tasks for instances, nodes, and Orbit | [Schedule Concepts](domains/9_schedule/schedule-concepts.md) |
 | `tool` | Node-level capabilities installed on each node | [Tool Concepts](domains/3_tool/tool-concepts.md) |
 | `firewall_rule` | What network traffic each node allows | [Firewall Concepts](domains/4_firewall/firewall-concepts.md) |
-| `database_connection` | Reusable database connection intent mapped into instance and workspace `.env` files | [Database Concepts](domains/18_database/database-concepts.md) |
+| `database_connection` | Reusable database connection intent mapped into instance and workspace `.env` files | [Database Concepts](domains/17_database/database-concepts.md) |
 
 Security is not a tenth state family. Security findings are sections inside the
 family that owns the protected state: host security under `node.security.*`,
@@ -665,22 +691,43 @@ These names are how Orbit thinks about each thing. The tools behind them — `or
 
 ### Keeping nodes in sync
 
-Reality drifts. The gateway tracks configuration; a node is meant to match it; over time those can fall apart. **Drift** can be a config mismatch (a proxy route is missing on the node, a process definition has changed), a pending update (security patches the node hasn't installed), or a runtime problem (an app that should be responding isn't).
+Gateway configuration must converge with node reality. Over time the two can
+diverge after a partial apply, manual host change, migration, or restored
+gateway database. Not every Doctor finding is restorable genuine drift.
 
-`orbit doctor` is how you catch and resolve all of those. It runs across a single family, a single node, or the whole fleet, and reports everything that isn't in the expected state.
+`orbit doctor` is how Orbit reports those conditions and, for node-scoped
+restore, deterministically repairs supported genuine drift. It runs across a
+single family, a single node, or the whole fleet (verify-only with `--all`).
+
+Every emitted Doctor issue code carries an explicit public **disposition**
+owned by its state family:
+
+| Disposition | Meaning |
+|---|---|
+| `genuine_drift` | Gateway intent is valid and a safe deterministic restore action exists. Node-scoped `--restore` repairs it and re-probes until the finding is gone or progress stops. |
+| `blocked_inspection` | A probe or control path cannot complete; report the exact prerequisite/root blocker. Not repaired by guessing. |
+| `invalid_intent` | Gateway configuration itself is incomplete or illegal; never auto-repaired by inventing intent. |
+| `runtime_incident` | Runtime failure without a safe deterministic Doctor recovery path; report only. |
+
+Generic issue `kind` (`missing`, `extra`, `divergent`, `unverifiable`) remains for
+compatibility; disposition is the stable automation outcome classification.
 
 Doctor has four modes. Without any flag it only reports. The other three modes are selected by mutually-exclusive flags:
 
 | Mode | Flag | Meaning |
 |---|---|---|
 | Verify | *(none)* | Default. Compare gateway configuration and node reality; report only. |
-| Interactive | `--fix` | Prompt per drifted item: restore, adopt, skip, or view details. |
-| Restore | `--restore` | Force-restore non-interactively. The gateway is right; re-apply gateway configuration on every drifted item. |
-| Adopt | `--adopt` | Force-adopt non-interactively. The node is right; record observed node reality into gateway configuration for every drifted item. |
+| Interactive | `--fix` | Prompt per finding: restore, adopt, skip, or view details when the family declares those actions safe. |
+| Restore | `--restore` | Node-scoped only. Bounded multi-pass convergence: re-apply every supported genuine-drift restorer under the exact scope fence, re-probe, and continue until clean, no-progress, or max passes. Fresh observation stays authoritative. |
+| Adopt | `--adopt` | Explicit disaster-recovery bulk adopt of family-declared compatible observations into gateway configuration. Not widened into general intent invention. |
 
 The mode names are also used by the doctor permission registry: `doctor:verify`, `doctor:restore`, and `doctor:adopt` are the permission strings that gate access to each mode.
 
-Restore is the common case: you fix a node by pushing the gateway's version of the world back onto it. Adopt is the recovery case — a manual host setup, a migration, a disaster recovery — where the node holds the right answer and the gateway needs to learn it.
+Restore is the common case for genuine drift: push gateway intent onto the
+node until no further supported repair is possible. Adopt is the recovery case
+where the node holds the right answer and the gateway must learn it. Fleet
+`--all` remains verify-only in this model; Doctor does not SSH or run
+arbitrary-shell repair paths.
 
 Doctor is safe to run often, and safe to scope. Running it after every deploy and on a daily schedule is the simplest way to catch problems early.
 
@@ -688,19 +735,9 @@ Doctor is safe to run often, and safe to scope. Running it after every deploy an
 
 Orbit's extension points and identity rules keep product concepts stable while implementations can change underneath them.
 
-### Agent IDE integration
-
-AI agents that work on apps typically run inside an agent IDE — PolyScope, OpenCode, or similar — on a developer's machine. Orbit can integrate with those IDEs so that the agent has a smooth experience: opening a workspace by name, getting notified when a process crashes, receiving messages from the gateway when something needs the agent's attention.
-
-The agent IDE adapter is configured per node, with optional override per app. When something happens that the active agent should know about — a crash, a deploy failure, a doctor finding — Orbit resolves the effective adapter for the app or workspace and sends the message through. If no session is active, the event is still recorded; nothing is lost.
-
-Agent IDE adapters are extension points. New IDEs can be supported by writing an adapter without touching the rest of Orbit.
-
-This integration is for human-driven coding sessions. Autonomous agents that operate the fleet on their own — OpenClaw, Hermes — run as ordinary managed tools under the `agent` role instead. There is no default agent tool: a node with the `agent` role may be created with zero, one, or several agent tools selected. Running multiple agent tools on the same node is allowed, but Orbit warns about weaker node-level traceability whenever a second running agent tool is started or installed — interactive callers see a confirmation prompt, machine-readable callers receive a structured warning under `success.meta.warnings[]` and the command proceeds when input is otherwise valid.
-
 ### Identity names
 
-Apps, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. A future presentation label may add spaces or capitalization, but the slug stays canonical.
+Apps, instances, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. Process presentation **labels** are current product surface: they may add spaces or capitalization for humans, while the process slug stays canonical for paths, keys, and selectors.
 
 A slug must match:
 
@@ -710,27 +747,28 @@ A slug must match:
 
 Length limits:
 
-- project slug: up to 40 characters
+- app slug: up to 40 characters
+- instance slug: up to 40 characters
 - node slug: up to 63 characters
-- workspace slug: up to 63 characters (independent of the parent project slug)
+- workspace slug: up to 63 characters (independent of the parent instance slug)
 - process slug: up to 64 characters
 
-**Workspace hostnames** prepend the workspace slug to the parent project's hostname. For a development project, that's `{workspace}.{project}.{tld}`.
+**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). App identity does not own hostname composition.
 
-**Process names** combine the app, workspace, and process slugs into a single identifier:
+**Process names** use a five-part runtime-unit key:
 
 ```text
-orbit_<project>_<instance>_<workspace|main>_<process>
+orbit_<app>_<instance>_<workspace|main>_<process>
 ```
 
 Examples:
 
 ```text
-orbit_docs_main_vite
-orbit_docs_feature-docs_vite
+orbit_docs_development_main_vite
+orbit_docs_development_feature-docs_vite
 ```
 
-`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug.
+`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is app, instance, workspace (or `main` for the instance checkout), then process.
 
 ### Next
 

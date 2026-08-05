@@ -23,7 +23,7 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->isKnown('tool:*'))
             ->toBeTrue()
-            ->and($registry->isKnown('project:*'))
+            ->and($registry->isKnown('app:*'))
             ->toBeTrue()
             ->and($registry->isKnown('instance:*'))
             ->toBeTrue();
@@ -40,12 +40,12 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->isKnown('node:read'))
             ->toBeTrue()
-            ->and($registry->isKnown('project:new'))
+            ->and($registry->isKnown('app:new'))
             ->toBeTrue()
             ->and($registry->isKnown('instance:credentials'))
             ->toBeTrue()
             ->and($registry->isKnown('agent-ide:message'))
-            ->toBeTrue()
+            ->toBeFalse()
             ->and($registry->isKnown('database:read'))
             ->toBeTrue()
             ->and($registry->isKnown('database:query:write'))
@@ -163,9 +163,9 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->allows(['instance:*'], 'instance:credentials'))
             ->toBeTrue()
-            ->and($registry->allows(['project:read'], 'project:show'))
+            ->and($registry->allows(['app:read'], 'app:show'))
             ->toBeTrue()
-            ->and($registry->allows(['project:write'], 'project:new'))
+            ->and($registry->allows(['app:write'], 'app:new'))
             ->toBeFalse()
             ->and($registry->allows(['tool:update'], 'tool:update:agent-tools'))
             ->toBeTrue()
@@ -221,13 +221,15 @@ describe('node permission registry', function (): void {
             ->not->toContain('node:*');
     });
 
-    it('returns namespace permissions for agent-ide wildcard', function (): void {
+    it('does not register removed agent-ide permissions', function (): void {
         $registry = new NodePermissionRegistry;
 
         expect($registry->isKnown('agent-ide:*'))
-            ->toBeTrue()
+            ->toBeFalse()
+            ->and($registry->isKnown('agent-ide:message'))
+            ->toBeFalse()
             ->and($registry->impliedBy('agent-ide:*'))
-            ->toBe(['agent-ide:message']);
+            ->toBeEmpty();
     });
 
     it('reports coverage correctly', function (): void {
@@ -261,9 +263,10 @@ describe('node permission registry', function (): void {
             ->and($namespaces->toArray())
             ->toContain('tool')
             ->and($namespaces->toArray())
+            ->not
             ->toContain('agent-ide')
             ->and($namespaces->toArray())
-            ->toContain('project')
+            ->toContain('app')
             ->and($namespaces->toArray())
             ->toContain('instance')
             ->and($namespaces->toArray())

@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\App;
+use App\Models\Instance;
+use App\Services\Apps\InstancePayloads;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+uses(TestCase::class);
+uses(RefreshDatabase::class);
+
+it('publishes deployment state from the concrete app instance', function (): void {
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'production',
+        'adopted' => true,
+        'deploy_warmup_paths' => ['/health'],
+        'latest_deployment_status' => 'completed',
+        'latest_deployment_run_id' => 42,
+        'worker_enabled' => true,
+        'worker_config' => ['workers' => 4, 'max_requests' => 500],
+    ]);
+
+    $payload = app(InstancePayloads::class)->instance($instance);
+
+    expect($payload)
+        ->toMatchArray([
+            'app' => 'docs',
+            'name' => 'production',
+            'adopted' => true,
+            'deploy_warmup_paths' => ['/health'],
+            'latest_deployment_status' => 'completed',
+            'latest_deployment_run_id' => 42,
+            'worker_enabled' => true,
+            'worker_config' => ['workers' => 4, 'max_requests' => 500],
+        ])
+        ->and($payload['runtime']['mode'])
+        ->toBe('worker');
+});

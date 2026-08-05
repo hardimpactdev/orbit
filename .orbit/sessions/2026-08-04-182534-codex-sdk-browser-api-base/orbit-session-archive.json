@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-04T16:25:34+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-sdk-browser-api-base/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-04-182534-codex-sdk-browser-api-base",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-04T162057Z-ce3e53dd235c.json"
+    ],
+    "entry_digests": {
+        "loop.md": "abadff91a6ad123db01245bc9d4346a16a5a265cabc8a937fae85fc991f72556",
+        "quality-gates/quality-check-2026-08-04T162057Z-ce3e53dd235c.json": "3850518b946e26299d4436a1e013b30ecb532622267ad2462aa2b8aefe1e1405"
+    },
+    "slug": "codex-sdk-browser-api-base",
+    "requested_slug": "codex-sdk-browser-api-base",
+    "compatible_slugs": [
+        "codex-sdk-browser-api-base"
+    ],
+    "branch": "codex/sdk-browser-api-base",
+    "candidate_commit": "21800143a56f3aa754dacf060510643422a354dd",
+    "accepted_feature_tip": "21800143a56f3aa754dacf060510643422a354dd",
+    "accepted_main_tip": "66b05179409a1c356b817add69bb49c457eb4b29",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

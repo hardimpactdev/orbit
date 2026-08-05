@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Processes\RuntimeActivationFence;
@@ -71,18 +71,16 @@ it('returns an immediate minimal progress page with only detected dependencies a
         server: [
             'REMOTE_ADDR' => $node->wireguard_address,
             'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/docs/api?version=2',
         ],
     );
 
+    assert_runtime_activation_boot_screen($response, '/docs/api?version=2');
     $response
-        ->assertServiceUnavailable()
-        ->assertHeader('Content-Type', 'text/html; charset=UTF-8')
-        ->assertHeader('Cache-Control', 'no-store, private')
-        ->assertSee('Waking docs.test')
-        ->assertSee('Installing PHP dependencies')
-        ->assertSee('Installing frontend dependencies')
-        ->assertSee('Starting horizon')
-        ->assertSee('Starting vite')
+        ->assertDontSee('Installing PHP dependencies')
+        ->assertDontSee('Installing frontend dependencies')
+        ->assertDontSee('Starting horizon')
+        ->assertDontSee('Starting vite')
         ->assertDontSee('Starting queue')
         ->assertDontSee('/home/orbit/apps/docs')
         ->assertDontSee('composer install')
@@ -94,6 +92,8 @@ it('returns an immediate minimal progress page with only detected dependencies a
 
     expect($run->operation_type)
         ->toBe('runtime-activation')
+        ->and($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeTrue()
         ->and($run->result['runtime_activation']['dependencies'] ?? null)
         ->toHaveCount(2);
 
@@ -378,20 +378,30 @@ it('detects persistent cold state for a legacy route that does not send the roll
     ]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/app-instance/{$instance->id}",
-            server: ['REMOTE_ADDR' => $node->wireguard_address],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Installing PHP dependencies');
+    $legacyColdResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($legacyColdResponse, '/');
+    $legacyColdResponse->assertDontSee('Installing PHP dependencies');
 
     expect(array_slice($executor->actions(), offset: 0, length: 2))
         ->toBe([
             'internal:caddy-config:runtime-states',
             'internal:runtime-dependencies:inspect',
         ]);
+
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+    expect($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeTrue()
+        ->and($run->result['runtime_activation']['dependencies'] ?? null)
+        ->not->toBeEmpty();
 });
 
 it('keeps the cold gate when dependency inspection fails', function (): void {
@@ -417,17 +427,77 @@ it('keeps the cold gate when dependency inspection fails', function (): void {
         ->not->toContain('internal:process-systemd-service:start');
 });
 
-it('keeps the transparent fast wake when no dependencies need restoration', function (): void {
+it('returns the progress page immediately for soft wake when no dependencies need restoration', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
     Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
-    $executor = new ColdRuntimeExecutor([
+    $executor = new ColdRuntimeExecutor(
         [
-            'key' => 'composer',
-            'label' => 'Installing PHP dependencies',
-            'present' => true,
-            'reconstructable' => true,
+            [
+                'key' => 'composer',
+                'label' => 'Installing PHP dependencies',
+                'present' => true,
+                'reconstructable' => true,
+            ],
         ],
-    ]);
+        defaultAwake: false,
+        defaultCold: false,
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $softWakeResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($softWakeResponse, '/');
+    $softWakeResponse
+        ->assertDontSee('Starting horizon')
+        ->assertDontSee('Installing PHP dependencies');
+
+    $run = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+
+    expect($run->result['runtime_activation']['cold'] ?? null)
+        ->toBeFalse()
+        ->and($run->result['runtime_activation']['dependencies'] ?? null)
+        ->toBeEmpty()
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states'])
+        ->not->toContain('internal:process-systemd-service:start')
+        ->not->toContain('internal:runtime-dependencies:inspect');
+
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
+        ->toContain('internal:process-systemd-service:start')
+        ->toContain('internal:caddy-config:runtime-awake')
+        ->and($executor->actions())
+        ->not->toContain('internal:runtime-dependencies:inspect')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+});
+
+it('returns no content for an already-awake soft scope without starting an activation operation', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor(
+        [
+            [
+                'key' => 'composer',
+                'label' => 'Installing PHP dependencies',
+                'present' => true,
+                'reconstructable' => true,
+            ],
+        ],
+        defaultAwake: true,
+        defaultCold: false,
+    );
     app()->instance(RunsInternalCommands::class, $executor);
 
     $this->call(
@@ -442,8 +512,7 @@ it('keeps the transparent fast wake when no dependencies need restoration', func
     expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
         ->toBe(0)
         ->and($executor->actions())
-        ->toContain('internal:process-systemd-service:start')
-        ->toContain('internal:caddy-config:runtime-awake');
+        ->toBe(['internal:caddy-config:runtime-states']);
 });
 
 it('keeps a cold sibling in activation until its already restored source is ready', function (): void {
@@ -457,17 +526,18 @@ it('keeps a cold sibling in activation until its already restored source is read
     ]]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/app-instance/{$instance->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Starting horizon')
+    $presentDependencyResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($presentDependencyResponse, '/');
+    $presentDependencyResponse
+        ->assertDontSee('Starting horizon')
         ->assertDontSee('Installing PHP dependencies');
 
     $run = OperationRun::query()->sole();
@@ -484,7 +554,7 @@ it('keeps a cold sibling in activation until its already restored source is read
 it('uses the workspace source and its inherited dynamic process plan', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
     ]);
@@ -500,20 +570,20 @@ it('uses the workspace source and its inherited dynamic process plan', function 
     ]);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $this
-        ->call(
-            'GET',
-            "/api/runtime-activations/workspace/{$workspace->id}",
-            server: [
-                'REMOTE_ADDR' => $node->wireguard_address,
-                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
-            ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Waking feature-a.docs.test')
-        ->assertSee('Installing frontend dependencies')
-        ->assertSee('Starting horizon')
-        ->assertSee('Starting vite');
+    $workspaceColdResponse = $this->call(
+        'GET',
+        "/api/runtime-activations/workspace/{$workspace->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            'HTTP_X_FORWARDED_URI' => '/',
+        ],
+    );
+    assert_runtime_activation_boot_screen($workspaceColdResponse, '/');
+    $workspaceColdResponse
+        ->assertDontSee('Installing frontend dependencies')
+        ->assertDontSee('Starting horizon')
+        ->assertDontSee('Starting vite');
 
     expect($executor->runtimeDependencyPaths())
         ->toBe(['/home/orbit/apps/docs/.worktrees/feature-a']);
@@ -573,9 +643,9 @@ it('restores dependencies before starting the planned processes and clearing col
 
 it('single-flights dependency restoration across simultaneous scopes that share one source', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
-    $sibling = AppInstance::factory()->for($app)->create([
+    $sibling = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -587,7 +657,7 @@ it('single-flights dependency restoration across simultaneous scopes that share 
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $sibling->id,
+            'instance_id' => $sibling->id,
             'name' => 'horizon-preview',
         ]);
     $executor = new ColdRuntimeExecutor([[
@@ -669,7 +739,7 @@ it('keeps the cold marker and failed progress page when a process cannot start',
         ->toContain('internal:process-systemd-service:start')
         ->not->toContain('internal:caddy-config:runtime-warm');
 
-    $this
+    $failedResponse = $this
         ->call(
             'GET',
             "/api/runtime-activations/app-instance/{$instance->id}",
@@ -677,10 +747,11 @@ it('keeps the cold marker and failed progress page when a process cannot start',
                 'REMOTE_ADDR' => $node->wireguard_address,
                 'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
             ],
-        )
-        ->assertServiceUnavailable()
-        ->assertSee('Wake-up paused')
-        ->assertSee('Try again');
+        );
+
+    assert_runtime_activation_failed_screen($failedResponse, '/?orbit-wake-retry=1');
+    $failedResponse
+        ->assertDontSee('Wake-up paused');
 });
 
 it('launches the activation runner as a detached one-shot gateway container', function (): void {
@@ -726,7 +797,7 @@ it('allows only one detached runner to claim an activation operation', function 
 });
 
 /**
- * @return array{Node, Project, AppInstance}
+ * @return array{Node, App, Instance}
  */
 function create_cold_runtime_instance(): array
 {
@@ -734,13 +805,13 @@ function create_cold_runtime_instance(): array
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.21',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -767,12 +838,20 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
     /** @var list<string> */
     private array $runtimeWarmMarkerKeys = [];
 
+    /** @var array<string, bool> */
+    private array $awakeByKey = [];
+
+    /** @var array<string, bool> */
+    private array $coldByKey = [];
+
     /**
      * @param  list<array{key: string, label: string, present: bool, reconstructable: bool}>  $dependencies
      */
     public function __construct(
         private array $dependencies,
         private readonly ?string $failingAction = null,
+        private readonly bool $defaultAwake = false,
+        private readonly bool $defaultCold = true,
     ) {}
 
     /** @mago-expect lint:halstead */
@@ -787,6 +866,7 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         $call = $action === '' ? $commandName : "{$commandName}:{$action}";
         $this->actions[] = $call;
         $shouldFail = $call === $this->failingAction;
+        $inputKey = $this->inputKey($transportOptions);
 
         if (
             $commandName === 'internal:runtime-dependencies'
@@ -812,16 +892,41 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             );
         }
 
-        if ($commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
-            $input = $transportOptions['input'] ?? null;
-            $decoded = is_string($input)
-                ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
-                : [];
-            $key = is_array($decoded) ? $decoded['key'] ?? null : null;
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-awake'
+            && is_string($inputKey)
+        ) {
+            $this->awakeByKey[$inputKey] = true;
+        }
 
-            if (is_string($key)) {
-                $this->runtimeWarmMarkerKeys[] = $key;
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-asleep'
+            && is_string($inputKey)
+        ) {
+            $this->awakeByKey[$inputKey] = false;
+        }
+
+        if ($commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
+            if (is_string($inputKey)) {
+                $this->runtimeWarmMarkerKeys[] = $inputKey;
+
+                if (! $shouldFail) {
+                    $this->coldByKey[$inputKey] = false;
+                }
             }
+        }
+
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:caddy-config'
+            && $action === 'runtime-cold'
+            && is_string($inputKey)
+        ) {
+            $this->coldByKey[$inputKey] = true;
         }
 
         $data = match ([$commandName, $action]) {
@@ -832,9 +937,9 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             ['internal:caddy-config', 'runtime-states'] => [
                 'states' => [[
                     'key' => 'app-instance-1',
-                    'awake' => false,
-                    'hibernated' => true,
-                    'cold' => true,
+                    'awake' => $this->isAwake('app-instance-1'),
+                    'hibernated' => ! $this->isAwake('app-instance-1'),
+                    'cold' => $this->isCold('app-instance-1'),
                     'last_activity_at' => 1_767_268_800,
                 ]],
             ],
@@ -847,11 +952,11 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
                 ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
                 : [];
             $keys = is_array($decoded) && is_array($decoded['keys'] ?? null) ? $decoded['keys'] : [];
-            $data['states'] = array_map(static fn (string $key): array => [
+            $data['states'] = array_map(fn (string $key): array => [
                 'key' => $key,
-                'awake' => false,
-                'hibernated' => true,
-                'cold' => true,
+                'awake' => $this->isAwake($key),
+                'hibernated' => ! $this->isAwake($key),
+                'cold' => $this->isCold($key),
                 'last_activity_at' => 1_767_268_800,
             ], $keys);
         }
@@ -868,6 +973,30 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
             stderr: '',
             durationMs: 1,
         );
+    }
+
+    private function isAwake(string $key): bool
+    {
+        return $this->awakeByKey[$key] ?? $this->defaultAwake;
+    }
+
+    private function isCold(string $key): bool
+    {
+        return $this->coldByKey[$key] ?? $this->defaultCold;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function inputKey(array $transportOptions): ?string
+    {
+        $input = $transportOptions['input'] ?? null;
+        $decoded = is_string($input)
+            ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
+            : [];
+        $key = is_array($decoded) ? $decoded['key'] ?? null : null;
+
+        return is_string($key) ? $key : null;
     }
 
     /**

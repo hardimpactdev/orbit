@@ -14,12 +14,12 @@
 **Post-input path eligibility:**
 - The resolved workspace must match an existing workspace record visible to
   the caller.
-- The resolved workspace's parent project must be visible to the caller.
+- The resolved workspace's parent app must be visible to the caller.
 
 ## Signature
 
 ```bash
-orbit workspace:show [name] [--instance=<project.instance>] [--json]
+orbit workspace:show [name] [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -30,13 +30,13 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Never; resolvable through defaults or prompt. | Never. | Current workspace if the CWD is inside a known workspace path; otherwise prompt or fail (see below). | Must match an existing workspace record visible to the caller. |
-| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent project and required selected instance of the uniquely resolved workspace. | Must match a visible app or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. |
+| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent app and required selected instance of the uniquely resolved workspace. | Must match a visible app or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-Workspace slugs are unique within a project but not globally unique. Two projects may
+Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--instance` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
-A bare project slug must resolve to exactly one concrete instance or fail with
+A bare app slug must resolve to exactly one concrete instance or fail with
 `error.meta.reason=instance_required`.
 When `--instance` includes an instance selector, the resolved workspace must
 belong to that concrete instance.
@@ -50,7 +50,7 @@ belong to that concrete instance.
      [`5.2_workspace-show_input-mode_non-interactive.md`](5.2_workspace-show_input-mode_non-interactive.md).
 2. **Handle ambiguity.**
    - If multiple workspaces match `name` and `--instance` is missing, interactive
-     mode prompts for the parent project. Non-interactive mode fails with
+     mode prompts for the parent app. Non-interactive mode fails with
      `error.code=workspace.ambiguous_name`.
 3. **Validate result.**
    - Must resolve to exactly one visible workspace record.
@@ -60,20 +60,18 @@ belong to that concrete instance.
 
 ## Behavior Contract
 
-1. **Registry Lookup.** Read the workspace record and related parent project and
+1. **Registry Lookup.** Read the workspace record and related parent app and
    gateway history from the gateway database.
 2. **Authorization Check.** Verify the caller is authorized to inspect the
    target workspace through gateway-owned access policy. If not authorized,
    fail before side effects.
 3. **Result Assembly.** Collect the workspace record and the durable gateway
    configuration the workspace owns or inherits:
-   - workspace registry: name, parent project, selected instance, branch,
+   - workspace registry: name, parent app, selected instance, branch,
      workspace path, canonical URL;
    - owning node: name and host (from the workspace's effective node);
    - runtime expectations: effective PHP version and inheritance source,
      runtime container, derived hostname;
-   - agent IDE configuration: effective adapter, resolution source, and
-     workspace discovery capability;
    - inherited process: instance-owned process definitions inherited by this
      workspace (registry-shaped, not live status);
    - workspace-owned proxy route: host, kind, owner;

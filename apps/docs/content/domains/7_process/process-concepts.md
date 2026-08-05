@@ -8,23 +8,54 @@ These terms define how process definitions are identified, scoped, and ordered.
 
 - **Process definition:** Gateway-owned configuration for one Orbit-managed
   long-running unit. A process may be scoped to a node, concrete instance,
-  or workspace. An instance-scoped definition is persisted against an `AppInstance`,
-  never only against a project. Instance and workspace processes run
+  or workspace. An instance-scoped definition is persisted against an `Instance`,
+  never only against an app. Instance and workspace processes run
   on that instance's serving node; node-level processes run directly against
   the owning node.
-- **Process identity slug:** Lowercase identity slug used as the process name.
-  Maximum 64 characters.
+- **Process identity slug (`key`):** Stable lowercase identity slug stored
+  internally as `Process.name` and exposed publicly as `key` (with
+  compatibility alias `name` equal to `key`). Maximum 64 characters. Used for
+  runtime unit identity, lifecycle targeting, and uniqueness within the owner
+  scope. Renaming the identity does not rewrite the display label.
+- **Process display label (`label`):** Durable non-null human-facing label
+  persisted on the process row. Defaults to the identity key when omitted at
+  create time. Updated only via explicit `label` input; max 255 characters after
+  trim; must be non-empty.
 - **Process scope:** Optional target that binds a process to a node, concrete
   instance, or workspace. The scope selects the serving node, working
   context, default environment, and lifecycle authorization boundary.
-- **Instance selector:** Dotted `<project.instance>` identity used by public
-  process commands. A bare project slug is shorthand only when the project has
+- **Instance selector:** Dotted `<app.instance>` identity used by public
+  process commands. A bare app slug is shorthand only when the app has
   exactly one instance. If it has more than one, resolution fails with
   `validation_failed`, `field=instance`, and `reason=instance_required`.
-- **Canonical project identity:** Instance and workspace process identities and
-  JSON include both the logical `project` slug and concrete `instance` slug.
+- **App hostname selector:** Hostname target accepted as the `app` query or body
+  key (CLI `--app`) for process list and lifecycle actions. The value is an
+  app-instance hostname or workspace hostname resolved against the gateway
+  proxy registry with exact registered proxy-route domain precedence so custom domains
+  work. An app-owned route resolves the concrete `Instance`; a
+  workspace-owned route resolves that workspace and its `Instance`. The
+  selector key is `app` only; `url` is never accepted. `app` is mutually
+  exclusive with `node`, `instance`, and `workspace` target modes (the existing
+  `instance`+`workspace` pairing remains valid only for those two keys).
+- **Browser process CORS admission:** For browser process list/lifecycle/stream
+  calls that send `Origin`, the gateway admits only a registered app/workspace
+  proxy domain Origin that matches the requested `app` hostname and uses a
+  default scheme/port tuple (`http` with no port or `:80`, `https` with no port
+  or `:443`). Non-default ports are distinct browser origins and are rejected.
+  CORS never authenticates the caller. CLI, TypeScript SDK, and browser clients
+  share one auth model: actual WireGuard peer source IP, then grant, permission,
+  and target-node authorization. Clients send no bearer token and no peer-IP
+  identity header. Optional `X-Orbit-Client` is a non-identity label only;
+  native EventSource streams must not require it. CORS may allow `Last-Event-ID`
+  for EventSource reconnect on the stream route.
+- **Browser process SSE:** Toolbars subscribe to
+  `GET /api/processes/stream?app=<hostname>` (app-only). No client polling and
+  no Laravel Toolbar PHP/filesystem watcher. See the process stream technical
+  contract under `internal/1_process-event-stream`.
+- **Canonical app identity:** Instance and workspace process identities and
+  JSON include both the logical `app` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
-  such as `php-cli`, `viteplus`, `opencode-cli`, or `polyscope`. The dependency
+  such as `php-cli`, `viteplus`, or `hermes`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
 - **External macOS runtime provider:** macOS applications such as OrbStack may
@@ -84,9 +115,9 @@ These terms describe the runtime objects that Orbit derives from process definit
   Instance/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,
-  including node-level services such as OpenCode Server or PolyScope Server and
-  instance/workspace command processes. The process row owns start/stop/restart/log
-  lifecycle; any related tool row supplies only the installed capability.
+  including node-level host services and instance/workspace command processes.
+  The process row owns start/stop/restart/log lifecycle; any related tool row
+  supplies only the installed capability.
 - **Launchd process runtime:** Runtime backend for macOS host command units.
   The first slice renders user LaunchAgent plists under the configured node
   user's `~/Library/LaunchAgents`, uses Orbit-owned labels under
@@ -98,18 +129,26 @@ These terms describe the runtime objects that Orbit derives from process definit
   process definitions normally render one unit. Instance-scoped inherited
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
-- **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  Systemd units use `orbit_<scope>_<process>` segment names for instance/workspace
-  command processes, with project and instance slugs as separate scope
-  segments; Docker units use equivalent Orbit-owned container names.
-  Launchd labels use `dev.hardimpact.orbit.<runtimeUnit>` and plist files use
-  the same label under the configured node user's LaunchAgents directory.
-  The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
-  backend segment delimiters.
+- **Runtime unit filename:** Backend-safe five-part identity for a rendered
+  runtime unit. The canonical form is
+  `orbit_<app>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_docs_development_main_vite` and
+  `orbit_docs_development_feature-docs_vite`). Component order is app,
+  instance, workspace (or `main` for the instance checkout), then process.
+  When that full identity exceeds the shared backend limit (64 characters for
+  the strictest consumer, launchd), Orbit deterministically bounds it by
+  retaining a readable prefix and appending a stable 12-character SHA-256
+  fragment so render, probe, and restore share one valid name. Systemd and
+  Docker use the same identity. Launchd labels use
+  `dev.hardimpact.orbit.<runtimeUnit>` and plist files use the same label under
+  the configured node user's LaunchAgents directory. The `orbit_` prefix marks
+  Orbit ownership, and underscores are reserved as backend segment delimiters.
 - **Runtime unit environment:** Predictable runtime environment exposed to
-  derived runtime units, including `PATH`, `HOME`, `APP_URL`, `VITE_APP_URL`,
-  and TLS path variables that Orbit manages. Separate from workspace lifecycle
-  step environment.
+  derived runtime units. Every unit receives `PATH` and `HOME`. Instance and
+  workspace process units also receive `APP_URL`, `VITE_APP_URL`, and TLS path
+  variables that Orbit manages. Node-owned process units receive only variables
+  meaningful to their selected runtime and do not synthesize app/Vite variables.
+  Separate from workspace lifecycle step environment.
 - **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
   Systemd runtime units are host service files. Docker runtime units are
   container definitions. Launchd runtime units are user LaunchAgent plist files
@@ -128,35 +167,42 @@ These terms define per-process behavioral rules that apply to every derived runt
   active unit; it does not opt an app-development instance or workspace out of
   hibernation.
 - **Development hibernation policy:** App-instance and workspace process groups
-  on `app-dev` nodes are installed without host-boot start intent. The first
-  HTTP request wakes the full owning group. One hour without route activity
-  makes it eligible for an automatic stop during the next ten-minute sweep.
-  The hibernator runs independently from the Orbit Scheduler. Routes for one
-  scope share its marker, activity state, and lock. Bulk lifecycle actions use
-  that lock and align the marker with the group state; named actions do not
-  change it. Node-owned and `app-prod` processes remain boot-persistent and are
-  outside this policy.
+  on `app-dev` nodes are installed without host-boot start intent.
+
+The first HTTP request wakes the full owning group through one serialized
+activation operation. Internal wake starts every configured lifecycle process
+concurrently, then marks the scope awake only after a bounded aggregate
+readiness check observes every expected runtime unit running. Public bulk
+`process:start` keeps process-order semantics and does not adopt a
+process-dependency model.
+
+One hour without route activity makes a group eligible for an automatic stop
+during the next ten-minute sweep. The hibernator runs independently from the
+Orbit Scheduler. Routes for one scope share its marker, activity state, and
+lock. Bulk lifecycle actions use that lock and align the marker with the group
+state; named actions do not change it. Node-owned and `app-prod` processes
+remain boot-persistent and are outside this policy.
+
 - **Development cold-dependency policy:** An already-hibernated app-instance or
   workspace group becomes eligible for dependency pruning after seven days
-  without HTTP, process-lifecycle, or source-tree activity. Shared source paths
-  use their newest owning-scope activity. Orbit removes only contained,
-  non-symlink Composer or JavaScript dependency directories backed by a
-  deterministic lockfile; it retains lockfiles, build artifacts, and
-  package-manager caches. Later sweeps skip a scope that is already cold. The
-  next HTTP activation restores only the missing dependency families before
-  starting the group. The activation plan enumerates the scope's effective
-  configured processes dynamically rather than assuming fixed roles such as a
-  queue worker. Failed or uncertain pruning leaves the source cold, and Orbit
-  clears that state only after dependency restoration and process startup both
-  succeed. Dependencies are single-flight across scopes sharing a node and
-  source path, while process startup and warm markers remain scope-owned. Stale
-  takeover must acquire both fences.
-- **Crash notification policy:** Process-definition opt-in for crash event
-  delivery. When the policy is enabled, `crashed` events resolve the effective
-  agent IDE and notify the active session when one is available. Units that use
-  launchd reject `agent_ide` crash notification in this slice with
-  `launchd_crash_notification_deferred` until Orbit owns a macOS crash wrapper
-  that can emit gateway-authenticated `crashed` events.
+  without HTTP, process-lifecycle, or source-tree activity.
+
+Shared source paths use their newest owning-scope activity. Orbit removes only
+contained, non-symlink Composer or JavaScript dependency directories backed by
+a deterministic lockfile. It retains lockfiles, build artifacts, and
+package-manager caches. Later sweeps skip a scope that is already cold. The
+next HTTP activation restores only the missing dependency families before the
+concurrent process-start phase and aggregate readiness gate. The activation
+plan enumerates the scope's effective configured processes dynamically rather
+than assuming fixed roles such as a queue worker. Failed
+  or uncertain pruning leaves the source cold, and Orbit clears that state only
+  after dependency restoration and process startup both succeed. Dependencies
+  are single-flight across scopes sharing a node and source path, while process
+  startup and warm markers remain scope-owned. Stale takeover must acquire both
+  fences.
+- **Crash notification policy:** Process-definition field for crash
+  notification delivery. The only supported value is `none`. Orbit does not
+  deliver crash notifications through an external notification adapter.
 - **Process runtime selection:** Process-definition field that records which
   backend renders the runtime units. Instance and workspace host-command processes
   default to `systemd` on Linux and `launchd` on macOS. Node-owned host-command
@@ -169,10 +215,28 @@ These terms define per-process behavioral rules that apply to every derived runt
 
 These terms define the durable lifecycle records that process commands produce and consume.
 
-- **Process event:** Durable lifecycle history record. `started` and `stopped`
-  events are recorded by successful gateway service lifecycle actions.
-  `crashed` events are recorded when the runtime hook on the node reports an
-  exit.
+- **Process event:** Durable lifecycle history record for process runtime state.
+
+Gateway lifecycle actions record transitional `starting` / `stopping` /
+`restarting` **before** the runtime call. They then record terminal `started` /
+`stopped` on success, or `failed` when the backend returns false or throws. The
+exception is rethrown after recording.
+
+Ordinary creation and convergence paths that start units use the same
+starting→started/failed pattern. Examples include `process:add` default start,
+workspace setup, and role or doctor restore starts. `process:update --restart`
+records restarting→started/failed with the current process name snapshot,
+including renames applied in the same update.
+
+Deploy active-release FrankenPHP container restarts are not process lifecycle
+events. `crashed` events are recorded when the runtime hook on the node reports
+an exit. Gateway lifecycle event history is authoritative for list and toolbar
+consumers. List does not live-probe nodes.
+- **Process status:** Normalized runtime status from the latest durable
+  lifecycle event: `starting`, `running` (`started`), `stopping`, `stopped`,
+  `restarting`, `crashed`, and `unknown` (no event yet, or latest event
+  `failed`). Transitional values appear only when truthfully persisted.
+  Compatible `last_event` fields remain present when an event exists.
 - **Crash event:** A process event emitted by the runtime hooks that Orbit
   manages on nodes, for definitions whose crash-notification policy is
   enabled. Carries a stable event id, runtime unit name, exit code, exit status,
@@ -183,7 +247,7 @@ These terms define the durable lifecycle records that process commands produce a
 These terms define what the process family owns and what remains outside its scope.
 
 - **Process-family boundaries:** Process commands own process definitions,
-  optional node/instance/workspace scope, optional tool dependency, runtime backend,
+  optional node/instance/workspace/`app` hostname scope, optional tool dependency, runtime backend,
   runtime configuration, command or image configuration, environment, ports,
   volumes, restart policy, lifecycle commands, logs, crash notification policy,
   runtime unit derivation, runtime unit environment, and lifecycle event

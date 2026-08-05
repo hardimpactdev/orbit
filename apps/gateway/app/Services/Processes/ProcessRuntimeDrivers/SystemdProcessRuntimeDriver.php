@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\RemoteSystemdService;
 use App\Services\Processes\SystemdUnitRenderer;
@@ -19,14 +19,14 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         private RemoteSystemdService $systemd,
     ) {}
 
-    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->unitName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -79,8 +79,13 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->systemd->restart($node, $this->renderer->serviceName($runtimeUnit));
     }
 
+    public function isRunning(Node $node, string $runtimeUnit): bool
+    {
+        return $this->systemd->isActive($node, $this->renderer->serviceName($runtimeUnit));
+    }
+
     public function logScript(
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

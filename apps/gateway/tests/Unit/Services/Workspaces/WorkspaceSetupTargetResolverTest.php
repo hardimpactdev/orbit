@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Workspaces;
 
-use App\Contracts\AgentIdeWorkspacePathResolver;
-use App\Data\AgentIde\WorkspacePathResolution;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use RuntimeException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -50,38 +47,26 @@ describe('explicit path adoption', function (): void {
             ->toBeTrue();
     });
 
-    it('uses adapter identity for explicit Codex worktree paths without a workspace name', function (): void {
+    it('uses basename for explicit Codex worktree paths without a workspace name', function (): void {
         $app = workspaceSetupResolverApp([
             'name' => 'happie',
             'path' => '/home/nckrtl/apps/happie',
-            'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
 
         $localNode = createTestAppHostNode(role: 'app-dev');
-        $instance = AppInstance::factory()
+        $instance = Instance::factory()
             ->for($app)
             ->create([
                 'name' => 'nmbp',
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver' => InstanceDriver::Orbit,
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $localNode->id,
                     node: 'NMBP',
                     path: '/Users/nckrtl/apps/happie',
                     document_root: 'public',
                     domain: 'happie.nmbp',
                 ),
-                'agent_ide_config' => ['adapter' => 'polyscope'],
             ]);
-
-        app()->instance(
-            AgentIdeWorkspacePathResolver::class,
-            new WorkspaceSetupTargetResolverFakePathResolver(new WorkspacePathResolution(
-                workspaceName: 'codex-auto-env-happie-194238',
-                appSlug: 'happie',
-                path: '/Users/nckrtl/.codex/worktrees/fa33/happie',
-                adapterWorkspaceId: 'codex:fa33',
-            )),
-        );
 
         [$workspace, $resolvedApp, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
             name: null,
@@ -92,17 +77,13 @@ describe('explicit path adoption', function (): void {
         expect($workspace)
             ->toBeInstanceOf(Workspace::class)
             ->and($workspace->name)
-            ->toBe('codex-auto-env-happie-194238')
+            ->toBe('happie')
             ->and($workspace->path)
             ->toBe('/Users/nckrtl/.codex/worktrees/fa33/happie')
-            ->and($workspace->app_instance_id)
+            ->and($workspace->instance_id)
             ->toBe($instance->id)
-            ->and($workspace->agent_ide)
-            ->toBe('polyscope')
-            ->and($workspace->agent_ide_workspace_id)
-            ->toBe('codex:fa33')
             ->and($workspace->url())
-            ->toBe('https://codex-auto-env-happie-194238.happie.nmbp')
+            ->toBe('https://happie.happie.nmbp')
             ->and($resolvedApp->is($app))
             ->toBeTrue()
             ->and($node->is($localNode))
@@ -125,30 +106,20 @@ describe('explicit path adoption', function (): void {
             ->toThrow(WorkspaceSetupResolutionFailed::class, 'project root');
     });
 
-    it('rejects production placement before adapter lookup or workspace registration', function (): void {
+    it('rejects production placement before workspace registration', function (): void {
         $node = createTestAppHostNode(role: 'app-prod');
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'site',
             'environment' => 'production',
-            'agent_ide_config' => ['adapter' => 'polyscope'],
         ]);
-        AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,
                 domain: $app->domain,
             ),
         ]);
-        app()->instance(
-            AgentIdeWorkspacePathResolver::class,
-            new class implements AgentIdeWorkspacePathResolver {
-                public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
-                {
-                    throw new RuntimeException('Production workspace adapter lookup must not run.');
-                }
-            },
-        );
 
         try {
             app(WorkspaceSetupTargetResolver::class)->resolve(
@@ -171,18 +142,18 @@ describe('explicit path adoption', function (): void {
     });
 });
 
-function workspaceSetupResolverApp(array $overrides = []): Project
+function workspaceSetupResolverApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(role: 'app-dev');
 
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
 
-    AppInstance::factory()
+    Instance::factory()
         ->for($app)
         ->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,
@@ -191,28 +162,4 @@ function workspaceSetupResolverApp(array $overrides = []): Project
         ]);
 
     return $app;
-}
-
-final readonly class WorkspaceSetupTargetResolverFakePathResolver implements AgentIdeWorkspacePathResolver
-{
-    public function __construct(
-        private WorkspacePathResolution $resolution,
-    ) {}
-
-    public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
-    {
-        if ($adapter !== 'polyscope') {
-            return null;
-        }
-
-        if ($app->name !== $this->resolution->appSlug) {
-            return null;
-        }
-
-        if ($absolutePath !== $this->resolution->path) {
-            return null;
-        }
-
-        return $this->resolution;
-    }
 }

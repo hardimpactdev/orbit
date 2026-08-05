@@ -19,7 +19,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -40,14 +40,13 @@ orbit node:new dev-1 --roles=app-dev --host=app-1.ssh.example.com --tld=test
 orbit node:new edge-1 --template=ingress --host=203.0.113.20 --tld=edge
 orbit node:new web-1 --template=app-production --host=203.0.113.21 --tld=web
 orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22 --tld=web-two
-orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --valkey-node=db-1 --tld=realtime
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data --tld=storage
 orbit node:new metrics-1 --template=metrics --host=203.0.113.40 --tld=metrics
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
 orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --postgres-process=postgres --clickhouse-node=db-1 --tld=analytics
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=operator-1 --operator-tld=operator
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
-orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=openclaw --agent-tool=hermes
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=hermes
 orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=all --grant-to-preset=operator
 ```
 
@@ -97,6 +96,12 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   used when the Agent executes work on that node. Root SSH login and password
   login are disabled. Break-glass access belongs to the operator and remains
   outside Orbit commands.
+- `--gateway-endpoint`: optional IP address or dotted DNS name that this node's
+  WireGuard peer should use to reach the gateway. Defaults to the gateway VPN
+  public endpoint. Forbidden for bare client identities and `--operator`. The
+  WireGuard port is appended by Orbit.
+- `--host-key-fingerprint`: optional expected SSH host key SHA256 fingerprint
+  verified by the initiating CLI during bootstrap.
 - `--ingress`: existing active `ingress` node to use when
   creating a private `app-prod` backend node that does not serve public
   traffic itself.
@@ -119,6 +124,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
+- `--self-grant-permissions`: custom permission set for the self-grant. Optional;
+  requires `--self-grant=custom` specifically (not merely any `--self-grant`).
 - `--agent-tool`: repeatable. Names an agent tool slug to install during
   provisioning when `--roles` includes `agent`. Forbidden when the node has no
   `agent` role. Zero, one, or many may be supplied; no default agent tool is
@@ -156,9 +163,12 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 | `analytics` | `analytics` | — | yes | live |
 | `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
 
-> **Status:** The `websocket` template is documented so the CLI surface stays
-> stable, but current behavior fails before side effects with
-> `validation_failed` until the WebSocket implementation lands. See the
+> **Status:** The `websocket` template and `--roles=websocket` remain accepted
+> names on this command so the CLI surface stays stable, but current behavior
+> fails before side effects with `validation_failed` and
+> `reason=not_implemented`. The live path onto a node is
+> [`node role:add`](../12_node-role-add/node-role-add.md) with role
+> `websocket` (and `--valkey-node`) on an already-provisioned host. See the
 > [JSON renderer contract](technical/6.2_node-new_output-render_json.md#validation-error)
 > for the exact machine-readable failure shape.
 
@@ -203,10 +213,12 @@ Requires `--host` when the template provisions a host.
 
 **`websocket` template**
 
-Provisions a private realtime node and creates an active `websocket` role
-assignment whose settings point at the selected Valkey node.
-
-Requires `--host` and `--valkey-node`. Implementation pending.
+Documented expansion would provision a private realtime node and create an
+active `websocket` role assignment whose settings point at the selected Valkey
+node. Requires `--host` and `--valkey-node`. Current `node:new` rejects the
+template and explicit `websocket` role with `reason=not_implemented`; use
+`node role:add <node> websocket --valkey-node=<node>` after provisioning the
+host.
 
 **`s3` template**
 
@@ -333,7 +345,7 @@ regardless of whether a template or explicit role list was used.
 **`agent` role details**
 
 `--agent-tool=<tool>` may be repeated to select agent tools to install
-during provisioning. Supported agent tools are `openclaw` and `hermes`.
+during provisioning. The only supported first-party agent tool is `hermes`.
 Selecting more than one agent tool emits the same multiple-agent-tool
 warning that `tool:install` uses: interactive callers confirm before
 proceeding, machine-readable callers receive a structured
@@ -357,7 +369,7 @@ receives its concrete `orbit.{tld}` record in the node projection.
 For provisioned Linux nodes, `node:new` configures node-owned security policy
 by default. That policy belongs to the `node` family and may surface as
 `node.security.*` doctor findings. `node:new` does not configure tools,
-user-facing firewall rules, projects, instances, or workspaces.
+user-facing firewall rules, apps, instances, or workspaces.
 
 If initial role validation fails, the command stops before provisioning
 or writing the node identity. If an initial role is persisted but its
@@ -420,7 +432,7 @@ Agent setup does not offer `gateway-admin` by default. `node:new` itself
 requires the caller to hold a grant to the gateway with `node:new` or `*`.
 The normal way to grant that authority is the `gateway-admin` preset.
 
-It does not configure tools, projects, instances, workspaces, processes, schedules,
+It does not configure tools, apps, instances, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
 and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt`.
 

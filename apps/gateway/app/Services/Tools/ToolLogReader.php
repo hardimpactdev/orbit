@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Actions\Processes\ShowProcessLogs;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as ProcessModel;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
@@ -90,7 +90,7 @@ final readonly class ToolLogReader
                     $target->node->name,
                     'logs',
                     $result->exitCode() ?? 1,
-                    trim($result->errorOutput()),
+                    $this->failureOutput($result->output(), $result->errorOutput()),
                 );
             }
 
@@ -113,7 +113,7 @@ final readonly class ToolLogReader
                     $target->node->name,
                     'logs',
                     $result->exitCode,
-                    trim($result->stderr),
+                    $this->failureOutput($result->stdout, $result->stderr),
                 );
             }
 
@@ -136,7 +136,7 @@ final readonly class ToolLogReader
             return $this->processContexts->resolve($process->owner->name, null, null);
         }
 
-        if ($process->owner instanceof Project) {
+        if ($process->owner instanceof App) {
             return $this->processContexts->resolve(null, $process->owner->name, null);
         }
 
@@ -155,6 +155,21 @@ final readonly class ToolLogReader
             'validation_failed',
             ['process' => $process->name],
         );
+    }
+
+    /**
+     * Prefer stderr, but keep stdout when commands redirect with 2>&1 (for
+     * example `docker logs ... 2>&1`) so failure reports stay useful.
+     */
+    private function failureOutput(string $stdout, string $stderr): string
+    {
+        $stderr = trim($stderr);
+
+        if ($stderr !== '') {
+            return $stderr;
+        }
+
+        return trim($stdout);
     }
 
     /**

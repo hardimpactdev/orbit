@@ -51,7 +51,7 @@ selects non-interactive input mode and is never destructive consent.
 - Sends one Cloudflare DNS record delete request for the resolved zone and
   record ID.
 - Returns the removed record ID and resolved zone in the command result.
-- Does not delete Orbit proxy routes, app domains, local DNS resolver overrides, or gateway-owned DNS configuration.
+- Does not delete Orbit proxy routes, instance domains, local DNS resolver overrides, or gateway-owned DNS configuration.
 
 ## Renderer Contracts
 
@@ -69,7 +69,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-dns:remove` may remove provider DNS used by proxy or app hostnames, but it
 does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
-owns ingress route health and [`doctor --family=instance`](../../../5_project/instance-doctor.md)
+owns ingress route health and [`doctor --family=instance`](../../../5_app/instance-doctor.md)
 owns app-domain health.
 
 ## Test Mapping

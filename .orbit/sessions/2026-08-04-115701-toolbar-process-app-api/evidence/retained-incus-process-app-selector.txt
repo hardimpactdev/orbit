@@ -1,0 +1,142 @@
+Retained Incus process app-selector proof
+========================================
+
+Source HEAD: 4ac2fc1fa016e970d22b8c7db165abaafdbff4ef
+Branch: codex/toolbar-process-app-api
+Worktree: /Users/nckrtl/orbit/.worktrees/codex-toolbar-process-app-api
+Proof completed (UTC): 2026-08-04T09:38:07Z
+HUMAN_JUDGMENT: not-required
+
+Topology
+--------
+id: dev-736935
+kind: operator_gateway_app-dev
+provider: incus
+host: beast
+run_id: dev-736935
+gateway_ip: 10.6.0.2
+created_at: 2026-08-04T09:27:27+00:00
+release_command: composer e2e:incus -- --stop --id=dev-736935
+source_path: /tmp/orbit-e2e-sources/codex-toolbar-process-app-api-incus-dcf95baa5302/retained/dev-736935
+
+Roles / instances
+-----------------
+operator: orbit-e2e-dev-736935-operator (WireGuard 10.6.0.3)
+gateway:  orbit-e2e-dev-736935-gateway  (WireGuard 10.6.0.2)
+dev:      orbit-e2e-dev-736935-dev       (WireGuard 10.6.0.4, node name app-dev-1)
+
+Checkout / launcher identity (operator Solo terminal process 1349)
+------------------------------------------------------------------
+cwd: /home/orbit/orbit-run
+launcher: /usr/local/bin/orbit -> /home/orbit/orbit-run/apps/cli/orbit
+CLI version: 0.1.190 (Installed at 04-08-2026 - 07:05)
+Feature marker present: apps/gateway/app/Services/Processes/ProcessAppHostnameResolver.php
+attach:
+  ssh -tt beast 'incus exec orbit-e2e-dev-736935-operator -- sudo -iu orbit bash -lc "cd /home/orbit/orbit-run && exec bash -i"'
+
+Pre-flight
+----------
+- bin/orbit-secret-scan: PASS (before topology acquire)
+- git status clean at 4ac2fc1fa016e970d22b8c7db165abaafdbff4ef
+- composer e2e:incus -- --start --topology=operator_gateway_app-dev --json: exit 0
+- project:new via GitHub blocked (gh unauthenticated); disposable fixture used instead
+
+Disposable fixture (topology-local only)
+----------------------------------------
+1. Seeded only registry objects needed for hostnames (project/instance/workspace/proxy_routes)
+   with app path + workspace path set to real /home/orbit/orbit-run on app-dev-1.
+2. Removed only disposable seeded process rows sleep-proof / ws-sleep-proof (ids 2,3).
+3. Created real runtime units through source CLI:
+   orbit process:add sleep-proof 'sleep 3600' --instance=toolbar-process-proof.development --json
+   ADD_APP_EXIT:0
+   rendered units:
+     - orbit_toolbar-process-proof_development_main_sleep-proof (context=main)
+     - orbit_toolbar-process-proof_development_feature-too_31f81ce61efc (context=feature-toolbar)
+
+Hostnames
+---------
+app hostname:       toolbar-process-proof-development.test  (owner_type=app)
+workspace hostname: feature-toolbar.test                    (owner_type=workspace)
+
+Commands and results (operator @ /home/orbit/orbit-run)
+------------------------------------------------------
+APP_HOST=toolbar-process-proof-development.test
+WS_HOST=feature-toolbar.test
+
+## process:list --app=$APP_HOST --json  (after add)
+LIST_APP:0
+context: node=app-dev-1 project=toolbar-process-proof instance=development workspace=null
+process sleep-proof status=running runtime_unit=orbit_toolbar-process-proof_development_main_sleep-proof
+last_event type=started
+
+## process:list --app=$WS_HOST --json  (after add)
+LIST_WS:0
+context: node=app-dev-1 project=toolbar-process-proof instance=development workspace=feature-toolbar
+process sleep-proof status=running runtime_unit=orbit_toolbar-process-proof_development_feature-too_31f81ce61efc
+last_event type=started
+exact target selection: distinct runtime_unit for workspace hostname vs app hostname
+
+## process:stop sleep-proof --app=$APP_HOST --json
+STOP1:0 state=stopped event.type=stopped (id=6)
+
+## process:start sleep-proof --app=$APP_HOST --json
+START1:0 state=running event.type=started (id=7)
+
+## process:list --app=$APP_HOST --json (running)
+status=running last_event.type=started
+
+## process:stop sleep-proof --app=$APP_HOST --json
+STOP2:0 state=stopped event.type=stopped (id=8)
+
+## process:list --app=$APP_HOST --json (stopped)
+status=stopped last_event.type=stopped
+
+## process:start sleep-proof --app=$APP_HOST --json (repeat/idempotent restart path)
+START2:0 state=running event.type=started (id=9)
+
+## process:restart sleep-proof --app=$APP_HOST --json
+RESTART:0 state=running events=[{type:stopped,id:10},{type:started,id:11}]
+(restart uses plural events[], matching OpenAPI contract)
+
+## process:stop/start/restart sleep-proof --app=$WS_HOST --json
+WSTOP:0    state=stopped event.type=stopped (id=12) workspace=feature-toolbar unit=...feature-too_31f81ce61efc
+WSTART:0   state=running event.type=started (id=13)
+WRESTART:0 state=running events=[{type:stopped,id:14},{type:started,id:15}]
+workspace list after restart: status=running last_event.type=started
+
+## mutual exclusion
+process:list --app=$APP_HOST --node=app-dev-1 --json
+MEX1:1 validation_failed "An app context cannot be combined with node, instance, or workspace context." field=context
+
+process:start sleep-proof --app=$APP_HOST --instance=toolbar-process-proof.development --json
+MEX2:1 validation_failed same mutual-exclusion message field=context
+
+## missing hostname
+process:list --app=does-not-exist.test --json
+MISS:1 validation_failed "App hostname 'does-not-exist.test' is not registered." field=app
+
+Normalized status vocabulary observed
+-------------------------------------
+running, stopped (and earlier unknown before unit materialization)
+
+On-node unit proof (app-dev instance)
+-------------------------------------
+systemctl is-active orbit_toolbar-process-proof_development_main_sleep-proof.service => active
+systemctl is-active orbit_toolbar-process-proof_development_feature-too_31f81ce61efc.service => active
+WorkingDirectory=/home/orbit/orbit-run
+ExecStart=/bin/bash -lc 'sleep 3600'
+
+Result
+------
+PASSED retained-incus runtime proof for app-selector process list/start/stop/restart
+on app and workspace hostnames, concrete statuses, event/events shapes, exact unit
+selection, mutual exclusion, and missing-host failure.
+
+Reap
+----
+composer e2e:incus -- --stop --id=dev-736935  (after loop/evidence write)
+Solo terminal: retained-process-app-selector-proof (process 1349) — agent-owned; close after proof.
+
+Reap confirmed (UTC 2026-08-04T09:38:52Z):
+composer e2e:incus -- --stop --id=dev-736935 --json => exit 0
+reaped: operator, gateway, dev

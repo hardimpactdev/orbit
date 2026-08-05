@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -18,7 +18,7 @@ final readonly class SystemdUnitRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function unitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -48,7 +48,7 @@ final readonly class SystemdUnitRenderer
         return '/etc/systemd/system/'.$this->serviceName($runtimeUnit);
     }
 
-    public function render(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $user = $node->user ?: 'orbit';
@@ -64,8 +64,8 @@ final readonly class SystemdUnitRenderer
             'Type=simple',
             "User={$user}",
             'WorkingDirectory='.$this->workingDirectory($node, $app, $process, $workspace, $home),
-            ...$this->environmentLines($app, $node, $workspace, $home),
-            'ExecStart=/bin/bash -lc '.escapeshellarg($process->command),
+            ...$this->environmentLines($process, $app, $node, $workspace, $home),
+            'ExecStart=/bin/bash -lc '.$this->execStartCommand($process->command),
             'Restart='.$process->restart_policy->toSystemd(),
             'RestartSec=2',
             '',
@@ -74,7 +74,7 @@ final readonly class SystemdUnitRenderer
         ])).PHP_EOL;
     }
 
-    public function installScript(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function installScript(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $serviceName = $this->serviceName($runtimeUnit);
@@ -95,7 +95,7 @@ final readonly class SystemdUnitRenderer
 
     private function workingDirectory(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $home,
@@ -116,13 +116,25 @@ final readonly class SystemdUnitRenderer
     /**
      * @return list<string>
      */
-    private function environmentLines(Project $app, Node $node, ?Workspace $workspace, string $home): array
-    {
-        $environment =
-            [
-                'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
-                'HOME' => $home,
-            ] + $this->vite->shellVariables($app, $node, $workspace);
+    private function environmentLines(
+        Process $process,
+        App $app,
+        Node $node,
+        ?Workspace $workspace,
+        string $home,
+    ): array {
+        $environment = [
+            'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+            'HOME' => $home,
+        ];
+
+        $process->loadMissing('owner');
+
+        // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
+        // TLS variables belong to instance/workspace process contexts.
+        if (! $process->owner instanceof Node) {
+            $environment += $this->vite->shellVariables($app, $node, $workspace);
+        }
 
         return collect($environment)
             ->map(
@@ -132,6 +144,16 @@ final readonly class SystemdUnitRenderer
             )
             ->values()
             ->all();
+    }
+
+    /**
+     * Systemd expands `$VAR` / `${VAR}` / `$(...)` in unit values before the
+     * ExecStart program runs. Escape each `$` as `$$` so shell variables and
+     * command substitutions in process commands reach `/bin/bash -lc` intact.
+     */
+    private function execStartCommand(string $command): string
+    {
+        return str_replace('$', '$$', escapeshellarg($command));
     }
 
     private function escapeEnvironmentValue(string $value): string

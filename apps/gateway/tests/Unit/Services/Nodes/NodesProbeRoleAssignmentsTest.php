@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Nodes;
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -363,10 +363,10 @@ it('does not reactivate an app production role while the node owns a workspace',
         'last_error' => 'baseline failed',
         'converged_at' => null,
     ]);
-    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/srv/docs',
@@ -374,7 +374,7 @@ it('does not reactivate an app production role while the node owns a workspace',
     ]);
     Workspace::factory()->for($app)->create([
         'name' => 'feature-docs',
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
     ]);
 
     $this->app->bind(NodeRoleBaselineConverger::class, fn (): NodeRoleBaselineConverger => new class extends

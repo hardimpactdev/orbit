@@ -4,15 +4,9 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivityListController;
 use App\Http\Controllers\Api\ActivityShowController;
-use App\Http\Controllers\Api\AgentIdeAdapterChoicesController;
-use App\Http\Controllers\Api\AgentIdeMessageController;
 use App\Http\Controllers\Api\AnalyticsUpdateController;
-use App\Http\Controllers\Api\AppAgentIdeController;
 use App\Http\Controllers\Api\AppAnalyticsController;
-use App\Http\Controllers\Api\AppInstanceController;
-use App\Http\Controllers\Api\AppInstanceEnvController;
 use App\Http\Controllers\Api\AppListController;
-use App\Http\Controllers\Api\AppPruneController;
 use App\Http\Controllers\Api\AppRegisterController;
 use App\Http\Controllers\Api\AppRemoveController;
 use App\Http\Controllers\Api\AppRootController;
@@ -49,13 +43,14 @@ use App\Http\Controllers\Api\FirewallRuleDestroyController;
 use App\Http\Controllers\Api\FirewallRuleListController;
 use App\Http\Controllers\Api\FirewallRuleStoreController;
 use App\Http\Controllers\Api\GatewayStatusController;
+use App\Http\Controllers\Api\InstanceController;
+use App\Http\Controllers\Api\InstanceEnvController;
 use App\Http\Controllers\Api\InternalExecutorTokenController;
 use App\Http\Controllers\Api\ManifestSourceController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\MetricsCredentialsController;
 use App\Http\Controllers\Api\MetricsCredentialsResetController;
 use App\Http\Controllers\Api\MetricsStatusController;
-use App\Http\Controllers\Api\NodeAgentIdeController;
 use App\Http\Controllers\Api\NodeBootstrapCompleteController;
 use App\Http\Controllers\Api\NodeBootstrapController;
 use App\Http\Controllers\Api\NodeBootstrapResumeController;
@@ -76,7 +71,6 @@ use App\Http\Controllers\Api\OperationStreamControlPlaneController;
 use App\Http\Controllers\Api\PhpRuntimeController;
 use App\Http\Controllers\Api\PhpUseController;
 use App\Http\Controllers\Api\ProcessDestroyController;
-use App\Http\Controllers\Api\ProcessEventIngestController;
 use App\Http\Controllers\Api\ProcessListController;
 use App\Http\Controllers\Api\ProcessLogController;
 use App\Http\Controllers\Api\ProcessLogStreamStartController;
@@ -84,6 +78,7 @@ use App\Http\Controllers\Api\ProcessRestartController;
 use App\Http\Controllers\Api\ProcessStartController;
 use App\Http\Controllers\Api\ProcessStopController;
 use App\Http\Controllers\Api\ProcessStoreController;
+use App\Http\Controllers\Api\ProcessStreamController;
 use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProxyRouteDestroyController;
 use App\Http\Controllers\Api\ProxyRouteListController;
@@ -152,11 +147,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             ->name('api.operations.stream.auth');
         Route::post('/operations/{operationRun}/stream/leave', [OperationStreamControlPlaneController::class, 'leave'])
             ->name('api.operations.stream.leave');
-        Route::get('/operations/{operationRun}/stream/stop-decision', [
-            OperationStreamControlPlaneController::class,
-            'stopDecision',
-        ])
-            ->name('api.operations.stream.stopDecision');
     });
 
     Route::middleware(WireGuardIdentity::class)->group(function (): void {
@@ -174,6 +164,12 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             'publish',
         ])
             ->name('api.operations.stream.publish');
+        // Target-agent only: same peer as publish/publisher-credentials. Not grant-gated.
+        Route::get('/operations/{operationRun}/stream/stop-decision', [
+            OperationStreamControlPlaneController::class,
+            'stopDecision',
+        ])
+            ->name('api.operations.stream.stopDecision');
     });
 
     Route::middleware([
@@ -183,8 +179,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     ])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
-        Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
-        Route::post('/agent-ide/message', AgentIdeMessageController::class);
         Route::post('/analytics/update', AnalyticsUpdateController::class);
         Route::get('/dashboard/runtime-inventory', DashboardRuntimeInventoryController::class);
         Route::middleware(RequireGatewayExtension::class.':cloudflare')->group(function (): void {
@@ -193,8 +187,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             Route::post('/cloudflare/zones/{zone}/dns', [CloudflareController::class, 'storeDnsRecord']);
             Route::delete('/cloudflare/zones/{zone}/dns/{record}', [CloudflareController::class, 'removeDnsRecord']);
             Route::post('/cloudflare/cache/flush', [CloudflareController::class, 'flushCache']);
-            Route::post('/cloudflare/cache-rules/{project}', [CloudflareController::class, 'addCacheRule']);
-            Route::delete('/cloudflare/cache-rules/{project}', [CloudflareController::class, 'removeCacheRule']);
+            Route::post('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'addCacheRule']);
+            Route::delete('/cloudflare/cache-rules/{app}', [CloudflareController::class, 'removeCacheRule']);
             Route::put('/cloudflare/zones/{zone}/ssl', [CloudflareController::class, 'enableSsl']);
             Route::put('/cloudflare/zones/{zone}/ssl/disable', [CloudflareController::class, 'disableSsl']);
         });
@@ -228,11 +222,12 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/metrics/status', MetricsStatusController::class);
         Route::get('/metrics/credentials', MetricsCredentialsController::class);
         Route::post('/metrics/credentials/reset', MetricsCredentialsResetController::class);
-        Route::post('/events/process', ProcessEventIngestController::class);
         Route::get('/firewall-rules', FirewallRuleListController::class);
         Route::post('/firewall-rules', FirewallRuleStoreController::class);
         Route::delete('/firewall-rules/{name}', FirewallRuleDestroyController::class);
         Route::get('/processes', ProcessListController::class);
+        Route::get('/processes/stream', ProcessStreamController::class)
+            ->name('api.processes.stream');
         Route::post('/processes', ProcessStoreController::class);
         Route::post('/processes/restart', ProcessRestartController::class);
         Route::post('/processes/start', ProcessStartController::class);
@@ -272,11 +267,10 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/workspaces/{workspace}/env/render', [WorkspaceEnvController::class, 'render']);
         Route::delete('/workspaces/{name}', WorkspaceRemoveController::class);
         Route::get('/workspaces/{name}', WorkspaceShowController::class);
-        Route::get('/projects', AppListController::class);
-        Route::post('/projects', AppStoreController::class);
+        Route::get('/apps', AppListController::class);
+        Route::post('/apps', AppStoreController::class);
         Route::post('/instances/register', AppRegisterController::class);
-        Route::post('/instances/prune', AppPruneController::class);
-        Route::get('/instances', [AppInstanceController::class, 'all']);
+        Route::get('/instances', [InstanceController::class, 'all']);
         Route::middleware(RequireGatewayExtension::class.':codex')->group(function (): void {
             Route::get('/codex/apps', [CodexAppController::class, 'list']);
             Route::post('/codex/apps/{project}', [CodexAppController::class, 'add']);
@@ -292,7 +286,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
                 [SoloProxyController::class, 'mutate'],
             )->where('operation', '.*');
         });
-        Route::post('/instances/{instance}/agent-ide', AppAgentIdeController::class);
         Route::post('/instances/{instance}/analytics/enable', [AppAnalyticsController::class, 'enable']);
         Route::post('/instances/{instance}/analytics/disable', [AppAnalyticsController::class, 'disable']);
         Route::get('/instances/{instance}/analytics/verify', [AppAnalyticsController::class, 'verify']);
@@ -308,18 +301,18 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/instances/{instance}/mounts', [AppRuntimeMountController::class, 'index']);
         Route::post('/instances/{instance}/mounts', [AppRuntimeMountController::class, 'store']);
         Route::delete('/instances/{instance}/mounts', [AppRuntimeMountController::class, 'destroy']);
-        Route::get('/projects/{project}/instances', [AppInstanceController::class, 'index']);
-        Route::post('/projects/{project}/instances', [AppInstanceController::class, 'store']);
-        Route::get('/projects/{project}/instances/{instance}', [AppInstanceController::class, 'show']);
-        Route::delete('/projects/{project}/instances/{instance}', [AppInstanceController::class, 'destroy']);
-        Route::get('/projects/{project}/instances/{instance}/env', [AppInstanceEnvController::class, 'index']);
-        Route::post('/projects/{project}/instances/{instance}/env', [AppInstanceEnvController::class, 'store']);
-        Route::get('/projects/{project}/instances/{instance}/env/render', [AppInstanceEnvController::class, 'render']);
+        Route::get('/apps/{app}/instances', [InstanceController::class, 'index']);
+        Route::post('/apps/{app}/instances', [InstanceController::class, 'store']);
+        Route::get('/apps/{app}/instances/{instance}', [InstanceController::class, 'show']);
+        Route::delete('/apps/{app}/instances/{instance}', [InstanceController::class, 'destroy']);
+        Route::get('/apps/{app}/instances/{instance}/env', [InstanceEnvController::class, 'index']);
+        Route::post('/apps/{app}/instances/{instance}/env', [InstanceEnvController::class, 'store']);
+        Route::get('/apps/{app}/instances/{instance}/env/render', [InstanceEnvController::class, 'render']);
         Route::get('/instances/{instance}/worker', [AppWorkerController::class, 'show']);
         Route::post('/instances/{instance}/worker/enable', [AppWorkerController::class, 'enable']);
         Route::post('/instances/{instance}/worker/disable', [AppWorkerController::class, 'disable']);
-        Route::delete('/projects/{project}', AppRemoveController::class);
-        Route::get('/projects/{project}', AppShowController::class);
+        Route::delete('/apps/{app}', AppRemoveController::class);
+        Route::get('/apps/{app}', AppShowController::class);
         Route::get('/tools', ToolListController::class);
         Route::delete('/tools/{tool}', ToolRemoveController::class);
         Route::post('/tools/{tool}/install', ToolInstallController::class);
@@ -353,7 +346,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/nodes/{name}/roles', NodeRoleListController::class);
         Route::post('/nodes/{name}/roles', NodeRoleAddController::class);
         Route::delete('/nodes/{name}/roles/{role}', NodeRoleRemoveController::class);
-        Route::post('/nodes/{name}/agent-ide', NodeAgentIdeController::class);
         Route::delete('/nodes/{name}', NodeRemoveController::class);
         Route::put('/nodes/{name}', NodeUpdateController::class);
         Route::get('/nodes/{name}', NodeShowController::class);

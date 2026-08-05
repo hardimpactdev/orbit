@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use JsonException;
 use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -16,8 +15,6 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
 
     /**
      * @return array<string, string>
-     *
-     * @throws JsonException
      */
     public function forPayload(LocalFleetUpdateInstallCliPayload $payload, string|false $path): array
     {
@@ -63,27 +60,33 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
             'ORBIT_RUNTIME_BOOT_SCRIPT_PATH' => NodeSystemdServiceRenderer::RuntimeBootScriptPath,
             'ORBIT_RUNTIME_BOOT_UNIT_NAME' => NodeSystemdServiceRenderer::RuntimeBootUnitName,
             'ORBIT_RUNTIME_BOOT_UNIT_PATH' => NodeSystemdServiceRenderer::RuntimeBootUnitPath,
-            'ORBIT_ROLE_IMAGES_JSON' => json_encode($payload->roleImages, JSON_THROW_ON_ERROR),
-            'ORBIT_ROLE_IMAGE_ARTIFACTS_JSON' => json_encode(
+            'ORBIT_ROLE_IMAGES_LINES' => implode(
+                "\n",
                 array_map(
-                    static fn (LocalFleetUpdateInstallRoleImageArtifactPayload $artifact): array => [
-                        'image' => $artifact->image,
-                        'url' => $artifact->artifactUrl,
-                        'sha256' => strtolower($artifact->sha256),
-                    ],
+                    base64_encode(...),
+                    $payload->roleImages,
+                ),
+            ),
+            'ORBIT_ROLE_IMAGE_ARTIFACTS_LINES' => implode(
+                "\n",
+                array_map(
+                    static fn (LocalFleetUpdateInstallRoleImageArtifactPayload $artifact): string => implode(' ', [
+                        base64_encode($artifact->image),
+                        base64_encode($artifact->artifactUrl),
+                        strtolower($artifact->sha256),
+                    ]),
                     $payload->roleImageArtifacts,
                 ),
-                JSON_THROW_ON_ERROR,
             ),
-            'ORBIT_ROLE_IMAGE_ALIASES_JSON' => json_encode(
+            'ORBIT_ROLE_IMAGE_ALIASES_LINES' => implode(
+                "\n",
                 array_map(
-                    static fn (LocalFleetUpdateInstallRoleImageAliasPayload $alias): array => [
-                        'source' => $alias->source,
-                        'target' => $alias->target,
-                    ],
+                    static fn (LocalFleetUpdateInstallRoleImageAliasPayload $alias): string => implode(' ', [
+                        base64_encode($alias->source),
+                        base64_encode($alias->target),
+                    ]),
                     $payload->roleImageAliases,
                 ),
-                JSON_THROW_ON_ERROR,
             ),
         ];
     }

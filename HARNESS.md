@@ -28,7 +28,15 @@ taxonomies do not belong in the anchor.
    docs. Stop only for unresolved product intent or missing external authority.
 3. Create the isolated worktree with `bin/orbit-prepare-worktree`; it seeds
    `.orbit/loop.md` when missing. Fill Goal, Scope, branch, worktree, and
-   scratchpad/source reference before editing.
+   scratchpad/source reference before editing. For stateful, lifecycle, or
+   concrete UX features, append one optional compact clause on the existing
+   Scope `Owned` row:
+   `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+   Omit the clause for ordinary/local changes. When the markers are present,
+   deterministic lint checks only field presence, known transition keys,
+   duplicates, and template placeholders; it does not decide whether a feature
+   is stateful or grade prose quality. Do not add a permanent new Scope row,
+   spec artifact, lane, or semantic grader for this framing.
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope. It searches the primary session archive
    corpus by default and returns matched records with their linked promotions
@@ -58,8 +66,25 @@ Run the smallest relevant checks first, then the diff-routed broader gate:
 When the Goal claims runtime reachability or convergence, proof must directly
 exercise the claimed final outcome. Configuration validation, artifact
 presence, and successful intermediate hops are supporting evidence, not
-substitutes. A failed or explicitly excluded final hop means
-`Verification.runtime` cannot be recorded as `passed`.
+substitutes. A failed, excluded, still-required, or deferred final hop means
+`Verification.runtime` cannot be recorded as `passed`. Acceptance and
+finalization share that contract for every non-`automated` venue: the existing
+`Verification.runtime` row must carry a candidate-bound structured receipt
+(`candidate=`, `venue=`, `environment=`, `target=` or `command=`, `expected=`,
+`observed=`, `result=passed`, and one exact `evidence=` path under
+`.orbit/evidence/` or `.orbit/quality-gates/`). The cited evidence path must be
+an existing regular file in the worktree `.orbit` tree; reject traversal,
+dot-segments, and symlink hops. Scan deferred or incomplete final-hop language in free-form detail and in
+structured `environment=`, `expected=`, and `observed=` only; do not scan
+target/command/evidence values. Reject unknown receipt keys. Free-form wording cannot turn a failed or
+post-LAND/post-merge deferred hop into a pass. Unresolved terminal runtime proof
+stays in PROVE: `ready`/`accept` refuse, normalize `State` to `prove` with
+`Acceptance: pending` and accepted tips `none`, preserve a still-valid Review
+and Reviewed feature tip, and route FIX -> BUILD -> PROVE before ACCEPT. A
+repair that moves HEAD still needs a refreshed review via the existing identity
+check. Do not invent a post-LAND closure proof. Historical archive reading stays
+compatible; the strict receipt applies when new acceptance or finalization is
+attempted.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those
@@ -98,20 +123,33 @@ with unresolved blast-radius gaps.
 
 ## Acceptance Venues
 
-`bin/orbit-feature-acceptance ready` conservatively derives one venue from the
-changed files:
+Immediately after FRAME and before expensive PROVE work, run the read-only
+diff-derived route (no loop packet, no cleanliness/review gates):
+
+```bash
+bin/orbit-feature-acceptance route
+```
+
+It prints stable JSON for the exact candidate HEAD, base tip, merge base,
+changed files, and derived venue. The same derivation feeds `ready` and
+`accept`. Default base is `main`. Fail closed when the route cannot be derived.
+
+`bin/orbit-feature-acceptance ready` uses that same venue from the changed
+files:
 
 | Venue | Use |
 | --- | --- |
-| `automated` | Proof venue for docs, tests, declarative workflow files, and repository tooling under `bin/` |
-| `retained-incus` | CLI commands and server or node runtime behavior |
+| `automated` | Docs, tests, declarative workflow files, repository tooling under `bin/`, and repository-only TypeScript SDK packaging under `packages/sdk-typescript/**` |
+| `retained-incus` | Shared core (`packages/core/src/**`), PHP SDK (`packages/sdk/**`; production require of CLI/gateway), CLI commands, and server or node runtime behavior |
 | `browser` | Gateway or docs web UI |
 | `host-macos` | Native macOS Agent behavior |
 
 Run `ready` only after recording the venue proof. It refuses every
 non-`automated` venue unless `Verification.runtime` is `passed`.
-Repository tooling still requires diff-routed `composer quality-check`; it has
-no retained topology target.
+Repository tooling and TypeScript SDK automation still require diff-routed
+`composer quality-check`; they have no retained topology target. Receipts that
+claim a live/production surface must use exact `environment=live`; ordinary
+retained topology proof may keep `environment=dev-fixture`.
 
 Work that still requires human judgment needs explicit user acceptance before
 merge. Other work is accepted by the automated actor after reviewer PASS and
@@ -217,6 +255,25 @@ passes.
 
 ## LAND
 
+Prefer the resumable coordinator on primary `main`:
+
+```bash
+bin/orbit-feature-land \
+  --branch=<feature> \
+  --worktree=<exact-feature-worktree> \
+  --solo-project-id=<session-owned-numeric-id>
+```
+
+Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
+only the next incomplete boundary. The same invocation is safe to resume: it
+derives progress from Git, the committed session archive/index, and Solo state,
+skips completed mutations, and stops with a phase plus next action on failure.
+Solo ownership is exact project path equals the feature worktree path; refuse
+primary/root projects, self-cwd, matching `SOLO_PROJECT_ID`, and
+`--confirm-stop-running` project deletion.
+
+Manual LAND remains validate-then-execute for each destructive mutation:
+
 1. Run `bin/orbit-feature-finalization-check --lint .orbit/loop.md`.
 2. Confirm the worktree has no tracked dirt or nonignored untracked files.
 3. Confirm exact successful diff-routed artifacts, reviewer PASS, accepted
@@ -228,22 +285,33 @@ passes.
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
    optional `feedback.jsonl`, regular files cited by the loop as one exact
-   inline-code path below `.orbit/evidence/` or `.orbit/quality-gates/`, and a
-   versioned receipt bound to the landed feature branch and every archived
-   byte. Cite files, never proof directories; missing, malformed, or unsafe
-   citations block archival.
+   inline-code path below `.orbit/evidence/`, `.orbit/quality-gates/`, or
+   `.orbit/release-evidence/`, and a versioned receipt bound to the landed
+   feature branch and every archived byte. Cite files, never proof
+   directories; missing, malformed, or unsafe citations block archival.
+   Runtime acceptance receipts still require evidence under
+   `.orbit/evidence/` or `.orbit/quality-gates/` only.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
-7. Update the session index and commit the archive/index.
+7. Update the session index and commit the archive/index. Cleanup requires
+   those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
+   - Cleanup in this order so each gated Solo ownership check remains
+     satisfiable: stop session-owned running/starting processes; delete the
+     session-owned Solo project (exact path == feature worktree); remove the
+     exact clean merged worktree; delete the exact merged feature branch.
+     Solo project deletion must complete before worktree removal.
    - Validate each cleanup mutation with
-     `bin/orbit-feature-finalization-check <exact git command>`.
+     `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.
 
-Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 compact
-receipt. Historical/full archives remain valid through their legacy manifests.
+Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 or schema-v3
+compact receipt. Schema-v3 newly written receipts may bind exact cited files
+under `.orbit/release-evidence/`; schema-v2 receipts keep pre-v3
+evidence/quality-gates proof roots only so historical archives remain valid.
+Historical/full archives remain valid through their legacy manifests.
 
 ## Trigger-Only Loop Improvement
 

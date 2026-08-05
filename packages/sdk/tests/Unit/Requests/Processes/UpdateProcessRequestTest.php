@@ -26,14 +26,14 @@ it('serializes only supplied editable fields', function (): void {
         instance: 'docs',
         name: 'vite',
         command: 'npm run dev -- --host=0.0.0.0',
-        crashNotification: 'agent_ide',
+        crashNotification: 'none',
         restart: true,
     );
 
     expect($request->body()->all())->toBe([
         'instance' => 'docs',
         'command' => 'npm run dev -- --host=0.0.0.0',
-        'crash_notification' => 'agent_ide',
+        'crash_notification' => 'none',
         'restart' => true,
     ]);
 });
@@ -55,6 +55,26 @@ it('serializes a runtime change into the request body', function (): void {
         'instance' => 'docs',
         'runtime' => 'systemd',
     ]);
+});
+
+it('serializes an optional label into the request body when supplied', function (): void {
+    $request = new UpdateProcessRequest(
+        instance: 'docs',
+        name: 'vite',
+        label: 'Vite Dev Server',
+    );
+
+    expect($request->body()->all())->toMatchArray([
+        'instance' => 'docs',
+        'label' => 'Vite Dev Server',
+        'restart' => false,
+    ]);
+});
+
+it('omits label from the request body when none was supplied', function (): void {
+    $request = new UpdateProcessRequest(instance: 'docs', name: 'vite', command: 'npm run dev');
+
+    expect($request->body()->all())->not->toHaveKey('label');
 });
 
 it('returns a ProcessUpdateResponse DTO with warnings', function (): void {

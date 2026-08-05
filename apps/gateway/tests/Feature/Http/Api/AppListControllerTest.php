@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,11 +49,11 @@ function assignAppListGatewayRole(Node $node): void
     ]);
 }
 
-function create_app_list_instance(Project $app, Node $node, string $name = 'development'): AppInstance
+function create_app_list_instance(App $app, Node $node, string $name = 'development'): Instance
 {
-    return AppInstance::factory()->for($app)->create([
+    return Instance::factory()->for($app)->create([
         'name' => $name,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -66,7 +66,7 @@ function create_app_list_instance(Project $app, Node $node, string $name = 'deve
 /**
  * @param  list<string>  $permissions
  */
-function grantAppListAccess(Node $caller, Node $appNode, array $permissions = ['project:read']): void
+function grantAppListAccess(Node $caller, Node $appNode, array $permissions = ['app:read']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -86,21 +86,21 @@ describe('AppListController', function (): void {
         grantAppListAccess($caller, $zNode);
         grantAppListAccess($caller, $aNode);
 
-        $zebra = Project::factory()->create(['name' => 'zebra', 'node_id' => $aNode->id, 'domain' => 'zebra.test']);
-        $beta = Project::factory()->create(['name' => 'beta', 'node_id' => $zNode->id, 'domain' => 'beta.test']);
-        $alpha = Project::factory()->create(['name' => 'alpha', 'node_id' => $zNode->id, 'domain' => 'alpha.test']);
+        $zebra = App::factory()->create(['name' => 'zebra', 'node_id' => $aNode->id, 'domain' => 'zebra.test']);
+        $beta = App::factory()->create(['name' => 'beta', 'node_id' => $zNode->id, 'domain' => 'beta.test']);
+        $alpha = App::factory()->create(['name' => 'alpha', 'node_id' => $zNode->id, 'domain' => 'alpha.test']);
 
         create_app_list_instance($zebra, $aNode);
         create_app_list_instance($beta, $zNode);
         create_app_list_instance($alpha, $zNode);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response->assertOk();
         $response->assertJsonPath('success.meta', []);
         expect($response->getContent())->toContain('"meta":[]');
 
-        $apps = $response->json('success.data.projects');
+        $apps = $response->json('success.data.apps');
         expect(array_column($apps, 'name'))
             ->toBe(['alpha', 'beta', 'zebra']);
 
@@ -113,18 +113,18 @@ describe('AppListController', function (): void {
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node']);
         grantAppListAccess($caller, $visibleNode);
 
-        $visible = Project::factory()->create(['name' => 'visible', 'node_id' => $hiddenNode->id]);
-        $hidden = Project::factory()->create(['name' => 'hidden', 'node_id' => $visibleNode->id]);
+        $visible = App::factory()->create(['name' => 'visible', 'node_id' => $hiddenNode->id]);
+        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $visibleNode->id]);
 
         create_app_list_instance($visible, $visibleNode);
         create_app_list_instance($hidden, $hiddenNode);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonCount(1, 'success.data.projects')
-            ->assertJsonPath('success.data.projects.0.name', 'visible');
+            ->assertJsonCount(1, 'success.data.apps')
+            ->assertJsonPath('success.data.apps.0.name', 'visible');
     });
 
     it('returns a logical app once when multiple visible instances exist', function (): void {
@@ -134,18 +134,18 @@ describe('AppListController', function (): void {
         grantAppListAccess($caller, $firstNode);
         grantAppListAccess($caller, $secondNode);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
         create_app_list_instance($app, $firstNode, name: 'development');
         create_app_list_instance($app, $secondNode, name: 'nmbp');
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonCount(1, 'success.data.projects')
-            ->assertJsonPath('success.data.projects.0.name', 'docs')
-            ->assertJsonPath('success.data.projects.0.instance_count', 2)
-            ->assertJsonPath('success.data.projects.0.workspace_count', 0)
+            ->assertJsonCount(1, 'success.data.apps')
+            ->assertJsonPath('success.data.apps.0.name', 'docs')
+            ->assertJsonPath('success.data.apps.0.instance_count', 2)
+            ->assertJsonPath('success.data.apps.0.workspace_count', 0)
             ->assertJsonMissingPath('success.data.inventory');
     });
 
@@ -155,28 +155,28 @@ describe('AppListController', function (): void {
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node', 'tld' => 'hidden']);
         grantAppListAccess($caller, $visibleNode);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
         $visibleInstance = create_app_list_instance($app, $visibleNode, name: 'development');
         $hiddenInstance = create_app_list_instance($app, $hiddenNode, name: 'production');
 
         Workspace::factory()->create([
             'name' => 'visible-workspace',
             'app_id' => $app->id,
-            'app_instance_id' => $visibleInstance->id,
+            'instance_id' => $visibleInstance->id,
         ]);
         Workspace::factory()->create([
             'name' => 'hidden-workspace',
             'app_id' => $app->id,
-            'app_instance_id' => $hiddenInstance->id,
+            'instance_id' => $hiddenInstance->id,
         ]);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.projects.0.instance_count', 1)
-            ->assertJsonPath('success.data.projects.0.workspace_count', 1)
-            ->assertJsonMissingPath('success.data.projects.0.workspaces')
+            ->assertJsonPath('success.data.apps.0.instance_count', 1)
+            ->assertJsonPath('success.data.apps.0.workspace_count', 1)
+            ->assertJsonMissingPath('success.data.apps.0.workspaces')
             ->assertJsonMissing(['name' => 'visible-workspace'])
             ->assertJsonMissing(['name' => 'hidden-workspace']);
     });
@@ -190,19 +190,19 @@ describe('AppListController', function (): void {
         $developmentNode = createAppListAppNode(['name' => 'app-dev-1']);
         grantAppListAccess($caller, $developmentNode);
 
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
         $instance = create_app_list_instance($app, $developmentNode);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         $this
-            ->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP])
+            ->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP])
             ->assertOk()
-            ->assertJsonPath('success.data.projects.0.name', 'docs')
-            ->assertJsonPath('success.data.projects.0.workspace_count', 0);
+            ->assertJsonPath('success.data.apps.0.name', 'docs')
+            ->assertJsonPath('success.data.apps.0.workspace_count', 0);
     });
 
     it('lets an app role node list logical apps with an instance on its self-granted node', function (): void {
@@ -219,19 +219,19 @@ describe('AppListController', function (): void {
             permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
         );
 
-        $owned = Project::factory()->create(['name' => 'owned', 'node_id' => $otherNode->id]);
-        $hidden = Project::factory()->create(['name' => 'hidden', 'node_id' => $caller->id]);
+        $owned = App::factory()->create(['name' => 'owned', 'node_id' => $otherNode->id]);
+        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $caller->id]);
 
         create_app_list_instance($owned, $caller);
         create_app_list_instance($hidden, $otherNode);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonCount(1, 'success.data.projects')
-            ->assertJsonPath('success.data.projects.0.name', 'owned')
-            ->assertJsonMissingPath('success.data.projects.1');
+            ->assertJsonCount(1, 'success.data.apps')
+            ->assertJsonPath('success.data.apps.0.name', 'owned')
+            ->assertJsonMissingPath('success.data.apps.1');
     });
 
     it('lets active gateway role assignments read all project registry records', function (): void {
@@ -240,24 +240,24 @@ describe('AppListController', function (): void {
         $firstNode = createAppListAppNode(['name' => 'app-1']);
         $secondNode = createAppListAppNode(['name' => 'app-2']);
 
-        $first = Project::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
-        $second = Project::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+        $first = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
+        $second = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
 
         create_app_list_instance($first, $firstNode);
         create_app_list_instance($second, $secondNode);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()->assertJsonCount(2, 'success.data.projects');
+        $response->assertOk()->assertJsonCount(2, 'success.data.apps');
     });
 
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         create_app_list_instance($app, $node);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response->assertForbidden()->assertJsonPath('error.code', 'authorization_failed');
     });
@@ -266,16 +266,16 @@ describe('AppListController', function (): void {
         $caller = createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
         grantAppListAccess($caller, $node, ['node:read']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         create_app_list_instance($app, $node);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This node is not authorized to read the project registry.')
-            ->assertJsonPath('error.meta.missing_permission', 'project:read');
+            ->assertJsonPath('error.message', 'This node is not authorized to read the app registry.')
+            ->assertJsonPath('error.meta.missing_permission', 'app:read');
     });
 
     it('returns validation error for invalid environment', function (): void {
@@ -284,7 +284,7 @@ describe('AppListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/projects?environment=staging',
+            '/api/apps?environment=staging',
             [],
             [],
             [],
@@ -303,7 +303,7 @@ describe('AppListController', function (): void {
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => null,
@@ -317,14 +317,14 @@ describe('AppListController', function (): void {
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.projects.0', [
+            ->assertJsonPath('success.data.apps.0', [
                 'name' => 'docs',
                 'repository' => null,
                 'dependency_audit_status' => 'unknown',
@@ -342,7 +342,7 @@ describe('AppListController', function (): void {
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
         ]);
@@ -353,14 +353,14 @@ describe('AppListController', function (): void {
                 'audited_at' => '2026-07-02 08:15:00',
             ]);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.projects.0.dependency_audit_status', 'findings')
-            ->assertJsonPath('success.data.projects.0.dependency_warning_count', 14)
-            ->assertJsonPath('success.data.projects.0.dependency_danger_count', 2)
-            ->assertJsonPath('success.data.projects.0.last_dependency_audit_at', '2026-07-02T08:15:00+00:00');
+            ->assertJsonPath('success.data.apps.0.dependency_audit_status', 'findings')
+            ->assertJsonPath('success.data.apps.0.dependency_warning_count', 14)
+            ->assertJsonPath('success.data.apps.0.dependency_danger_count', 2)
+            ->assertJsonPath('success.data.apps.0.last_dependency_audit_at', '2026-07-02T08:15:00+00:00');
     });
 
     it('does not expose runtime placement details for static apps', function (): void {
@@ -368,7 +368,7 @@ describe('AppListController', function (): void {
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
-        Project::factory()
+        App::factory()
             ->static()
             ->create([
                 'name' => 'marketing',
@@ -380,19 +380,19 @@ describe('AppListController', function (): void {
                 'adopted' => false,
             ]);
 
-        $response = $this->call('GET', '/api/projects', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.projects.0.name', 'marketing')
-            ->assertJsonMissingPath('success.data.projects.0.runtime')
-            ->assertJsonMissingPath('success.data.projects.0.runtime_config')
-            ->assertJsonMissingPath('success.data.projects.0.node')
-            ->assertJsonMissingPath('success.data.projects.0.path');
+            ->assertJsonPath('success.data.apps.0.name', 'marketing')
+            ->assertJsonMissingPath('success.data.apps.0.runtime')
+            ->assertJsonMissingPath('success.data.apps.0.runtime_config')
+            ->assertJsonMissingPath('success.data.apps.0.node')
+            ->assertJsonMissingPath('success.data.apps.0.path');
     });
 
     it('rejects unauthenticated requests', function (): void {
-        $response = $this->getJson('/api/projects');
+        $response = $this->getJson('/api/apps');
 
         $response
             ->assertForbidden()

@@ -255,7 +255,7 @@ final readonly class WorkspaceHistoryController implements Loggable
     ): Workspace|JsonResponse|null {
         /** @var Collection<int, Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->where('name', $name)
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',
@@ -289,8 +289,8 @@ final readonly class WorkspaceHistoryController implements Loggable
                     'meta' => [
                         'name' => $name,
                         'instances' => array_values(array_filter(array_map(
-                            fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\Project
-                                ? "{$workspace->app->name}.{$workspace->appInstance->name}"
+                            fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\App
+                                ? "{$workspace->app->name}.{$workspace->instance->name}"
                                 : null,
                             $matches->all(),
                         ))),
@@ -316,7 +316,7 @@ final readonly class WorkspaceHistoryController implements Loggable
         $normalizedPath = rtrim($path, '/');
 
         return Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',
                 $selection?->app->id,

@@ -10,10 +10,11 @@ use Illuminate\Support\Facades\Process as ProcessFacade;
 /**
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:too-many-methods
+ * @mago-expect lint:kan-defect
  */
 final readonly class LocalDockerSwarmServiceAction
 {
-    private const array ACTIONS = ['apply', 'ensure', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'ensure', 'is-active', 'remove', 'restart', 'start', 'stop'];
 
     /**
      * @param  array<string, mixed>  $payload
@@ -36,6 +37,18 @@ final readonly class LocalDockerSwarmServiceAction
         }
 
         $result = $this->runProcess($this->command($action, $service));
+
+        if ($action === 'is-active') {
+            if ($this->isActivelyRunning($result)) {
+                return [
+                    'action' => $action,
+                    'service' => $service,
+                    'changed' => false,
+                ];
+            }
+
+            throw $this->failure($action, $service, $result);
+        }
 
         if ($result->successful()) {
             return [
@@ -204,6 +217,14 @@ final readonly class LocalDockerSwarmServiceAction
             'restart' => ['docker', 'service', 'update', '--detach', '--force', $service],
             'start' => ['docker', 'service', 'update', '--detach', '--replicas', '1', $service],
             'stop' => ['docker', 'service', 'update', '--detach', '--replicas', '0', $service],
+            'is-active' => [
+                'docker',
+                'service',
+                'inspect',
+                '--format',
+                '{{if .ServiceStatus}}{{.ServiceStatus.RunningTasks}} {{.ServiceStatus.DesiredTasks}}{{else}}0 0{{end}}',
+                $service,
+            ],
             default => throw new LocalDockerSwarmServiceFailure(
                 errorCode: 'validation_failed',
                 message: 'Docker Swarm service action is invalid.',
@@ -260,6 +281,26 @@ final readonly class LocalDockerSwarmServiceAction
             strtolower($result->errorOutput().' '.$result->output()),
             'no such service',
         );
+    }
+
+    private function isActivelyRunning(ProcessResult $result): bool
+    {
+        if (! $result->successful()) {
+            return false;
+        }
+
+        $parts = preg_split('/\s+/', trim($result->output()));
+
+        if (! is_array($parts)) {
+            return false;
+        }
+
+        $runningToken = $parts[0] ?? null;
+        $desiredToken = $parts[1] ?? null;
+        $running = is_string($runningToken) && ctype_digit($runningToken) ? (int) $runningToken : 0;
+        $desired = is_string($desiredToken) && ctype_digit($desiredToken) ? (int) $desiredToken : 0;
+
+        return $desired > 0 && $running >= $desired;
     }
 
     private function failure(string $action, string $service, ProcessResult $result): LocalDockerSwarmServiceFailure

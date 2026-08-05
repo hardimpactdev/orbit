@@ -1105,14 +1105,6 @@ final readonly class E2EGatewayApi
                     return run_orbit_command('orbit node:show '.escapeshellarg($name).' --json');
                 }
 
-                function run_node_agent_ide(string $name, array $input): array
-                {
-                    return run_orbit_command(
-                        'orbit node:agent-ide '
-                            .escapeshellarg($name).' '
-                            .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
-                    );
-                }
 
                 function run_node_update(string $name, array $input): array
                 {
@@ -1190,13 +1182,13 @@ final readonly class E2EGatewayApi
 
                 function run_app_show(string $name): array
                 {
-                    return run_orbit_command('orbit project:show '.escapeshellarg($name).' --json');
+                    return run_orbit_command('orbit app:show '.escapeshellarg($name).' --json');
                 }
 
                 function run_app_new(array $input): array
                 {
                     $parts = [
-                        'orbit project:new',
+                        'orbit app:new',
                         escapeshellarg((string) ($input['name'] ?? '')),
                         '--node='.escapeshellarg((string) ($input['node'] ?? '')),
                         '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
@@ -1250,18 +1242,10 @@ final readonly class E2EGatewayApi
                     );
                 }
 
-                function run_app_agent_ide(string $name, array $input): array
-                {
-                    return run_orbit_command(
-                        'orbit instance:agent-ide '
-                            .escapeshellarg($name).' '
-                            .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
-                    );
-                }
 
                 function run_app_remove(string $name): array
                 {
-                    return run_orbit_command('orbit project:remove '.escapeshellarg($name).' --force --json');
+                    return run_orbit_command('orbit app:remove '.escapeshellarg($name).' --force --json');
                 }
 
                 function run_activity_list(array $query): array
@@ -1600,29 +1584,6 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^POST /api/nodes/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
-                        $input = json_decode(read_request_body($connection, $headers), true);
-
-                        if (! is_array($input)) {
-                            respond($connection, 422, json_encode([
-                                'error' => [
-                                    'code' => 'validation_failed',
-                                    'message' => 'Invalid JSON request.',
-                                    'meta' => [],
-                                ],
-                            ], JSON_THROW_ON_ERROR));
-                            fclose($connection);
-
-                            continue;
-                        }
-
-                        [$exitCode, $output] = run_node_agent_ide(urldecode($matches[1]), $input);
-                        respond($connection, $exitCode === 0 ? 200 : 422, $output);
-                        fclose($connection);
-
-                        continue;
-                    }
-
                     if (str_starts_with($requestLine, 'POST /api/nodes/grant ')) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
@@ -1702,8 +1663,8 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (str_starts_with($requestLine, 'GET /api/projects ') || str_starts_with($requestLine, 'GET /api/projects?')) {
-                        $path = explode(' ', $requestLine)[1] ?? '/api/projects';
+                    if (str_starts_with($requestLine, 'GET /api/apps ') || str_starts_with($requestLine, 'GET /api/apps?')) {
+                        $path = explode(' ', $requestLine)[1] ?? '/api/apps';
                         $queryString = parse_url($path, PHP_URL_QUERY);
                         $query = [];
 
@@ -1711,7 +1672,7 @@ final readonly class E2EGatewayApi
                             parse_str($queryString, $query);
                         }
 
-                        $parts = ['orbit project:list --json'];
+                        $parts = ['orbit app:list --json'];
 
                         foreach (['node', 'environment'] as $option) {
                             $value = $query[$option] ?? null;
@@ -1728,7 +1689,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^GET /api/projects/([^ ?]+)#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^GET /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
                         [$exitCode, $output] = run_app_show(urldecode($matches[1]));
                         respond($connection, $exitCode === 0 ? 200 : 422, $output);
                         fclose($connection);
@@ -1936,29 +1897,6 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^POST /api/instances/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
-                        $input = json_decode(read_request_body($connection, $headers), true);
-
-                        if (! is_array($input)) {
-                            respond($connection, 422, json_encode([
-                                'error' => [
-                                    'code' => 'validation_failed',
-                                    'message' => 'Invalid JSON request.',
-                                    'meta' => [],
-                                ],
-                            ], JSON_THROW_ON_ERROR));
-                            fclose($connection);
-
-                            continue;
-                        }
-
-                        [$exitCode, $output] = run_app_agent_ide(urldecode($matches[1]), $input);
-                        respond($connection, $exitCode === 0 ? 200 : 422, $output);
-                        fclose($connection);
-
-                        continue;
-                    }
-
                     if (preg_match('#^POST /api/instances/([^ ?]+)/root#', $requestLine, $matches) === 1) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
@@ -1982,7 +1920,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^DELETE /api/projects/([^ ?]+)#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^DELETE /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
                         read_request_body($connection, $headers);
 
                         [$exitCode, $output] = run_app_remove(urldecode($matches[1]));
@@ -2015,7 +1953,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (str_starts_with($requestLine, 'POST /api/projects ')) {
+                    if (str_starts_with($requestLine, 'POST /api/apps ')) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
                         if (! is_array($input)) {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -22,7 +22,7 @@ final readonly class AddSchedule
      * @return array{data: array<string, mixed>}
      */
     public function handle(
-        AppInstance|Node $target,
+        Instance|Node $target,
         string $name,
         string $interval,
         string $timezone,
@@ -30,9 +30,9 @@ final readonly class AddSchedule
         string $executionValue,
         int $timeoutSeconds,
     ): array {
-        $scope = $target instanceof AppInstance ? 'app' : 'node';
-        $publicScope = $target instanceof AppInstance ? 'instance' : 'node';
-        $targetName = $target instanceof AppInstance
+        $scope = $target instanceof Instance ? 'app' : 'node';
+        $publicScope = $target instanceof Instance ? 'instance' : 'node';
+        $targetName = $target instanceof Instance
             ? "{$target->app->name}.{$target->name}"
             : $target->name;
         $scheduleKey = "{$scope}:{$targetName}:{$name}";
@@ -52,8 +52,8 @@ final readonly class AddSchedule
             'schedule_key' => $scheduleKey,
             'name' => $name,
             'scope' => $scope,
-            'app_id' => $target instanceof AppInstance ? $target->app_id : null,
-            'app_instance_id' => $target instanceof AppInstance ? $target->id : null,
+            'app_id' => $target instanceof Instance ? $target->app_id : null,
+            'instance_id' => $target instanceof Instance ? $target->id : null,
             'node_id' => $target instanceof Node ? $target->id : null,
             'target_name' => $targetName,
             'interval' => $interval,
