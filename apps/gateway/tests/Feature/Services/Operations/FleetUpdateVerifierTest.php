@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Operations\FleetUpdateVerificationFailed;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
@@ -842,6 +843,8 @@ function fleet_verifier_gateway_migration_command(string $gatewayImage): string
         '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
         escapeshellarg($gatewayImage),
         escapeshellarg('php'),
+        escapeshellarg('-d'),
+        escapeshellarg('memory_limit='.GatewaySwarmManager::GatewayMigrationMemoryLimit),
         escapeshellarg('artisan'),
         escapeshellarg('migrate'),
         escapeshellarg('--force'),

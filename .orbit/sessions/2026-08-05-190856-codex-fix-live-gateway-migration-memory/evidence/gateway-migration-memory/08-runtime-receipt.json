@@ -1,0 +1,24 @@
+{
+  "candidate": "de52c78766a3556a1eb7d29fc6e4aea08bfad25b",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology_id": "dev-0c58bf",
+  "topology_kind": "operator_gateway",
+  "host": "beast",
+  "target": "orbit-e2e-dev-0c58bf-gateway:/home/orbit/orbit-run",
+  "command": "php -d memory_limit=32M .orbit-proof/proof-run.php && php -d memory_limit=32M .orbit-proof/proof-rerun.php",
+  "expected": "cutover migration rewrites 20000 activity_log rows under 32M; schema/grants/driver tokens correct; re-run remains safe; fleet migrate passes memory_limit=512M",
+  "observed": {
+    "migration_status": "passed",
+    "activity_rows": 20000,
+    "php_memory_limit": "32M",
+    "memory_peak_mib": 30,
+    "peak_under_limit": true,
+    "legacy_remaining": 0,
+    "rerun_status": "passed",
+    "fleet_memory_ceiling_present": true
+  },
+  "result": "passed",
+  "release_command": "composer e2e:incus -- --stop --id=dev-0c58bf",
+  "note": "Topology kept open for independent review; do not release until review/acceptance no longer needs it."
+}

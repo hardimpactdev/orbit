@@ -8,6 +8,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\GatewaySwarmInstaller;
+use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
@@ -809,6 +810,8 @@ function gateway_service_updater_migration_command(OperationUpdatePlan $plan): s
         '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
         escapeshellarg($plan->gateway_image),
         escapeshellarg('php'),
+        escapeshellarg('-d'),
+        escapeshellarg('memory_limit='.GatewaySwarmManager::GatewayMigrationMemoryLimit),
         escapeshellarg('artisan'),
         escapeshellarg('migrate'),
         escapeshellarg('--force'),
