@@ -103,6 +103,42 @@ test('gateway openapi schema-only operations are classified for sdk generation',
     ], $internalOperations);
 });
 
+test('application log openapi documents lines node and required workspace instance', function (): void {
+    ini_set('memory_limit', '1G');
+
+    $schema = export_open_api_schema_for_sdk_surface();
+    /** @var array<string, mixed> $paths */
+    $paths = $schema['paths'];
+
+    $instanceLog = $paths['/instances/{instance}/log']['get'] ?? null;
+    Assert::assertIsArray($instanceLog);
+    Assert::assertSame('instanceApplicationLog', $instanceLog['operationId'] ?? null);
+    Assert::assertTrue(openapi_has_query_parameter($instanceLog, 'lines', required: false, type: 'integer'));
+    Assert::assertTrue(openapi_has_query_parameter($instanceLog, 'node', required: false, type: 'string'));
+
+    $instanceStream = $paths['/instances/{instance}/log-stream']['post'] ?? null;
+    Assert::assertIsArray($instanceStream);
+    Assert::assertSame('instanceApplicationLogStreamStart', $instanceStream['operationId'] ?? null);
+    Assert::assertTrue(openapi_request_body_has_property($instanceStream, 'lines', required: false, type: 'integer'));
+    Assert::assertTrue(openapi_request_body_has_property($instanceStream, 'node', required: false, type: 'string'));
+    Assert::assertFalse(openapi_request_body_requires_property($instanceStream, 'instance'));
+
+    $workspaceLog = $paths['/workspaces/{workspace}/log']['get'] ?? null;
+    Assert::assertIsArray($workspaceLog);
+    Assert::assertSame('workspaceApplicationLog', $workspaceLog['operationId'] ?? null);
+    Assert::assertTrue(openapi_has_query_parameter($workspaceLog, 'instance', required: true, type: 'string'));
+    Assert::assertTrue(openapi_has_query_parameter($workspaceLog, 'lines', required: false, type: 'integer'));
+    Assert::assertTrue(openapi_has_query_parameter($workspaceLog, 'node', required: false, type: 'string'));
+
+    $workspaceStream = $paths['/workspaces/{workspace}/log-stream']['post'] ?? null;
+    Assert::assertIsArray($workspaceStream);
+    Assert::assertSame('workspaceApplicationLogStreamStart', $workspaceStream['operationId'] ?? null);
+    Assert::assertTrue(openapi_request_body_has_property($workspaceStream, 'instance', required: true, type: 'string'));
+    Assert::assertTrue(openapi_request_body_has_property($workspaceStream, 'lines', required: false, type: 'integer'));
+    Assert::assertTrue(openapi_request_body_has_property($workspaceStream, 'node', required: false, type: 'string'));
+    Assert::assertTrue(openapi_request_body_requires_property($workspaceStream, 'instance'));
+});
+
 /**
  * @return array<string, mixed>
  */
@@ -357,4 +393,101 @@ function path_shape_matches(string $schemaPath, string $sdkPath): bool
     }
 
     return true;
+}
+
+/**
+ * @param  array<string, mixed>  $operation
+ */
+function openapi_has_query_parameter(array $operation, string $name, bool $required, string $type): bool
+{
+    $parameters = $operation['parameters'] ?? null;
+
+    if (! is_array($parameters)) {
+        return false;
+    }
+
+    foreach ($parameters as $parameter) {
+        if (! is_array($parameter)) {
+            continue;
+        }
+
+        if (($parameter['name'] ?? null) !== $name || ($parameter['in'] ?? null) !== 'query') {
+            continue;
+        }
+
+        $schema = $parameter['schema'] ?? null;
+        $schemaType = is_array($schema) ? $schema['type'] ?? null : null;
+
+        return ($parameter['required'] ?? false) === $required && $schemaType === $type;
+    }
+
+    return false;
+}
+
+/**
+ * @param  array<string, mixed>  $operation
+ */
+function openapi_request_body_has_property(array $operation, string $name, bool $required, string $type): bool
+{
+    $schema = openapi_request_body_schema($operation);
+
+    if ($schema === null) {
+        return false;
+    }
+
+    $properties = $schema['properties'] ?? null;
+
+    if (! is_array($properties) || ! is_array($properties[$name] ?? null)) {
+        return false;
+    }
+
+    $property = $properties[$name];
+    $requiredNames = $schema['required'] ?? [];
+
+    if (! is_array($requiredNames)) {
+        $requiredNames = [];
+    }
+
+    $isRequired = in_array($name, $requiredNames, true);
+
+    return $isRequired === $required && ($property['type'] ?? null) === $type;
+}
+
+/**
+ * @param  array<string, mixed>  $operation
+ */
+function openapi_request_body_requires_property(array $operation, string $name): bool
+{
+    $schema = openapi_request_body_schema($operation);
+
+    if ($schema === null) {
+        return false;
+    }
+
+    $requiredNames = $schema['required'] ?? [];
+
+    return is_array($requiredNames) && in_array($name, $requiredNames, true);
+}
+
+/**
+ * @param  array<string, mixed>  $operation
+ * @return array<string, mixed>|null
+ */
+function openapi_request_body_schema(array $operation): ?array
+{
+    $requestBody = $operation['requestBody'] ?? null;
+
+    if (! is_array($requestBody)) {
+        return null;
+    }
+
+    $content = $requestBody['content']['application/json'] ?? null;
+
+    if (! is_array($content)) {
+        return null;
+    }
+
+    $schema = $content['schema'] ?? null;
+
+    return is_array($schema) ? $schema : null;
 }

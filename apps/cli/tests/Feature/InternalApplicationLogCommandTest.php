@@ -94,6 +94,52 @@ describe('internal:application-log', function (): void {
         }
     });
 
+    it('returns application_log.unreadable when the existing log file is unreadable', function (): void {
+        $root = sys_get_temp_dir().'/orbit-app-log-unreadable-'.uniqid();
+        mkdir($root.'/storage/logs', 0777, true);
+        $absolute = $root.'/storage/logs/laravel.log';
+        file_put_contents($absolute, "[history] unreadable\n");
+        $originalMode = fileperms($absolute);
+
+        try {
+            chmod($absolute, 0000);
+
+            [$exitCode, $output] = run_internal_application_log_command(
+                [
+                    '--operation-token' => application_log_signed_operation_token(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'absolute_path' => $absolute,
+                    'authorized_root' => $root,
+                    'lines' => 100,
+                    'follow' => false,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('application_log.unreadable');
+        } finally {
+            if (is_file($absolute)) {
+                chmod($absolute, is_int($originalMode) ? ($originalMode & 0777) : 0644);
+                unlink($absolute);
+            }
+            if (is_dir($root.'/storage/logs')) {
+                rmdir($root.'/storage/logs');
+            }
+            if (is_dir($root.'/storage')) {
+                rmdir($root.'/storage');
+            }
+            if (is_dir($root)) {
+                rmdir($root);
+            }
+        }
+    });
+
     it('accepts PHP_INT_MAX lines and rejects overflow line counts', function (): void {
         $root = sys_get_temp_dir().'/orbit-app-log-lines-'.uniqid();
         mkdir($root.'/storage/logs', 0777, true);

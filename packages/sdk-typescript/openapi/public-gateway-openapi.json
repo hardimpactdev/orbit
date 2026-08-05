@@ -5854,6 +5854,7 @@
     "/instances/{instance}/log": {
       "get": {
         "operationId": "instanceApplicationLog",
+        "description": "Read the fixed Laravel application log for one Instance (storage/logs/laravel.log under the authorized application root).",
         "tags": [
           "InstanceApplicationLog"
         ],
@@ -5865,6 +5866,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "description": "Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "description": "Optional serving-node placement constraint. When set, must equal the resolved instance serving node.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5873,284 +5890,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "object",
-                          "properties": {
-                            "data": {
-                              "type": "object",
-                              "properties": {
-                                "target": {
-                                  "type": "object",
-                                  "properties": {
-                                    "type": {
-                                      "type": "string",
-                                      "const": "instance"
-                                    },
-                                    "app": {
-                                      "type": "string"
-                                    },
-                                    "instance": {
-                                      "type": "string"
-                                    },
-                                    "workspace": {
-                                      "type": "null"
-                                    },
-                                    "selector": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "app",
-                                    "instance",
-                                    "workspace",
-                                    "selector"
-                                  ]
-                                },
-                                "node": {
-                                  "type": "string"
-                                },
-                                "path": {
-                                  "type": "string",
-                                  "const": "storage/logs/laravel.log"
-                                },
-                                "lines_requested": {
-                                  "type": "integer"
-                                },
-                                "file_exists": {
-                                  "type": "boolean"
-                                },
-                                "lines": {
-                                  "type": "array",
-                                  "items": {}
-                                }
-                              },
-                              "required": [
-                                "target",
-                                "node",
-                                "path",
-                                "lines_requested",
-                                "file_exists",
-                                "lines"
-                              ]
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "data",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success"
-                      ]
-                    },
-                    {
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "reason": {
-                                  "type": "string",
-                                  "enum": [
-                                    "missing_permission",
-                                    "direct_grant",
-                                    "gateway_admin_grant",
-                                    "gateway_node"
-                                  ]
-                                },
-                                "missing_permission": {
-                                  "type": "string",
-                                  "const": "instance:read"
-                                },
-                                "serving_node": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "reason",
-                                "missing_permission",
-                                "serving_node"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Peer identity unknown."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "instance.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "validation_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "The instance serving node could not be resolved."
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "field": {
-                              "type": "string",
-                              "const": "instance"
-                            },
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "field",
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -6161,6 +5901,7 @@
     "/instances/{instance}/log-stream": {
       "post": {
         "operationId": "instanceApplicationLogStreamStart",
+        "description": "Start an operation stream that follows the fixed Laravel application log for one Instance.",
         "tags": [
           "InstanceApplicationLogStreamStart"
         ],
@@ -6174,252 +5915,33 @@
             }
           }
         ],
+        "requestBody": {
+          "description": "Bounded history size and optional serving-node constraint for the follow stream.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "integer",
+                    "description": "Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX)."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Optional serving-node placement constraint. When set, must equal the resolved instance serving node."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "operation": {
-                              "type": "object",
-                              "properties": {
-                                "uuid": {
-                                  "type": "string"
-                                },
-                                "stream_descriptor_url": {
-                                  "type": "string"
-                                },
-                                "events_url": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "uuid",
-                                "stream_descriptor_url",
-                                "events_url"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "operation"
-                          ]
-                        },
-                        "meta": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "data",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "reason": {
-                                  "type": "string",
-                                  "enum": [
-                                    "missing_permission",
-                                    "direct_grant",
-                                    "gateway_admin_grant",
-                                    "gateway_node"
-                                  ]
-                                },
-                                "missing_permission": {
-                                  "type": "string",
-                                  "const": "instance:read"
-                                },
-                                "serving_node": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "reason",
-                                "missing_permission",
-                                "serving_node"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Peer identity unknown."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "instance.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "instance": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "validation_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "The instance serving node could not be resolved."
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "field": {
-                              "type": "string",
-                              "const": "instance"
-                            }
-                          },
-                          "required": [
-                            "field"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -10982,6 +10504,12 @@
                                       "type": "string",
                                       "const": "removed"
                                     },
+                                    "instance": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
                                     "placement": {
                                       "type": "string",
                                       "const": "ingress"
@@ -11039,6 +10567,7 @@
                                     "redirect_code",
                                     "tls",
                                     "status",
+                                    "instance",
                                     "placement",
                                     "router"
                                   ]
@@ -14808,6 +14337,7 @@
     "/workspaces/{workspace}/log": {
       "get": {
         "operationId": "workspaceApplicationLog",
+        "description": "Read the fixed Laravel application log for one Workspace (storage/logs/laravel.log under the workspace path).",
         "tags": [
           "WorkspaceApplicationLog"
         ],
@@ -14819,6 +14349,31 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "description": "Required owning instance selector (app.instance) for the workspace log target.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "description": "Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "description": "Optional serving-node placement constraint. When set, must equal the resolved workspace serving node.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14827,385 +14382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "object",
-                          "properties": {
-                            "data": {
-                              "type": "object",
-                              "properties": {
-                                "target": {
-                                  "type": "object",
-                                  "properties": {
-                                    "type": {
-                                      "type": "string",
-                                      "const": "workspace"
-                                    },
-                                    "app": {
-                                      "type": "string"
-                                    },
-                                    "instance": {
-                                      "type": "string"
-                                    },
-                                    "workspace": {
-                                      "type": "string"
-                                    },
-                                    "selector": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "type",
-                                    "app",
-                                    "instance",
-                                    "workspace",
-                                    "selector"
-                                  ]
-                                },
-                                "node": {
-                                  "type": "string"
-                                },
-                                "path": {
-                                  "type": "string",
-                                  "const": "storage/logs/laravel.log"
-                                },
-                                "lines_requested": {
-                                  "type": "integer"
-                                },
-                                "file_exists": {
-                                  "type": "boolean"
-                                },
-                                "lines": {
-                                  "type": "array",
-                                  "items": {}
-                                }
-                              },
-                              "required": [
-                                "target",
-                                "node",
-                                "path",
-                                "lines_requested",
-                                "file_exists",
-                                "lines"
-                              ]
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "data",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success"
-                      ]
-                    },
-                    {
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "reason": {
-                                  "type": "string",
-                                  "enum": [
-                                    "missing_permission",
-                                    "direct_grant",
-                                    "gateway_admin_grant",
-                                    "gateway_node"
-                                  ]
-                                },
-                                "missing_permission": {
-                                  "type": "string",
-                                  "const": "workspace:read"
-                                },
-                                "serving_node": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "reason",
-                                "missing_permission",
-                                "serving_node"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Peer identity unknown."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "workspace.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "workspace": {
-                              "type": "string"
-                            },
-                            "instance": {
-                              "type": [
-                                "string",
-                                "null"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "workspace",
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "The workspace serving node could not be resolved."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "const": "workspace"
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "The instance query parameter is required."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "const": "instance"
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -15216,6 +14393,7 @@
     "/workspaces/{workspace}/log-stream": {
       "post": {
         "operationId": "workspaceApplicationLogStreamStart",
+        "description": "Start an operation stream that follows the fixed Laravel application log for one Workspace.",
         "tags": [
           "WorkspaceApplicationLogStreamStart"
         ],
@@ -15229,384 +14407,40 @@
             }
           }
         ],
+        "requestBody": {
+          "description": "Required owning instance selector, optional bounded history size, and optional serving-node constraint for the follow stream.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance": {
+                    "type": "string",
+                    "description": "Required owning instance selector (app.instance) for the workspace log target."
+                  },
+                  "lines": {
+                    "type": "integer",
+                    "description": "Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX)."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Optional serving-node placement constraint. When set, must equal the resolved workspace serving node."
+                  }
+                },
+                "required": [
+                  "instance"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "202": {
+          "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "operation": {
-                              "type": "object",
-                              "properties": {
-                                "uuid": {
-                                  "type": "string"
-                                },
-                                "stream_descriptor_url": {
-                                  "type": "string"
-                                },
-                                "events_url": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "uuid",
-                                "stream_descriptor_url",
-                                "events_url"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "operation"
-                          ]
-                        },
-                        "meta": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "data",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "reason": {
-                                  "type": "string",
-                                  "enum": [
-                                    "missing_permission",
-                                    "direct_grant",
-                                    "gateway_admin_grant",
-                                    "gateway_node"
-                                  ]
-                                },
-                                "missing_permission": {
-                                  "type": "string",
-                                  "const": "workspace:read"
-                                },
-                                "serving_node": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "reason",
-                                "missing_permission",
-                                "serving_node"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Peer identity unknown."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "workspace.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "workspace": {
-                              "type": "string"
-                            },
-                            "instance": {
-                              "type": [
-                                "string",
-                                "null"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "workspace",
-                            "instance"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "string",
-                                  "enum": [
-                                    "validation_failed"
-                                  ]
-                                }
-                              ]
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "The workspace serving node could not be resolved."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "const": "workspace"
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {}
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "validation_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "The instance field is required."
-                            },
-                            "meta": {
-                              "type": "object",
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "const": "instance"
-                                }
-                              },
-                              "required": [
-                                "field"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
+                  "type": "object"
                 }
               }
             }

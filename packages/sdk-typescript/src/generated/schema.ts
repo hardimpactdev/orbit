@@ -603,6 +603,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Read the fixed Laravel application log for one Instance (storage/logs/laravel.log under the authorized application root). */
         get: operations["instanceApplicationLog"];
         put?: never;
         post?: never;
@@ -621,6 +622,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Start an operation stream that follows the fixed Laravel application log for one Instance. */
         post: operations["instanceApplicationLogStreamStart"];
         delete?: never;
         options?: never;
@@ -1388,6 +1390,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Read the fixed Laravel application log for one Workspace (storage/logs/laravel.log under the workspace path). */
         get: operations["workspaceApplicationLog"];
         put?: never;
         post?: never;
@@ -1406,6 +1409,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Start an operation stream that follows the fixed Laravel application log for one Workspace. */
         post: operations["workspaceApplicationLogStreamStart"];
         delete?: never;
         options?: never;
@@ -3997,7 +4001,12 @@ export interface operations {
     };
     instanceApplicationLog: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                lines?: number;
+                /** @description Optional serving-node placement constraint. When set, must equal the resolved instance serving node. */
+                node?: string;
+            };
             header?: never;
             path: {
                 instance: string;
@@ -4011,93 +4020,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                target: {
-                                    /** @constant */
-                                    type: "instance";
-                                    app: string;
-                                    instance: string;
-                                    workspace: null;
-                                    selector: string;
-                                };
-                                node: string;
-                                /** @constant */
-                                path: "storage/logs/laravel.log";
-                                lines_requested: number;
-                                file_exists: boolean;
-                                lines: unknown[];
-                            };
-                            meta: string[];
-                        };
-                    } | string;
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: {
-                                /** @enum {string} */
-                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
-                                /** @constant */
-                                missing_permission: "instance:read";
-                                serving_node: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "instance.not_found";
-                            message: string;
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The instance serving node could not be resolved.";
-                            meta: {
-                                /** @constant */
-                                field: "instance";
-                                instance: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -4111,98 +4034,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Bounded history size and optional serving-node constraint for the follow stream. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                    lines?: number;
+                    /** @description Optional serving-node placement constraint. When set, must equal the resolved instance serving node. */
+                    node?: string;
+                };
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
-                };
-            };
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                operation: {
-                                    uuid: string;
-                                    stream_descriptor_url: string;
-                                    events_url: string;
-                                };
-                            };
-                            meta: string;
-                        };
-                    };
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: {
-                                /** @enum {string} */
-                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
-                                /** @constant */
-                                missing_permission: "instance:read";
-                                serving_node: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "instance.not_found";
-                            message: string;
-                            meta: {
-                                instance: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The instance serving node could not be resolved.";
-                            meta: {
-                                /** @constant */
-                                field: "instance";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -5837,6 +5686,7 @@ export interface operations {
                                     };
                                     /** @constant */
                                     status: "removed";
+                                    instance: string | null;
                                     /** @constant */
                                     placement: "ingress";
                                     router: {
@@ -7227,7 +7077,14 @@ export interface operations {
     };
     workspaceApplicationLog: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Required owning instance selector (app.instance) for the workspace log target. */
+                instance: string;
+                /** @description Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                lines?: number;
+                /** @description Optional serving-node placement constraint. When set, must equal the resolved workspace serving node. */
+                node?: string;
+            };
             header?: never;
             path: {
                 workspace: string;
@@ -7241,117 +7098,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                target: {
-                                    /** @constant */
-                                    type: "workspace";
-                                    app: string;
-                                    instance: string;
-                                    workspace: string;
-                                    selector: string;
-                                };
-                                node: string;
-                                /** @constant */
-                                path: "storage/logs/laravel.log";
-                                lines_requested: number;
-                                file_exists: boolean;
-                                lines: unknown[];
-                            };
-                            meta: string[];
-                        };
-                    } | string;
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: {
-                                /** @enum {string} */
-                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
-                                /** @constant */
-                                missing_permission: "workspace:read";
-                                serving_node: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "workspace.not_found";
-                            message: string;
-                            meta: {
-                                workspace: string;
-                                instance: string | null;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The workspace serving node could not be resolved.";
-                            meta: {
-                                /** @constant */
-                                field: "workspace";
-                            };
-                        };
-                    } | {
-                        error: {
-                            code: string;
-                            message: string;
-                            meta: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: unknown[];
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The instance query parameter is required.";
-                            meta: {
-                                /** @constant */
-                                field: "instance";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -7365,121 +7112,26 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Required owning instance selector, optional bounded history size, and optional serving-node constraint for the follow stream. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Required owning instance selector (app.instance) for the workspace log target. */
+                    instance: string;
+                    /** @description Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                    lines?: number;
+                    /** @description Optional serving-node placement constraint. When set, must equal the resolved workspace serving node. */
+                    node?: string;
+                };
+            };
+        };
         responses: {
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                operation: {
-                                    uuid: string;
-                                    stream_descriptor_url: string;
-                                    events_url: string;
-                                };
-                            };
-                            meta: string;
-                        };
-                    };
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: {
-                                /** @enum {string} */
-                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
-                                /** @constant */
-                                missing_permission: "workspace:read";
-                                serving_node: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "workspace.not_found";
-                            message: string;
-                            meta: {
-                                workspace: string;
-                                instance: string | null;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            code: string | "validation_failed";
-                            message: string;
-                            meta: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The workspace serving node could not be resolved.";
-                            meta: {
-                                /** @constant */
-                                field: "workspace";
-                            };
-                        };
-                    } | {
-                        error: {
-                            code: string;
-                            message: string;
-                            meta: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: unknown[];
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The instance field is required.";
-                            meta: {
-                                /** @constant */
-                                field: "instance";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
