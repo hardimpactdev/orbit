@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T13:32:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-atomic-land/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-153245-codex-loop-atomic-land",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T132343Z-b69ba0529c59.json"
+    ],
+    "entry_digests": {
+        "loop.md": "9a4953110e32ed4747c64495ff7826e0827d37d5a9a3a2bf44b62132c999cba8",
+        "quality-gates/quality-check-2026-08-05T132343Z-b69ba0529c59.json": "be8cd8d7ed27c5f9f0fd5d7190fc6a3464b2a66e715d3a46e99a8fb23eed7eed"
+    },
+    "slug": "codex-loop-atomic-land",
+    "requested_slug": "codex-loop-atomic-land",
+    "compatible_slugs": [
+        "codex-loop-atomic-land"
+    ],
+    "branch": "codex/loop-atomic-land",
+    "candidate_commit": "1d9deacb42810f202ac39b45af6e1ca79652564d",
+    "accepted_feature_tip": "1d9deacb42810f202ac39b45af6e1ca79652564d",
+    "accepted_main_tip": "10833ea27f23e85b0f3f469257732c5a5d8f1cb6",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
