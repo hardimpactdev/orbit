@@ -28,7 +28,15 @@ taxonomies do not belong in the anchor.
    docs. Stop only for unresolved product intent or missing external authority.
 3. Create the isolated worktree with `bin/orbit-prepare-worktree`; it seeds
    `.orbit/loop.md` when missing. Fill Goal, Scope, branch, worktree, and
-   scratchpad/source reference before editing.
+   scratchpad/source reference before editing. For stateful, lifecycle, or
+   concrete UX features, append one optional compact clause on the existing
+   Scope `Owned` row:
+   `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+   Omit the clause for ordinary/local changes. When the markers are present,
+   deterministic lint checks only field presence, known transition keys,
+   duplicates, and template placeholders; it does not decide whether a feature
+   is stateful or grade prose quality. Do not add a permanent new Scope row,
+   spec artifact, lane, or semantic grader for this framing.
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope. It searches the primary session archive
    corpus by default and returns matched records with their linked promotions

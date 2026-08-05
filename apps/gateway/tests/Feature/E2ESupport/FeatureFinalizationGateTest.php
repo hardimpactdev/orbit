@@ -79,6 +79,179 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
+it('documents optional compact Scope transition framing without a new row or ceremony', function (): void {
+    $template = (string) file_get_contents(repo_path('LOOP.md.example'));
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
+    $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+
+    foreach ([$template, $harness, $skill] as $doc) {
+        expect($doc)
+            ->toContain('primitive=')
+            ->toContain('transitions=')
+            ->toContain('success:')
+            ->toContain('failure:')
+            ->toContain('retry:')
+            ->toContain('stop-restart:')
+            ->toContain('stale:')
+            ->toContain('Omit the clause');
+    }
+
+    expect($template)
+        ->toMatch('/^- Owned:\s*$/m')
+        ->not->toContain('## Transition Framing')
+        ->not->toContain('- Framing:');
+});
+
+it('validates optional Scope framing only when the compact markers are present', function (
+    string $owned,
+    ?string $errorNeedle,
+): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $markdown = compact_feature_loop_packet(owned: $owned);
+    $problem = orbitLoopScopeFramingProblem($markdown);
+
+    if ($errorNeedle === null) {
+        expect($problem)->toBeNull();
+    } else {
+        expect($problem)
+            ->toBeString()
+            ->toContain($errorNeedle);
+    }
+})->with([
+    'ordinary owned without framing' => [
+        'loop tooling',
+        null,
+    ],
+    'valid framing with n/a transitions' => [
+        'apps/cli progress UX; primitive=progress-tree; transitions=success:exit 0 green tree|failure:nonzero tree|retry:re-run command|stop-restart:n/a|stale:refresh snapshot',
+        null,
+    ],
+    'valid framing reordered transition keys' => [
+        'lifecycle feature; primitive=process-start-stop; transitions=stale:refresh|stop-restart:restart unit|retry:retry once|failure:failed state|success:running',
+        null,
+    ],
+    'missing transitions marker' => [
+        'apps/cli; primitive=progress-tree',
+        'missing transitions=',
+    ],
+    'missing primitive marker' => [
+        'apps/cli; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'missing primitive=',
+    ],
+    'empty primitive value' => [
+        'apps/cli; primitive=; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'primitive=',
+    ],
+    'missing required transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a',
+        'missing required key: stale',
+    ],
+    'unknown transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|boom:x',
+        'unknown key: boom',
+    ],
+    'duplicate transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|success:again',
+        'duplicate key: success',
+    ],
+    'duplicate primitive marker' => [
+        'apps/cli; primitive=progress-tree; primitive=other; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'duplicate primitive=',
+    ],
+    'template placeholder in primitive' => [
+        'apps/cli; primitive=<exact primitive>; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'template placeholder in transitions' => [
+        'apps/cli; primitive=progress-tree; transitions=success:<ok>|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'empty transition value' => [
+        'apps/cli; primitive=progress-tree; transitions=success:|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'value for success is empty',
+    ],
+]);
+
+it('parses optional Scope framing only from the Owned row', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $ordinaryWithMarkerProse = compact_feature_loop_packet(owned: 'loop tooling');
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: docs may mention primitive= and transitions= as format tokens only',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Out of scope: .+$/m',
+            '- Out of scope: do not invent a permanent Framing row; leave primitive= off ordinary Owned values',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+
+    expect(orbitLoopScopeFramingProblem($ordinaryWithMarkerProse))->toBeNull();
+
+    $splitAcrossRows = compact_feature_loop_packet(owned: 'apps/cli; primitive=progress-tree');
+    $splitAcrossRows =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+            $splitAcrossRows,
+        ) ?? $splitAcrossRows;
+
+    expect(orbitLoopScopeFramingProblem($splitAcrossRows))
+        ->toBeString()
+        ->toContain('missing transitions=');
+
+    $completeOnOwnedWithProseElsewhere = compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    );
+    $completeOnOwnedWithProseElsewhere =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: other Scope rows may still mention primitive= without becoming the clause source',
+            $completeOnOwnedWithProseElsewhere,
+        ) ?? $completeOnOwnedWithProseElsewhere;
+
+    expect(orbitLoopScopeFramingProblem($completeOnOwnedWithProseElsewhere))->toBeNull();
+});
+
+it('blocks compact finalization lint when optional Scope framing is malformed', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->toContain('Scope framing')
+            ->toContain('missing required key');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('lints compact finalization when optional Scope framing is complete', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('blocks compact finalization while blast-radius closure is unresolved', function (string $blastRadius): void {
     $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(blastRadius: $blastRadius));
 
@@ -3646,6 +3819,7 @@ function compact_feature_loop_packet(
     ?string $reviewedTip = null,
     string $runtime = 'not applicable - no runtime proof venue',
     string $blastRadius = 'not-required - local change',
+    string $owned = 'loop tooling',
 ): string {
     $reviewedTip ??= $featureTip;
 
@@ -3662,7 +3836,7 @@ function compact_feature_loop_packet(
 
         ## Scope
 
-        - Owned: loop tooling
+        - Owned: {$owned}
         - Constraints: no manual E2E
         - Out of scope: product behavior
 

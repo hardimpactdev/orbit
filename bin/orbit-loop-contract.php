@@ -437,6 +437,132 @@ const ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS = [
     'command',
 ];
 
+const ORBIT_LOOP_SCOPE_TRANSITION_KEYS = [
+    'success',
+    'failure',
+    'retry',
+    'stop-restart',
+    'stale',
+];
+
+/**
+ * Optional compact Scope framing for stateful, lifecycle, or concrete UX work.
+ *
+ * Parse only the Scope Owned row. Other Scope rows may mention the marker text
+ * without enabling framing. When neither marker appears on Owned, ordinary and
+ * legacy loops stay valid. When primitive= or transitions= appears on Owned,
+ * require the compact syntax only: exact primitive plus the five known
+ * transition keys. Values may be n/a. Do not decide whether a feature is
+ * stateful or whether prose is correct.
+ */
+function orbitLoopScopeFramingProblem(string $markdown): ?string
+{
+    $owned = orbitLoopLabel($markdown, 'Scope', 'Owned');
+
+    if ($owned === null || $owned === '') {
+        return null;
+    }
+
+    if (preg_match_all('/\b(primitive|transitions)\s*=/i', $owned, $markerMatches, PREG_SET_ORDER) === 0) {
+        return null;
+    }
+
+    $primitiveCount = 0;
+    $transitionsCount = 0;
+
+    foreach ($markerMatches as $markerMatch) {
+        if (strtolower($markerMatch[1]) === 'primitive') {
+            $primitiveCount++;
+        } else {
+            $transitionsCount++;
+        }
+    }
+
+    if ($primitiveCount > 1) {
+        return 'Scope framing has duplicate primitive=; use one optional clause on the Owned row';
+    }
+
+    if ($transitionsCount > 1) {
+        return 'Scope framing has duplicate transitions=; use one optional clause on the Owned row';
+    }
+
+    if ($primitiveCount === 0) {
+        return 'Scope framing is incomplete: missing primitive=; when framing is used require primitive=<exact> and transitions=success:...|failure:...|retry:...|stop-restart:...|stale:...';
+    }
+
+    if ($transitionsCount === 0) {
+        return 'Scope framing is incomplete: missing transitions=; when framing is used require primitive=<exact> and transitions=success:...|failure:...|retry:...|stop-restart:...|stale:...';
+    }
+
+    if (preg_match('/\bprimitive\s*=\s*([^;\r\n]*)/i', $owned, $primitiveMatch) !== 1) {
+        return 'Scope framing primitive= is missing a value; use primitive=<exact requested primitive>';
+    }
+
+    $primitive = trim($primitiveMatch[1]);
+
+    if ($primitive === '') {
+        return 'Scope framing primitive= is empty; use primitive=<exact requested primitive>';
+    }
+
+    if (preg_match('/<[^>\r\n]+>/', $primitive) === 1) {
+        return 'Scope framing contains a template placeholder in primitive=; replace placeholders with concrete values';
+    }
+
+    if (preg_match('/\btransitions\s*=\s*(.*)$/is', $owned, $transitionsMatch) !== 1) {
+        return 'Scope framing transitions= is missing a value; require success|failure|retry|stop-restart|stale keys';
+    }
+
+    $transitionsRaw = trim($transitionsMatch[1]);
+
+    if ($transitionsRaw === '') {
+        return 'Scope framing transitions= is empty; require success|failure|retry|stop-restart|stale keys';
+    }
+
+    if (preg_match('/<[^>\r\n]+>/', $transitionsRaw) === 1) {
+        return 'Scope framing contains a template placeholder in transitions=; replace placeholders with concrete values or n/a';
+    }
+
+    $parts = explode('|', $transitionsRaw);
+    $seen = [];
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+
+        if ($part === '') {
+            return 'Scope framing transitions= has an empty segment; use key:value pairs separated by |';
+        }
+
+        if (preg_match('/^([a-z0-9-]+)\s*:\s*(.*)$/s', $part, $segmentMatch) !== 1) {
+            return "Scope framing transitions= segment is not key:value: {$part}";
+        }
+
+        $key = strtolower($segmentMatch[1]);
+        $value = trim($segmentMatch[2]);
+
+        if (! in_array($key, ORBIT_LOOP_SCOPE_TRANSITION_KEYS, true)) {
+            return "Scope framing transitions= has unknown key: {$key}; allowed keys are success, failure, retry, stop-restart, stale";
+        }
+
+        if (array_key_exists($key, $seen)) {
+            return "Scope framing transitions= has duplicate key: {$key}";
+        }
+
+        if ($value === '') {
+            return "Scope framing transitions= value for {$key} is empty; use concrete text or n/a";
+        }
+
+        $seen[$key] = $value;
+    }
+
+    foreach (ORBIT_LOOP_SCOPE_TRANSITION_KEYS as $requiredKey) {
+        if (! array_key_exists($requiredKey, $seen)) {
+            return "Scope framing transitions= is missing required key: {$requiredKey}; require success, failure, retry, stop-restart, and stale (use n/a when not applicable)";
+        }
+    }
+
+    return null;
+}
+
 function orbitLoopRuntimeProofProblem(
     string $markdown,
     string $venue,

@@ -1,0 +1,11 @@
+CHECKOUT_PROOF: cwd=/Users/nckrtl/orbit/.worktrees/codex-loop-scope-transition-framing; branch=codex/loop-scope-transition-framing; head=bf1cad7284ad0b46211199adb4e50f6dbc3485cc; main=b6b587ff412bdf1512f84a242c10afcb388feef1; status=clean
+Findings: none
+Inventory: full-tree primitive=/transitions= marker sweep hits only the six diff files; all 216 tracked archived loop packets scanned with zero marker-bearing Owned rows; no other Scope Owned parser in bin/, gateway, CLI, packages; compact_loop_problems has no callers outside the hook.
+Verification: focused 17/59; full FeatureFinalizationGateTest Fable rerun 157/408; broad artifact/digest/45/45 candidate binding verified.
+BLAST_RADIUS: complete
+HUMAN_JUDGMENT: not-required
+VERDICT: PASS
+Fable Solo process: 1419.
+
+Broad quality-check artifact: .orbit/quality-gates/quality-check-2026-08-05T110701Z-ac530c3f5acd.json
+Broad quality-check digest (sha256): a5a7a182d8c70306fe00b2c00834fd58308aa61e1cd3212cba4d523c98a2edcb
