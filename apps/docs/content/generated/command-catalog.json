@@ -12838,6 +12838,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php",
                 "apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php",
                 "apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php",
                 "apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php",
@@ -12853,6 +12854,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Operation/UpdateCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Operation/UpdateCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Operation/VersionCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Operation/VersionCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php",
