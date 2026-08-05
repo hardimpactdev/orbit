@@ -24,7 +24,11 @@ final readonly class ProcessUpdateValidator
                 $input->label,
             ) ?? new ProcessUpdateAllowedValueValidator()->validate(
                 $input,
-            ) ?? new ProcessUpdateRuntimeScopeValidator()->validate($input)
+            ) ?? new ProcessUpdateRuntimeScopeValidator()->validate(
+                $input,
+            ) ?? new ProcessUpdateBindValidator()->validate(
+                $input,
+            )
         );
     }
 
@@ -56,6 +60,7 @@ final readonly class ProcessUpdateValidator
             || $input->command !== null
             || $input->restartPolicy !== null
             || $input->crashNotification !== null
+            || $input->hasBinds()
         ) {
             return null;
         }
@@ -190,5 +195,25 @@ final readonly class ProcessUpdateRuntimeScopeValidator
             ),
             default => null,
         };
+    }
+}
+
+final readonly class ProcessUpdateBindValidator
+{
+    public function validate(ProcessUpdateInput $input): ?ProcessUpdateValidationFailure
+    {
+        $failure = ProcessBindOption::validate(
+            binds: $input->binds,
+            node: $input->node,
+            service: null,
+            runtime: $input->runtime,
+            requireService: false,
+        );
+
+        if ($failure === null) {
+            return null;
+        }
+
+        return new ProcessUpdateValidationFailure($failure->field, $failure->message, $failure->meta);
     }
 }

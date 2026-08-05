@@ -99,7 +99,7 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, instance: string|null, workspace: string|null, changes: array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, changes: array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -112,6 +112,11 @@ final class ProcessUpdateController implements Loggable
         $restartPolicyInput = $this->optionalString($request, 'restart_policy');
         $crashNotificationInput = $this->optionalString($request, 'crash_notification');
         $runtimeInput = $this->optionalString($request, 'runtime');
+        $binds = $this->optionalBinds($request);
+
+        if ($binds instanceof JsonResponse) {
+            return $binds;
+        }
 
         if ($label instanceof JsonResponse) {
             return $label;
@@ -147,6 +152,7 @@ final class ProcessUpdateController implements Loggable
             && $restartPolicyInput === null
             && $crashNotificationInput === null
             && $runtimeInput === null
+            && $binds === null
         ) {
             return $this->error(
                 'validation_failed',
@@ -253,6 +259,10 @@ final class ProcessUpdateController implements Loggable
             $changes['runtime'] = $runtime;
         }
 
+        if ($binds !== null) {
+            $changes['binds'] = $binds;
+        }
+
         return [
             'node' => $node,
             'instance' => $app,
@@ -260,6 +270,39 @@ final class ProcessUpdateController implements Loggable
             'changes' => $changes,
             'restart' => $request->boolean('restart'),
         ];
+    }
+
+    /**
+     * @return list<string>|null|JsonResponse
+     */
+    private function optionalBinds(Request $request): array|JsonResponse|null
+    {
+        if (! $request->exists('binds')) {
+            return null;
+        }
+
+        $value = $request->input('binds');
+
+        if (! is_array($value)) {
+            return $this->error(
+                'validation_failed',
+                'Publish binds must be a list of wireguard or loopback selectors.',
+                [
+                    'field' => 'bind',
+                    'reason' => 'invalid_type',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+                422,
+            );
+        }
+
+        $binds = [];
+
+        foreach ($value as $item) {
+            $binds[] = is_string($item) ? trim($item) : '';
+        }
+
+        return $binds;
     }
 
     private function authorizeProcessAccess(Node $caller, Node $node, string $permission): ?JsonResponse

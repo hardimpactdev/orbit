@@ -6,6 +6,9 @@ namespace App\Services\Processes;
 
 use App\Models\Process;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class ProcessServiceMetadataPayload
 {
     /**
@@ -25,10 +28,37 @@ final readonly class ProcessServiceMetadataPayload
             'version_family' => $this->optionalString($config, 'version_family'),
             'version' => $this->optionalString($config, 'version'),
             'service_name' => $this->optionalString($config, 'service_name'),
+            'binds' => $this->binds($config),
             'endpoint' => $this->endpoint($config['endpoint'] ?? null),
             'endpoints' => $this->endpoints($config),
             'credential_fields' => $this->credentialFields($config['credentials'] ?? null),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function binds(array $config): array
+    {
+        $raw = $config['binds'] ?? null;
+
+        if (! is_array($raw) || $raw === []) {
+            return ['wireguard'];
+        }
+
+        $normalized = [];
+
+        foreach (['wireguard', 'loopback'] as $selector) {
+            foreach ($raw as $value) {
+                if (is_string($value) && trim($value) === $selector) {
+                    $normalized[] = $selector;
+                    break;
+                }
+            }
+        }
+
+        return $normalized === [] ? ['wireguard'] : $normalized;
     }
 
     /**

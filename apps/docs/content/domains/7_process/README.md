@@ -164,14 +164,21 @@ particular, every PostgreSQL process uses `postgres`, selects an explicit
 version family and concrete version, and owns its initialization settings and
 published port. Multiple PostgreSQL processes may coexist on one node when
 their process identities and published endpoints are distinct.
-The endpoint host is always the owning node's WireGuard service address. Orbit
-does not fall back to the node SSH host, node name, loopback, or Docker network
-alias for managed service endpoints.
+
+Node-owned Docker managed services publish ports according to a normalized
+`--bind` intent of `wireguard` and/or `loopback`. Omission on add defaults to
+WireGuard-only; existing rows without bind intent infer WireGuard-only. The
+primary `endpoint` prefers the WireGuard service address when selected,
+otherwise host-local `127.0.0.1`. `loopback` is host-local and is not reachable
+as `127.0.0.1` from another container.
+
+Orbit does not accept arbitrary IP addresses, interface names, the node SSH
+host, node name, or Docker network aliases as publish selectors.
 
 `process:list` and bounded `process:logs` expose safe connection metadata for
 managed services: service identifier, version family, concrete version, service
-runtime unit name, endpoint host/port, and credential field names. They do not
-expose credential values.
+runtime unit name, normalized binds, primary endpoint, every selected endpoint
+bind, and credential field names. They do not expose credential values.
 
 When a service endpoint points back at the owning node's own WireGuard service
 address, `doctor --family=process` diagnoses the Linux self-route with
