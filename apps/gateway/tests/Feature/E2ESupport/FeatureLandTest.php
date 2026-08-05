@@ -47,7 +47,7 @@ it('blocks solo project delete with --confirm-stop-running and path ownership mi
 
         $shortcut = land_run_finalization(
             $repo,
-            escapeshellarg($solo['cli'])." projects delete 73 --confirm-stop-running --json",
+            escapeshellarg($solo['cli']).' projects delete 73 --confirm-stop-running --json',
         );
         $mismatch = land_run_finalization(
             $repo,
@@ -92,7 +92,13 @@ it('exposes one-step resume after merge and keeps archive-commit as the next ord
             ->toBe(0, $afterArchive->getErrorOutput().$afterArchive->getOutput())
             ->and(strtolower($afterArchive->getOutput().$afterArchive->getErrorOutput()))
             ->toMatch('/archive-commit|commit.*archive|index\.json/')
-            ->and(trim(new Process(['git', 'status', '--porcelain', '--', '.orbit/sessions'], $repo)->mustRun()->getOutput()))
+            ->and(
+                trim(
+                    new Process(['git', 'status', '--porcelain', '--', '.orbit/sessions'], $repo)
+                        ->mustRun()
+                        ->getOutput(),
+                ),
+            )
             ->not->toBe('');
     } finally {
         land_remove_fixture($repo, $worktree);
@@ -123,26 +129,39 @@ it('completes a clean full land and is idempotent at done', function (): void {
             ->toBe(0, $full->getErrorOutput().$full->getOutput())
             ->and($full->getOutput())
             ->toContain('phase=done')
-            ->and(is_dir($worktree))->toBeFalse()
-            ->and(land_branch_exists($repo, 'feature'))->toBeFalse()
-            ->and(is_dir($otherWorktree))->toBeTrue()
-            ->and(land_branch_exists($repo, 'unrelated'))->toBeTrue();
+            ->and(is_dir($worktree))
+            ->toBeFalse()
+            ->and(land_branch_exists($repo, 'feature'))
+            ->toBeFalse()
+            ->and(is_dir($otherWorktree))
+            ->toBeTrue()
+            ->and(land_branch_exists($repo, 'unrelated'))
+            ->toBeTrue();
 
         $soloState = json_decode((string) file_get_contents($solo['state']), true, flags: JSON_THROW_ON_ERROR);
-        expect($soloState['projects'])->not->toHaveKey(73)
-            ->and($soloState['projects'])->toHaveKey(88)
-            ->and($soloState['processes'][900]['status'] ?? null)->toBe('running');
+        expect($soloState['projects'])
+            ->not
+            ->toHaveKey(73)
+            ->and($soloState['projects'])
+            ->toHaveKey(88)
+            ->and($soloState['processes'][900]['status'] ?? null)
+            ->toBe('running');
 
         $again = land_run_land($repo, land_args($worktree, $solo));
         $headBefore = trim(new Process(['git', 'rev-parse', 'HEAD'], $repo)->mustRun()->getOutput());
         $again2 = land_run_land($repo, land_args($worktree, $solo));
         $headAfter = trim(new Process(['git', 'rev-parse', 'HEAD'], $repo)->mustRun()->getOutput());
 
-        expect($again->getExitCode())->toBe(0, $again->getErrorOutput().$again->getOutput())
-            ->and($again->getOutput())->toContain('phase=done')
-            ->and($again2->getExitCode())->toBe(0)
-            ->and($again2->getOutput())->toContain('phase=done')
-            ->and($headAfter)->toBe($headBefore);
+        expect($again->getExitCode())
+            ->toBe(0, $again->getErrorOutput().$again->getOutput())
+            ->and($again->getOutput())
+            ->toContain('phase=done')
+            ->and($again2->getExitCode())
+            ->toBe(0)
+            ->and($again2->getOutput())
+            ->toContain('phase=done')
+            ->and($headAfter)
+            ->toBe($headBefore);
     } finally {
         land_remove_fixture($repo, $worktree);
         if (is_dir($otherWorktree)) {
@@ -402,7 +421,7 @@ function land_add_unrelated_worktree(string $repo): string
 
 function land_branch_exists(string $repo, string $branch): bool
 {
-    return (new Process(['git', 'show-ref', '--verify', '--quiet', "refs/heads/{$branch}"], $repo))->run() === 0;
+    return new Process(['git', 'show-ref', '--verify', '--quiet', "refs/heads/{$branch}"], $repo)->run() === 0;
 }
 
 /**
@@ -474,45 +493,45 @@ function land_write_accepted_loop(string $repo, string $worktree): void
     );
 
     file_put_contents("{$worktree}/.orbit/loop.md", <<<MARKDOWN
-# Orbit Feature Loop
+        # Orbit Feature Loop
 
-- Scratchpad: solo://proj/4/scratchpad/orbit-feature-loop-e--341
-- Worktree: {$worktree}
-- Branch: feature
+        - Scratchpad: solo://proj/4/scratchpad/orbit-feature-loop-e--341
+        - Worktree: {$worktree}
+        - Branch: feature
 
-## Goal
+        ## Goal
 
-Land atomic saga fixture.
+        Land atomic saga fixture.
 
-## Scope
+        ## Scope
 
-- Owned: bin/orbit-feature-land; primitive=bin/orbit-feature-land; transitions=success:main-updated-archive-committed-session-cleaned|failure:stop-at-failed-phase-with-next-action|retry:rerun-from-observed-phase|stop-restart:resume-without-repeating-completed-mutations|stale:reject-ownership-or-identity-drift
-- Constraints: fixture only
-- Out of scope: product
+        - Owned: bin/orbit-feature-land; primitive=bin/orbit-feature-land; transitions=success:main-updated-archive-committed-session-cleaned|failure:stop-at-failed-phase-with-next-action|retry:rerun-from-observed-phase|stop-restart:resume-without-repeating-completed-mutations|stale:reject-ownership-or-identity-drift
+        - Constraints: fixture only
+        - Out of scope: product
 
-## Proof
+        ## Proof
 
-- Verification:
-  - focused: passed - focused test
-  - broader: passed - docs-lint artifact
-  - runtime: not applicable - no runtime proof venue
-- Blast radius: not-required - local change
-- Review: passed - reviewer fixture - human-judgment=not-required
-- Reviewed feature tip: {$featureTip}
-- Acceptance venue: automated
-- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment
-- Accepted feature tip: {$featureTip}
-- Accepted main tip: {$mainTip}
+        - Verification:
+          - focused: passed - focused test
+          - broader: passed - docs-lint artifact
+          - runtime: not applicable - no runtime proof venue
+        - Blast radius: not-required - local change
+        - Review: passed - reviewer fixture - human-judgment=not-required
+        - Reviewed feature tip: {$featureTip}
+        - Acceptance venue: automated
+        - Acceptance: accepted - automated - reviewer-confirmed no-human-judgment
+        - Accepted feature tip: {$featureTip}
+        - Accepted main tip: {$mainTip}
 
-## Status
+        ## Status
 
-- State: accepted
-- Blocker: none
+        - State: accepted
+        - Blocker: none
 
-## Feedback
+        ## Feedback
 
-- Events: .orbit/feedback.jsonl
-MARKDOWN);
+        - Events: .orbit/feedback.jsonl
+        MARKDOWN);
 }
 
 function land_merge_feature(string $repo): void
@@ -543,7 +562,8 @@ function land_write_compact_archive(string $repo, string $worktree): string
             'entry_digests' => [
                 'loop.md' => hash_file('sha256', "{$archiveDir}/loop.md"),
             ],
-        ], JSON_THROW_ON_ERROR).PHP_EOL,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL,
     );
 
     return $archiveDir;
@@ -565,7 +585,8 @@ function land_write_session_index(string $repo, string $archiveBasename): void
                     'timestamp' => '2026-08-05-120000',
                 ],
             ],
-        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT).PHP_EOL,
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
+            .PHP_EOL,
     );
 }
 
@@ -755,16 +776,31 @@ function land_seed_boundary(string $repo, string $worktree, array $solo, string 
                 ],
             ]);
         })(),
-        'after-project-deleted' => (static function () use ($repo, $worktree, $solo, $advanceThroughArchiveCommit): void {
+        'after-project-deleted' => (static function () use (
+            $repo,
+            $worktree,
+            $solo,
+            $advanceThroughArchiveCommit,
+        ): void {
             $advanceThroughArchiveCommit();
             land_fake_solo_state($solo, ['projects' => [], 'processes' => []]);
         })(),
-        'after-worktree-removed' => (static function () use ($repo, $worktree, $solo, $advanceThroughArchiveCommit): void {
+        'after-worktree-removed' => (static function () use (
+            $repo,
+            $worktree,
+            $solo,
+            $advanceThroughArchiveCommit,
+        ): void {
             $advanceThroughArchiveCommit();
             land_fake_solo_state($solo, ['projects' => [], 'processes' => []]);
             land_run($repo, ['git', 'worktree', 'remove', $worktree]);
         })(),
-        'after-branch-deleted' => (static function () use ($repo, $worktree, $solo, $advanceThroughArchiveCommit): void {
+        'after-branch-deleted' => (static function () use (
+            $repo,
+            $worktree,
+            $solo,
+            $advanceThroughArchiveCommit,
+        ): void {
             $advanceThroughArchiveCommit();
             land_fake_solo_state($solo, ['projects' => [], 'processes' => []]);
             if (is_dir($worktree)) {
@@ -790,7 +826,8 @@ function land_write_broken_solo_cli(string $repo, string $mode): string
     $path = "{$repo}.solo-fake/broken-{$mode}-solo-cli";
     $body = match ($mode) {
         'malformed' => "#!/bin/sh\necho 'not-json'\nexit 0\n",
-        'error' => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"permission_denied\",\"message\":\"permission denied\"}}'\nexit 1\n",
+        'error'
+            => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"permission_denied\",\"message\":\"permission denied\"}}'\nexit 1\n",
         default => throw new RuntimeException($mode),
     };
     file_put_contents($path, $body);
@@ -804,7 +841,7 @@ function land_write_broken_solo_cli(string $repo, string $mode): string
  */
 function land_run(string $cwd, array $command): void
 {
-    (new Process($command, $cwd))->mustRun();
+    new Process($command, $cwd)->mustRun();
 }
 
 function land_remove_fixture(string $repo, string $worktree): void

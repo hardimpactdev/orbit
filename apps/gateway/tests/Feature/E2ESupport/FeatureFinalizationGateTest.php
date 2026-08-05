@@ -4316,7 +4316,8 @@ function commit_finalization_session_archive(string $repo, string $archiveDir): 
             'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
             'record_count' => count($records),
             'records' => $records,
-        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT).PHP_EOL,
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
+            .PHP_EOL,
     );
 
     run_fixture_command($repo, ['git', 'add', '--', $relativeArchive, '.orbit/sessions/index.json']);
