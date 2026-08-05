@@ -195,9 +195,9 @@ class RawOperationStreamWebSocketTransport implements OperationStreamWebSocketTr
 
     private function readFrame(): ?string
     {
-        $header = fread($this->stream(), 2);
+        $header = $this->readBytes(2);
 
-        if ($header === false || strlen($header) < 2) {
+        if ($header === null) {
             return null;
         }
 
@@ -213,16 +213,32 @@ class RawOperationStreamWebSocketTransport implements OperationStreamWebSocketTr
         }
 
         if ($lengthCode === 126) {
-            $length = unpack('n', $this->readBytes(2))[1];
+            $length = unpack(
+                'n',
+                $this->readBytes(2) ?? throw GatewayApiException::networkError(
+                    new ConnectionException('Operations websocket closed mid-frame.'),
+                ),
+            )[1];
         }
 
         if ($lengthCode === 127) {
-            $parts = unpack('N2', $this->readBytes(8));
+            $parts = unpack(
+                'N2',
+                $this->readBytes(8) ?? throw GatewayApiException::networkError(
+                    new ConnectionException('Operations websocket closed mid-frame.'),
+                ),
+            );
             $length = ($parts[1] << 32) + $parts[2];
         }
 
-        $mask = $masked ? $this->readBytes(4) : null;
-        $payload = $this->readBytes($length);
+        $mask = $masked
+            ? $this->readBytes(4) ?? throw GatewayApiException::networkError(
+                new ConnectionException('Operations websocket closed mid-frame.'),
+            )
+            : null;
+        $payload = $this->readBytes($length) ?? throw GatewayApiException::networkError(
+            new ConnectionException('Operations websocket closed mid-frame.'),
+        );
 
         if ($mask === null) {
             return $payload;
@@ -237,14 +253,32 @@ class RawOperationStreamWebSocketTransport implements OperationStreamWebSocketTr
         return $unmasked;
     }
 
-    private function readBytes(int $length): string
+    /**
+     * Read exactly $length bytes, continuing through blocking read timeouts.
+     *
+     * Returns null only when the peer closes before any byte arrives (clean
+     * EOF before a frame). A close after any byte is a mid-frame error. Idle
+     * fread empty/false with stream meta timed_out retries on the next blocking
+     * timeout rather than spinning.
+     */
+    private function readBytes(int $length): ?string
     {
         $buffer = '';
 
         while (strlen($buffer) < $length) {
-            $chunk = fread($this->stream(), $length - strlen($buffer));
+            $stream = $this->stream();
+            $chunk = fread($stream, $length - strlen($buffer));
+            $meta = stream_get_meta_data($stream);
 
             if ($chunk === false || $chunk === '') {
+                if ($meta['timed_out'] === true) {
+                    continue;
+                }
+
+                if ($buffer === '') {
+                    return null;
+                }
+
                 throw GatewayApiException::networkError(
                     new ConnectionException('Operations websocket closed mid-frame.'),
                 );
