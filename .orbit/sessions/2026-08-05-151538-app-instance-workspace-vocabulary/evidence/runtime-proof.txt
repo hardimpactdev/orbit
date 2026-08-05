@@ -1,0 +1,61 @@
+App → Instance → Workspace host-macos runtime proof
+Date: 2026-08-05
+Feature tip (candidate): 7b40ac905f762e004d0baa05c803c4adc6d2ab28
+Integrated main: d8838d365d5f5f7567f40a05d3bcab5fc26d0922
+Venue: host-macos
+Environment: dev-fixture
+Target: host nick macOS
+Host: nick
+OS: macOS 27.0 build 26A5388g arm64
+
+Source under proof (candidate-bound):
+apps/macos/frontend/src/main.ts
+  sha256: 48527664a5241c763418fb24907f4a4f3731828aa8ca3bc3a9a5175b550989fd
+apps/macos/frontend/src/dashboard-data.ts
+  sha256: 41af88bb87e55470a569ce51627344a6ccf31267f4ff913a9b81e595d0c2d4e4
+
+Runtime serve:
+Vite served exact apps/macos candidate at http://127.0.0.1:5175
+
+Browser setup:
+Installed Tauri dashboard_config mock and deterministic runtime-inventory payload
+with two apps, two instances, nodes with app-dev/app-prod roles, and one process.
+
+Expected:
+Dashboard totals and lists use App vocabulary (APPS / Apps), not Project.
+Node detail Instances table columns: APP, INSTANCE, ENVIRONMENT, STATUS.
+Node detail Processes table columns: PROCESS, APP, RUNTIME, STATUS.
+Node roles app-dev and app-prod remain unchanged.
+No browser console errors.
+
+Observed:
+Dashboard rendered APPS=2 and Apps list.
+mini node Instances tab rendered columns APP INSTANCE ENVIRONMENT STATUS
+  with row orbit-docs / local / development / ready.
+Processes rendered PROCESS APP RUNTIME STATUS
+  with row queue / orbit-docs / launchd / running.
+app-dev and app-prod role labels unchanged.
+Browser errors empty.
+
+Result: passed
+
+Evidence screenshots (already retained):
+.orbit/evidence/host-macos-app-instance-dashboard.png
+  sha256: 7a0ada3f715be08149a86203a4b5bbdd1d9acd2622fd166a0f5042f3dd715725
+.orbit/evidence/host-macos-app-instance-dashboard-instances.png
+  sha256: 54221971ee578f602aa00f42511e72504c09548bb2e69ba7c1165458906fa49d
+
+Focused proof (pre-host / candidate-bound suites):
+- gateway vocabulary/migration: 14 passed
+- CLI instance/app: 17 passed
+- macOS frontend unit: 6 passed
+- SDK Pest: 140 passed
+- docs glued-option rule: 2 cases / 9 assertions
+- domains docs lint: 0 errors
+
+Broader quality-check:
+artifact: .orbit/quality-gates/quality-check-2026-08-05T131106Z-7f19cae2f352.json
+exit_code: 0
+git.commit: 7b40ac905f762e004d0baa05c803c4adc6d2ab28
+git.dirty: false
+every subgate: 0

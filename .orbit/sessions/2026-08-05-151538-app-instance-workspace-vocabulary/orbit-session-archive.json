@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T13:15:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-app-instance-workspace-vocabulary/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-151538-app-instance-workspace-vocabulary",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T131106Z-7f19cae2f352.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "c9466e8da2a9ae02395195ed18cec723a865fcaf3616956689233f9984612e54",
+        "loop.md": "d1925f93b6470528646af0c3416cc911a1c9ac24c8fc3157e3581151c95efa9e",
+        "quality-gates/quality-check-2026-08-05T131106Z-7f19cae2f352.json": "2e3ec0175759e13176a7b8ccfbfbbd2a4b98051b90c52b17561ec68868e3b0a1"
+    },
+    "slug": "app-instance-workspace-vocabulary",
+    "requested_slug": "app-instance-workspace-vocabulary",
+    "compatible_slugs": [
+        "app-instance-workspace-vocabulary"
+    ],
+    "branch": "codex/app-instance-workspace-vocabulary",
+    "candidate_commit": "7b40ac905f762e004d0baa05c803c4adc6d2ab28",
+    "accepted_feature_tip": "7b40ac905f762e004d0baa05c803c4adc6d2ab28",
+    "accepted_main_tip": "d8838d365d5f5f7567f40a05d3bcab5fc26d0922",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
