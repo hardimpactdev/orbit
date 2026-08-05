@@ -37,8 +37,24 @@ it('derives the minimum acceptance venue from changed files', function (array $f
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
     'repository tooling' => [['bin/orbit-example'], 'automated'],
     'generated session index' => [['.orbit/sessions/index.json'], 'automated'],
+    'docs librarian rule' => [['apps/docs/app/Librarian/Rules/SignatureLiveSurfaceRule.php'], 'automated'],
+    'docs librarian command-docs config' => [
+        ['apps/docs/config/librarian-command-docs/entities/node.php'],
+        'automated',
+    ],
+    'docs generated catalog' => [['apps/docs/content/generated/command-catalog.json'], 'automated'],
+    'docs automation surfaces together' => [
+        [
+            'apps/docs/app/Librarian/Rules/SignatureLiveSurfaceRule.php',
+            'apps/docs/config/librarian-command-docs/entities/instance.php',
+            'apps/docs/content/generated/command-catalog.json',
+            'apps/docs/content/domains/3_tool/4_tool-remove/technical/6.2_tool-remove_output-render_json.md',
+        ],
+        'automated',
+    ],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
     'node runtime' => [['apps/gateway/app/Actions/Node/RepairNode.php'], 'retained-incus'],
+    'docs non-librarian runtime php' => [['apps/docs/app/Http/Controllers/DocsController.php'], 'retained-incus'],
     'tooling and cli command' => [
         [
             'bin/orbit-example',
@@ -47,6 +63,14 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         'retained-incus',
     ],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
+    'docs frontend resources stay browser' => [['apps/docs/resources/js/app.js'], 'browser'],
+    'docs automation does not downgrade browser resources' => [
+        [
+            'apps/docs/app/Librarian/Rules/SignatureLiveSurfaceRule.php',
+            'apps/docs/resources/js/app.js',
+        ],
+        'browser',
+    ],
     'native mac app' => [['apps/macos/src/main.rs'], 'host-macos'],
 ]);
 
