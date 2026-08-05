@@ -69,9 +69,14 @@ an existing regular file in the worktree `.orbit` tree; reject traversal,
 dot-segments, and symlink hops. Scan deferred or incomplete final-hop language in free-form detail and in
 structured `environment=`, `expected=`, and `observed=` only; do not scan
 target/command/evidence values. Reject unknown receipt keys. Free-form wording cannot turn a failed or
-post-LAND/post-merge deferred hop into a pass; remain in PROVE and re-prove the
-final hop. Historical archive reading stays compatible; the strict receipt
-applies when new acceptance or finalization is attempted.
+post-LAND/post-merge deferred hop into a pass. Unresolved terminal runtime proof
+stays in PROVE: `ready`/`accept` refuse, normalize `State` to `prove` with
+`Acceptance: pending` and accepted tips `none`, preserve a still-valid Review
+and Reviewed feature tip, and route FIX -> BUILD -> PROVE before ACCEPT. A
+repair that moves HEAD still needs a refreshed review via the existing identity
+check. Do not invent a post-LAND closure proof. Historical archive reading stays
+compatible; the strict receipt applies when new acceptance or finalization is
+attempted.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those
