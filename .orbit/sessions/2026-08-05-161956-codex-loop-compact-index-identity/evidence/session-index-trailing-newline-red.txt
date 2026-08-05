@@ -1,0 +1,24 @@
+
+  [31;1m⨯[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it rejects receipt candidate_commit values with an embedded trailing newline                   
+[39;1m  Failed asserting that '1d9deacb42810f202ac39b45af6e1ca79652564d\n
+' is null.[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m1426[39m
+    1422▕ 
+    1423▕         $index = session_index_json($sessionsDir);
+    1424▕ 
+    1425▕         expect(session_index_record($index, 'newline-identity')['candidate_commit'])
+  ➜ 1426▕             ->toBeNull()
+    1427▕             ->and($index)
+    1428▕             ->toHaveKey('record_count', 1)
+    1429▕             ->toHaveKey('unique_candidate_commit_count', 0);
+    1430▕     } finally {
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m1426[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (2 assertions)[39m
+  [90mDuration:[39m [39m1.52s[39m
+

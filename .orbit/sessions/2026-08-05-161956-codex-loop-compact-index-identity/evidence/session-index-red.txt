@@ -1,0 +1,121 @@
+
+  [31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it indexes compact loop receipts alongside historical archives                                 
+[39;1m  Failed asserting that 2 matches expected 3.[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m72[39m
+     68▕         $compact = session_index_record($index, 'compact-loop');
+     69▕         $historical = session_index_record($index, 'historical-loop');
+     70▕ 
+     71▕         expect($index)
+  ➜  72▕             ->toHaveKey('schema_version', 3)
+     73▕             ->and($compact)
+     74▕             ->toMatchArray([
+     75▕                 'schema' => 'compact-v1',
+     76▕                 'state' => 'accepted',
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m72[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it writes and checks deterministic facets for heterogeneous session archives                   
+[39;1m  Failed asserting that 2 matches expected 3.[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m240[39m
+    236▕ 
+    237▕         $index = session_index_json($sessionsDir);
+    238▕ 
+    239▕         expect($index)
+  ➜ 240▕             ->toHaveKey('schema_version', 3)
+    241▕             ->toHaveKey('record_count', 4);
+    242▕ 
+    243▕         $legacy = session_index_record($index, 'legacy-slice');
+    244▕         $ok = session_index_record($index, 'lane-close-agent-session-capture');
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m240[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it classifies token usage without inventing missing or invalid values                          
+[39;1m  Failed asserting that 2 matches expected 3.[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m530[39m
+    526▕         $inconsistentPartial = session_index_record($index, 'inconsistent-partial-token-usage');
+    527▕         $invalidPrecedence = session_index_record($index, 'invalid-precedence-token-usage');
+    528▕ 
+    529▕         expect($index)
+  ➜ 530▕             ->toHaveKey('schema_version', 3)
+    531▕             ->and($unavailable)
+    532▕             ->not
+    533▕             ->toHaveKey('token_usage_status')
+    534▕             ->and($unavailable['token_usage'])
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m530[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it stores explicit candidate_commit identity from receipts without guessing… [41;1m ErrorException [49;22m  
+[39;1m  Undefined array key "candidate_commit"[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m1467[39m
+    1463▕         expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+    1464▕ 
+    1465▕         $index = session_index_json($sessionsDir);
+    1466▕ 
+  ➜ 1467▕         expect(session_index_record($index, 'valid-identity')['candidate_commit'])
+    1468▕             ->toBe($validCommit)
+    1469▕             ->and(session_index_record($index, 'missing-identity')['candidate_commit'])
+    1470▕             ->toBeNull()
+    1471▕             ->and(session_index_record($index, 'invalid-identity')['candidate_commit'])
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it deduplicates only valid explicit candidate commits and keeps multiple unknowns as raw re…   
+[39;1m  Failed asserting that an array has the key 'unique_candidate_commit_count'[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m1551[39m
+    1547▕         $commits = array_column($index['records'], 'candidate_commit');
+    1548▕ 
+    1549▕         expect($index)
+    1550▕             ->toHaveKey('record_count', 5)
+  ➜ 1551▕             ->toHaveKey('unique_candidate_commit_count', 2)
+    1552▕             ->and($archives)
+    1553▕             ->toBe([
+    1554▕                 '2026-08-05-130000-shared-a',
+    1555▕                 '2026-08-05-130100-shared-b',
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m1551[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it reports empty and partial orphan archive directories without deleting them                  
+[39;1m  Failed asserting that an array has the key 'orphan_count'[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m1612[39m
+    1608▕         $index = session_index_json($sessionsDir);
+    1609▕ 
+    1610▕         expect($index)
+    1611▕             ->toHaveKey('record_count', 1)
+  ➜ 1612▕             ->toHaveKey('orphan_count', 3)
+    1613▕             ->and($index['orphans'])
+    1614▕             ->toBe([
+    1615▕                 [
+    1616▕                     'archive' => '2026-08-05-140050-unsafe-orphan',
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionIndexTest.php[39;22m:[39;1m1612[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionIndexTest[22m [90m>[39m it documents regeneration backfill only for explicit receipt identity        [41;1m ErrorException [49;22m  
+[39;1m  Undefined array key "candidate_commit"[39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionIndexTest.php[39m:[32m1692[39m
+    1688▕         expect($second->getExitCode())->toBe(0, $second->getErrorOutput());
+    1689▕ 
+    1690▕         $index = session_index_json($sessionsDir);
+    1691▕ 
+  ➜ 1692▕         expect(session_index_record($index, 'historical-receipt')['candidate_commit'])
+    1693▕             ->toBe($commit)
+    1694▕             ->and(session_index_record($index, 'historical-absence')['candidate_commit'])
+    1695▕             ->toBeNull()
+    1696▕             ->and($index['unique_candidate_commit_count'])
+
+
+  [90mTests:[39m    [31;1m7 failed[39;22m[90m (20 assertions)[39m
+  [90mDuration:[39m [39m1.64s[39m
+
