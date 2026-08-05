@@ -142,7 +142,33 @@ final class ZshShellIntegration
     {
         $quoted = self::singleQuote($snippetPath);
 
-        return self::BEGIN_MARKER."\n".'[ -f '.$quoted.' ] && . '.$quoted."\n".self::END_MARKER."\n";
+        return self::BEGIN_MARKER."\n".self::sourceLine($snippetPath)."\n".self::END_MARKER."\n";
+    }
+
+    public static function sourceLine(string $snippetPath): string
+    {
+        $quoted = self::singleQuote($snippetPath);
+
+        return '[ -f '.$quoted.' ] && . '.$quoted;
+    }
+
+    /**
+     * Pure path resolution for HOME/ZDOTDIR without writing files.
+     *
+     * @return array{snippet_path: string, zshrc_path: string}|null
+     */
+    public function resolvePaths(string $home, ?string $zdotdir = null): ?array
+    {
+        $resolvedHome = $this->normalizeDirectoryPath($home);
+
+        if ($resolvedHome === null) {
+            return null;
+        }
+
+        return [
+            'snippet_path' => $this->joinUnderHome($resolvedHome, self::snippetRelativePath()),
+            'zshrc_path' => $this->resolveZshrcPath($resolvedHome, $zdotdir),
+        ];
     }
 
     public function isZsh(?string $shell): bool
@@ -153,6 +179,52 @@ final class ZshShellIntegration
 
         // Match bin/install-orbit: exact basename `zsh` only (not `not-zsh`, `zsh-5.9`, …).
         return strtolower(basename($shell)) === 'zsh';
+    }
+
+    /**
+     * True when contents already contain the exact complete managed block for the snippet.
+     */
+    public static function hasCompleteManagedBlock(string $contents, string $snippetPath): bool
+    {
+        return (
+            str_contains($contents, self::zshrcBlock($snippetPath))
+            || str_contains($contents, rtrim(self::zshrcBlock($snippetPath), "\n"))
+        );
+    }
+
+    /**
+     * Remove managed Orbit zsh integration lines while preserving all unknown
+     * user content.
+     *
+     * - A complete BEGIN…END block is removed only as a bounded range.
+     * - An orphan BEGIN with no END removes only that exact marker line (never
+     *   consumes following user lines).
+     * - Orphan END lines and the exact Orbit source line for `$snippetPath` are
+     *   removed when recognizable.
+     */
+    public static function stripManagedBlocks(string $contents, string $snippetPath): string
+    {
+        $stripped = preg_replace(
+            '/'.preg_quote(self::BEGIN_MARKER, '/').'.*?'.preg_quote(self::END_MARKER, '/').'\n?/s',
+            '',
+            $contents,
+        );
+
+        if (! is_string($stripped)) {
+            $stripped = $contents;
+        }
+
+        // Orphan markers only — never delete arbitrary later user content.
+        $stripped = preg_replace('/^'.preg_quote(self::BEGIN_MARKER, '/').'\n?/m', '', $stripped) ?? $stripped;
+        $stripped = preg_replace('/^'.preg_quote(self::END_MARKER, '/').'\n?/m', '', $stripped) ?? $stripped;
+        $stripped =
+            preg_replace(
+                '/^'.preg_quote(self::sourceLine($snippetPath), '/').'\n?/m',
+                '',
+                $stripped,
+            ) ?? $stripped;
+
+        return $stripped;
     }
 
     private function resolveShell(?string $shell): string
@@ -282,9 +354,13 @@ final class ZshShellIntegration
     }
 
     /**
-     * Append the managed source block only when the begin marker is absent.
-     * Never rewrites an existing `.zshrc` (preserves symlinks and modes). Snippet
-     * upgrades alone refresh noglob behavior on the next shell start.
+     * Ensure exactly one complete managed source block for the snippet path.
+     *
+     * Only the exact complete block (begin marker, source line for this snippet,
+     * end marker) counts as already present. A begin-marker-only or otherwise
+     * partial interrupted append is repaired to one complete block. Writes go
+     * through the existing path so symlink targets and modes are preserved
+     * (never rename-over the rc file).
      *
      * @return self::STATUS_INSTALLED|self::STATUS_ALREADY_PRESENT|self::STATUS_FAILED
      */
@@ -298,6 +374,8 @@ final class ZshShellIntegration
             }
         }
 
+        $block = self::zshrcBlock($snippetPath);
+
         if (is_file($zshrcPath) || is_link($zshrcPath)) {
             $existing = @file_get_contents($zshrcPath);
 
@@ -305,25 +383,19 @@ final class ZshShellIntegration
                 return self::STATUS_FAILED;
             }
 
-            if (str_contains($existing, self::BEGIN_MARKER)) {
+            if (self::hasCompleteManagedBlock($existing, $snippetPath)) {
                 return self::STATUS_ALREADY_PRESENT;
             }
 
-            $prefix = str_ends_with($existing, "\n") || $existing === '' ? '' : "\n";
-            $written = @file_put_contents(
-                $zshrcPath,
-                $prefix.self::zshrcBlock($snippetPath),
-                FILE_APPEND | LOCK_EX,
-            );
+            $cleaned = self::stripManagedBlocks($existing, $snippetPath);
+            $separator = $cleaned === '' || str_ends_with($cleaned, "\n") ? '' : "\n";
+            // Write through the path (follows symlink); do not rename-over.
+            $written = @file_put_contents($zshrcPath, $cleaned.$separator.$block, LOCK_EX);
 
             return $written === false ? self::STATUS_FAILED : self::STATUS_INSTALLED;
         }
 
-        $written = @file_put_contents(
-            $zshrcPath,
-            self::zshrcBlock($snippetPath),
-            FILE_APPEND | LOCK_EX,
-        );
+        $written = @file_put_contents($zshrcPath, $block, LOCK_EX);
 
         return $written === false ? self::STATUS_FAILED : self::STATUS_INSTALLED;
     }

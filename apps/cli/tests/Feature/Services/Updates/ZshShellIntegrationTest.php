@@ -300,48 +300,70 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->toBe(1);
     });
 
-    it('preserves root directory paths for HOME and ZDOTDIR without collapsing to empty', function (): void {
+    it('preserves root directory paths for HOME and ZDOTDIR without writing root', function (): void {
         $integration = new ZshShellIntegration;
 
-        // Root HOME: path normalization must keep `/` so snippet/rc targets are
-        // `/.config/...` and `/.zshrc`, not empty-string paths. Do not require a
-        // successful write to the real root filesystem.
-        $rootHome = $integration->ensure(home: '/', shell: '/bin/zsh', zdotdir: '');
+        // Pure path resolution only — never call ensure() with home/zdotdir `/`
+        // (that can persistently write under the real filesystem root).
+        $rootHome = $integration->resolvePaths('/');
+        $rootZdot = $integration->resolvePaths($this->home, '/');
+        $slashed = $integration->resolvePaths($this->home.'/', $this->root.'/zdotdir/');
 
-        expect($rootHome['snippet_path'])
-            ->toBe('/.config/orbit/shell/zsh-noglob.zsh')
-            ->and($rootHome['zshrc_path'])
-            ->toBe('/.zshrc')
-            ->and($rootHome['status'])
-            ->not->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH);
+        expect($rootHome)
+            ->toBe([
+                'snippet_path' => '/.config/orbit/shell/zsh-noglob.zsh',
+                'zshrc_path' => '/.zshrc',
+            ])
+            ->and($rootZdot)
+            ->toBe([
+                'snippet_path' => $this->home.'/.config/orbit/shell/zsh-noglob.zsh',
+                'zshrc_path' => '/.zshrc',
+            ])
+            ->and($slashed)
+            ->toBe([
+                'snippet_path' => $this->home.'/.config/orbit/shell/zsh-noglob.zsh',
+                'zshrc_path' => $this->root.'/zdotdir/.zshrc',
+            ])
+            ->and(file_exists('/.config/orbit/shell/zsh-noglob.zsh') || is_link('/.config/orbit/shell/zsh-noglob.zsh'))
+            ->toBeFalse()
+            ->and($integration->resolvePaths(''))
+            ->toBeNull();
+    });
 
-        // Root ZDOTDIR with sandboxed HOME: rc path is `/.zshrc`; snippet stays under HOME.
-        $rootZdot = $integration->ensure(
-            home: $this->home,
-            shell: '/bin/zsh',
-            zdotdir: '/',
+    it('repairs a begin-marker-only interrupted block without deleting following user lines', function (): void {
+        $zshrc = $this->home.'/.zshrc';
+        $snippet = $this->home.'/.config/orbit/shell/zsh-noglob.zsh';
+        file_put_contents(
+            $zshrc,
+            ZshShellIntegration::BEGIN_MARKER."\n"."export ORBIT_ZSH_SENTINEL=keep-me\n"."# user trailing comment\n",
         );
 
-        expect($rootZdot['snippet_path'])
-            ->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
-            ->and($rootZdot['zshrc_path'])
-            ->toBe('/.zshrc')
-            ->and($rootZdot['status'])
-            ->not->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH);
+        $first = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        $contents = file_get_contents($zshrc);
 
-        // Trailing slashes on non-root paths still normalize without losing the root case.
-        $slashed = $integration->ensure(
-            home: $this->home.'/',
-            shell: '/bin/zsh',
-            zdotdir: $this->root.'/zdotdir/',
-        );
-
-        expect($slashed['status'])
+        expect($first['status'])
             ->toBe(ZshShellIntegration::STATUS_INSTALLED)
-            ->and($slashed['snippet_path'])
-            ->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
-            ->and($slashed['zshrc_path'])
-            ->toBe($this->root.'/zdotdir/.zshrc');
+            ->and($contents)
+            ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
+            ->and($contents)
+            ->toContain('# user trailing comment')
+            ->and($contents)
+            ->toContain(ZshShellIntegration::sourceLine($snippet))
+            ->and($contents)
+            ->toContain(ZshShellIntegration::END_MARKER)
+            ->and(substr_count($contents, ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(1)
+            ->and(ZshShellIntegration::hasCompleteManagedBlock($contents, $snippet))
+            ->toBeTrue();
+
+        $second = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+
+        expect($second['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(file_get_contents($zshrc))
+            ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
+            ->and(substr_count(file_get_contents($zshrc), ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(1);
     });
 
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {

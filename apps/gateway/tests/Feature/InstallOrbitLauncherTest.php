@@ -64,8 +64,10 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toContain('# >>> orbit zsh integration >>>')
             ->toContain('mktemp "${snippet_dir}/.zsh-noglob.XXXXXX"')
             ->toContain('mv -f "$tmp_file" "$snippet_path"')
-            ->toContain('tail -c 1 "$zshrc_path"')
-            ->toContain('grep -Fq "$begin_marker" "$zshrc_path"')
+            ->toContain('snippet_dir="/.config/orbit/shell"')
+            ->toContain('zshrc_path="/.zshrc"')
+            ->toContain('source_line=')
+            ->toContain('flush_hold')
             ->not->toContain('existing="$(cat "$zshrc_path"')
             ->not->toContain('install -m 0600 "$tmp_file" "$snippet_path"')
             ->not->toMatch('/^\s*cat\s+>\s*"\$snippet_path"/m')
@@ -76,6 +78,99 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toBeLessThan(strrpos($installer, 'ensure_zsh_shell_integration'));
         expect(strrpos($installer, 'Ensure zsh shell integration'))
             ->toBeLessThan(strrpos($installer, 'Verify Orbit'));
+    });
+
+    it('repairs marker-only interrupted zshrc content without deleting following user lines', function (): void {
+        $root = sys_get_temp_dir().'/orbit-install-zsh-partial-'.bin2hex(random_bytes(4));
+        $home = $root.'/home';
+        $zshrc = $home.'/.zshrc';
+
+        try {
+            File::ensureDirectoryExists($home);
+            File::put(
+                $zshrc,
+                "# >>> orbit zsh integration >>>\nexport ORBIT_ZSH_SENTINEL=keep-me\n# user trailing comment\n",
+            );
+
+            $process = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $process->run();
+
+            $contents = File::get($zshrc);
+
+            expect($process->isSuccessful())
+                ->toBeTrue($process->getErrorOutput().$process->getOutput())
+                ->and($contents)
+                ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
+                ->and($contents)
+                ->toContain('# user trailing comment')
+                ->and($contents)
+                ->toContain('# <<< orbit zsh integration <<<')
+                ->and($contents)
+                ->toContain('zsh-noglob.zsh')
+                ->and(substr_count($contents, '# >>> orbit zsh integration >>>'))
+                ->toBe(1);
+
+            $second = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $second->run();
+
+            expect($second->isSuccessful())
+                ->toBeTrue($second->getErrorOutput().$second->getOutput())
+                ->and(File::get($zshrc))
+                ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
+                ->and(substr_count(File::get($zshrc), '# >>> orbit zsh integration >>>'))
+                ->toBe(1);
+        } finally {
+            if (is_dir($root)) {
+                File::deleteDirectory($root);
+            }
+        }
+    });
+
+    it('resolves installer root HOME and ZDOTDIR paths without writing real root', function (): void {
+        $installer = File::get(repo_path('bin/install-orbit'));
+
+        // Shape contract: root branches must produce exact PHP-aligned paths.
+        expect($installer)
+            ->toContain('if [ "$target_home" = "/" ]; then')
+            ->toContain('snippet_dir="/.config/orbit/shell"')
+            ->toContain('if [ "$ZDOTDIR" = "/" ]; then')
+            ->toContain('zshrc_path="/.zshrc"');
+
+        // Pure shell evaluation of path-join logic only (no ensure, no root writes).
+        $script = <<<'BASH'
+            set -euo pipefail
+            target_home="/"
+            if [ "$target_home" = "/" ]; then
+                snippet_dir="/.config/orbit/shell"
+            else
+                snippet_dir="${target_home%/}/.config/orbit/shell"
+            fi
+            snippet_path="${snippet_dir}/zsh-noglob.zsh"
+            ZDOTDIR="/"
+            if [ -n "${ZDOTDIR:-}" ]; then
+                if [ "$ZDOTDIR" = "/" ]; then
+                    zshrc_path="/.zshrc"
+                else
+                    zshrc_path="${ZDOTDIR%/}/.zshrc"
+                fi
+            elif [ "$target_home" = "/" ]; then
+                zshrc_path="/.zshrc"
+            else
+                zshrc_path="${target_home%/}/.zshrc"
+            fi
+            printf 'snippet=%s\n' "$snippet_path"
+            printf 'zshrc=%s\n' "$zshrc_path"
+            BASH;
+
+        $process = new Process(['bash', '-c', $script]);
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeTrue()
+            ->and($process->getOutput())
+            ->toContain('snippet=/.config/orbit/shell/zsh-noglob.zsh')
+            ->and($process->getOutput())
+            ->toContain('zshrc=/.zshrc');
     });
 
     it('executes ensure_zsh_shell_integration for zsh with symlink-safe snippet and zshrc append', function (): void {

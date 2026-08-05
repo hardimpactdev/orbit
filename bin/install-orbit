@@ -1004,17 +1004,29 @@ ensure_zsh_shell_integration() {
         fail validation_failed "Failed to ensure zsh shell integration: HOME is not set."
     fi
 
-    snippet_dir="${target_home}/.config/orbit/shell"
+    # Root-safe join: HOME=/ must yield /.config/... not //.config/... (match PHP).
+    if [ "$target_home" = "/" ]; then
+        snippet_dir="/.config/orbit/shell"
+    else
+        snippet_dir="${target_home%/}/.config/orbit/shell"
+    fi
     snippet_path="${snippet_dir}/zsh-noglob.zsh"
     # zsh loads $ZDOTDIR/.zshrc when ZDOTDIR is a non-empty export; otherwise
     # $HOME/.zshrc. The Orbit-owned snippet still lives under config home.
     if [ -n "${ZDOTDIR:-}" ]; then
-        zshrc_path="${ZDOTDIR%/}/.zshrc"
+        if [ "$ZDOTDIR" = "/" ]; then
+            zshrc_path="/.zshrc"
+        else
+            zshrc_path="${ZDOTDIR%/}/.zshrc"
+        fi
+    elif [ "$target_home" = "/" ]; then
+        zshrc_path="/.zshrc"
     else
-        zshrc_path="${target_home}/.zshrc"
+        zshrc_path="${target_home%/}/.zshrc"
     fi
     begin_marker='# >>> orbit zsh integration >>>'
     end_marker='# <<< orbit zsh integration <<<'
+    source_line="[ -f $(printf '%q' "$snippet_path") ] && . $(printf '%q' "$snippet_path")"
 
     zshrc_dir="$(dirname "$zshrc_path")"
     if [ -n "$zshrc_dir" ] && [ "$zshrc_dir" != "." ] && [ ! -d "$zshrc_dir" ]; then
@@ -1057,24 +1069,93 @@ ZSH
     fi
 
     block="${begin_marker}
-[ -f $(printf '%q' "$snippet_path") ] && . $(printf '%q' "$snippet_path")
+${source_line}
 ${end_marker}
 "
 
     if [ -e "$zshrc_path" ] || [ -L "$zshrc_path" ]; then
-        # Inspect the file itself — never `existing="$(cat ...)"`, which strips
-        # trailing newlines and mis-detects whether a separator newline is needed.
-        if grep -Fq "$begin_marker" "$zshrc_path" 2>/dev/null; then
+        # Complete block only: begin + expected source line + end in order.
+        # A begin-marker-only interrupted append must be repaired, not treated
+        # as already present.
+        if grep -Fq "$begin_marker" "$zshrc_path" 2>/dev/null \
+            && grep -Fq "$end_marker" "$zshrc_path" 2>/dev/null \
+            && grep -Fq "$source_line" "$zshrc_path" 2>/dev/null \
+            && awk -v begin="$begin_marker" -v end="$end_marker" -v src="$source_line" '
+                $0 == begin { b = NR; s = 0 }
+                b && !s && $0 == src { s = NR }
+                b && s && $0 == end && NR > s { ok = 1 }
+                END { exit ok ? 0 : 1 }
+            ' "$zshrc_path"; then
             printf 'orbit-install: zsh shell integration already present in %s\n' "$zshrc_path"
             return 0
         fi
 
-        # Append only — never rewrite the whole file (preserves symlinks/modes).
-        if [ -s "$zshrc_path" ] && [ "$(tail -c 1 "$zshrc_path" | wc -l | tr -d ' ')" = "0" ]; then
-            printf '\n' >>"$zshrc_path" || fail validation_failed "Failed to ensure zsh shell integration: could not append to ${zshrc_path}."
+        # Repair partial or outdated managed content to one complete block.
+        # Never let an unmatched BEGIN delete following user lines: only remove
+        # bounded BEGIN...END blocks, or exact orphan BEGIN/END/source lines.
+        # Write through the path (follows symlink); never rename-over the rc.
+        cleaned_tmp="$(mktemp "${TMPDIR:-/tmp}/orbit-zshrc-clean.XXXXXX")"
+        if ! awk -v begin="$begin_marker" -v end="$end_marker" -v src="$source_line" '
+            function flush_hold(   i) {
+                # Orphan BEGIN (no END): drop only the begin line; keep buffered
+                # following lines except exact orphan source lines.
+                for (i = 1; i <= n; i++) {
+                    if (buf[i] != src) {
+                        print buf[i]
+                    }
+                }
+                n = 0
+                holding = 0
+            }
+            $0 == begin {
+                if (holding) {
+                    flush_hold()
+                }
+                holding = 1
+                n = 0
+                next
+            }
+            holding {
+                if ($0 == end) {
+                    # Complete managed block — discard begin, buffer, and end.
+                    n = 0
+                    holding = 0
+                    next
+                }
+                buf[++n] = $0
+                next
+            }
+            $0 == end { next }
+            $0 == src { next }
+            { print }
+            END {
+                if (holding) {
+                    flush_hold()
+                }
+            }
+        ' "$zshrc_path" >"$cleaned_tmp"; then
+            run rm -f "$cleaned_tmp"
+            fail validation_failed "Failed to ensure zsh shell integration: could not repair ${zshrc_path}."
         fi
 
-        printf '%s' "$block" >>"$zshrc_path" || fail validation_failed "Failed to ensure zsh shell integration: could not append to ${zshrc_path}."
+        if [ -s "$cleaned_tmp" ] && [ "$(tail -c 1 "$cleaned_tmp" | wc -l | tr -d ' ')" = "0" ]; then
+            printf '\n' >>"$cleaned_tmp" || {
+                run rm -f "$cleaned_tmp"
+                fail validation_failed "Failed to ensure zsh shell integration: could not repair ${zshrc_path}."
+            }
+        fi
+
+        printf '%s' "$block" >>"$cleaned_tmp" || {
+            run rm -f "$cleaned_tmp"
+            fail validation_failed "Failed to ensure zsh shell integration: could not repair ${zshrc_path}."
+        }
+
+        # Redirect into the path so a symlink target is updated in place.
+        if ! cat "$cleaned_tmp" >"$zshrc_path"; then
+            run rm -f "$cleaned_tmp"
+            fail validation_failed "Failed to ensure zsh shell integration: could not write ${zshrc_path}."
+        fi
+        run rm -f "$cleaned_tmp"
         return 0
     fi
 
