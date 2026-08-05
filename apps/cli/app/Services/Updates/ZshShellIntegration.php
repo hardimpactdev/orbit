@@ -47,8 +47,12 @@ final class ZshShellIntegration
     }
 
     /**
-     * Ensure the managed snippet and a single append-only source block in `~/.zshrc`
-     * when the active shell is zsh.
+     * Ensure the managed snippet and a single append-only source block in the
+     * active zsh rc when the active shell is zsh.
+     *
+     * The Orbit-owned snippet always lives under `$HOME/.config/orbit/shell/`.
+     * The managed source block is appended to `$ZDOTDIR/.zshrc` when `ZDOTDIR`
+     * is a non-empty export, otherwise `$HOME/.zshrc`, matching zsh startup.
      *
      * @return array{
      *     status: self::STATUS_*,
@@ -57,7 +61,7 @@ final class ZshShellIntegration
      *     message: string,
      * }
      */
-    public function ensure(?string $home = null, ?string $shell = null): array
+    public function ensure(?string $home = null, ?string $shell = null, ?string $zdotdir = null): array
     {
         $resolvedShell = $this->resolveShell($shell);
 
@@ -82,7 +86,7 @@ final class ZshShellIntegration
         }
 
         $snippetPath = $resolvedHome.'/'.self::snippetRelativePath();
-        $zshrcPath = $resolvedHome.'/.zshrc';
+        $zshrcPath = $this->resolveZshrcPath($resolvedHome, $zdotdir);
 
         if (! $this->writeSnippet($snippetPath)) {
             return [
@@ -185,6 +189,40 @@ final class ZshShellIntegration
         return null;
     }
 
+    /**
+     * Resolve the zsh rc path zsh will load.
+     *
+     * A non-empty `ZDOTDIR` (parameter or environment) wins; otherwise `$HOME/.zshrc`.
+     * An explicit empty string forces the HOME fallback without reading the env.
+     */
+    private function resolveZshrcPath(string $home, ?string $zdotdir): string
+    {
+        $resolved = $this->resolveZdotdir($zdotdir);
+
+        if ($resolved !== null) {
+            return $resolved.'/.zshrc';
+        }
+
+        return $home.'/.zshrc';
+    }
+
+    private function resolveZdotdir(?string $zdotdir): ?string
+    {
+        if ($zdotdir !== null) {
+            $trimmed = rtrim($zdotdir, '/');
+
+            return $trimmed === '' ? null : $trimmed;
+        }
+
+        $envZdotdir = getenv('ZDOTDIR');
+
+        if (is_string($envZdotdir) && $envZdotdir !== '') {
+            return rtrim($envZdotdir, '/');
+        }
+
+        return null;
+    }
+
     private function writeSnippet(string $snippetPath): bool
     {
         $directory = dirname($snippetPath);
@@ -228,6 +266,14 @@ final class ZshShellIntegration
      */
     private function ensureZshrcBlock(string $zshrcPath, string $snippetPath): string
     {
+        $directory = dirname($zshrcPath);
+
+        if ($directory !== '' && $directory !== '.' && ! is_dir($directory)) {
+            if (! @mkdir($directory, 0700, recursive: true) && ! is_dir($directory)) {
+                return self::STATUS_FAILED;
+            }
+        }
+
         if (is_file($zshrcPath) || is_link($zshrcPath)) {
             $existing = @file_get_contents($zshrcPath);
 

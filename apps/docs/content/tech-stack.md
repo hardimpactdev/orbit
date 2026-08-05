@@ -1005,12 +1005,16 @@ local launcher and do not mutate protected system launchers implicitly. When
 the active login shell is zsh, install and update also ensure a supported zsh
 integration: an Orbit-owned snippet at
 `~/.config/orbit/shell/zsh-noglob.zsh` with `alias orbit='noglob orbit'`,
-sourced from an append-only managed block in `~/.zshrc`. The managed alias
-takes effect only in a newly started or freshly sourced zsh session;
-`bin/install-orbit` and `orbit update` cannot mutate the parent shell that
-invoked them. That integration is command-scoped only (no global `NONOMATCH` /
+sourced from an append-only managed block in `$ZDOTDIR/.zshrc` when `ZDOTDIR`
+is a non-empty export, otherwise `$HOME/.zshrc` (matching zsh startup). The
+managed alias takes effect only in a newly started or freshly sourced zsh
+session; `bin/install-orbit` and `orbit update` cannot mutate the parent shell
+that invoked them. First upgrade from a pre-feature binary still installs the
+integration because post-replace verify already runs the candidate as
+`orbit --version --local --json`, which ensures the zsh integration on the
+candidate side. That integration is command-scoped only (no global `NONOMATCH` /
 `nonomatch`) so unquoted namespace wildcards such as `process:*` reach Orbit
-literally; bash-only hosts skip it and do not receive a new `~/.zshrc`. In source-dev Docker and Incus topologies,
+literally; bash-only hosts skip it and do not receive a new `.zshrc`. In source-dev Docker and Incus topologies,
 `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, the
 current checkout is mounted or copied into the topology, and mutable node-local
 Orbit state lives under `~/.config/orbit`. Internal executor commands verify

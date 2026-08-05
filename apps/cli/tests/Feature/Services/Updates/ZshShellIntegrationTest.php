@@ -221,6 +221,85 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->toBe("do-not-truncate\n");
     });
 
+    it('appends the managed block under ZDOTDIR when ZDOTDIR differs from HOME', function (): void {
+        $zdotdir = $this->root.'/zdotdir';
+        $home = $this->home;
+        mkdir($zdotdir, 0700, recursive: true);
+
+        $result = new ZshShellIntegration()->ensure(
+            home: $home,
+            shell: '/bin/zsh',
+            zdotdir: $zdotdir,
+        );
+
+        $snippet = $home.'/.config/orbit/shell/zsh-noglob.zsh';
+        $zshrc = $zdotdir.'/.zshrc';
+
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and($result['zshrc_path'])
+            ->toBe($zshrc)
+            ->and(is_file($snippet))
+            ->toBeTrue()
+            ->and(file_get_contents($snippet))
+            ->toContain("alias orbit='noglob orbit'")
+            ->and(is_file($zshrc))
+            ->toBeTrue()
+            ->and(file_get_contents($zshrc))
+            ->toContain(ZshShellIntegration::BEGIN_MARKER)
+            ->and(file_exists($home.'/.zshrc'))
+            ->toBeFalse();
+
+        // Fresh interactive zsh with ZDOTDIR != HOME preserves unquoted process:*.
+        file_put_contents($zshrc, zsh_capture_function_only().file_get_contents($zshrc));
+        $process = zsh_interactive_orbit_invocation($zdotdir, $home);
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('ARG:--add=process:*');
+    });
+
+    it('appends through a ZDOTDIR .zshrc symlink without replacing it', function (): void {
+        $zdotdir = $this->root.'/zdotdir';
+        $target = $this->root.'/dotfiles/zshrc';
+        mkdir(dirname($target), 0700, recursive: true);
+        mkdir($zdotdir, 0700, recursive: true);
+        file_put_contents($target, "export CUSTOM=1\n");
+        chmod($target, 0640);
+        symlink($target, $zdotdir.'/.zshrc');
+
+        $result = new ZshShellIntegration()->ensure(
+            home: $this->home,
+            shell: '/bin/zsh',
+            zdotdir: $zdotdir,
+        );
+
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(is_link($zdotdir.'/.zshrc'))
+            ->toBeTrue()
+            ->and(readlink($zdotdir.'/.zshrc'))
+            ->toBe($target)
+            ->and(substr(sprintf('%o', fileperms($target)), -4))
+            ->toBe('0640')
+            ->and(file_get_contents($target))
+            ->toContain(ZshShellIntegration::BEGIN_MARKER)
+            ->and(file_exists($this->home.'/.zshrc'))
+            ->toBeFalse();
+
+        $second = new ZshShellIntegration()->ensure(
+            home: $this->home,
+            shell: '/bin/zsh',
+            zdotdir: $zdotdir,
+        );
+
+        expect($second['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(substr_count(file_get_contents($target), ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(1);
+    });
+
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {
         // Explicit empty home is distinguishable from null (process HOME fallback).
         $result = new ZshShellIntegration()->ensure(home: '', shell: '/bin/zsh');

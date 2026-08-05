@@ -13,6 +13,8 @@ describe('version', function (): void {
         $this->previousDisplayTimezone = getenv('ORBIT_DISPLAY_TIMEZONE');
         $this->previousBinPath = getenv('ORBIT_BIN_PATH');
         $this->previousHome = getenv('HOME');
+        $this->previousShell = getenv('SHELL');
+        $this->previousZdotdir = getenv('ZDOTDIR');
         $this->versionTempRoot = sys_get_temp_dir().'/orbit-version-test-'.getmypid();
         $this->installMetadataPath = $this->versionTempRoot.'/install.json';
         File::deleteDirectory($this->versionTempRoot);
@@ -21,6 +23,11 @@ describe('version', function (): void {
         putenv('ORBIT_DISPLAY_TIMEZONE=Europe/Amsterdam');
         config()->set('app.version', '0.1.105');
         putenv("ORBIT_INSTALL_METADATA_PATH={$this->installMetadataPath}");
+        // Keep shell ensure off real operator homes during ordinary version tests.
+        putenv("HOME={$this->versionTempRoot}/home");
+        File::ensureDirectoryExists($this->versionTempRoot.'/home');
+        putenv('SHELL=/bin/bash');
+        putenv('ZDOTDIR');
         $this->previousArgvPath = $_SERVER['argv'][0] ?? null;
     });
 
@@ -31,6 +38,8 @@ describe('version', function (): void {
             : putenv("ORBIT_DISPLAY_TIMEZONE={$this->previousDisplayTimezone}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
         $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
+        $this->previousShell === false ? putenv('SHELL') : putenv("SHELL={$this->previousShell}");
+        $this->previousZdotdir === false ? putenv('ZDOTDIR') : putenv("ZDOTDIR={$this->previousZdotdir}");
         putenv('ORBIT_INSTALL_METADATA_PATH');
         if ($this->previousArgvPath === null) {
             unset($_SERVER['argv'][0]);
@@ -164,6 +173,50 @@ describe('version', function (): void {
             ]);
 
         Http::assertNothingSent();
+    });
+
+    it('installs zsh integration when --local verify runs as pre-feature updaters do', function (): void {
+        // Pre-feature LocalCheckoutUpdater already invokes the replaced binary as
+        // `orbit --version --local --json`. That candidate-side path must install
+        // zsh integration on the first upgrade without calling the candidate updater.
+        putenv('SHELL=/bin/zsh');
+        file_put_contents($this->installMetadataPath, json_encode([
+            'schema_version' => 1,
+            'version' => '0.1.105',
+            'installed_at' => '2026-06-17T10:54:00+00:00',
+        ], JSON_THROW_ON_ERROR));
+
+        $home = $this->versionTempRoot.'/home';
+        $cli = base_path('orbit');
+
+        $process = new Symfony\Component\Process\Process(
+            [$cli, '--version', '--local', '--json'],
+            base_path(),
+            [
+                'HOME' => $home,
+                'SHELL' => '/bin/zsh',
+                'ORBIT_INSTALL_METADATA_PATH' => $this->installMetadataPath,
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ],
+        );
+        $process->setTimeout(30);
+        $process->run();
+
+        $snippet = $home.'/.config/orbit/shell/zsh-noglob.zsh';
+        $zshrc = $home.'/.zshrc';
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('"version"')
+            ->and(is_file($snippet))
+            ->toBeTrue()
+            ->and(file_get_contents($snippet))
+            ->toContain("alias orbit='noglob orbit'")
+            ->and(is_file($zshrc))
+            ->toBeTrue()
+            ->and(file_get_contents($zshrc))
+            ->toContain('# >>> orbit zsh integration >>>');
     });
 
     it('does not fail when release lookups are unavailable', function (): void {

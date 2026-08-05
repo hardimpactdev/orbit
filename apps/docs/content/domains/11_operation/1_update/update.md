@@ -54,12 +54,16 @@ orbit update --json
    point in source-mounted lanes). Production self-update does not discover or
    rewrite protected unmanaged launchers such as `/usr/local/bin/orbit`.
 5. Ensure the supported zsh shell integration when the active login shell is
-   zsh (including already-current installs that skip a binary download) so
-   unquoted namespace wildcards such as `process:*` reach Orbit literally.
-   Failure to ensure that integration is reported as an update failure rather
-   than silent success. Bash-only hosts skip this step without creating
-   `~/.zshrc`. The managed alias takes effect only in a newly started or
-   freshly sourced zsh session; `orbit update` cannot mutate the parent shell.
+   zsh (including already-current installs that skip a binary download, and
+   including the first upgrade from a pre-feature binary via candidate
+   `orbit --version --local --json` post-replace verify) so unquoted namespace
+   wildcards such as `process:*` reach Orbit literally. Failure to ensure that
+   integration is reported as an update failure rather than silent success.
+   Bash-only hosts skip this step without creating a new `.zshrc`. When
+   `ZDOTDIR` is set, the managed source block is appended under that directory;
+   the Orbit-owned snippet still lives under `~/.config/orbit/shell/`. The
+   managed alias takes effect only in a newly started or freshly sourced zsh
+   session; `orbit update` cannot mutate the parent shell.
 6. Run `orbit doctor` in verify mode for the local node and report the issue
    count without failing an otherwise completed binary update.
 7. Report the local update result.

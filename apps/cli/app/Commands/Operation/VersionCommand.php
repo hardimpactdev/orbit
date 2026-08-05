@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Commands\Operation;
 
 use App\Commands\LocalOnlyCommand;
+use App\Services\Updates\ZshShellIntegration;
 use App\Services\Version\VersionInfo;
 use App\Services\Version\VersionInfoResolver;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity -- Local/json rendering plus first-upgrade shell ensure bridge.
+ */
 final class VersionCommand extends LocalOnlyCommand
 {
     #[\Override]
@@ -18,8 +22,35 @@ final class VersionCommand extends LocalOnlyCommand
     #[\Override]
     protected $description = 'Show Orbit version and release metadata';
 
-    public function handle(VersionInfoResolver $versions): int
+    public function handle(VersionInfoResolver $versions, ZshShellIntegration $zshShellIntegration): int
     {
+        // First-upgrade bridge: pre-feature updaters already invoke the replaced
+        // binary as `orbit --version --local --json` (and may not call ensure on
+        // their own). Running ensure here installs zsh noglob integration during
+        // that first candidate-side verify without waiting for a second update.
+        if ($this->option('local')) {
+            $shell = $zshShellIntegration->ensure();
+
+            if (! $zshShellIntegration->succeeded($shell)) {
+                if ($this->wantsJson()) {
+                    return $this->renderFailure(
+                        'shell_integration_failed',
+                        $shell['message'] !== ''
+                            ? $shell['message']
+                            : 'Failed to ensure zsh shell integration.',
+                    );
+                }
+
+                $this->error(
+                    $shell['message'] !== ''
+                        ? $shell['message']
+                        : 'Failed to ensure zsh shell integration.',
+                );
+
+                return self::FAILURE;
+            }
+        }
+
         $info = $this->option('local')
             ? $versions->resolveLocal()
             : $versions->resolve();

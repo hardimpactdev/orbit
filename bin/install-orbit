@@ -1006,9 +1006,20 @@ ensure_zsh_shell_integration() {
 
     snippet_dir="${target_home}/.config/orbit/shell"
     snippet_path="${snippet_dir}/zsh-noglob.zsh"
-    zshrc_path="${target_home}/.zshrc"
+    # zsh loads $ZDOTDIR/.zshrc when ZDOTDIR is a non-empty export; otherwise
+    # $HOME/.zshrc. The Orbit-owned snippet still lives under config home.
+    if [ -n "${ZDOTDIR:-}" ]; then
+        zshrc_path="${ZDOTDIR%/}/.zshrc"
+    else
+        zshrc_path="${target_home}/.zshrc"
+    fi
     begin_marker='# >>> orbit zsh integration >>>'
     end_marker='# <<< orbit zsh integration <<<'
+
+    zshrc_dir="$(dirname "$zshrc_path")"
+    if [ -n "$zshrc_dir" ] && [ "$zshrc_dir" != "." ] && [ ! -d "$zshrc_dir" ]; then
+        run mkdir -p "$zshrc_dir"
+    fi
 
     run mkdir -p "$snippet_dir"
     run chmod 0700 "$snippet_dir"

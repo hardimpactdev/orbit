@@ -147,6 +147,44 @@ describe('install-orbit always-cli launcher contract', function (): void {
         }
     });
 
+    it('executes ensure_zsh_shell_integration against ZDOTDIR when it differs from HOME', function (): void {
+        $root = sys_get_temp_dir().'/orbit-install-zsh-zdotdir-'.bin2hex(random_bytes(4));
+        $home = $root.'/home';
+        $zdotdir = $root.'/zdotdir';
+
+        try {
+            File::ensureDirectoryExists($home);
+            File::ensureDirectoryExists($zdotdir);
+
+            $process = installOrbitEnsureZshIntegrationProcess(
+                home: $home,
+                shell: '/bin/zsh',
+                zdotdir: $zdotdir,
+            );
+            $process->run();
+
+            $snippet = $home.'/.config/orbit/shell/zsh-noglob.zsh';
+            $zshrc = $zdotdir.'/.zshrc';
+
+            expect($process->isSuccessful())
+                ->toBeTrue($process->getErrorOutput().$process->getOutput())
+                ->and(is_file($snippet))
+                ->toBeTrue()
+                ->and(file_get_contents($snippet))
+                ->toContain("alias orbit='noglob orbit'")
+                ->and(is_file($zshrc))
+                ->toBeTrue()
+                ->and(file_get_contents($zshrc))
+                ->toContain('# >>> orbit zsh integration >>>')
+                ->and(File::exists($home.'/.zshrc'))
+                ->toBeFalse();
+        } finally {
+            if (is_dir($root)) {
+                File::deleteDirectory($root);
+            }
+        }
+    });
+
     it('skips ensure_zsh_shell_integration when the active shell is not zsh', function (): void {
         $root = sys_get_temp_dir().'/orbit-install-zsh-bash-'.bin2hex(random_bytes(4));
         $home = $root.'/home';
@@ -278,7 +316,7 @@ describe('install-orbit always-cli launcher contract', function (): void {
  * Source and run ensure_zsh_shell_integration from bin/install-orbit with local
  * fail/run stubs so the installer path is exercised without a full install.
  */
-function installOrbitEnsureZshIntegrationProcess(string $home, string $shell): Process
+function installOrbitEnsureZshIntegrationProcess(string $home, string $shell, ?string $zdotdir = null): Process
 {
     $installer = repo_path('bin/install-orbit');
     $script = <<<'BASH'
@@ -300,17 +338,23 @@ function installOrbitEnsureZshIntegrationProcess(string $home, string $shell): P
         ensure_zsh_shell_integration
         BASH;
 
+    $env = [
+        'HOME' => $home,
+        'ORBIT_CONFIG_HOME' => $home,
+        'SHELL' => $shell,
+        'ORBIT_INSTALLER_PATH' => $installer,
+        'PATH' => getenv('PATH') ?: '/usr/bin:/bin:/usr/sbin:/sbin',
+        'TMPDIR' => sys_get_temp_dir(),
+    ];
+
+    if ($zdotdir !== null) {
+        $env['ZDOTDIR'] = $zdotdir;
+    }
+
     return new Process(
         ['bash', '-c', $script],
         null,
-        [
-            'HOME' => $home,
-            'ORBIT_CONFIG_HOME' => $home,
-            'SHELL' => $shell,
-            'ORBIT_INSTALLER_PATH' => $installer,
-            'PATH' => getenv('PATH') ?: '/usr/bin:/bin:/usr/sbin:/sbin',
-            'TMPDIR' => sys_get_temp_dir(),
-        ],
+        $env,
     );
 }
 
