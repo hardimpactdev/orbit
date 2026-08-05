@@ -1,0 +1,44 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T17:27:46+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-agent-e2e-pretool-guard/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-192746-codex-agent-e2e-pretool-guard",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/e2e-guard-contract-reshape.md",
+        "evidence/e2e-guard-green-gateway-pest-post-merge.txt",
+        "evidence/e2e-guard-green-gateway-pest.txt",
+        "evidence/e2e-guard-green-hook-test-post-merge.txt",
+        "evidence/e2e-guard-green-hook-test.txt",
+        "evidence/e2e-guard-red-gateway-pest.txt",
+        "evidence/e2e-guard-red-hook-test.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T170341Z-176eacd4d688.json",
+        "quality-gates/quality-check-2026-08-05T172213Z-422b67403620.json"
+    ],
+    "entry_digests": {
+        "evidence/e2e-guard-contract-reshape.md": "cf91b0436384d80f2654b91b8a8e3b27142a7c92f06ae41a4fa6ca13af6f1574",
+        "evidence/e2e-guard-green-gateway-pest-post-merge.txt": "45313128fe8fea45698f8d511b1a973dbdbe3e54feefc51c01d8471fa62de648",
+        "evidence/e2e-guard-green-gateway-pest.txt": "eb83c55655ea3e766b1c4a90af63487927920b55e9f6291df6e1294e91389c79",
+        "evidence/e2e-guard-green-hook-test-post-merge.txt": "fbc96d7c99d1ba32fadde2ab4321b35be09718285e2225caf71034a01de91c57",
+        "evidence/e2e-guard-green-hook-test.txt": "fbc96d7c99d1ba32fadde2ab4321b35be09718285e2225caf71034a01de91c57",
+        "evidence/e2e-guard-red-gateway-pest.txt": "bddfe34a7aab6be5cc34fc31c1a32594a0a7540ea60c771e2c828fb9ae701d6f",
+        "evidence/e2e-guard-red-hook-test.txt": "85623ee47a3c78766aaee279afa32fb807450d6a957176f9102aa9e126d4d96e",
+        "loop.md": "9e98fc00e592e3506865a0e1939863b0f474cff033801474797081f4b1641e60",
+        "quality-gates/quality-check-2026-08-05T170341Z-176eacd4d688.json": "b9c4fb0ee4e6cd9c25abb29f006824c2566904e5c131e03c90fa09c6566bdf65",
+        "quality-gates/quality-check-2026-08-05T172213Z-422b67403620.json": "a05646c394d6aba56890b50f170db92388ee3acb9954a41f9dcd78e3f77d1be4"
+    },
+    "slug": "codex-agent-e2e-pretool-guard",
+    "requested_slug": "codex-agent-e2e-pretool-guard",
+    "compatible_slugs": [
+        "codex-agent-e2e-pretool-guard"
+    ],
+    "branch": "codex/agent-e2e-pretool-guard",
+    "candidate_commit": "f854bbafdd6eccb0de18288f30b419f734bf6bc0",
+    "accepted_feature_tip": "f854bbafdd6eccb0de18288f30b419f734bf6bc0",
+    "accepted_main_tip": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
