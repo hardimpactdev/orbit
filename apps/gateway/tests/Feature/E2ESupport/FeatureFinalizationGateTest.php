@@ -3600,14 +3600,19 @@ function finalization_structured_runtime(
     string $venue = 'retained-incus',
     string $observed = 'exit 0',
 ): string {
-    return 'passed - candidate='.$candidate
-        .'; venue='.$venue
+    return (
+        'passed - candidate='
+        .$candidate
+        .'; venue='
+        .$venue
         .'; environment=dev-fixture'
         .'; target=orbit fixture'
         .'; expected=exit 0'
-        .'; observed='.$observed
+        .'; observed='
+        .$observed
         .'; result=passed'
-        .'; evidence=`.orbit/evidence/runtime-proof.txt`';
+        .'; evidence=`.orbit/evidence/runtime-proof.txt`'
+    );
 }
 
 function write_finalization_acceptance_event(
