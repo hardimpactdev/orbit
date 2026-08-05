@@ -14,7 +14,6 @@ use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use JsonException;
 
 uses(RefreshDatabase::class);
 
@@ -683,7 +682,7 @@ function workspace_env_controller_env_file_action(array $options): ?string
     try {
         /** @var mixed $payload */
         $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
-    } catch (JsonException) {
+    } catch (\JsonException) {
         return null;
     }
 
