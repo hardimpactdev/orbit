@@ -166,9 +166,10 @@ already-absent node remains a validation failure.
 - A stale WireGuard peer for a removed node is reported as `node.wireguard_peer_extra`
   by the node-family probe. See
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --family=node --restore` is the recovery command named by node-remove
-  human output for later node-family drift. `node.wireguard_peer_extra` remains
-  non-restorable when no deterministic peer intent exists.
+- `node.wireguard_peer_extra` is adopt-only: recovery is
+  `doctor --family=node --adopt` when peer attachment is intended. It is not
+  restored by `doctor --family=node --restore`. Other restorable node-family
+  drift may still name `doctor --family=node --restore`.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 

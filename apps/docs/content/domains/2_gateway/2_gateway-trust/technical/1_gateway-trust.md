@@ -33,8 +33,8 @@ This command follows the shared
 2. Resolve the configured local gateway endpoint.
    - If no gateway endpoint can be resolved, fail before network or
      trust-store side effects.
-   - If local gateway settings cannot be read, fail with
-     `config_unreadable` before network or trust-store side effects.
+   - If local gateway settings cannot be read, `OrbitConfigStore` throws an
+     uncaught exception before the command builds a canonical JSON envelope.
 3. Validate the configured gateway endpoint.
 4. Start the local trust repair sequence.
 
@@ -134,21 +134,19 @@ not usable:
 - `reason=missing`: no gateway endpoint is configured.
 - `reason=invalid`: the configured gateway endpoint cannot be normalized.
 
-Local config load failures come from `OrbitConfigStore` and surface as the
-store's own `error.code` values (not a synthetic `config_unreadable`
-wrapper). The codes that apply when reading `~/.config/orbit/config.json` before
-network or trust-store work include:
-
-- `config_unreadable`: the config path cannot be opened or read.
-- `config_invalid_json`: the file body is not valid JSON (related schema codes
-  such as `config_invalid_root` and `config_invalid_schema_version` may also
-  fire for non-object roots or bad `schema_version`).
-- `config_insecure_permissions`: ownership or mode is outside the owner-only ACL
-  Orbit accepts.
+Local config load failures from `OrbitConfigStore` are not caught by
+`GatewayTrustCommand` and are not rewritten into the canonical JSON error
+envelope. An unreadable, invalid, or permission-unsafe
+`~/.config/orbit/config.json` therefore surfaces as an uncaught
+`OrbitConfigStoreException` (CLI process failure), not as documented
+`error.code` values such as `config_unreadable`. Do not treat those store codes
+as part of the `gateway:trust` public envelope contract until the command
+explicitly catches and maps them.
 
 Post-installation metadata write failures keep using
 `node.local_config_write_failed` with `reason=metadata_write_failed` when the
-atomic write of trust metadata to `~/.config/orbit/config.json` fails.
+atomic write of trust metadata to `~/.config/orbit/config.json` fails after the
+config store has already loaded successfully.
 
 ## Doctor Relationship
 
