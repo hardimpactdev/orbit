@@ -8,6 +8,9 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class RemoteEnvFile
 {
     public function __construct(
@@ -21,13 +24,31 @@ final readonly class RemoteEnvFile
             'path' => $path,
         ]);
 
-        if (! $result->successful()) {
+        if ($result->successful()) {
+            $data = $this->data($result);
+            $contents = $data['contents'] ?? null;
+
+            // Only an explicit not-found error means "absent". A successful
+            // transport response without a string contents field is a protocol
+            // failure — never treat it as empty or the next write may clobber
+            // an unread file.
+            if (! is_string($contents)) {
+                throw new RuntimeException(
+                    "Env file read response for {$path} is missing string contents.",
+                );
+            }
+
+            return $contents;
+        }
+
+        $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+        $code = $error['code'] ?? null;
+
+        if ($code === 'env_file.not_found') {
             return null;
         }
 
-        $contents = $this->data($result)['contents'] ?? null;
-
-        return is_string($contents) ? $contents : null;
+        throw new RuntimeException($this->failureMessage($result, $error, "Failed to read env file at {$path}."));
     }
 
     public function write(
@@ -49,8 +70,26 @@ final readonly class RemoteEnvFile
         $result = $this->run($node, $payload);
 
         if (! $result->successful()) {
-            throw new RuntimeException($result->output());
+            $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+
+            throw new RuntimeException($this->failureMessage($result, $error, "Failed to write env file at {$path}."));
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $error
+     */
+    private function failureMessage(RemoteShellResult $result, array $error, string $fallback): string
+    {
+        $message = $error['message'] ?? null;
+
+        if (is_string($message) && trim($message) !== '') {
+            return $message;
+        }
+
+        $output = trim($result->errorOutput().' '.$result->stdout);
+
+        return $output !== '' ? $output : $fallback;
     }
 
     /**

@@ -34,10 +34,16 @@ final readonly class WorkspaceRuntimeContainerManager
         private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
-    public function apply(Node $node, WorkspaceRuntimeContainer $container): WorkspaceRuntimeContainerApplyOutcome
-    {
+    /**
+     * @mago-expect lint:halstead
+     */
+    public function apply(
+        Node $node,
+        WorkspaceRuntimeContainer $container,
+        bool $restartIfRunning = false,
+    ): WorkspaceRuntimeContainerApplyOutcome {
         if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
-            return $this->applyThroughLocalExecutor($node, $container);
+            return $this->applyThroughLocalExecutor($node, $container, $restartIfRunning);
         }
 
         $this->ensureNetwork($node, $container);
@@ -86,7 +92,21 @@ final readonly class WorkspaceRuntimeContainerManager
                 return WorkspaceRuntimeContainerApplyOutcome::Started;
             }
 
-            return WorkspaceRuntimeContainerApplyOutcome::Unchanged;
+            // Default doctor/setup convergence leaves a matching running
+            // container alone. Workspace env apply opts into a forced restart
+            // so PHP reloads the newly published .env without recreating the
+            // container when the runtime spec is otherwise unchanged.
+            if (! $restartIfRunning) {
+                return WorkspaceRuntimeContainerApplyOutcome::Unchanged;
+            }
+
+            $this->runRequired(
+                $node,
+                $this->commands->containerRestart($container->name()),
+                "restart {$container->name()} container",
+            );
+
+            return WorkspaceRuntimeContainerApplyOutcome::Restarted;
         } catch (WorkspaceRuntimeImageUnavailableException|WorkspaceRuntimeContainerApplyException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
@@ -101,6 +121,7 @@ final readonly class WorkspaceRuntimeContainerManager
     private function applyThroughLocalExecutor(
         Node $node,
         WorkspaceRuntimeContainer $container,
+        bool $restartIfRunning = false,
     ): WorkspaceRuntimeContainerApplyOutcome {
         $result = $this->runRuntimeAction(
             node: $node,
@@ -108,6 +129,7 @@ final readonly class WorkspaceRuntimeContainerManager
             payload: [
                 'spec' => $this->runtimeContainerSpec($container),
                 'runtime_config' => $this->runtimeConfigPayload($container),
+                'restart_if_running' => $restartIfRunning,
             ],
             operation: 'workspace-runtime-container-apply',
         );

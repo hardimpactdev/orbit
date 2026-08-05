@@ -85,7 +85,7 @@ describe('internal env-file command', function (): void {
             ->toBe('env_file.not_found');
     });
 
-    it('writes production app env files as their owning runtime user', function (): void {
+    it('writes production app env files as their owning runtime user via stage chmod rename', function (): void {
         Process::fake([
             '*' => Process::result(),
         ]);
@@ -105,20 +105,136 @@ describe('internal env-file command', function (): void {
 
         expect($exitCode)->toBe(0)->and($output)->toContain('"bytes":20');
 
-        Process::assertRan(
-            fn (PendingProcess $process): bool => (
-                $process->command === [
-                    'sudo',
-                    '-n',
-                    '-u',
-                    'mealou-production',
-                    'tee',
-                    '--',
-                    '/home/mealou-production/app/.env',
-                ]
+        Process::assertRan(function (PendingProcess $process): bool {
+            if (! is_array($process->command) || ($process->command[0] ?? null) !== 'sudo') {
+                return false;
+            }
+
+            $joined = implode(' ', $process->command);
+            $script = (string) ($process->command[array_key_last($process->command)] ?? '');
+
+            return (
+                str_contains($joined, '-u mealou-production')
+                && str_contains($joined, 'sh')
+                && ! str_contains($joined, 'tee')
+                && str_starts_with($script, 'set -eu')
+                && ! str_contains($script, 'pipefail')
+                && str_contains($script, 'trap')
+                && str_contains($script, 'mv -f')
+                && str_contains($script, '[ -L ')
                 && $process->input === "DB_JOURNAL_MODE=WAL\n"
-            ),
-        );
+            );
+        });
+    });
+
+    it('executes the runtime-user publish script under real POSIX sh with trap cleanup and symlink rejection', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-env-posix-'.bin2hex(random_bytes(4));
+        mkdir($directory, permissions: 0o755);
+        $path = $directory.'/.env';
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(4));
+        file_put_contents($path, data: "OLD=1\n");
+        chmod($path, permissions: 0o640);
+
+        try {
+            $script = \App\Services\EnvFiles\RuntimeUserEnvFileWriter::publishScript(
+                temporary: $temporary,
+                path: $path,
+                mode: 0o640,
+            );
+
+            expect($script)
+                ->toStartWith('set -eu')
+                ->not
+                ->toContain('pipefail')
+                ->toContain('trap')
+                ->toContain('[ -L ');
+
+            $process = proc_open(
+                ['sh', '-c', $script],
+                [
+                    0 => ['pipe', 'r'],
+                    1 => ['pipe', 'w'],
+                    2 => ['pipe', 'w'],
+                ],
+                $pipes,
+            );
+
+            expect($process)->not->toBeFalse();
+
+            fwrite($pipes[0], "NEW=1\nKEEP=yes\n");
+            fclose($pipes[0]);
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+
+            expect($exitCode)
+                ->toBe(0, "stdout={$stdout} stderr={$stderr}")
+                ->and(file_get_contents($path))
+                ->toBe("NEW=1\nKEEP=yes\n")
+                ->and(fileperms($path) & 0o777)
+                ->toBe(0o640)
+                ->and(is_file($temporary))
+                ->toBeFalse();
+
+            $outside = $directory.'/outside.env';
+            file_put_contents($outside, data: "SECRET=1\n");
+            unlink($path);
+            symlink($outside, $path);
+            $symlinkTemporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(4));
+            $symlinkScript = \App\Services\EnvFiles\RuntimeUserEnvFileWriter::publishScript(
+                temporary: $symlinkTemporary,
+                path: $path,
+                mode: 0o600,
+            );
+
+            $symlinkProcess = proc_open(
+                ['sh', '-c', $symlinkScript],
+                [
+                    0 => ['pipe', 'r'],
+                    1 => ['pipe', 'w'],
+                    2 => ['pipe', 'w'],
+                ],
+                $symlinkPipes,
+            );
+
+            expect($symlinkProcess)->not->toBeFalse();
+
+            fwrite($symlinkPipes[0], "SHOULD_NOT_WRITE=1\n");
+            fclose($symlinkPipes[0]);
+            stream_get_contents($symlinkPipes[1]);
+            stream_get_contents($symlinkPipes[2]);
+            fclose($symlinkPipes[1]);
+            fclose($symlinkPipes[2]);
+            $symlinkExit = proc_close($symlinkProcess);
+
+            expect($symlinkExit)
+                ->not
+                ->toBe(0)
+                ->and(is_link($path))
+                ->toBeTrue()
+                ->and(file_get_contents($outside))
+                ->toBe("SECRET=1\n")
+                ->and(is_file($symlinkTemporary))
+                ->toBeFalse();
+        } finally {
+            if (is_link($path) || is_file($path)) {
+                unlink($path);
+            }
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+            foreach (glob($directory.'/.env.tmp.*') ?: [] as $leftover) {
+                unlink($leftover);
+            }
+            if (is_file($directory.'/outside.env')) {
+                unlink($directory.'/outside.env');
+            }
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+        }
     });
 
     it('rejects a production env runtime user that does not own the app path', function (): void {
@@ -196,6 +312,29 @@ describe('internal env-file command', function (): void {
         'macOS app-dev' => '/Users/orbit-test-user/apps/mealou-env-test/.env',
     ]);
 
+    it('accepts Orbit-managed development worktree env paths', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('env_file.not_found');
+    })->with([
+        'linux development worktree' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/.env',
+        'macOS development worktree' => '/Users/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/.env',
+    ]);
+
     it('keeps development env access bounded to the exact app root', function (string $path): void {
         [$exitCode, $output] = runInternalEnvFileCommand(
             [
@@ -221,6 +360,37 @@ describe('internal env-file command', function (): void {
         '/Users/nckrtl/mealou/.env',
         '/Users/nckrtl/apps/mealou/config/.env',
         '/Users/nckrtl/apps/mealou/../.env',
+    ]);
+
+    it('rejects unsafe or non-workspace development worktree env paths', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed');
+    })->with([
+        'nested worktree path' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/config/.env',
+        'traversal after worktrees' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/../.env',
+        'dot segment' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/./.env',
+        'extra nested workspace' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/nested/.env',
+        'alternate filename' => '/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/.env.local',
+        'arbitrary root' => '/var/tmp/apps/mealou-env-test/.worktrees/feature-mail/.env',
+        'macOS nested' => '/Users/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/config/.env',
+        'macOS traversal' => '/Users/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/../.env',
+        'NUL rejected' => "/home/orbit-test-user/apps/mealou-env-test/.worktrees/feature-mail/.env\0",
+        'relative path' => 'apps/mealou-env-test/.worktrees/feature-mail/.env',
     ]);
 
     it('accepts registered Codex worktree workspace env paths', function (string $path): void {
@@ -404,6 +574,95 @@ describe('internal env-file command', function (): void {
             }
         }
     });
+
+    it('atomically writes development worktree env files while preserving mode and unrelated content', function (): void {
+        $workspace = make_env_file_development_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        file_put_contents($envPath, data: "APP_KEY=base\nKEEP_ME=yes\n");
+        chmod($envPath, permissions: 0o640);
+
+        try {
+            [$writeExit, $writeOutput] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'write',
+                    'path' => $envPath,
+                    'contents' => "APP_KEY=updated\nKEEP_ME=yes\nNEW_KEY=1\n",
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($writeExit)
+                ->toBe(0)
+                ->and($writeOutput)
+                ->toContain('"bytes":')
+                ->and(file_get_contents($envPath))
+                ->toBe("APP_KEY=updated\nKEEP_ME=yes\nNEW_KEY=1\n")
+                ->and(fileperms($envPath) & 0o777)
+                ->toBe(0o640);
+
+            $secondContents = "APP_KEY=updated\nKEEP_ME=yes\nNEW_KEY=1\n";
+
+            [$secondExit] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'write',
+                    'path' => $envPath,
+                    'contents' => $secondContents,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($secondExit)
+                ->toBe(0)
+                ->and(file_get_contents($envPath))
+                ->toBe($secondContents)
+                ->and(fileperms($envPath) & 0o777)
+                ->toBe(0o640);
+        } finally {
+            delete_env_file_development_worktree_workspace($workspace);
+        }
+    });
+
+    it('rejects a development worktree path whose .env is a symlink escape', function (): void {
+        $workspace = make_env_file_development_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        $outside = sys_get_temp_dir().'/orbit-dev-worktree-env-escape-'.bin2hex(random_bytes(4));
+        file_put_contents($outside, data: "SECRET=1\n");
+        symlink($outside, $envPath);
+
+        try {
+            [$exitCode, $output] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'read',
+                    'path' => $envPath,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('validation_failed');
+        } finally {
+            if (is_link($envPath) || is_file($envPath)) {
+                unlink($envPath);
+            }
+            if (is_file($outside)) {
+                unlink($outside);
+            }
+            delete_env_file_development_worktree_workspace($workspace);
+        }
+    });
 });
 
 function env_file_codex_home_root(): string
@@ -431,6 +690,43 @@ function make_env_file_codex_worktree_workspace(): string
     mkdir($workspace, permissions: 0o755, recursive: true);
 
     return $workspace;
+}
+
+function make_env_file_development_worktree_workspace(): string
+{
+    $project = 'mealou-env-test-'.bin2hex(random_bytes(3));
+    $workspaceName = 'feature-mail';
+    $workspace = env_file_codex_home_root()."/apps/{$project}/.worktrees/{$workspaceName}";
+    mkdir($workspace, permissions: 0o755, recursive: true);
+
+    return $workspace;
+}
+
+function delete_env_file_development_worktree_workspace(string $workspace): void
+{
+    if (is_file("{$workspace}/.env") || is_link("{$workspace}/.env")) {
+        unlink("{$workspace}/.env");
+    }
+
+    if (is_dir($workspace)) {
+        rmdir($workspace);
+    }
+
+    $worktrees = dirname($workspace);
+    $project = dirname($worktrees);
+    $apps = dirname($project);
+
+    if (is_dir($worktrees)) {
+        rmdir_if_empty($worktrees);
+    }
+
+    if (is_dir($project)) {
+        rmdir_if_empty($project);
+    }
+
+    if (is_dir($apps) && basename($apps) === 'apps') {
+        rmdir_if_empty($apps);
+    }
 }
 
 function delete_env_file_codex_worktree_workspace(string $workspace): void

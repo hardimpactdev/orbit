@@ -399,6 +399,123 @@ describe('internal app runtime command', function (): void {
         }
     });
 
+    it('leaves a matching running container unchanged by default on the local executor transport', function (): void {
+        $home = app_runtime_command_home();
+        $socket = app_runtime_command_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $hash = str_repeat('b', times: 64);
+        $bin = install_app_runtime_fake_docker_bin(
+            requiredDockerHost: "unix://{$socket}",
+            networkAlreadyExists: true,
+            existingMatchingRunning: true,
+            expectedHash: $hash,
+        );
+        $spec = app_runtime_container_spec_payload($home);
+        $spec['expected_hash'] = $hash;
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'container:apply',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'spec' => $spec,
+                    'runtime_config' => [
+                        'path' => "{$home}/.config/orbit/apps/happie-smoke.ini",
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => "{$home}/.config/orbit/apps",
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $calls = file_get_contents("{$bin}/calls.log");
+
+            expect($exitCode)
+                ->toBe(0, $output)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data'] ?? null)
+                ->toMatchArray([
+                    'action' => 'container:apply',
+                    'container' => 'orbit-ws-happie-smoke',
+                    'outcome' => 'unchanged',
+                    'changed' => false,
+                ])
+                ->and($calls)
+                ->not->toContain('docker restart')
+                ->not->toContain('docker run -d');
+        } finally {
+            delete_app_runtime_fake_docker_bin($bin);
+        }
+    });
+
+    it('restarts a matching running workspace runtime only when restart_if_running is opted in', function (): void {
+        $home = app_runtime_command_home();
+        $socket = app_runtime_command_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $hash = str_repeat('b', times: 64);
+        $bin = install_app_runtime_fake_docker_bin(
+            requiredDockerHost: "unix://{$socket}",
+            networkAlreadyExists: true,
+            existingMatchingRunning: true,
+            expectedHash: $hash,
+        );
+        $spec = app_runtime_container_spec_payload($home);
+        $spec['expected_hash'] = $hash;
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'container:apply',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'spec' => $spec,
+                    'runtime_config' => [
+                        'path' => "{$home}/.config/orbit/apps/happie-smoke.ini",
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => "{$home}/.config/orbit/apps",
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                    'restart_if_running' => true,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $calls = file_get_contents("{$bin}/calls.log");
+
+            expect($exitCode)
+                ->toBe(0, $output)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data'] ?? null)
+                ->toMatchArray([
+                    'action' => 'container:apply',
+                    'container' => 'orbit-ws-happie-smoke',
+                    'outcome' => 'restarted',
+                    'changed' => true,
+                ])
+                ->and($calls)
+                ->toContain('docker restart orbit-ws-happie-smoke')
+                ->not->toContain('docker run -d');
+        } finally {
+            delete_app_runtime_fake_docker_bin($bin);
+        }
+    });
+
     it('omits host gateway mappings inside the nested E2E Docker network', function (): void {
         $home = app_runtime_command_home();
         $socket = app_runtime_command_fake_orbstack_socket($home);
@@ -562,18 +679,26 @@ function app_runtime_container_spec_payload(string $home): array
     ];
 }
 
-function install_app_runtime_fake_docker_bin(string $requiredDockerHost, bool $networkAlreadyExists): string
-{
+function install_app_runtime_fake_docker_bin(
+    string $requiredDockerHost,
+    bool $networkAlreadyExists,
+    bool $existingMatchingRunning = false,
+    ?string $expectedHash = null,
+): string {
     $dir = sys_get_temp_dir().'/orbit-app-runtime-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
     $encodedRequiredDockerHost = var_export($requiredDockerHost, return: true);
     $encodedNetworkAlreadyExists = var_export($networkAlreadyExists, return: true);
+    $encodedExistingMatchingRunning = var_export($existingMatchingRunning, return: true);
+    $encodedExpectedHash = var_export($expectedHash ?? str_repeat('b', times: 64), return: true);
 
     file_put_contents("{$dir}/docker", <<<PHP_WRAP
         #!/usr/bin/env php
         <?php
         \$requiredDockerHost = {$encodedRequiredDockerHost};
         \$networkAlreadyExists = {$encodedNetworkAlreadyExists};
+        \$existingMatchingRunning = {$encodedExistingMatchingRunning};
+        \$expectedHash = {$encodedExpectedHash};
         \$dockerHost = getenv('DOCKER_HOST') ?: '';
         file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
         if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
@@ -581,6 +706,9 @@ function install_app_runtime_fake_docker_bin(string $requiredDockerHost, bool $n
             exit(1);
         }
         if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'inspect') {
+            if (\$existingMatchingRunning) {
+                exit(0);
+            }
             fwrite(STDERR, 'network not found');
             exit(1);
         }
@@ -588,9 +716,27 @@ function install_app_runtime_fake_docker_bin(string $requiredDockerHost, bool $n
             fwrite(STDERR, 'Error response from daemon: network with name orbit-network already exists');
             exit(1);
         }
+        if ((\$argv[1] ?? null) === 'image' && (\$argv[2] ?? null) === 'inspect') {
+            exit(0);
+        }
         if ((\$argv[1] ?? null) === 'container' && (\$argv[2] ?? null) === 'inspect') {
+            if (\$existingMatchingRunning) {
+                echo json_encode([
+                    'State' => ['Running' => true],
+                    'Config' => [
+                        'Labels' => [
+                            'orbit.workspace.spec_hash' => \$expectedHash,
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR);
+                exit(0);
+            }
             fwrite(STDERR, 'Error: No such container');
             exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'restart') {
+            echo \$argv[2] ?? '';
+            exit(0);
         }
         exit(0);
         PHP_WRAP);

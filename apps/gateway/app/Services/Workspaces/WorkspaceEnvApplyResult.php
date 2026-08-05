@@ -12,10 +12,31 @@ final readonly class WorkspaceEnvApplyResult
         public string $envPath,
         public bool $cacheCleared,
         public ?WorkspaceRuntimeContainerApplyOutcome $runtimeOutcome,
+        public bool $envWritten = true,
     ) {}
 
+    public function runtimeRestarted(): bool
+    {
+        return in_array(
+            $this->runtimeOutcome,
+            [
+                WorkspaceRuntimeContainerApplyOutcome::Created,
+                WorkspaceRuntimeContainerApplyOutcome::Recreated,
+                WorkspaceRuntimeContainerApplyOutcome::Started,
+                WorkspaceRuntimeContainerApplyOutcome::Restarted,
+            ],
+            strict: true,
+        );
+    }
+
     /**
-     * @return array{env_path: string, cache_cleared: bool, runtime_outcome: string|null}
+     * @return array{
+     *     env_path: string,
+     *     cache_cleared: bool,
+     *     runtime_outcome: string|null,
+     *     env_written: bool,
+     *     runtime_restarted: bool
+     * }
      */
     public function toArray(): array
     {
@@ -23,6 +44,8 @@ final readonly class WorkspaceEnvApplyResult
             'env_path' => $this->envPath,
             'cache_cleared' => $this->cacheCleared,
             'runtime_outcome' => $this->runtimeOutcome?->value,
+            'env_written' => $this->envWritten,
+            'runtime_restarted' => $this->runtimeRestarted(),
         ];
     }
 }

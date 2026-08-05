@@ -13,7 +13,11 @@ use App\Services\Apps\RemoteAppCacheClear;
 use App\Services\DatabaseConnections\EnvFileEditor;
 use App\Services\RemoteShell\RemoteEnvFile;
 use RuntimeException;
+use Throwable;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class WorkspaceEnvApplier
 {
     /**
@@ -31,6 +35,8 @@ final readonly class WorkspaceEnvApplier
 
     /**
      * @param  array<string, string>  $updates
+     *
+     * @mago-expect lint:halstead
      */
     public function apply(Workspace $workspace, array $updates): WorkspaceEnvApplyResult
     {
@@ -44,35 +50,73 @@ final readonly class WorkspaceEnvApplier
         }
 
         $path = $this->envPath($workspace);
-        $contents = $this->readContents($node, $path);
-        $this->writeContents($node, $path, $this->envFileEditor->update($contents, $updates));
+        $envWritten = false;
+
+        try {
+            $contents = $this->readContents($node, $path);
+            $this->writeContents(
+                $node,
+                $path,
+                $this->envFileEditor->update($contents, $updates),
+                $this->runtimeUserForWrite($app, $node, $workspace),
+            );
+            $envWritten = true;
+        } catch (WorkspaceEnvApplyException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new WorkspaceEnvApplyException(
+                phase: 'env_write',
+                envWritten: false,
+                message: $exception->getMessage(),
+                meta: [
+                    'path' => $path,
+                    'workspace' => $workspace->name,
+                ],
+                previous: $exception,
+            );
+        }
 
         $cacheCleared = false;
         $runtimeOutcome = null;
 
         if ($app->runtimeKind() === AppRuntimeKind::Php) {
-            $runtimeApp = clone $app;
-            $runtimeApp->path = $workspace->path;
-            $runtimeApp->setRelation('node', $node);
-            $result = $this->cacheClear->clearPath(
-                node: $node,
-                path: $workspace->path,
-                phpVersion: (string) $workspace->effectivePhpVersion(),
-                runtimeUser: $this->runtimeUser->forApp($runtimeApp),
-            );
+            try {
+                $runtimeApp = clone $app;
+                $runtimeApp->path = $workspace->path;
+                $runtimeApp->setRelation('node', $node);
+                $result = $this->cacheClear->clearPath(
+                    node: $node,
+                    path: $workspace->path,
+                    phpVersion: (string) $workspace->effectivePhpVersion(),
+                    runtimeUser: $this->runtimeUser->forApp($runtimeApp),
+                );
 
-            if (! $result->successful()) {
-                throw new RuntimeException($result->output());
+                if (! $result->successful()) {
+                    throw new RuntimeException($result->output());
+                }
+
+                $cacheCleared = true;
+                $runtimeOutcome = $this->containerManager->apply(
+                    $node,
+                    $this->containerRenderer->render($workspace),
+                    restartIfRunning: true,
+                );
+            } catch (Throwable $exception) {
+                throw new WorkspaceEnvApplyException(
+                    phase: 'runtime',
+                    envWritten: true,
+                    message: $exception->getMessage(),
+                    meta: [
+                        'path' => $path,
+                        'workspace' => $workspace->name,
+                        'cache_cleared' => $cacheCleared,
+                    ],
+                    previous: $exception,
+                );
             }
-
-            $cacheCleared = true;
-            $runtimeOutcome = $this->containerManager->apply(
-                $node,
-                $this->containerRenderer->render($workspace),
-            );
         }
 
-        return new WorkspaceEnvApplyResult($path, $cacheCleared, $runtimeOutcome);
+        return new WorkspaceEnvApplyResult($path, $cacheCleared, $runtimeOutcome, envWritten: $envWritten);
     }
 
     public function envPath(Workspace $workspace): string
@@ -82,26 +126,83 @@ final readonly class WorkspaceEnvApplier
 
     private function readContents(Node $node, string $path): string
     {
-        if ($this->shouldUseLocalFilesystem($node) && is_file($path)) {
-            return (string) file_get_contents($path);
+        if ($this->shouldUseLocalFilesystem($node)) {
+            if (! is_file($path)) {
+                return '';
+            }
+
+            $contents = file_get_contents($path);
+
+            if (! is_string($contents)) {
+                throw new RuntimeException("Env file could not be read at {$path}.");
+            }
+
+            return $contents;
         }
 
         return app(RemoteEnvFile::class)->read($node, $path) ?? '';
     }
 
-    private function writeContents(Node $node, string $path, string $contents): void
+    private function writeContents(Node $node, string $path, string $contents, ?string $runtimeUser): void
     {
         if ($this->shouldUseLocalFilesystem($node)) {
-            if (! is_dir(dirname($path))) {
-                mkdir(directory: dirname($path), permissions: 0o775, recursive: true);
-            }
-
-            file_put_contents($path, $contents);
+            $this->writeLocalContents($path, $contents);
 
             return;
         }
 
-        app(RemoteEnvFile::class)->write($node, $path, $contents);
+        app(RemoteEnvFile::class)->write($node, $path, $contents, $runtimeUser);
+    }
+
+    private function writeLocalContents(string $path, string $contents): void
+    {
+        $directory = dirname($path);
+
+        if (
+            ! is_dir($directory)
+            && ! mkdir(directory: $directory, permissions: 0o775, recursive: true)
+            && ! is_dir($directory)
+        ) {
+            throw new RuntimeException("Env file directory could not be created at {$directory}.");
+        }
+
+        $mode = is_file($path) ? fileperms($path) & 0o777 : 0o600;
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(8));
+
+        try {
+            if (file_put_contents($temporary, $contents, LOCK_EX) === false) {
+                throw new RuntimeException("Env file could not be written at {$path}.");
+            }
+
+            if (! chmod($temporary, $mode)) {
+                throw new RuntimeException("Env file permissions could not be set at {$path}.");
+            }
+
+            if (! rename($temporary, $path)) {
+                throw new RuntimeException("Env file could not be published at {$path}.");
+            }
+        } finally {
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+        }
+    }
+
+    private function runtimeUserForWrite(Project $app, Node $node, Workspace $workspace): ?string
+    {
+        $runtimeApp = clone $app;
+        $runtimeApp->path = $workspace->path;
+        $runtimeApp->setRelation('node', $node);
+
+        $user = $this->runtimeUser->forApp($runtimeApp);
+
+        // Production-style /home/<user>/app paths require the owning runtime user.
+        // Development workspaces under the node user write without sudo elevation.
+        if (preg_match('#\A/home/[^/]+/app/#', $workspace->path) === 1) {
+            return $user;
+        }
+
+        return null;
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool
