@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T17:08:56+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-live-gateway-migration-memory/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-190856-codex-fix-live-gateway-migration-memory",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/gateway-migration-memory/08-runtime-receipt.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/gateway-migration-memory/08-runtime-receipt.json": "d4410407728d242402de4b93831baa2f27992c9dd96937af06a69d04e8c87cde",
+        "loop.md": "90091e41d2dd9458a41b4cf906371d4ed657002a93b2dd110fdcfa446fa87c08"
+    },
+    "slug": "codex-fix-live-gateway-migration-memory",
+    "requested_slug": "codex-fix-live-gateway-migration-memory",
+    "compatible_slugs": [
+        "codex-fix-live-gateway-migration-memory"
+    ],
+    "branch": "codex/fix-live-gateway-migration-memory",
+    "candidate_commit": "de52c78766a3556a1eb7d29fc6e4aea08bfad25b",
+    "accepted_feature_tip": "de52c78766a3556a1eb7d29fc6e4aea08bfad25b",
+    "accepted_main_tip": "bb9e79e35510f3cb437aec9d7a0057b2dcd37703",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
