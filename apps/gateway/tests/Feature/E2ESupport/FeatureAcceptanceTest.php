@@ -481,22 +481,21 @@ it('requires the diff-derived runtime proof before any retained acceptance', fun
     }
 });
 
-it('keeps LOOP.md.example free of malformed compact proof path markers', function (): void {
+it('keeps LOOP.md.example free of compact proof path citations', function (): void {
     require_once repo_path('bin/orbit-loop-contract.php');
 
     $content = (string) file_get_contents(repo_path('LOOP.md.example'));
 
-    // Directory-root markers such as `.orbit/evidence/` are malformed compact
-    // refs; only the deliberate exact file example may be cited.
+    // Fresh automated loops copy this template; any compact proof marker would
+    // force a dummy evidence file before operators write a real receipt.
     expect(orbitLoopProofReferences($content))
-        ->toBe(['.orbit/evidence/runtime-proof.txt'])
+        ->toBe([])
         ->and($content)
         ->not->toContain('evidence=\`')
-        ->not->toContain('.orbit/evidence/...')
-        ->not->toContain('target=<target>|command=<cmd>')
-        ->not->toContain('`.orbit/evidence/`')
-        ->not->toContain('`.orbit/quality-gates/`')->toContain('exactly one of target= or command=')->toContain(
-            '`.orbit/evidence/runtime-proof.txt`',
+        ->not->toContain('.orbit/evidence/')
+        ->not->toContain('.orbit/quality-gates/')
+        ->not->toContain('target=<target>|command=<cmd>')->toContain('exactly one of target= or command=')->toContain(
+            'worktree evidence tree',
         );
 });
 
@@ -695,6 +694,26 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         true,
         null,
     ],
+    'valid count narrative 0 skipped' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=0 skipped; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'observed hop skipped' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=hop skipped; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed live verification skipped' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=live verification skipped; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed skipped the live hop' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=skipped the live hop; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
     'valid queue drained nothing pending' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=queue drained, nothing pending; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         true,
@@ -702,6 +721,26 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
     ],
     'valid no failed hops' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=no failed hops; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid deferred-queue environment compound' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=deferred-queue fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid no incomplete migrations' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=no incomplete migrations; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid excluding vendor dirs' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0 excluding vendor dirs; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid later kernel version' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0 on later kernel 6.8; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         true,
         null,
     ],

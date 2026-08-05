@@ -54,9 +54,12 @@ are candidate=, venue=, environment=, expected=, observed=, result=passed, and
 evidence= as one exact inline-code path under the worktree evidence or
 quality-gates trees. Use exactly one of target= or command=. Semicolons
 separate fields, so values must not embed raw semicolon-delimited
-pseudo-fields. Known keys only. Example evidence citation:
-`.orbit/evidence/runtime-proof.txt`. A failed, excluded, still-required, or
-deferred final hop cannot be recorded as passed; remain in PROVE and re-prove
-it. Automated venues keep `runtime: not applicable`. Proof files retained by
-the compact archive must be cited as one exact inline-code path; prose,
-directories, padded code spans, and partial paths are not proof citations.
+pseudo-fields. Known keys only. Example evidence citation: write a real receipt
+and cite one exact regular file below the worktree evidence tree (not a
+directory root). A failed, excluded, still-required, or deferred final hop
+cannot be recorded as passed; remain in PROVE and re-prove it. Automated venues
+keep `runtime: not applicable`. Proof files retained by the compact archive
+must be cited as one exact inline-code path; prose, directories, padded code
+spans, and partial paths are not proof citations.
+
+

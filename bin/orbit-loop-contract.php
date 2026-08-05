@@ -514,9 +514,10 @@ function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?strin
     }
 
     $blockedPatterns = [
-        '/\bdeferred\b/',
+        // Protect compound product names such as deferred-queue.
+        '/\bdeferred\b(?![\w-])/',
         '/\bdeferral\b/',
-        '/\bdefer(?:s|ring)?\b/',
+        '/\bdefer(?:s|ring)?\b(?![\w-])/',
         '/\bpost-land\b(?![\w-])/',
         '/\bpost\s+land(?:ing)?\b/',
         '/\bafter\s+land(?:ing)?\b/',
@@ -528,17 +529,19 @@ function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?strin
         '/\bfollow-up\s+closure\s+proof\b/',
         '/\bclosure\s+proof\b/',
         '/\bclosure\s+is\s+a\s+deferral\b/',
-        '/\bexclud(?:e|es|ed|ing)\b/',
+        // Exclude / incomplete only when they signal an open final hop or proof.
+        '/\b(?:was\s+)?exclud(?:e|es|ed)\b(?:\s+the\s+(?:decisive|final)\s+hop)?/',
+        '/\bwe\s+exclud(?:e|es|ed)\b/',
         '/\bfinal\s+hop\s+(?:excluded|skipped|not\s+reached|not\s+completed|incomplete)\b/',
-        '/\bincomplete\b/',
-        '/\bnot\s+completed\b/',
-        '/\bnot\s+reached\b/',
+        '/\b(?:final|decisive|live)\s+hop\s+(?:is\s+)?(?:incomplete|not\s+completed|not\s+reached)\b/',
+        '/\b(?:live\s+)?(?:verification|proof)\s+(?:is\s+)?(?:incomplete|outstanding|skipped)\b/',
+        '/\bhop\s+skipped\b/',
+        '/\bskipped\s+the\s+(?:live|final|decisive)\s+hop\b/',
         '/\bre-proof\s+follows\b/',
         '/\bproof\s+follows\b/',
         '/\bre-proof\s+after\b/',
         '/\bwill\s+(?:confirm|re-run)\b/',
         '/\bto\s+be\s+run\s+later\b/',
-        '/\blater\b/',
         '/\boutstanding\b/',
         '/\bfailed\b/',
         '/\bfailure\b/',
