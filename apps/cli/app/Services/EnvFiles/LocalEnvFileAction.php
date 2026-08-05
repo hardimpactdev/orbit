@@ -27,6 +27,9 @@ final readonly class LocalEnvFileAction
         }
 
         $contents = $this->contents($payload['contents'] ?? null);
+        // Validate before either write path so a directory/symlink .env cannot
+        // reach stage/rename or the runtime-user publish script.
+        $this->paths->assertWritableTarget($path);
         $runtimeUser = $payload['runtime_user'] ?? null;
 
         if ($runtimeUser !== null) {
@@ -84,12 +87,40 @@ final readonly class LocalEnvFileAction
         // Re-check after mkdir: parent must still be a non-escaping real directory.
         $this->paths->assertWritableTarget($path);
 
-        if (file_put_contents($path, $contents) === false) {
-            throw new LocalEnvFileFailure(
-                errorCode: 'env_file.write_failed',
-                message: 'Env file could not be written.',
-                meta: ['path' => $path],
-            );
+        $mode = is_file($path) ? fileperms($path) & 0o777 : 0o600;
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(8));
+
+        try {
+            if (file_put_contents($temporary, $contents, LOCK_EX) === false) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file could not be written.',
+                    meta: ['path' => $path],
+                );
+            }
+
+            if (! chmod($temporary, $mode)) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file permissions could not be set.',
+                    meta: ['path' => $path],
+                );
+            }
+
+            // Revalidate immediately before same-directory rename.
+            $this->paths->assertWritableTarget($path);
+
+            if (! rename($temporary, $path)) {
+                throw new LocalEnvFileFailure(
+                    errorCode: 'env_file.write_failed',
+                    message: 'Env file could not be published.',
+                    meta: ['path' => $path],
+                );
+            }
+        } finally {
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
         }
 
         return [

@@ -1,0 +1,32 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-05T10:05:50+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-workspace-env-worktree-apply/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-120550-codex-fix-workspace-env-worktree-apply",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/green-scoped-readforapply-summary.md",
+        "evidence/workspace-env-quality-check.md",
+        "evidence/workspace-env-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/green-scoped-readforapply-summary.md": "259ded234593be798620d0870cd0484623f2206cf7d56034ae9fec8e6822198a",
+        "evidence/workspace-env-quality-check.md": "bf4e566717a64344a90cf82ebe22314f58904b338868a821f3af3b5c686600a8",
+        "evidence/workspace-env-retained-incus.md": "74eabbeb7a84abefa16ea08f0e49cbb3c66a11230fb123a0cd504aa135ecdca4",
+        "loop.md": "c582d2d1371e493e1baaeb09a1a443bc39104ea87704456aa31ecc2fc650901c"
+    },
+    "slug": "codex-fix-workspace-env-worktree-apply",
+    "requested_slug": "codex-fix-workspace-env-worktree-apply",
+    "compatible_slugs": [
+        "codex-fix-workspace-env-worktree-apply"
+    ],
+    "branch": "codex/fix-workspace-env-worktree-apply",
+    "candidate_commit": "89322e6f9436dfa35cee08203a30203a6b2a24ce",
+    "accepted_feature_tip": "89322e6f9436dfa35cee08203a30203a6b2a24ce",
+    "accepted_main_tip": "e977f6c06ae55968d6f2306f1ca1855f5c34e0db",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -427,3 +427,58 @@ it(
             ->toBeFalse();
     },
 );
+
+it('returns Unchanged for a matching running workspace runtime by default', function (): void {
+    [$workspace, $node] = workspaceAndNodeForManagerTest();
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: inspectPayloadForWorkspace($container, running: true),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(exitCode: 0, stdout: '[]', stderr: '', durationMs: 1),
+    );
+
+    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container);
+    $scripts = array_map(static fn (array $call): string => $call['script'], $shell->calls);
+
+    expect($outcome->value)
+        ->toBe('unchanged')
+        ->and(collect($scripts)->contains(static fn (string $script): bool => str_contains($script, 'docker restart')))
+        ->toBeFalse()
+        ->and(collect($scripts)->contains(static fn (string $script): bool => str_contains($script, 'docker run -d')))
+        ->toBeFalse();
+});
+
+it('restarts a matching running workspace runtime only when restartIfRunning is opted in', function (): void {
+    [$workspace, $node] = workspaceAndNodeForManagerTest();
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: inspectPayloadForWorkspace($container, running: true),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(exitCode: 0, stdout: '[]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: $container->name(), stderr: '', durationMs: 1),
+    );
+
+    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container, restartIfRunning: true);
+    $scripts = array_map(static fn (array $call): string => $call['script'], $shell->calls);
+
+    expect($outcome->value)
+        ->toBe('restarted')
+        ->and(collect($scripts)->contains(static fn (string $script): bool => str_contains($script, 'docker restart')))
+        ->toBeTrue()
+        ->and(collect($scripts)->contains(static fn (string $script): bool => str_contains($script, 'docker run -d')))
+        ->toBeFalse()
+        ->and(collect($scripts)->contains(static fn (string $script): bool => str_contains($script, 'docker rm -f')))
+        ->toBeFalse();
+});
