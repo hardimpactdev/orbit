@@ -14494,10 +14494,18 @@
                 },
                 "optional": {
                     "adopted": "bool",
-                    "node": "string|object",
-                    "path": "string",
-                    "root": "string",
-                    "url": "string",
+                    "deploy_warmup_paths": "array",
+                    "domain": "string|null",
+                    "driver": "string",
+                    "driver_config": "object|array",
+                    "environment": "string|null",
+                    "latest_deployment_run_id": "int|string|null",
+                    "latest_deployment_status": "string|null",
+                    "node": "string|object|null",
+                    "path": "string|null",
+                    "root": "string|null",
+                    "runtime": "object",
+                    "url": "string|null",
                     "worker_config": "object|null",
                     "worker_enabled": "bool"
                 }
@@ -14523,14 +14531,17 @@
                     "name": "string"
                 },
                 "optional": {
-                    "project": "string|null",
-                    "instance": "string|null",
                     "command": "string",
                     "crash_notification": "string",
+                    "instance": "string|null",
+                    "key": "string",
+                    "label": "string|null",
                     "last_event": "object|null",
+                    "project": "string|null",
                     "restart_policy": "string",
                     "runtime": "string",
                     "runtime_unit": "string",
+                    "status": "string",
                     "workspace": "string|null"
                 }
             },

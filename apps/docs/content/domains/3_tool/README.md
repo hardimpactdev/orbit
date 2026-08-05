@@ -78,9 +78,10 @@ These rules govern what the tool command family owns and what it may not touch.
 
 Orbit supports only the catalogued tool slugs below. A syntactically valid tool
 name that is not present in this catalog fails as an unsupported tool. The only
-exception is a removal-only residual slug that `tool:remove` still accepts
-(`openclaw`, `opencode-cli`, `polyscope-server`). Detailed tool-specific
-contracts live in [`catalog/`](catalog/README.md).
+exception is a removal-only residual slug that `tool:remove` still accepts.
+The closed residual set is listed only on the public `tool:remove` contract;
+those slugs are not catalog members and have no install or update surface.
+Detailed tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
