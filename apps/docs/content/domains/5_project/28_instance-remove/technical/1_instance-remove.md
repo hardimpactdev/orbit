@@ -24,7 +24,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `instance` | `[instance]` | Always. | Never. | None. | Dotted `project.instance` selector. |
-| `force` | `--force` | Always. | Never. | `false`. | Explicit consent for this instance only. |
+| `force` | `--force` | In non-interactive input mode. | Never. | `false`. | Explicit consent for this instance only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects JSON; never implies consent. |
 
 `--force` supplies destructive consent for the exact selected instance.
@@ -52,7 +52,10 @@ relationships. The parent `Project` and sibling instances remain.
 ### Instance Removal Rules
 
 1. Resolve and authorize the exact dotted instance before effects.
-2. Require `--force` in human and JSON modes.
+2. Require destructive consent: interactive confirmation via
+   `instance_remove.confirm`, or `--force`; non-interactive mode without
+   `--force` fails `validation_failed` `meta.field=force`
+   `meta.reason=destructive_consent_required`.
 3. Delete only the named instance and its instance-owned dependents.
 4. Never delete the project or sibling instances.
 5. Use gateway-only authority for external-driver instances.

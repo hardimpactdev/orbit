@@ -65,12 +65,22 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /deploy/history` |
+| Effect | `read` |
+| Subject | `none` (list). |
+| Properties | `project`, `instance`, `count`, `limit`. |
+| Description | derived |
+
 ## Doctor Relationship
 
 `deploy:history` reads deployment history that the instance owns. It does not own a
 doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) owns production
 app health checks that may incorporate latest deployment status through
-`app.latest_deployment_failed` and `app.deployment_run_stuck`.
+`instance.latest_deployment_failed` and `instance.deployment_run_stuck`.
 
 ## Test Mapping
 

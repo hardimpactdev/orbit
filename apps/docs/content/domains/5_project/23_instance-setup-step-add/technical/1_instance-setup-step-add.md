@@ -50,7 +50,7 @@ It does not execute the command.
 | --- | --- | --- |
 | Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
 | Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
-| Invalid position | `--before` and `--after` are both supplied. | `error.code=app_setup.invalid_position` |
+| Invalid position | `--before` and `--after` are both supplied. | `error.code=instance.invalid_position` |
 
 ## Doctor Relationship
 

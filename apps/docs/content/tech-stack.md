@@ -102,7 +102,7 @@ The sections below walk through each layer of the stack in the same order as the
 | S3 service backend | SeaweedFS in a canonical node-owned Docker process on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and active Ubuntu workload nodes; Grafana private route `metrics.orbit` |
 | Analytics service backend | Plausible CE 3.2.1 in a node-owned Docker process on `analytics` nodes, published only on the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL 16 Alpine and ClickHouse 24.12 Alpine run as authenticated, node-owned Docker service processes published only on active `database` nodes' WireGuard addresses. |
-| Agent runtime | Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
+| Agent runtime | Hermes as the first-party agent tool, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
 
@@ -885,14 +885,14 @@ Docker socket, not Docker-in-Docker.
 
 ### Agent runtime
 
-Nodes with the `agent` role run the first-party autonomous agent tool Hermes —
-that operates Orbit through the gateway API. The agent role
-baseline converges `orbit-caddy`, the WireGuard/node identity and trust
-material every other Orbit node uses, a single unprivileged shared `agent`
-runtime user, and whatever role-specific runtime containers the agent workloads
-need. Agent tools never run as the privileged `orbit` maintenance user. The
-node identity requires an explicit unique `tld`, as every active node does;
-`orbit` is reserved for the proxy-owned `.orbit` namespace.
+Nodes with the `agent` role run the first-party autonomous agent tool Hermes,
+which operates Orbit through the gateway API. The agent role baseline converges
+`orbit-caddy`, the WireGuard/node identity and trust material every other Orbit
+node uses, a single unprivileged shared `agent` runtime user, and whatever
+role-specific runtime containers the agent workloads need. The agent tool never
+runs as the privileged `orbit` maintenance user. The node identity requires an
+explicit unique `tld`, as every active node does; `orbit` is reserved for the
+proxy-owned `.orbit` namespace.
 The `agent` and `app-dev` roles consume that node-owned field for wildcard DNS mappings;
 neither role owns it or supplies a default.
 The node family always maps `orbit.{tld}` to an active node's WireGuard address
@@ -900,7 +900,15 @@ and adds `*.{tld}` plus a local-zone directive only while that node has an
 active `app-dev` or `agent` role. Stable private `.orbit` service names are
 proxy-family state and distinct from these node records.
 
-Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, run through the runtime backend declared by the tool definition, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
+Hermes is an ordinary entry in the `tool` catalog with category `agent`; there
+is no separate `agent_tool` state family. It is installed through
+`orbit tool:install`, run through the runtime backend declared by the tool
+definition, and configured through gateway-tracked tool state. The Hermes web
+UI is exposed by default through a tool-owned internal HTTPS proxy route under
+the agent TLD (for example `https://hermes.agent`). Tool credentials and web UI
+tokens are returned only by `tool:credentials` and only when the caller has the
+explicit `tool:credentials` permission; the agent self-grant does not include
+that permission. See [Architecture: Node roles](architecture.md#node-roles).
 
 ### Network
 

@@ -220,10 +220,11 @@ Input mode behavior is split out of the canonical command contract:
 ### Scope Boundaries
 
 `node:update` must not:
-- Change the target node's role. Role change is an identity migration and is
-  outside `node:update` scope. There is no `--role` input flag and no future
-  migration command is named yet; a future explicit role-migration contract
-  will own that flow.
+- Change the target node's role assignments. There is no `--role` input flag on
+  `node:update`; use
+  [`node role:remove`](../../14_node-role-remove/node-role-remove.md) and
+  [`node role:add`](../../12_node-role-add/node-role-add.md) for role-assignment
+  changes.
 - Update operating system packages, Orbit installations, tools, or system
   services beyond the artifacts that the node owns and that are directly affected by the changed field.
 - Update app runtime policy, tool state, firewall policy, proxy routes,

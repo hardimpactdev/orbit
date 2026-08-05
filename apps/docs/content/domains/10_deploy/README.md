@@ -81,7 +81,7 @@ Deploy JSON renderers that return one step entity embed this shape under
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment step identifier. |
-| `instance` | string | Production project that owns the step. |
+| `project` | string | Owning project slug. |
 | `instance` | string | Concrete production instance that owns the step. |
 | `title` | string | Human label for the step. |
 | `command` | string | Shell command executed during deployment. |
@@ -118,7 +118,7 @@ Deploy JSON renderers that return one run entity embed this shape under
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment run identifier. |
-| `instance` | string | Production project that owns the run. |
+| `project` | string | Owning project slug. |
 | `instance` | string | Concrete production instance that owns the run. |
 | `status` | string | `running`, `completed`, `failed`, or `cancelled`. |
 | `exit_code` | integer \| null | Final process exit code when the run has finished. |

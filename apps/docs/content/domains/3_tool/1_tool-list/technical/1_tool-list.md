@@ -32,7 +32,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Tool configuration and apply rules
 
 - Reads gateway tool configuration visible to the caller.
-- Applies node and app filters at the gateway.
+- Applies node and instance filters at the gateway.
 - When `--node`, `--instance`, and `--all` are omitted, sends the local default node
   as the node filter.
 - When no local default node is set and `--node`, `--instance`, and `--all` are

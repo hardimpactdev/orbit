@@ -64,7 +64,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 These rules govern how `proxy:add` interacts with routes owned by other families and what consent is required to replace a custom route.
 
-The command fails before side effects if the domain is already owned by an app,
+The command fails before side effects if the domain is already owned by a
 project, instance, WebSocket binding, workspace, gateway, websocket service, S3 service, or
 tool route. It never uses `--force` to overwrite a non-custom route. Updating
 an existing custom route with a different target requires explicit replacement

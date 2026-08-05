@@ -59,7 +59,7 @@ drift review belongs with [`database-doctor.md`](../../database-doctor.md).
 | Field | Value |
 | --- | --- |
 | Type | `api:DELETE /database-connections/{connection}` |
-| Effect | `write` |
+| Effect | `destructive` |
 | Subject | `DatabaseConnection` when resolved; `none` otherwise. |
 | Properties | `slug` and attached target count only. No credentials. |
 | Description | derived |

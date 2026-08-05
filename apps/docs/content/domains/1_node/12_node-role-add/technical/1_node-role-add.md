@@ -78,16 +78,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Analytics success requires the Plausible runtime, router-owned
   `analytics.orbit` route, rendered Caddy site, and Orbit-managed TLS material
   to converge. Any route enactment failure leaves the assignment in `error`.
-- Websocket convergence resolves the selected release manifest's
-  `orbit-websocket` image. When its verified image archive is available,
-  convergence downloads it over HTTPS, verifies its SHA-256, and loads it
-  without registry credentials; otherwise it pulls the digest-pinned image.
-  The target verifies that the image is self-contained before updating the
-  runtime alias and applying the Reverb container. If the
-  manifest endpoint is unreachable, convergence preserves the existing local
-  alias inspection and source-checkout fallback. Existing mutable websocket
-  references are never installed and use that same safe fallback; newly
-  generated manifests reject them.
+- Websocket is a live role on this command. `node:new --template=websocket` and
+  `node:new --roles=websocket` remain rejected with `reason=not_implemented`;
+  `node role:add <node> websocket --valkey-node=<node>` is the creation path
+  for the `websocket` assignment. Websocket convergence resolves the selected
+  release manifest's `orbit-websocket` image. When its verified image archive
+  is available, convergence downloads it over HTTPS, verifies its SHA-256, and
+  loads it without registry credentials; otherwise it pulls the digest-pinned
+  image. The target verifies that the image is self-contained before updating
+  the runtime alias and applying the Reverb container. If the manifest endpoint
+  is unreachable, convergence preserves the existing local alias inspection and
+  source-checkout fallback. Existing mutable websocket references are never
+  installed and use that same safe fallback; newly generated manifests reject
+  them.
 - `app-dev` convergence runs as direct gateway-pushed command envelopes.
 - Active workload roles supply Agent intent. A roleless non-gateway operator
   may instead opt in through `managed`; platform and WireGuard eligibility

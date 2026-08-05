@@ -86,11 +86,11 @@ The instance probe reads gateway project and instance records and checks these l
 8. **Production runtime security:** instances on nodes with the `app-prod`
    role satisfy the instance-owned security posture. These findings use
    `instance.security.*` keys and do not depend on workspaces.
-10. **Instance runtime targets:** Orbit instances whose driver
+9. **Instance runtime targets:** Orbit instances whose driver
    configuration places them on the selected node are probed for instance-owned
    PHP/image requirements, managed config such as
    `~/.config/orbit/apps/hauser-nmbp.ini`, and instance-scoped app policy.
-11. **Stale instance configuration:** Managed runtime config whose encoded
+10. **Stale instance configuration:** Managed runtime config whose encoded
    dotted instance identity is absent from active instance records is
    reported as instance drift. Ambiguous or project-only identities are not
    adopted or bound automatically. Stale containers are process-family drift.
@@ -154,12 +154,17 @@ The table below shows what `doctor --restore` does for each fixable code.
 `instance.path_missing`, `instance.path_unusable`, `instance.root_missing`,
 `instance.root_outside_path`, `instance.php_version_unavailable`,
 `instance.runtime_config_probe_failed`,
+`instance.runtime_extensions_unverifiable`, `instance.runtime_extension_missing`,
+`instance.unregistered_path`,
 `instance.security.runtime_container_isolation`,
 `instance.production_user_missing`, `instance.production_user_mismatch`,
 `instance.production_health_unhealthy`, `instance.deployment_pipeline_invalid`,
-`instance.latest_deployment_failed`, `instance.deployment_run_stuck`,
+`instance.latest_deployment_failed`, or `instance.deployment_run_stuck`.
 Production user findings are `runtime_incident` until a safe AppsFixer restorer
 exists; operators repair them with explicit instance/user commands.
+`instance.runtime_extensions_unverifiable` and `instance.runtime_extension_missing`
+are diagnostic-only until an explicit extension repair command owns them.
+`instance.unregistered_path` is adopt-only through explicit `instance:register`.
 
 `instance.runtime_config_probe_failed` is Unverifiable diagnostic-only drift.
 Doctor must not present it as restorable; re-run verify after the underlying

@@ -113,8 +113,9 @@ for this default.
 
 `workspace:new` is an atomic creation + provisioning command. It does not
 support partial-creation flags (e.g. `--keep-files`); operators who want to
-register an existing path use
-`doctor --family=workspace --adopt` instead. The command performs:
+register an existing path use `workspace:setup --path` (routine adoption).
+`doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
+The command performs:
 
 1. **Workspace Source Provisioning:** Create a generic Git worktree on the
    effective workspace node at `<selected app path>/.worktrees/<name>` by
@@ -185,11 +186,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Agent-push failure (pre-configuration)** — gateway cannot reach the node
   *before* the gateway workspace row is written
   (`error.code=workspace.node_unreachable`).
-- **Workspace source failure (pre-configuration)** — the selected workspace
-  source driver cannot create the physical source path or external IDE
-  workspace before the gateway row is written
-  (`error.code=workspace.source_create_failed` for generic worktrees or
-  configuration row is retained.
+- **Workspace source failure (pre-configuration)** — the worktree source driver
+  cannot create the physical source path before the gateway row is written
+  (`error.code=workspace.source_create_failed`). No configuration row is
+  retained.
 - **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
@@ -205,11 +205,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
 - **Probe:** `doctor --family=workspace --workspace=<name> --instance=<project.instance>`
   verifies registry configuration and runtime artifacts.
-- **Convergence:** `doctor --family=workspace --restore` repairs missing or
-  divergent runtime container, runtime configuration, and source path drift surfaced by
-  `workspace:new` warnings.
-- **Adoption:** `doctor --family=workspace --adopt` is the only path for
-  registering an existing workspace path under a parent project;
+- **Convergence:** Workspace doctor is report-only in the current runtime;
+  `doctor --family=workspace --restore` does not auto-fix workspace codes.
+  Repair missing or divergent workspace runtime artifacts with
+  `workspace:setup` or explicit operator work after reading probe findings.
+- **Adoption:** Register an existing path with `workspace:setup --path`;
+  `doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
   `workspace:new` itself never adopts unmanaged paths.
 
 ## Test Mapping

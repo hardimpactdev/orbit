@@ -40,7 +40,7 @@ to read.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
 - Explicitly requested instances that do not exist receive
-  `error.code=workspace.instance_not_found`.
+  `error.code=instance.not_found`.
 
 ## Input Resolution
 
@@ -61,7 +61,7 @@ to read.
      `workspace:new` and `workspace-teardown-step:add` contracts and the
      `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
-   Unknown instances fail with `error.code=workspace.instance_not_found` before any
+   Unknown instances fail with `error.code=instance.not_found` before any
    read.
 3. **Select renderer.** Use the shared invocation model to select the output
    renderer.
@@ -114,7 +114,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | The resolved instance selector does not exist in gateway configuration (`error.code=workspace.instance_not_found`, `error.meta.instance`). | Failure |
+| Instance not found | The resolved instance selector does not exist in gateway configuration (`error.code=instance.not_found`, `error.meta.instance`). | Failure |
 | Instance required | The selector does not resolve a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.reason=instance_required`) |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's teardown-step policy (`error.code=authorization_failed`). | Failure |

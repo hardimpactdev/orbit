@@ -50,7 +50,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `websocket` selects the router-owned `websocket.orbit` service route; `s3`
   selects the router-owned `s3.orbit` service route plus public S3 host routes
   (owner `s3`); and `analytics` selects the router-owned `analytics.orbit`
-  service route plus public project analytics host routes (owner `analytics`).
+  service route plus public instance analytics host routes (owner `analytics`).
 - `custom` filters user-authored upstream routes with owner `custom` and kind
   `proxy`.
 - `redirect` filters routes with kind `redirect`.

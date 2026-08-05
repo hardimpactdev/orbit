@@ -5,14 +5,19 @@ Clear output for one Solo process after explicit force consent.
 ## Usage
 
 ```bash
-orbit solo:process:clear-output <process> [--node=<node>] [--force] [--json]
+orbit solo:process:clear-output <process> [--node=<node>] --force [--json]
 ```
 
 ## Contract
 
 `solo:process:clear-output` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `POST /api/solo/process/clear-output`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit uses local `node:default`, then the caller node.
 
-The gateway authorizes the caller with `solo:process:lifecycle` on the target node and records Orbit activity for the operation. Gateway targets use direct loopback; non-gateway targets use Agent push to target-local loopback. Solo ports and SSH transport are never exposed.
+`--force` is required in every mode (`forceRequired`). Missing `--force` fails
+with `validation_failed` and `meta.reason=force_required` before any gateway
+request. The gateway authorizes the caller with `solo:process:lifecycle` on the
+target node and records Orbit activity for the operation. Gateway targets use
+direct loopback; non-gateway targets use Agent push to target-local loopback.
+Solo ports and SSH transport are never exposed.
 
 ## Output
 

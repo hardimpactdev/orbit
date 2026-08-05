@@ -21,9 +21,12 @@ The terms below define the core identity vocabulary for the workspace family.
 - **Workspace identity slug:** Lowercase identity slug used as the workspace
   name. Unique within the parent project, maximum 63 characters, independent of the
   parent project slug.
-- **Workspace hostname:** Hostname formed by prepending the workspace slug as
-  its own DNS label to the parent project's primary hostname. For development instances
-  this yields `{workspace}.{project}.{tld}`.
+- **Workspace hostname:** Workspace-owned hostname formed by prepending the
+  workspace slug as its own DNS label to the parent instance's primary
+  hostname. For development instances this yields
+  `{workspace}.{instance-hostname}` (for example `{workspace}.{project}.{tld}`
+  when the instance hostname is `{project}.{tld}`). Project identity does not
+  own hostname composition.
 - **Workspace path:** Absolute path on the owning instance node where
   workspace files live. Derived from gateway configuration and applied through
   Agent push.
@@ -76,8 +79,6 @@ These terms describe how PHP version is resolved for workspaces.
 - **Workspace PHP inheritance flag:** Boolean entity field that records whether
   a workspace's effective PHP version comes from the parent project (`true`) or
   from its own override (`false`). Exposed in JSON as `php_inherited`.
-  resolved per session through the chain `app override → owning node default →
-  workspace-level override.
 
 ## Setup and teardown
 

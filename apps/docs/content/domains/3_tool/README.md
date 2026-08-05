@@ -77,8 +77,10 @@ These rules govern what the tool command family owns and what it may not touch.
 ## Supported Tool Catalog
 
 Orbit supports only the catalogued tool slugs below. A syntactically valid tool
-name that is not present in this catalog fails as an unsupported tool. Detailed
-tool-specific contracts live in [`catalog/`](catalog/README.md).
+name that is not present in this catalog fails as an unsupported tool, except
+documented removal-only legacy slugs accepted by `tool:remove` (`openclaw`,
+`opencode-cli`, `polyscope-server`). Detailed tool-specific contracts live in
+[`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
@@ -90,7 +92,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | host binary (`/usr/local/bin/composer`) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, adopt |
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |
-| [`claude-code`](catalog/claude-code.md) | Claude Code | Anthropic native installer (`https://claude.ai/install.sh`) | Installable runtime CLI on authorized active non-gateway Linux nodes; no required node role | `runtime` | install |
+| [`claude-code`](catalog/claude-code.md) | Claude Code | Anthropic native installer (`https://claude.ai/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; no required node role | `runtime` | install |
 | [`codex-cli`](catalog/codex-cli.md) | Codex CLI | OpenAI standalone installer (`https://chatgpt.com/codex/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`grok-cli`](catalog/grok-cli.md) | Grok CLI | xAI Grok Build installer (`https://x.ai/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`antigravity-cli`](catalog/antigravity-cli.md) | Antigravity CLI | Google Antigravity installer (`https://antigravity.google/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; supersedes outdated Gemini CLI support | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
@@ -98,7 +100,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`dns`](catalog/dns.md) | DNS | Gateway-local Docker service | Required infrastructure tool, kept converged on the gateway | `infrastructure` | update, restore, restart, logs; no adopt/start/stop/reload |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, remove (registry only), fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
-| [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`node-exporter`](catalog/node-exporter.md) | node-exporter | host binary (`/usr/local/bin/node_exporter`) | Role baseline tool for the `metrics` role and active Ubuntu workload nodes scraped by metrics | `observability` | install, remove, update, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Host-managed runtime as `agent` with default web port `8080` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |

@@ -127,8 +127,8 @@ failures below.
 | Validation failed (source) | `add` is missing `source`, or `source` is not an allowed absolute host path. | Failure |
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
 | Instance not found | No project record or instance matches the selector. | Failure |
-| Unsupported app runtime | The app has `runtime != php`; `error.meta.reason=app_runtime_not_php`. | Failure |
-| Unsupported serving role | The selected instance is not served by an active `app-dev` node; `error.meta.reason=app_mounts_app_dev_only`. | Failure |
+| Unsupported app runtime | The app has `runtime != php`; `error.meta.reason=instance_runtime_not_php`. | Failure |
+| Unsupported serving role | The selected instance is not served by an active `app-dev` node; `error.meta.reason=instance_mounts_app_dev_only`. | Failure |
 | Authorization denied | The caller lacks the action permission on the selected instance's serving node. | `authorization_failed` with `instance` and `serving_node`. |
 
 Validation failures use `error.code=validation_failed`. Source and target

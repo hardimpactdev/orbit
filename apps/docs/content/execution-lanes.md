@@ -231,7 +231,6 @@ key shape alone.
 
 Required work:
 
-  database lives in a node-local host path.
 - SQLite database query helpers for app, workspace, or database-role files
   resolved by the gateway but executed on the owning node's host path.
 - Wg-easy SQLite state updates and ownership checks that must preserve

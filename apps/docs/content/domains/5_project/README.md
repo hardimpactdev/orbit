@@ -53,8 +53,6 @@ These rules govern all instance family commands.
   adopt a named instance, re-apply Orbit management for that instance, move
   only that instance, or retry its production-domain activation. A first
   adoption atomically creates the project and its first instance.
-  Effective resolution is instance override, then that instance's serving-node
-  default, then no adapter.
 - Development-server behavior for instance and workspace processes is owned by the
   `process` family. Project and instance commands record shared runtime policy, while the
   selected instance records URL and document root; they do not create
@@ -108,15 +106,11 @@ These rules govern all instance family commands.
 - Projects may be registered in Codex App on an eligible operator node through the
   optional [`codex:app`](../22_codex/1_codex-app/codex-app.md) extension
   command. The command edits only Codex App's config file on the target node
-  and applies Codex App's URL callback; it does not configure the project's agent
-  IDE adapter.
+  and applies Codex App's URL callback.
 - Production deployment policy, ordered steps, warmup paths, runs, history,
   logs, and latest status belong to one concrete instance. `deploy:run`
   accepts the canonical dotted instance selector, while a bare project name is
   shorthand only when that project has exactly one instance.
-  not doctor drift repair. It checks that instance's effective
-  adapter, uses workspace removal semantics for stale workspaces owned by that
-  instance, and can be scheduled through normal schedules.
 - Project dependency audit posture is gateway-owned summary state for registered
   project source paths. The v1 storage and presentation slice records compact
   per-manager summaries derived from lockfile-aware audit commands such as
@@ -139,10 +133,11 @@ These rules govern all instance family commands.
   authorization or side effects.
 
 The same concrete-instance rule applies to `instance:register`, `instance:root`,
-commands. `project:remove` is the deliberate exception: it accepts only a logical
-project slug and, with explicit destructive consent, removes that project plus every
-owned instance as one authorized cascade. Dotted selectors and instance
-hostnames belong to `instance:remove`.
+and the other instance-scoped commands in this family. `project:remove` is the
+deliberate exception: it accepts only a logical project slug and, with explicit
+destructive consent, removes that project plus every owned instance as one
+authorized cascade. Dotted selectors and instance hostnames belong to
+`instance:remove`.
 
 Read commands over project registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. Instance runtime drift
@@ -336,19 +331,19 @@ Use these commands to create, inspect, and remove project records.
 4. [`orbit project:show [project]`](4_project-show/project-show.md)
 5. [`orbit instance:root [project.instance] [root]`](5_instance-root/instance-root.md)
 6. [`orbit project:remove [project]`](6_project-remove/project-remove.md)
-8. Reserved for a future project metadata update command. No `project:update` command
+7. Reserved for a future project metadata update command. No `project:update` command
    contract exists in the current converted surface.
 
 ### Instance Runtime Features
 
 Use these commands to configure runtime-facing instance capabilities.
 
-2. Reserved. Orbit has no command-`exec` surface.
-3. [`orbit instance:worker show|enable|disable [instance]`](11_instance-worker/instance-worker.md)
-4. [`orbit instance:websocket enable [project.instance]`](12_instance-websocket-enable/instance-websocket-enable.md)
-5. [`orbit instance:websocket disable [project.instance]`](13_instance-websocket-disable/instance-websocket-disable.md)
-6. [`orbit instance:websocket credentials [project.instance]`](14_instance-websocket-credentials/instance-websocket-credentials.md)
-7. [`orbit instance:mount list|add|remove [project.instance]`](15_instance-mount/instance-mount.md)
+1. Reserved. Orbit has no command-`exec` surface.
+2. [`orbit instance:worker show|enable|disable [instance]`](11_instance-worker/instance-worker.md)
+3. [`orbit instance:websocket enable [project.instance]`](12_instance-websocket-enable/instance-websocket-enable.md)
+4. [`orbit instance:websocket disable [project.instance]`](13_instance-websocket-disable/instance-websocket-disable.md)
+5. [`orbit instance:websocket credentials [project.instance]`](14_instance-websocket-credentials/instance-websocket-credentials.md)
+6. [`orbit instance:mount list|add|remove [project.instance]`](15_instance-mount/instance-mount.md)
 
 ### Instance Integrations
 

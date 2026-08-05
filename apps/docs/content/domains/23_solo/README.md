@@ -24,6 +24,25 @@ shared destructive-consent contract:
   `error.meta.field=force` and
   `error.meta.reason=destructive_consent_required`.
 
+## Hard `--force` requirement
+
+Some Solo mutating commands mark `forceRequired` in the shipped catalog and
+reject every invocation without `--force` in any mode — interactive prompts
+are not offered. Missing `--force` returns `error.code=validation_failed` with
+`error.meta.reason=force_required` and no `error.meta.field`.
+
+Commands currently under this hard gate include:
+
+- `solo:process:stop`
+- `solo:process:restart`
+- `solo:process:clear-output`
+- `solo:scratchpad:archive`
+
+This reason is Solo-specific and is not the shared
+`destructive_consent_required` vocabulary. Aligning these commands to the
+shared interactive destructive contract is a product follow-up; until then,
+automation must supply `--force`.
+
 ## State Ownership
 
 The Solo command domain does not own a state family. It hands off drift checks to existing doctor families:

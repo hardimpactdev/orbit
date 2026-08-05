@@ -66,11 +66,21 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step not found | No step matches the supplied id or title. | `error.code=deploy.step_not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /deploy/steps/{step}` |
+| Effect | `destructive` |
+| Subject | `DeployStep` when resolved; `none` otherwise. |
+| Properties | `project`, `instance`, `step_id`, `title`. History is preserved. |
+| Description | derived |
+
 ## Doctor Relationship
 
 Deployment policy is instance-owned gateway state. `deploy:step-remove` does not own
 a doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use
-deployment policy when reporting `app.deployment_pipeline_invalid`.
+deployment policy when reporting `instance.deployment_pipeline_invalid`.
 
 ## Test Mapping
 

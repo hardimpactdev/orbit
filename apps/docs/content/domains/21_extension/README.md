@@ -72,7 +72,7 @@ These rules constrain all extension commands.
 
 ## Solo Command Catalog
 
-The `solo` extension reserves the following command names. Direct invocation
+The `solo` extension registers a closed command catalog. Direct invocation
 while local `solo` is disabled fails with `extension_disabled` and
 `meta.scope=local`.
 
@@ -84,7 +84,17 @@ envelope.
 
 Registered Solo commands that are not implemented yet remain reserved. When
 local `solo` is enabled, those commands fail with `solo_command_deferred` and
-`meta.scope=local`.
+`meta.scope=local`. The reserved (full catalog) command names are:
+
+| Area | Commands |
+| --- | --- |
+| Setup and introspection | `solo:status`, `solo:help`, `solo:tools`, `solo:smoke-test`, `solo:feedback` |
+| Projects | `solo:project:list`, `solo:project:show`, `solo:project:status`, `solo:project:stats`, `solo:project:create`, `solo:project:rename`, `solo:project:select`, `solo:project:delete` |
+| Processes | `solo:process:list`, `solo:process:show`, `solo:process:output`, `solo:process:search`, `solo:process:ports`, `solo:process:select`, `solo:process:input`, `solo:process:spawn`, `solo:agent:spawn`, `solo:process:start`, `solo:process:stop`, `solo:process:restart`, `solo:process:clear-output`, `solo:process:rename`, `solo:process:close`, `solo:command:start-all`, `solo:command:stop-all`, `solo:command:restart-all` |
+| Agent tools | `solo:agent-tool:list`, `solo:agent:setup` |
+| Scratchpads | `solo:scratchpad:list`, `solo:scratchpad:show`, `solo:scratchpad:find`, `solo:scratchpad:create`, `solo:scratchpad:write`, `solo:scratchpad:append`, `solo:scratchpad:append-section`, `solo:scratchpad:edit`, `solo:scratchpad:rename`, `solo:scratchpad:archive`, `solo:scratchpad:clear`, `solo:scratchpad:delete`, `solo:scratchpad:tags`, `solo:scratchpad:tag:add`, `solo:scratchpad:tag:remove`, `solo:scratchpad:load-file`, `solo:scratchpad:save-file`, `solo:scratchpad:transfer` |
+| Todos | `solo:todo:list`, `solo:todo:show`, `solo:todo:create`, `solo:todo:update`, `solo:todo:complete`, `solo:todo:reopen`, `solo:todo:delete`, `solo:todo:lock`, `solo:todo:unlock`, `solo:todo:transfer`, `solo:todo:tags`, `solo:todo:tag:add`, `solo:todo:tag:remove`, `solo:todo:blocker:add`, `solo:todo:blocker:remove`, `solo:todo:blockers:set`, `solo:todo:comment:list`, `solo:todo:comment:add`, `solo:todo:comment:update`, `solo:todo:comment:delete` |
+| Coordination, timers, and readiness | `solo:lock:status`, `solo:lock:acquire`, `solo:lock:release`, `solo:timer:list`, `solo:timer:set`, `solo:timer:cancel`, `solo:timer:pause`, `solo:timer:resume`, `solo:timer:idle-any`, `solo:timer:idle-all`, `solo:service:list`, `solo:port:wait` |
 
 ## Solo Gateway Proxy
 
@@ -98,10 +108,11 @@ All `/api/solo/**` routes are gateway API routes, not WireGuard-exposed Solo
 ports. They use the gateway extension enablement gate for `solo`, log Orbit
 activity, and forward to the resolved target's configured loopback Solo API.
 Gateway targets are local calls; eligible non-gateway targets use Agent push.
-Read routes require `solo:*`; mutation routes require the narrow
-permission declared for the operation. Upstream unavailability is reported as
-`solo_upstream_unavailable`; malformed upstream payloads or missing loopback
-configuration are reported as `validation_failed`.
+Read routes require `solo:*` on the resolved Solo target node; mutation routes
+require the narrow permission declared for the operation on that same target.
+Upstream unavailability is reported as `solo_upstream_unavailable`; malformed
+upstream payloads or missing loopback configuration are reported as
+`validation_failed`.
 
 The implemented read-only CLI set is:
 
@@ -123,16 +134,6 @@ The implemented mutating CLI set is:
 | Scratchpads | `solo:scratchpad:create`, `solo:scratchpad:write`, `solo:scratchpad:append`, `solo:scratchpad:append-section`, `solo:scratchpad:edit`, `solo:scratchpad:rename`, `solo:scratchpad:archive`, `solo:scratchpad:clear`, `solo:scratchpad:delete` |
 | Todos | `solo:todo:create`, `solo:todo:update`, `solo:todo:complete`, `solo:todo:reopen`, `solo:todo:delete`, `solo:todo:lock`, `solo:todo:unlock`, `solo:todo:comment:add`, `solo:todo:comment:update`, `solo:todo:comment:delete` |
 | Coordination | `solo:lock:acquire`, `solo:lock:release`, `solo:timer:set`, `solo:timer:cancel`, `solo:timer:pause`, `solo:timer:resume` |
-
-| Area | Commands |
-| --- | --- |
-| Setup and introspection | `solo:status`, `solo:help`, `solo:tools`, `solo:smoke-test`, `solo:feedback` |
-| Projects | `solo:project:list`, `solo:project:show`, `solo:project:status`, `solo:project:stats`, `solo:project:create`, `solo:project:rename`, `solo:project:select`, `solo:project:delete` |
-| Processes | `solo:process:list`, `solo:process:show`, `solo:process:output`, `solo:process:search`, `solo:process:ports`, `solo:process:select`, `solo:process:input`, `solo:process:spawn`, `solo:agent:spawn`, `solo:process:start`, `solo:process:stop`, `solo:process:restart`, `solo:process:clear-output`, `solo:process:rename`, `solo:process:close`, `solo:command:start-all`, `solo:command:stop-all`, `solo:command:restart-all` |
-| Agent tools | `solo:agent-tool:list`, `solo:agent:setup` |
-| Scratchpads | `solo:scratchpad:list`, `solo:scratchpad:show`, `solo:scratchpad:find`, `solo:scratchpad:create`, `solo:scratchpad:write`, `solo:scratchpad:append`, `solo:scratchpad:append-section`, `solo:scratchpad:edit`, `solo:scratchpad:rename`, `solo:scratchpad:archive`, `solo:scratchpad:clear`, `solo:scratchpad:delete`, `solo:scratchpad:tags`, `solo:scratchpad:tag:add`, `solo:scratchpad:tag:remove`, `solo:scratchpad:load-file`, `solo:scratchpad:save-file`, `solo:scratchpad:transfer` |
-| Todos | `solo:todo:list`, `solo:todo:show`, `solo:todo:create`, `solo:todo:update`, `solo:todo:complete`, `solo:todo:reopen`, `solo:todo:delete`, `solo:todo:lock`, `solo:todo:unlock`, `solo:todo:transfer`, `solo:todo:tags`, `solo:todo:tag:add`, `solo:todo:tag:remove`, `solo:todo:blocker:add`, `solo:todo:blocker:remove`, `solo:todo:blockers:set`, `solo:todo:comment:list`, `solo:todo:comment:add`, `solo:todo:comment:update`, `solo:todo:comment:delete` |
-| Coordination, timers, and readiness | `solo:lock:status`, `solo:lock:acquire`, `solo:lock:release`, `solo:timer:list`, `solo:timer:set`, `solo:timer:cancel`, `solo:timer:pause`, `solo:timer:resume`, `solo:timer:idle-any`, `solo:timer:idle-all`, `solo:service:list`, `solo:port:wait` |
 
 ## Commands
 

@@ -27,8 +27,7 @@ These rules constrain all Codex commands.
 - `codex:app` is the command-family spelling. `app:codex` is removed from the
   public command surface.
 - The command edits only Codex App project configuration on eligible macOS
-  target nodes. It does not change app runtime configuration or the app's Agent
-  IDE adapter.
+  target nodes. It does not change app runtime configuration.
 
 ## Commands
 

@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 3. Read process definitions from gateway configuration in process order. An instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace. An `app` hostname that resolves to an app route uses the concrete instance context; a workspace route uses that workspace context.
 4. Derive expected runtime-unit identities for the selected context.
 5. For service process definitions, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
-6. Read latest durable lifecycle events for the selected runtime context when events exist and set each item's concrete `status` from that event (`running`, `stopped`, `crashed`, or `unknown` when no event exists).
+6. Read latest durable lifecycle events for the selected runtime context when events exist and set each item's concrete `status` from that event: `starting`, `running` (from `started`), `stopping`, `stopped`, `restarting`, `crashed`, or `unknown` when no event exists or the latest event is `failed`.
 7. Render the selected output.
 
 `process:list` must not SSH to nodes, run live process manager probes, mutate gateway configuration, or change runtime state.

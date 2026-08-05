@@ -43,9 +43,21 @@ primitive (the concern does not wrap `select` today).
 ```php
 use function Laravel\Prompts\select;
 
-$role = select(
-    label: 'Node role',
-    options: ['gateway', 'app-dev', 'app-prod', 'database', 'agent'],
+$template = select(
+    label: 'Node template',
+    options: [
+        'operator',
+        'app-development',
+        'app-production',
+        'gateway',
+        'ingress',
+        'database',
+        's3',
+        'metrics',
+        'websocket',
+        'analytics',
+        'agent',
+    ],
     required: true,
 );
 ```
@@ -54,7 +66,11 @@ $role = select(
 
 These commands use `select` and are good models to follow.
 
-- `orbit node:new` — `node_new.role`, `node_new.environment` use `select`.
+- `orbit node:new` — `node_new.template` (and related path selects such as
+  `node_new.ingress_node` / Valkey / Postgres / ClickHouse node picks) use
+  `select`. Canonical stored roles accepted through `--roles` are
+  `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`,
+  `metrics`, and `analytics`; `gateway` is not a public `--roles` value.
 
 ## Cross References
 

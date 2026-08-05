@@ -49,74 +49,46 @@ the parent project path, including external agent worktree directories.
      available, a valid `codex-thread.json` resolves to `codex-<key>`. The
      resulting slug is deterministic, valid, and at most 63 characters.
      Explicit `[name]` takes precedence; paths lacking valid Codex metadata
-     continue to the gateway lookup flow. Codex is not a workspace source driver
-     adapter.
-   - **Explicit `--path` adapter lookup:** when `[name]` is missing and
-     `--path` plus `--instance` are supplied, Orbit first asks the selected app's
-     match supplies the workspace name, absolute path, and adapter workspace
-     id. An instance selector such as `happie.nmbp` selects the instance
-     explicitly; a bare project selector must resolve to exactly one instance
-     before the workspace may be adopted.
+     continue to the path-basename fallback and gateway lookup flow. Codex
+     metadata is local tool resolution only — not a workspace source driver.
+   - **Explicit `--path` basename fallback:** when `[name]` is missing and
+     `--path` plus `--instance` are supplied without usable Codex metadata,
+     the workspace name may be derived from the path basename when that
+     basename is a valid workspace slug. An instance selector such as
+     `happie.nmbp` selects the instance explicitly; a bare project selector
+     must resolve to exactly one instance before the workspace may be adopted.
    - **CWD path-ownership lookup (gateway-authoritative):** when `[name]`
      is missing, Orbit asks the gateway to resolve the caller's absolute
-     current directory against registered app and workspace paths for the
-     caller's node identity. The lookup returns one of four outcomes:
+     current directory against registered project, instance, and workspace
+     paths for the caller's node identity. The lookup returns one of four
+     outcomes:
      - `workspace` — CWD is inside a registered workspace path. The gateway
-       returns the workspace name, parent project slug, required selected app
-       instance, and stored workspace path. The command proceeds with
-       these values; `--instance` and `--path` must agree if also supplied,
-       otherwise the command fails with
+       returns the workspace name, parent project slug, selected instance,
+       and stored workspace path. The command proceeds with these values;
+       `--instance` and `--path` must agree if also supplied, otherwise the
+       command fails with
        `error.code=validation_failed`/`error.meta.field=instance|path` before
        side effects.
-     - `app_root` — CWD is a registered app's own path, not a workspace
+     - `app_root` — CWD is a registered instance's own path, not a workspace
        path under it. The command fails before side effects with
        `error.code=workspace.path_is_app_root`,
        `error.meta.project=<project>`, and
-       `error.meta.next_command=orbit workspace:new`. The app root is not
+       `error.meta.next_command=orbit workspace:new`. The instance root is not
        a workspace and `workspace:setup` does not promote it to one.
-     - `inside_app` — CWD is under a registered app or instance path but
+     - `inside_app` — CWD is under a registered project or instance path but
        does not match any registered workspace path under that target. The
        parent project and exactly one concrete instance are resolved from the
        lookup. Zero or multiple instance matches fail with
        `error.meta.reason=instance_required`; the workspace name is
-       resolved through local Codex Git-worktree metadata when available, or through interactive
-       prompts.
-     - `unregistered` — CWD does not match any known app or workspace path.
-       The command does not run a external workspace path probe.
-       prompts. Non-interactive mode without an adapter resolution fails
-       fast with `validation_failed`.
-     the CWD lookup, when `[name]` is still missing and the lookup outcome was
-     `inside_app` or `unregistered`):
-     - The CLI gathers the **effective adapters** to probe:
-       - On `inside_app`, only the parent project's effective adapter.
-       - On `unregistered`, every adapter currently effective for any app
-         owned by the caller's node.
-       capability is asked to resolve the absolute CWD to one of its
-       managed workspaces. The adapter returns either no match or a
-       descriptor with workspace name, parent project slug, absolute path, and
-       adapter workspace id.
-     - Outcomes:
-       - Exactly one adapter returns a match → use the returned workspace
-         name and parent project for identity. Explicit `--instance` and `[name]`,
-         if supplied, must agree with the adapter; mismatches fail with
-         `error.code=validation_failed`,
-         `error.meta.field=instance|name`, `error.meta.reason=adapter_mismatch`
-         before side effects.
-       - Multiple adapters return a match → fail with
-         `error.code=validation_failed`, `error.meta.field=instance`,
-         `error.meta.reason=adapter_ambiguous`,
-         `error.meta.adapters=[…]`. The operator disambiguates with
-         `--instance`.
-       - No adapter returns a match → continue to prompts / non-interactive
-         failure.
-       - An adapter errors during probe (transport, auth, unexpected
-         response) → fail with
-         `error.meta.adapter=<name>`, `error.meta.reason=<short>`. The
-         probe does not silently fall through on adapter errors so the
-         operator does not get a confusingly different identity from a
-         partial probe.
-   - Interactive prompt for missing `[name]` when no CWD outcome or adapter
-     probe resolved it; non-interactive failure if no prompt is available.
+       resolved through local Codex Git-worktree metadata when available,
+       path-basename fallback when valid, or interactive prompts.
+     - `unregistered` — CWD does not match any known project, instance, or
+       workspace path. Local Codex Git-worktree metadata may still resolve
+       `[name]` when available. Non-interactive mode without a resolved name
+       fails fast with `validation_failed`.
+   - Interactive prompt for missing `[name]` when no CWD outcome or local
+     Codex/path resolution supplied it; non-interactive failure if no prompt
+     is available.
 2. **Resolve Path**:
    - Explicit `--path` (must be absolute).
    - Workspace `path` returned by the CWD path-ownership lookup or stored on
@@ -133,12 +105,12 @@ the parent project path, including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
    - Adoption is based on explicit command input, local Codex Git-worktree
-     `[name]` is omitted, and gateway path policy only.
-     `workspace:setup` does not inspect project files such as `composer.json`,
-     `package.json`, or `.php-version` to infer workspace identity, app
-     ownership, or PHP version. The narrowly scoped Codex Git-worktree
-     metadata read above is local tool metadata, not project-file inspection.
-     Project-file adoption hints belong only to
+     metadata when `[name]` is omitted, path-basename fallback, and gateway
+     path policy only. `workspace:setup` does not inspect project files such as
+     `composer.json`, `package.json`, or `.php-version` to infer workspace
+     identity, project ownership, or PHP version. The narrowly scoped Codex
+     Git-worktree metadata read above is local tool metadata, not project-file
+     inspection. Project-file adoption hints belong only to
      `doctor --family=workspace --adopt` as documented in the Workspaces
      README.
 
@@ -208,10 +180,9 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
   configuration (typically just created by `workspace:new`).
 - `adopted` — first-time setup where the path existed on the node but was
   unmanaged. Identity may come from explicit input, local Codex Git-worktree
-  metadata for an explicit `--path`. The durable `workspace.adopted` boolean is set to `true` for this
-  run; subsequent re-runs report
-  `result.action=converged` with `workspace.adopted=true` preserved. When
-  the adapter resolved identity, the workspace row records `none` and
+  metadata for an explicit `--path`, or path-basename fallback. The durable
+  `workspace.adopted` boolean is set to `true` for this run; subsequent re-runs
+  report `result.action=converged` with `workspace.adopted=true` preserved.
 - `converged` — idempotent re-application of an already-managed workspace
   where no observable artifact change was needed.
 
@@ -230,8 +201,8 @@ letting `result.action` describe what this run did, mirroring the
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-`workspace:setup` rejects an instance served by `app-prod` before adapter,
-registry, Agent-push, or runtime effects. This failure uses
+`workspace:setup` rejects an instance served by `app-prod` before registry,
+Agent-push, or runtime effects. This failure uses
 `error.code=workspace.unsupported_for_production`.
 
 - **Path Is Instance Root**: The resolved CWD is a registered instance's own path, not
@@ -297,7 +268,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent project path, adapter identity for app+path setup without a positional name, and parent-instance-root rejection before side effects. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent project path, Codex/path-basename identity for path setup without a positional name, and parent-instance-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, agent-push dispatch, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |

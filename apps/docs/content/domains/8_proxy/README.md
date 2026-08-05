@@ -28,7 +28,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   `websocket` selects the router-owned `websocket.orbit` service route, and
   `s3` selects the router-owned `s3.orbit` service route plus public S3 host
   routes, and `analytics` selects the router-owned `analytics.orbit` service
-  route plus public project analytics host routes. They are not owner-enum mirrors.
+  route plus public instance analytics host routes. They are not owner-enum mirrors.
   The router-owned `metrics.orbit` route is visible in the unified/default
   inventory; no dedicated metrics filter is exposed in this slice.
 - Workspace-owned routes are visible only when their serving node is active
@@ -40,7 +40,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - Project, instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - Every instance-owned primary route targets one concrete instance. The route
-  keeps `owner.type=app` and the project slug in `owner.name`, while
+  keeps `owner.type=project` and the project slug in `owner.name`, while
   `target.type=instance`, `target.value=<project.instance>`, and `node` identify
   the concrete instance and its serving node. A project is never a valid
   primary-route target.
@@ -48,8 +48,8 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   instance WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role
   nodes.
-- Project analytics routes are visible through proxy commands but edited through
-  project analytics binding commands. Public analytics hosts are `ingress` routes
+- Instance analytics routes are visible through proxy commands but edited through
+  instance analytics binding commands. Public analytics hosts are `ingress` routes
   that forward to `router`, preserve forwarding identity for event attribution,
   and expose only Plausible tracking paths; they must not route directly to
   analytics role nodes or expose the Plausible dashboard publicly.
@@ -229,7 +229,7 @@ The remaining fields describe placement, backend target, TLS, and status.
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
-| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, or `converged` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`. Healthy custom `proxy:add` completes as `pending` then `converged`; apply failure leaves `failed` or `partial` for doctor repair. `intent_only` remains only for older custom rows without one-step enactment evidence. |
+| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, `converged`, or `removed` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`. Healthy custom `proxy:add` completes as `pending` then `converged`; apply failure leaves `failed` or `partial` for doctor repair. `intent_only` remains only for older custom rows without one-step enactment evidence. `removed` is the removal-terminal value returned by successful `proxy:remove` payloads. Orbit never upgrades registry intent to `converged` (or any enacted status) merely because the database row exists. |
 
 ## Commands
 

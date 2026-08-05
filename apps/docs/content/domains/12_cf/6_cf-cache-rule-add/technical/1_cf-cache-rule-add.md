@@ -10,7 +10,8 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The app exists and has a real domain that resolves to a Cloudflare zone.
+- A concrete production instance is resolvable and has an instance-owned domain
+  that resolves to a Cloudflare zone.
 
 ## Signature
 
@@ -24,17 +25,22 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
+| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Concrete production instance selector: dotted `project.instance`, or bare project shorthand only when exactly one instance is visible. The resolved instance must own a Cloudflare-backed public domain. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
-### Project Zone Resolution Rules
+### Instance Zone Resolution Rules
 
-- Resolves `project` from gateway project state.
-- Resolves the app's real domain to a Cloudflare zone.
-- Fails before provider mutation when the app has no real Cloudflare-backed
-  domain.
+- Resolves a concrete production instance from the argument (exact dotted
+  selector first; bare project shorthand only when exactly one instance is
+  visible).
+- Uses that instance's instance-owned public domain to resolve a Cloudflare
+  zone. Projects store no server, path, URL, or domain.
+- Fails before provider mutation when the resolved instance has no Cloudflare-
+  backed domain.
+- Code follow-up: the gateway zone resolver may still read a legacy
+  project-level domain field; product contract is instance-owned domain only.
 
 ### Cache Rule Rules
 
@@ -47,7 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Scope Boundaries
 
 `cf-cache-rule:add` writes Cloudflare provider cache policy only. It must not
-mutate app deployment steps, app process state, proxy routes, or DNS records.
+mutate instance deployment steps, process state, proxy routes, or DNS records.
 
 ## Renderer Contracts
 
@@ -63,8 +69,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`cf-cache-rule:add` may support app performance policy, but it does not create a
-Cloudflare doctor family. Project-domain and deployment health remain owned by
+`cf-cache-rule:add` may support instance performance policy, but it does not create a
+Cloudflare doctor family. Instance-domain and deployment health remain owned by
 [`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
@@ -74,7 +80,7 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{project}` and JSON success envelope passthrough. |
 
-There is no gateway-side coverage for this command contract: authorization denial, app lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and app/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
+There is no gateway-side coverage for this command contract: authorization denial, instance lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and instance/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
 
 Renderer-specific test mapping lives in:
 

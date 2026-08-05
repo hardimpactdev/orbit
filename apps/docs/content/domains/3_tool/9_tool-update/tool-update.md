@@ -32,7 +32,8 @@ orbit tool:update hermes --instance=docs --stream-json
   `--version` console option. When omitted, the tool definition's latest
   supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--instance`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json`.
@@ -76,7 +77,7 @@ when some selected tools cannot be updated.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app.
+  or instance.
 - Selected tools are already registered and managed for the resolved node.
 - The tool definitions support updates.
 - The gateway can reach the target node through Orbit's node execution

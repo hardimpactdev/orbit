@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Restart Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context. Reject combining `app` with `node`, `instance`, or `workspace`. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
 2. Resolve the selected process set:
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
@@ -48,8 +48,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    before runtime or hibernation side effects begin.
 5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
    the scope's hibernation lock and mark the group asleep while it restarts.
-6. Restart each runtime unit through the gateway on the resolved node or instance serving node.
-7. Record and publish lifecycle events for each successful stopped and started runtime transition.
+6. For each selected runtime unit, record and publish a durable transitional
+   `restarting` process event before the runtime call.
+7. Restart each runtime unit through the gateway on the resolved node or instance
+   serving node. On success, record and publish a durable `started` event. On
+   backend false or thrown driver error, record and publish a durable `failed`
+   event (status becomes `unknown`) before rethrowing or reporting the failure
+   so status is never stuck transitional.
 8. After a successful bulk development restart, mark the group awake before
    releasing the hibernation lock. A failed restart remains asleep so its next
    HTTP request reconciles uncertain backend state. Named, node-owned, and
@@ -70,7 +75,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | `[name]` is supplied and the named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
 | No processes configured | `[name]` is omitted and the resolved context has no process definitions. | Failure (`error.code=process.none_configured`). |
-| Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--app` is combined with `--node`, `--instance`, or `--workspace`; `--node` is combined with `--instance` or `--workspace`; or no node/instance/workspace/`app` context resolves. | Failure (`error.code=validation_failed`). |
 | Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Runtime action failed | The gateway cannot restart the runtime unit on the resolved node or instance serving node. | Failure (`error.code=process.runtime_action_failed`). |
 

@@ -174,7 +174,7 @@ server name before rendering.
 | `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning seaweedfs tool row. |
 | `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
 | `proxy.analytics.router_route_missing` | Re-sync and enact the private `analytics.orbit` route and Orbit-managed TLS from gateway analytics intent. |
-| `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning project analytics binding. |
+| `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning instance analytics binding. |
 | `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |

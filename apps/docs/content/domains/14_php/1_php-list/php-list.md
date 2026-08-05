@@ -23,7 +23,8 @@ orbit php:list --node=app-1 --json
 
 - `--node=<node>`: Target node for available-image inspection.
 - `--instance=<project.instance>`: Concrete dotted instance context for project PHP
-  version and serving-node image reporting. A bare project is not accepted.
+  version and serving-node image reporting. A bare project slug is accepted only
+  when that project has exactly one visible instance.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
   reporting. Requires `--instance` unless the current directory resolves the parent
   project.

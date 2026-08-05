@@ -78,6 +78,7 @@ return [
         'allowed' => [
             'testing',
             'ux',
+            'abstractions',
             'superpowers',
         ],
     ],

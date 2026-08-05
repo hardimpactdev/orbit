@@ -139,7 +139,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
 | Instance required | Bare project slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
 | Step not found | No setup-step record matches `(step_id, instance, phase=setup)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
-| Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=workspace.instance_not_found`, `error.meta.instance`). |
+| Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=instance.not_found`, `error.meta.instance`). |
 | Instance unresolved | A concrete instance cannot be resolved from `--instance`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=instance`). |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) before policy deletion. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

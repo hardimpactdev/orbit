@@ -37,9 +37,10 @@ These rules govern every command contract in this directory.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
   `2_gateway` contains `gateway:*` commands, `15_dns` contains `dns:*`
-  commands, and `5_project` contains `app:*` commands. `11_operation` is the
-  exception for miscellaneous operational commands such as `doctor`, `update`,
-  and `activity:*`.
+  commands, and `5_project` contains `project:*` and `instance:*` commands.
+  `11_operation` is the exception for miscellaneous operational commands such
+  as `doctor` and `update`. `activity:*` commands belong to the Activity
+  domain (`16_activity`), not Operations.
 - When a domain has compound command prefixes, use the longest compound prefix
   before the colon and put only the action after the colon. Examples:
   `workspace-setup-step:add`, `workspace-teardown-step:add`, `cf-dns:list`,
@@ -178,7 +179,7 @@ Stable state families are `node`, `instance`, `workspace`, `process`,
 These are the keys accepted by `doctor --family=<family>` and the values
 carried by warning or doctor `family` fields. Machine-readable issue and
 warning codes use singular product prefixes, such as `node.wireguard_peer_missing`,
-`app.runtime_config_missing`, `workspace.path_missing`,
+`instance.runtime_config_missing`, `workspace.path_missing`,
 `process.runtime_unit_missing`, `proxy.route_extra`,
 `schedule.scheduler_missing`, and `database_connection.env_missing`.
 
@@ -192,8 +193,8 @@ issue codes and do not point at `doctor` as the recovery command. Warning codes
 that a command owns still use the singular product prefix for the command's domain.
 
 Family issue-code condition names should use the product relationship term for
-that family, such as `app.owner_node_invalid`,
-`workspace.parent_app_invalid`, or `process.owner_app_invalid`. Do not
+that family, such as `instance.owner_node_invalid`,
+`workspace.parent_instance_invalid`, or `process.owner_instance_invalid`. Do not
 normalize these into a generic parent/owner vocabulary when the domain model
 uses a more specific relationship name.
 
@@ -276,9 +277,18 @@ the sources of truth.
 
 The catalog is generated and never hand-edited. Regenerate it with
 `bin/orbit-docs-artisan orbit:command-catalog`. The committed artifact lives at
-`apps/docs/content/generated/command-catalog.json`. A Pest drift guard fails
-when the committed catalog omits a live public command or diverges from the
-command-docs registries, and passes once the catalog is regenerated.
+`apps/docs/content/generated/command-catalog.json`. The human-facing catalog
+contract is documented at [`command-catalog.md`](../command-catalog.md). A Pest
+drift guard fails when the committed catalog omits a live public command or
+diverges from the command-docs registries, and passes once the catalog is
+regenerated.
+
+Related top-level product docs for contract authors:
+
+- [Runtime execution lanes](../execution-lanes.md)
+- [Command UX primitives](../ux/README.md)
+- [Testing lane map](../testing/README.md)
+- [Security section pattern](../abstractions/17_security.md)
 
 The catalog joins existing sources instead of re-parsing them:
 
@@ -722,24 +732,24 @@ owned by the analytics role.
 13. [Cloudflare](12_cf/README.md)
 14. [VPN Administration](13_vpn/README.md)
 15. [PHP Runtime](14_php/README.md)
-17. [DNS](15_dns/README.md)
-18. [Activity](16_activity/README.md)
+16. [DNS](15_dns/README.md)
+17. [Activity](16_activity/README.md)
 
 Storage and observability integrations follow the network and activity
 surfaces:
 
-19. [S3](18_s3/README.md)
-20. [Metrics](19_metrics/README.md)
-21. [Analytics](20_analytics/README.md)
+18. [S3](18_s3/README.md)
+19. [Metrics](19_metrics/README.md)
+20. [Analytics](20_analytics/README.md)
 
 ### Optional extension and integration domains
 
 These domains describe optional command/API enablement and integrations that
 build on the core fleet authority model:
 
-22. [Extension](21_extension/README.md) — optional command and gateway API
+21. [Extension](21_extension/README.md) — optional command and gateway API
     surface enablement.
-23. [Codex](22_codex/README.md) — Codex App integration commands.
-24. [Solo](23_solo/README.md) — optional target-local Solo proxy command
+22. [Codex](22_codex/README.md) — Codex App integration commands.
+23. [Solo](23_solo/README.md) — optional target-local Solo proxy command
     catalog.
-25. [Skill](24_skill/README.md) — skill discovery and management commands.
+24. [Skill](24_skill/README.md) — skill discovery and management commands.

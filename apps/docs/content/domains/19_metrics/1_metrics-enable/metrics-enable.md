@@ -41,11 +41,13 @@ Role convergence records:
   node-exporter on TCP port 9100 through the private WireGuard interface.
 - The router-owned `metrics.orbit` route and Grafana admin credentials.
 
-The command immediately converges and starts Prometheus, Grafana, and
-node-exporter. Later runtime drift is repaired through `doctor --family=process`;
-private scrape firewall drift is repaired through
-`doctor --family=firewall_rule`. Direct lifecycle actions still belong to
-`process:*`.
+The command records metrics-role and baseline intent and asks the gateway to
+converge Prometheus, Grafana, and node-exporter on the target node. Human output
+reports the assignment result after the gateway write; it does not stream
+step-by-step convergence frames for that write. Later runtime drift is repaired
+through `doctor --family=process`; private scrape firewall drift is repaired
+through `doctor --family=firewall_rule`. Direct lifecycle actions still belong
+to `process:*`.
 
 ## Output
 

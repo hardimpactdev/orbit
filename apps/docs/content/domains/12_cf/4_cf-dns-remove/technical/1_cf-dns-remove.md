@@ -51,7 +51,7 @@ selects non-interactive input mode and is never destructive consent.
 - Sends one Cloudflare DNS record delete request for the resolved zone and
   record ID.
 - Returns the removed record ID and resolved zone in the command result.
-- Does not delete Orbit proxy routes, app domains, local DNS resolver overrides, or gateway-owned DNS configuration.
+- Does not delete Orbit proxy routes, instance domains, local DNS resolver overrides, or gateway-owned DNS configuration.
 
 ## Renderer Contracts
 

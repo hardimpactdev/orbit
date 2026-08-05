@@ -269,14 +269,16 @@ The `analytics` role is a private workload role for Orbit-managed Plausible CE
 analytics. An analytics node runs Plausible CE as a process-owned Docker
 container, publishes it only on the node's WireGuard address, and receives
 dashboard and tracking traffic through router-owned private service routes. The private
-dashboard/admin endpoint is `analytics.orbit`. Project-owned public analytics hosts
+dashboard/admin endpoint is `analytics.orbit`. Instance-owned public analytics hosts
 such as `analytics.example.com` enter through `ingress`, flow to `router`, and
 proxy only Plausible script and event-ingest paths to the analytics backend.
 The role depends on one explicitly identified PostgreSQL process and a
 ClickHouse Docker service process selected from active `database` role nodes.
-The PostgreSQL process identity is stored in the analytics role settings; a
-legacy assignment with one candidate remains compatible, while multiple
-candidates without a stored identity fail as ambiguous. Those services publish
+The PostgreSQL process identity is stored in the analytics role settings.
+Runtime resolution requires that stored process identity; there is no ongoing
+legacy single-candidate fallback. A one-time migration may backfill the stored
+identity from a previously unambiguous fleet assignment, but multiple candidates
+without a stored identity fail as ambiguous. Those services publish
 only on their database nodes' WireGuard addresses and keep generated
 credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that
@@ -572,7 +574,9 @@ cannot let a production app service operate another node's workspace.
 Authority is revocable through the lever that owns its class: remove a grant or
 permission, remove the gateway role, or disable the peer. `node:grant` creates
 the initial grant edge and permissions; long-term editing belongs to
-`node:permissions`, which is itself a gateway-admin-only surface.
+`node:permissions`. Read mode requires `node:read` or `*`; write mode requires
+`node:permissions` or `*`. Gateway-admin grants satisfy those permissions, but
+scoped callers with the matching grant may also use the command.
 
 #### Self-grants and self-serving
 
@@ -731,7 +735,7 @@ Orbit's extension points and identity rules keep product concepts stable while i
 
 ### Identity names
 
-Apps, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. A future presentation label may add spaces or capitalization, but the slug stays canonical.
+Projects, instances, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. Process presentation **labels** are current product surface: they may add spaces or capitalization for humans, while the process slug stays canonical for paths, keys, and selectors.
 
 A slug must match:
 
@@ -742,13 +746,14 @@ A slug must match:
 Length limits:
 
 - project slug: up to 40 characters
+- instance slug: up to 63 characters
 - node slug: up to 63 characters
-- workspace slug: up to 63 characters (independent of the parent project slug)
+- workspace slug: up to 63 characters (independent of the parent instance slug)
 - process slug: up to 64 characters
 
-**Workspace hostnames** prepend the workspace slug to the parent project's hostname. For a development project, that's `{workspace}.{project}.{tld}`.
+**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). Project identity does not own hostname composition.
 
-**Process names** combine the app, workspace, and process slugs into a single identifier:
+**Process names** use a five-part runtime-unit key:
 
 ```text
 orbit_<project>_<instance>_<workspace|main>_<process>
@@ -757,11 +762,11 @@ orbit_<project>_<instance>_<workspace|main>_<process>
 Examples:
 
 ```text
-orbit_docs_main_vite
-orbit_docs_feature-docs_vite
+orbit_docs_development_main_vite
+orbit_docs_development_feature-docs_vite
 ```
 
-`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug.
+`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is project, instance, workspace (or `main` for the instance checkout), then process.
 
 ### Next
 

@@ -22,23 +22,25 @@ These rules define the analytics command domain and its role boundary.
   tracking-only routes created for a selected concrete instance. They use
   that instance's public domain, proxy Plausible script and event paths only,
   and must not expose the dashboard publicly.
-- Enabling app analytics resolves one instance and its serving-node
+- Enabling instance analytics resolves one concrete instance and its serving-node
   authorization boundary before route effects. That instance must have a
   configured public domain. Orbit defaults the tracking host to
   `analytics.<instance-domain>`, enacts the router and ingress artifacts before
   reporting success, and returns the script base URL for that instance plus the
   event endpoint operators use to adapt the Plausible-generated snippet.
-  Shared analytics policy that carries no placement fact may remain owned by
-  the project; public domains, hosts, route targets, and serving-node
-  authorization never do.
+  Public domains, hosts, route targets, and serving-node authorization are
+  instance-owned placement facts; the project never owns them.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
-  `--plausible-version` option; commands use the generic `--version` field.
+  `--plausible-version` option; the CLI flag is `--version` (Laravel
+  Zero reserves the global `--version`).
 - PostgreSQL and ClickHouse are service processes on active `database` role
   nodes. The analytics role stores the selected PostgreSQL process identity as
   well as the backing node identities and does not install or own either
-  database. An assignment with multiple PostgreSQL candidates and no
-  stored process identity fails clearly instead of choosing one. Both services use generated
+  database. Runtime resolution requires that stored process identity; there is
+  no ongoing single-candidate fallback. A one-time migration may backfill an
+  unambiguous historical assignment, and multiple candidates without a stored
+  identity fail clearly instead of choosing one. Both services use generated
   credentials encrypted in gateway storage and publish only on WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:
   `postgres:16-alpine` and
@@ -53,14 +55,14 @@ These rules define the analytics command domain and its role boundary.
 - Removing the analytics role removes its live Plausible Docker container, the
   `analytics.orbit` route row, rendered Caddy site, certificate, and key before
   completing role removal.
-- The analytics command family coordinates node, process, proxy, and project-owned
-  binding state. It does not own an independent `doctor --family=analytics`
-  state family in v1.
+- The analytics command family coordinates node, process, proxy, and
+  instance-owned binding state. It does not own an independent
+  `doctor --family=analytics` state family in v1.
 
 ## State Ownership
 
 The `analytics` command domain does not own a state family. It coordinates
-state owned by node, app, process, and proxy families.
+state owned by node, instance, process, and proxy families.
 
 - [`node`](../1_node/README.md) owns the `analytics` role assignment and its
   `postgres_node_id`, `postgres_process_id`, and `clickhouse_node_id` settings.
@@ -70,14 +72,14 @@ state owned by node, app, process, and proxy families.
   ClickHouse service rows, runtime configuration, versions, lifecycle, logs, and
   endpoints. [`doctor --family=process`](../7_process/process-doctor.md) owns
   service runtime drift.
-- [`proxy`](../8_proxy/README.md) owns `analytics.orbit`, public app analytics
-  route rows, route artifacts, TLS material, and analytics backend pools.
-  [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route artifact
-  drift and restores a missing or divergent private analytics route from the
-  singleton active role assignment.
-- [`project`](../5_project/README.md) owns shared non-placement binding policy for the
-  project and concrete public tracking-host placement for each selected
-  instance. [`doctor --family=instance`](../5_project/instance-doctor.md) owns app
+- [`proxy`](../8_proxy/README.md) owns `analytics.orbit`, public instance
+  analytics route rows, route artifacts, TLS material, and analytics backend
+  pools. [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route
+  artifact drift and restores a missing or divergent private analytics route
+  from the singleton active role assignment.
+- Instance analytics bindings are instance-owned placement state (public domain,
+  tracking host, route target, serving-node authorization).
+  [`doctor --family=instance`](../5_project/instance-doctor.md) owns instance
   binding drift.
 
 There is no `doctor --family=analytics` contract in v1.

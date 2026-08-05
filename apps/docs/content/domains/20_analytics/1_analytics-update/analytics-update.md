@@ -7,7 +7,7 @@ Update the Plausible CE version used by an active analytics role node.
 ## Usage
 
 ```bash
-orbit analytics:update [--node=<node>] [--version=<version>] [--json]
+orbit analytics:update --version=<version> [--node=<node>] [--json]
 ```
 
 ## Arguments and options

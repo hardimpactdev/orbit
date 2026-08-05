@@ -1,13 +1,15 @@
 # `orbit tool:start`
 
-Start a lifecycle-capable tool on a target node.
+[Back to Tool commands.](../README.md)
+
+Start a lifecycle-capable tool on a target node. Only tools whose catalog
+definition declares `start` accept this verb (today: `orbstack` on macOS).
 
 ## Usage
 
 ```bash
 orbit tool:start <tool> --node=<node>
 orbit tool:start orbstack --node=<mac-node>
-orbit tool:start hermes --instance=<project.instance>
 orbit tool:start orbstack --node=<mac-node> --json
 ```
 

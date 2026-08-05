@@ -126,8 +126,8 @@ configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.
 
-11. [`hermes`](hermes.md)
-12. [`codex-app`](codex-app.md)
+8. [`hermes`](hermes.md)
+9. [`codex-app`](codex-app.md)
 
 ### macOS runtime providers
 
@@ -136,7 +136,7 @@ They use the generic `tool:*` surface for install, update, probe, adoption, and
 only the runtime verbs their definition declares. OrbStack declares start,
 stop, and restart; it does not create an Orbit process row.
 
-14. [`orbstack`](orbstack.md)
+10. [`orbstack`](orbstack.md)
 
 ## File Contract
 

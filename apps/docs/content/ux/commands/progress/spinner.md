@@ -30,22 +30,22 @@ These rules govern all uses of the spinner in Orbit commands.
 - Renderer doc's `## Progress Tree` section explicitly states a spinner is
   used (not a tree) and explains why.
 - The spinner uses the canonical Orbit frames from
-  `WithSpinner::$spinnerFrames`. Hand-rolling frame strings is banned.
+  `SpinnerTreeRenderer::spinnerFrames()`. Hand-rolling frame strings is banned.
 - In `--json` mode no spinner is rendered.
 
 ## Implementation
 
-`App\Concerns\WithSpinner` provides the frame set and runner helpers
-(`runWithSpinner`, `runAllWithSpinners`). See
+Use `SpinnerTreeRenderer::spinnerFrames()` for the canonical frame set. Do not
+hand-roll frame strings. See
 [`.agents/skills/command-designer/references/terminal-output.md`](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
-for the trait API and parallel-checks pattern.
+for spinner and progress-tree mechanics.
 
 ## Reference Implementations
 
 These commands use the spinner and are good models to follow.
 
-- `LinkCommand` — sequential spinner runner.
-- `DoctorCommand` — parallel spinners via `runAllWithSpinners`.
+- `orbit doctor` — `DoctorPanelRenderer` animates in-progress family probe
+  rows with `SpinnerTreeRenderer::spinnerFrames()` while checks run.
 
 ## Cross References
 

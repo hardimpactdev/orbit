@@ -121,7 +121,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Gateway missing | No configured gateway exists. | Failure before network or trust-store side effects |
-| Local config read failed | Local gateway settings cannot be read from the local Orbit database. | Failure before network or trust-store side effects |
+| Local config read failed | Local gateway settings cannot be read from `~/.config/orbit/config.json`. | Failure before network or trust-store side effects |
 | Gateway endpoint invalid | The configured gateway endpoint cannot be normalized to a gateway URL. | Failure before network or trust-store side effects |
 | Trust material invalid | The gateway response does not contain a valid PEM root CA certificate. | Failure before trust-store side effects |
 | Unsupported platform | The caller platform has no supported OS trust-store installer. | Failure before trust-store side effects |
@@ -135,20 +135,19 @@ not usable:
 - `reason=invalid`: the configured gateway endpoint cannot be normalized.
 
 `node.local_config_read_failed` is emitted only when the initial local gateway
-settings read fails. Its `error.meta.reason` values are:
+settings read from `~/.config/orbit/config.json` fails. Its `error.meta.reason`
+values are:
 
-- `local_database_unavailable`: the local Orbit SQLite database path cannot be
-  opened or reached.
-- `local_database_locked`: another local process holds a SQLite lock.
-- `local_database_read_only`: the local Orbit database opened but cannot accept
-  the settings read/create operation because it is read-only.
-- `local_database_corrupt`: the database file is malformed, corrupt, or not a
-  SQLite database.
-- `settings_table_missing`: the `local_gateway_settings` table is absent; local
-  migrations have not been applied.
+- `local_config_unreadable`: the config file path cannot be opened or read
+  (missing permissions, unreadable file, or home/config path resolution failure).
+- `local_config_invalid`: the config file exists but is not valid Orbit config
+  (invalid JSON, non-object root, missing/unsupported `schema_version`).
+- `local_config_insecure_permissions`: the config file is owned by another user,
+  or its mode is outside the owner-only ACL that Orbit accepts.
 
 Post-installation metadata write failures keep using
-`node.local_config_write_failed` with `reason=metadata_write_failed`.
+`node.local_config_write_failed` with `reason=metadata_write_failed` when the
+atomic write of trust metadata to `~/.config/orbit/config.json` fails.
 
 ## Doctor Relationship
 

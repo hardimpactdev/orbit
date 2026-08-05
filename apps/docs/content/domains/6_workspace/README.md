@@ -58,9 +58,10 @@ These rules govern all workspace family commands.
   route records. Workspace commands create, update, and remove the workspace
   configuration that owns those routes; proxy route registry and backend
   artifact convergence belong to the `proxy` family.
-- A workspace hostname is the workspace slug prepended to the selected app
-  instance's primary hostname. For a development app this yields
-  `{workspace}.{project}.{instance-tld}`.
+- A workspace hostname is workspace-owned: the workspace slug prepended to the
+  selected instance's primary hostname. For a development instance this yields
+  `{workspace}.{instance-hostname}` (for example
+  `{workspace}.{project}.{instance-tld}` when that is the instance hostname).
 - Workspaces inherit the selected instance's process definitions as
   instance runtime units.
   Each inherited runtime unit is owned
@@ -105,7 +106,7 @@ record.
 Operators may also adopt an existing on-disk worktree path (for example a
 Codex Git worktree under `~/.codex/worktrees/...`) through `workspace:setup
 --path`. Adoption still stores the observed absolute path; Orbit does not
-require a external workspace adapter service to register the path.
+require an external workspace service to register the path.
 
 No workspace command may derive a physical path as `<app path>/<workspace>`.
 Setup, runtime rendering, doctor checks, and teardown use the path stored on
@@ -170,9 +171,10 @@ entity does not define.
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
-whose value is inapplicable, such as generic worktrees without an adapter-side
-workspace id. `instance` is applicable to every workspace and is never
-`null`.
+whose value is inapplicable, such as a workspace-level `php_version` override
+when the workspace inherits the parent project PHP version (represented here
+through `php_inherited=true` with the effective version still reported flat).
+`instance` is applicable to every workspace and is never `null`.
 
 ## Terminology
 

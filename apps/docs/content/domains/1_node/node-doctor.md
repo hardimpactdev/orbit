@@ -170,9 +170,8 @@ The node probe reads gateway node records and checks these layers:
 
    `database` and `gateway` assignments have no role settings in v1.
 15. **Node-related defaults:** local `node:default` preferences point at
-   active, authorized `app-dev` nodes when `--self` inspects the CLI's
-   local configuration at the node level point at
-   supported adapters.
+   active, authorized nodes when `--self` inspects the CLI's local
+   configuration.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
@@ -272,9 +271,9 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_last_run_failed` | A supported update driver found recent unattended-upgrades evidence reporting a failed run. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
-| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing, unauthorized, or non-`app-dev` node. |
+| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing or unauthorized node. |
 
-`node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent.
+`node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent. Use `node:permissions` for permission-set repair and `doctor --family=node --adopt` when peer attachment is the intended recovery.
 
 ## Node Fix Map
 
@@ -285,10 +284,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.gateway_api_unreachable` | Restart or restore gateway service only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
 | `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --family=node --adopt`. |
-| `node.wireguard_peer_extra` | Remove stale gateway-managed peer material when no active node record owns the peer. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
-| `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path. |
 | `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, then re-probe the backend certificate and keep the issue visible if drift remains. |
@@ -310,7 +307,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.platform_record_mismatch`, `node.transport_unreachable`,
 `node.runtime_missing`, `node.security.runtime_user`,
 `node.security.posture_probe_failed`,
-`node.local_default_invalid`, or
+`node.access_permission_invalid`, `node.wireguard_peer_extra`,
+or `node.local_default_invalid`.
 
 `node.runtime_missing` is report-only because the gateway never owns bootstrap
 SSH credentials or a client-to-target SSH session. Resume or rerun `node:new`
@@ -321,7 +319,8 @@ normal gateway-to-Agent path.
 `node.dns_mapping_mismatch` is not adoptable. DNS record projection is derived
 from gateway node intent; observed resolver content cannot become node state.
 
-doctor must not silently clear or replace those preferences under
+`node.local_default_invalid` is reported only. `node:default` is an explicit
+user action; doctor must not silently clear or replace those preferences under
 `doctor --family=node --restore`.
 
 `node.updates_reboot_required` is non-restorable drift. The restore path may

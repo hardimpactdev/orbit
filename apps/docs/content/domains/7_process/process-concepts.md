@@ -121,8 +121,12 @@ These terms describe the runtime objects that Orbit derives from process definit
   process definitions normally render one unit. Instance-scoped inherited
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
-- **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  The canonical form is `orbit_<project>_<instance>_<workspace|main>_<process>`.
+- **Runtime unit filename:** Backend-safe five-part identity for a rendered
+  runtime unit. The canonical form is
+  `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_docs_development_main_vite` and
+  `orbit_docs_development_feature-docs_vite`). Component order is project,
+  instance, workspace (or `main` for the instance checkout), then process.
   When that full identity exceeds the shared backend limit (64 characters for
   the strictest consumer, launchd), Orbit deterministically bounds it by
   retaining a readable prefix and appending a stable 12-character SHA-256
@@ -204,8 +208,8 @@ These terms define the durable lifecycle records that process commands produce a
   runtime call, then terminal `started` / `stopped` on success or `failed` when
   the backend returns false or throws (exception is rethrown after recording).
   Ordinary creation/convergence paths that start units (for example
-  `process:add --start`, workspace setup, role/doctor restore starts) use the
-  same starting→started/failed pattern. `process:update --restart` records
+  `process:add` default start, workspace setup, role/doctor restore starts) use
+  the same starting→started/failed pattern. `process:update --restart` records
   restarting→started/failed with the current process name snapshot (including
   renames applied in the same update). Deploy active-release FrankenPHP
   container restarts are not process lifecycle events. `crashed` events are

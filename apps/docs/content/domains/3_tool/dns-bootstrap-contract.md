@@ -64,8 +64,10 @@ Required envs / settings:
 - `INIT_ENABLED=true` — enables the unattended setup flow in wg-easy v15.
 - `INIT_USERNAME=orbit` and `INIT_PASSWORD=<generated>` — bootstrap the admin
   account. The generated password is persisted in `ORBIT_CONFIG_ROOT/.env` (default `~/.config/orbit/.env`) as
-  `WG_EASY_PASSWORD=...` so future runs are idempotent and so
-  `tool:credentials wg-easy` can later expose it.
+  `WG_EASY_PASSWORD=...` so future runs are idempotent. The VPN web UI password
+  is VPN-family state (`vpn-web-ui:change-password`); it is not a tool-catalog
+  credential surface (`wg-easy` is not a catalog slug and
+  `tool:credentials wg-easy` is unsupported).
 - `INIT_HOST=<public host>` — the gateway's public IPv4 or DNS name.
 - `INIT_PORT=51820`.
 - `INIT_DNS=10.6.0.1` — the wg-easy WG IP, where `orbit-dns` listens via the

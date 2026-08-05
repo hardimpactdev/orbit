@@ -86,8 +86,11 @@ before role validation:
 | `agent` | `agent` |
 
 The `websocket` template fails with `validation_failed`,
-`error.meta.field=template`, and `error.meta.reason=not_implemented` until its
-implementation lands.
+`error.meta.field=template`, and `error.meta.reason=not_implemented`. Explicit
+`--roles` that include `websocket` fail the same way with
+`error.meta.field=roles`. Assign `websocket` on an existing node with
+`node role:add` (requires `--valkey-node`); do not treat `node:new` as the
+creation path for that role.
 
 ## Input Resolution
 
@@ -138,7 +141,7 @@ implementation lands.
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
    gateway-owned side effects. First-gateway bootstrap is the exception
    described in [`2_node-new_on-client.md`](2_node-new_on-client.md).
-7. Select the output renderer and begin the side-effect flow. Renderer-specific
+11. Select the output renderer and begin the side-effect flow. Renderer-specific
    progress and payload details live in the renderer contracts.
 
 Field-local validation and path eligibility must run at the earliest point where
@@ -214,9 +217,9 @@ Caller-path behavior is split out into:
   `settings.postgres_node_id`, `settings.postgres_process_id`, and
   `settings.clickhouse_node_id`. `settings.postgres_process_id` must identify
   one compatible PostgreSQL process owned by `settings.postgres_node_id`.
-  `database` and `metrics` assignments use empty settings. The
-  every active node requires the node-level `tld` field, not a role-assignment
-  setting. Role features consume that node-level value when they need DNS.
+  `database` and `metrics` assignments use empty settings. Every active node
+  requires the node-level `tld` field, not a role-assignment setting. Role
+  features consume that node-level value when they need DNS.
 - `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.
@@ -268,9 +271,9 @@ not plain runtime configuration.
   intent first, then applies the setup slice of that gateway intent to the real
   node before marking the node `active`.
 - The initial setup slice for `app-dev` applies the role baseline tools
-  `caddy`, `php-cli`, `composer`, and `laravel-installer` to node reality
-  through the same internal convergence path that tool doctor restore uses for
-  overlapping safe repairs.
+  `caddy`, `php-cli`, `composer`, `git`, `gh`, and `laravel-installer` to node
+  reality through the same internal convergence path that tool doctor restore
+  uses for overlapping safe repairs.
 - `node:new` must not report a successful active managed workload node while
   the setup slice is still missing or unverifiable. Setup failure returns
   `node.provisioning_incomplete`, includes the failed setup step in metadata,

@@ -14,11 +14,18 @@ classes](../architecture.md#authorization-classes).
 | --- | --- | --- | --- | --- | --- |
 | `activity:list` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
+| `analytics:update` | `process:update` | selected active analytics node | Exactly one active analytics role assignment | `authorization_failed` | Standard missing-permission meta plus selected analytics node |
 | `project:list` | `project:read` | at least one concrete Orbit instance serving node per returned project | Project and workspace placement filtering applies | `authorization_failed` | Standard missing-permission meta when the caller has no visible instance serving node |
 | `instance:list` | `instance:read` | at least one active app-role serving node; then each concrete Orbit instance serving node for row filtering | Authorized empty inventories succeed; external-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta only when the caller has no qualifying serving-node grant |
 | `instance:show` | `instance:read` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `instance` |
 | `instance:add` | `instance:write` | explicitly selected Orbit target node | External-driver creation is gateway-only; no project default node | `authorization_failed` | Standard missing-permission meta plus target node |
 | `instance:remove` | `instance:write` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `instance` |
+| `instance:env` list/render | `instance:read` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `project` and `instance` |
+| `instance:env` set | `instance:write` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `project` and `instance` |
+| `instance:mount` list | `instance:read` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `instance` |
+| `instance:mount` add/remove | `instance:mount` | selected concrete instance's serving node | app-dev placement constraints apply | `authorization_failed` | Standard missing-permission meta plus `instance` |
+| `instance:worker` show | `instance:read` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `instance` |
+| `instance:worker` enable/disable | `instance:worker` | selected concrete instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `instance` |
 | `project:new` | `project:new` | target app-role node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `instance:register` | `instance:register` | target app-role node | `app-dev` self-grants include same-node registration; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus target node |
 | `project:remove` | `project:remove` | every affected Orbit instance's serving node | Logical-wide destructive cascade preauthorizes all affected Orbit instances before effects; external-driver instances remain gateway-owned | `authorization_failed` | Standard missing-permission meta plus `project`, denied `instance`, and its serving node |
@@ -78,7 +85,10 @@ classes](../architecture.md#authorization-classes).
 | `firewall:list` | `firewall_rule:read` | target node or each visible node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta plus target node when requested |
 | `firewall:remove` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `gateway:add` | n/a - pre-grants bootstrap | n/a | Deployment-context command | n/a | n/a |
+| `gateway:list` | n/a - local-only | n/a | Lists local gateway entries only; no gateway API call | n/a | n/a |
+| `gateway:status` | authenticated WireGuard peer (no grant) | configured gateway endpoint | Reachability probe; no grant check | n/a when peer known | Transport/gateway-unavailable envelopes; not missing-permission |
 | `gateway:trust` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
+| `gateway:use` | n/a - local-only | n/a | Selects the active local gateway entry; no gateway API call | n/a | n/a |
 | `manifest:update` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
 | `manifest:remove` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
 | `metrics:credentials` read mode | `tool:credentials` | selected active metrics node | V1 process-backed permission for Grafana credentials | `authorization_failed` | Standard missing-permission meta plus selected node and process |
@@ -112,6 +122,7 @@ classes](../architecture.md#authorization-classes).
 | `process:stop` | `process:stop` | node owner, or concrete instance serving node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process and instance when applicable |
 | `process:update` | `process:update` | node owner, or concrete instance serving node | Public mutation surface for command, policy, runtime, and supported identity renames; `app-dev` self-grants include same-node instance process definition updates | `authorization_failed` | Standard missing-permission meta plus resolved process scope and instance |
 | `profile` | n/a - local-only | n/a | No gateway call, identity lookup, grant check, or activity entry | n/a | n/a |
+| `skill:install` | n/a - local-only | n/a | Writes skill files under the caller's home/install root only | n/a | n/a |
 | `proxy:add` | `proxy:add` | explicit target node, selected instance serving node, or workspace serving node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `proxy:list` | `proxy:read` | explicit target node or each route's serving node | Row-level filtering applies independently per route serving node | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible route serving node |
 | `proxy:remove` | `proxy:remove` | selected route's serving node | None | `authorization_failed` | Standard missing-permission meta plus route and serving node |
@@ -140,6 +151,7 @@ classes](../architecture.md#authorization-classes).
 | `tool:update` | `tool:update` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `update` | n/a - local-only | n/a | Updates the caller's local Orbit installation; only the source-mounted branch updates a checkout | n/a | n/a |
 | `update:all` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
+| `version` | n/a - local-only | n/a | Reads local Orbit release metadata; optional public release lookup only | n/a | n/a |
 | `vpn-client:disable` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta plus client |
 | `vpn-client:enable` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta plus client |
 | `vpn-client:list` | `vpn:read` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta |
@@ -147,6 +159,8 @@ classes](../architecture.md#authorization-classes).
 | `vpn-client:remove` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta plus client |
 | `vpn-web-ui:change-password` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta |
 | `workspace:history` | `workspace:read` | resolved concrete workspace's instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `instance` |
+| `workspace:env` list/render | `workspace:read` | workspace's owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `instance` |
+| `workspace:env` set | `workspace:write` | workspace's owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `instance` |
 | `workspace:list` | `workspace:read` | selected instance serving node when filtered; otherwise each visible concrete workspace's serving node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `workspace:log` | `workspace:read` | resolved concrete workspace's instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace run and `instance` |
 | `workspace:new` | `workspace:new` | selected instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `instance` |
@@ -187,9 +201,13 @@ a gateway permission check:
 - `node:default`
 - `dns:resolve-tld`
 - `dns:list`
+- `gateway:list`
 - `gateway:trust`
+- `gateway:use`
 - `update`
+- `version`
 - `profile`
+- `skill:install`
 
 ### Identity-Gated Self-Management
 

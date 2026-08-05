@@ -21,11 +21,24 @@ orbit solo:process:stop <process> [--node=<node>] [--force] [--json]
 
 This command follows the shared [Invocation Model](../../../README.md#invocation-model). Arguments and options are validated before the gateway request is sent.
 
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `force` | `--force` | Always (`forceRequired`). | Never. | `false` | Hard consent gate; interactive confirmation is not offered. |
+
+Missing `--force` fails before the gateway request with
+`error.code=validation_failed` and `error.meta.reason=force_required` (no
+`error.meta.field`).
+
 ## Behavior Contract
 
 ### Local Gate
 
 The command checks local Solo extension state before making a gateway request. Disabled local state returns `extension_disabled` with `meta.scope=local`.
+
+### Force Gate
+
+When the operation is `forceRequired`, the CLI rejects the invocation unless
+`--force` is present, even in interactive human mode.
 
 ### Gateway Proxy
 

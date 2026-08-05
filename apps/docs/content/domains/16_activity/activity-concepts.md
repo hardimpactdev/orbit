@@ -27,7 +27,7 @@ These terms define the scope of the activity command domain.
 Each activity entry carries the following fields.
 
 - **Type:** Stable, human-readable action identifier. Conventionally
-  `domain.verb` (`node.granted`, `app.created`, `proxy.route_stored`,
+  `domain.verb` (`node.granted`, `proxy.route_stored`,
   `workspace.deleted`). Type is part of the command's contract; changes are
   doc edits.
 - **Effect:** Read-vs-write classifier exposed to filters and renderers.
@@ -42,7 +42,7 @@ Each activity entry carries the following fields.
 
   Every Loggable implementation MUST declare its effect. The line between
   `write` and `destructive` is irreversibility through normal workflows,
-  not data sensitivity: `app:create` is `write`; `node:remove`,
+  not data sensitivity: `project:new` is `write`; `node:remove`,
   `node:revoke`, `vpn-client:remove`, and deploy retention prune are
   `destructive`.
 - **Subject:** Product-family entity the action targets, when there is one.

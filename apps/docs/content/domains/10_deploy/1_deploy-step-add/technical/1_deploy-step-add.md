@@ -76,11 +76,21 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /deploy/steps` |
+| Effect | `write` |
+| Subject | `DeployStep` when created; `none` otherwise. |
+| Properties | `project`, `instance`, `step_id`, `title`, `order`. No command secrets. |
+| Description | derived |
+
 ## Doctor Relationship
 
 Deployment policy is instance-owned gateway state. `deploy:step-add` does not own a
 doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use deployment
-policy when reporting `app.deployment_pipeline_invalid`.
+policy when reporting `instance.deployment_pipeline_invalid`.
 
 ## Test Mapping
 

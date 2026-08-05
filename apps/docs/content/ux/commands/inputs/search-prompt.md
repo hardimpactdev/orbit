@@ -58,10 +58,10 @@ $repository = search(
 
 ## Reference Implementations
 
-No node domain commands use `search` at plan time.
+These commands use `search` and are good models to follow.
 
-- None in the node domain at plan time. The `project:new` repository field is a
-  planned future user (out of scope for the node-first plan).
+- `orbit cf-cache:flush` — `cf_cache_flush_zone` searches Cloudflare zones when
+  the zone is omitted.
 
 ## Cross References
 

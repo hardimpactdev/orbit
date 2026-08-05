@@ -10,7 +10,8 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The app exists and has a real domain that resolves to a Cloudflare zone.
+- A concrete production instance is resolvable and has an instance-owned domain
+  that resolves to a Cloudflare zone.
 
 ## Signature
 
@@ -24,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
+| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Concrete production instance selector: dotted `project.instance`, or bare project shorthand only when exactly one instance is visible. The resolved instance must own a Cloudflare-backed public domain. |
 | `force` | `--force` | Required in non-interactive input mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
@@ -38,12 +39,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Project Zone Resolution Rules
+### Instance Zone Resolution Rules
 
-- Resolves `project` from gateway project state.
-- Resolves the app's real domain to a Cloudflare zone.
-- Fails before provider mutation when the app has no real Cloudflare-backed
-  domain.
+- Resolves a concrete production instance from the argument (exact dotted
+  selector first; bare project shorthand only when exactly one instance is
+  visible).
+- Uses that instance's instance-owned public domain to resolve a Cloudflare
+  zone. Projects store no server, path, URL, or domain.
+- Fails before provider mutation when the resolved instance has no Cloudflare-
+  backed domain.
+- Code follow-up: the gateway zone resolver may still read a legacy
+  project-level domain field; product contract is instance-owned domain only.
 
 ### Cache Rule Removal Rules
 
@@ -54,7 +60,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Scope Boundaries
 
 `cf-cache-rule:remove` mutates Cloudflare provider cache policy only. It must
-not remove app domains, DNS records, proxy routes, deployment steps, or app
+not remove instance domains, DNS records, proxy routes, deployment steps, or
 process state.
 
 ## Renderer Contracts
@@ -71,8 +77,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`cf-cache-rule:remove` may affect app performance policy, but it does not create
-a Cloudflare doctor family. Project-domain and deployment health remain owned by
+`cf-cache-rule:remove` may affect instance performance policy, but it does not create
+a Cloudflare doctor family. Instance-domain and deployment health remain owned by
 [`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 

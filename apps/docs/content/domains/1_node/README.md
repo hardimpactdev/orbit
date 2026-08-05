@@ -229,7 +229,6 @@ These rules apply to all node commands and define the invariants the family enfo
   and no app or workspace context already determines the owning node.
 - `node:new` never sets the local default node automatically.
   The caller must run `node:default` explicitly.
-  node. Instance-level settings override the node default.
 - Node access grants decide which consuming nodes may operate on which serving
   nodes. Authorization runs two gates: the grant edge from consuming to
   serving must exist, and the scoped permission set stored on that edge must
@@ -253,9 +252,11 @@ These rules apply to all node commands and define the invariants the family enfo
 - `node:grant` creates the initial grant edge and the initial permissions on
   it. It does not edit an existing grant's permission set.
 - `node:permissions` owns viewing, updating, and upserting the permission set
-  for a grant. It is gateway-admin only and may create a missing grant edge
-  when the caller submits a valid non-empty permission set through
-  interactive selection, `--preset`, `--permissions`, or `--add`. Read-only
+  for a grant. Read mode requires `node:read` or `*` on the grant edge; write
+  modes (`--preset`, `--permissions`, `--add`, `--remove`) require
+  `node:permissions` or `*`. Write modes may create a missing grant edge when
+  the caller submits a valid non-empty permission set through interactive
+  selection, `--preset`, `--permissions`, or `--add`. Read-only
   `node:permissions` and `--remove` require an existing grant and fail with
   `node.grant_not_found` otherwise.
 - Role-assignment settings live on the role assignment when they are
@@ -353,7 +354,11 @@ Node transport has different rules before and after bootstrap:
   opening the menu may perform a one-shot gateway ping that shows Connected or
   Disconnected, node name, and gateway name/host, plus Restart and Quit actions.
   It does not show command history.
-- Orbit Agent is distinct from the existing `agent` workload role and from
+- Orbit Agent is distinct from the existing `agent` workload role and from Agent
+  sessions. Orbit Agent is a node-local execution lane for Orbit operations.
+  Gateway-pushed commands are limited to Agent-eligible nodes. The `agent`
+  workload role supplies derived intent like every other workload role; it is
+  not a duplicated capability flag.
 
 The current steady-state paths are therefore:
 
@@ -447,7 +452,7 @@ The ideal node lifecycle is:
 
 ## Doctor Relationship
 
-The node family probe, drift kinds, and `doctor --family=node --restore` /
+The node family probe, issue dispositions, and `doctor --family=node --restore` /
 `doctor --family=node --adopt` boundaries are defined in [`node-doctor.md`](node-doctor.md).
 `doctor --fix` runs an interactive resolution flow that prompts per item to
 restore or adopt. List commands are registry-only; `doctor --family=node` owns
@@ -594,7 +599,7 @@ Use these commands to update, remove, or configure node settings after initial p
 7. [`orbit node:update [name]`](7_node-update/node-update.md)
 8. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
 9. [`orbit node:default [name]`](9_node-default/node-default.md)
-11. [`orbit node:manage`](16_node-manage/node-manage.md)
+10. [`orbit node:manage`](16_node-manage/node-manage.md)
 
 ### Role assignments
 
@@ -604,6 +609,6 @@ The node-level `tld` (mandatory and unique for every active node, at most one
 per node, with `orbit` reserved for the proxy namespace) is changed through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
-12. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
-13. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
-14. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)
+11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
+12. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
+13. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)

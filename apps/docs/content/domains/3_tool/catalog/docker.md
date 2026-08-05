@@ -23,6 +23,8 @@ install the `docker.io` package and enable its system service through Agent
 push. Later safe fix repairs supported service drift.
 
 `tool:install docker` and `tool:remove docker` are not supported by the tool
+catalog for host package management. Orbit probes and adopts Docker as baseline
+node capability instead of treating it as an operator-installed package tool.
 
 ## macOS Provider Support
 

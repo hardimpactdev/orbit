@@ -48,10 +48,10 @@ $capabilities = multiselect(
 
 ## Reference Implementations
 
-No node commands use `multiselect` at plan time.
+These commands use `multiselect` and are good models to follow.
 
-- None in the node domain at plan time. Add a row here when a node command
-  adopts `multiselect`.
+- `orbit node:permissions` — multiselect for the normalized permission set when
+  updating or creating a grant edge.
 
 ## Cross References
 

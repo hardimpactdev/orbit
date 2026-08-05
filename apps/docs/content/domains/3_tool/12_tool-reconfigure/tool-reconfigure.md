@@ -28,7 +28,8 @@ orbit tool:reconfigure hermes --node=agent-1 --stream-json
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from reconfigurable tools visible on the resolved node.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--instance`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--password`: Optional new authentication password when the tool definition
   supports password reconfiguration.
 - `--json`: Output JSON.
@@ -88,7 +89,7 @@ Use `--json` for the machine-readable tool and action result.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app.
+  or instance.
 - The tool is registered for the resolved node and supports reconfiguration.
 - The gateway can reach the target node through Orbit's node execution
   primitive.

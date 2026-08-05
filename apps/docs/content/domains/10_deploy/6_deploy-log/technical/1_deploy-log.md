@@ -65,12 +65,22 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step not found | `--step` does not match a step in the selected run. | `error.code=deploy.step_not_found` |
 | Log read failed | The gateway cannot read stored deployment output. | `error.code=deploy.log_read_failed` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /deploy/log/{run}` |
+| Effect | `read` |
+| Subject | `DeploymentRun` when resolved; `none` otherwise. |
+| Properties | `project`, `instance`, `run_id`, optional `step_id`. No raw secrets. |
+| Description | derived |
+
 ## Doctor Relationship
 
 `deploy:log` explains past deployment behavior. It does not own a doctor family.
 [`instance-doctor.md`](../../../5_project/instance-doctor.md) owns current production project
 health checks and may reference latest deployment status through
-`app.latest_deployment_failed` and `app.deployment_run_stuck`.
+`instance.latest_deployment_failed` and `instance.deployment_run_stuck`.
 
 ## Test Mapping
 
