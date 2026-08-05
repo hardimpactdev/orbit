@@ -292,7 +292,7 @@ function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
 function orbitLoopProofReferences(string $markdown): array
 {
     preg_match_all(
-        '~\.orbit/(?:evidence|quality-gates)/~',
+        '~\.orbit/(?:evidence|quality-gates|release-evidence)/~',
         $markdown,
         $markers,
         PREG_OFFSET_CAPTURE,
@@ -324,7 +324,7 @@ function orbitLoopProofReferences(string $markdown): array
 
         $candidate = substr($markdown, $markerOffset);
         $matched = preg_match(
-            '~^\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
+            '~^\.orbit/(?:evidence|quality-gates|release-evidence)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
             $candidate,
             $match,
         );

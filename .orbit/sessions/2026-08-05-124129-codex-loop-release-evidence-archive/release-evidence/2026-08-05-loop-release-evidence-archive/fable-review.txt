@@ -1,0 +1,10 @@
+Slice 5: compact session archives retain exact cited .orbit/release-evidence files.
+Candidate: 19a81e8acbe9bf6f2d446c90d220d583fab0e7a7
+Main: 4b2b7105952fa1ef1641339cc26a86c91db5a08f
+Fable Solo process: 1411
+Prior FIX archive: 2026-08-04-211205-gateway-leaf-caddy-restart
+Refreshed sweep: 112 compact receipts; historical schema-v2 release-evidence citation finding closed
+VERDICT: PASS
+HUMAN_JUDGMENT: not-required
+Quality-check: .orbit/quality-gates/quality-check-2026-08-05T103248Z-3735218588d0.json
+sha256: fa7e001d3d4c111b26ef8bacf0db16d6a215faa6fd753b01b4877429a94d9836

@@ -258,10 +258,12 @@ passes.
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
    optional `feedback.jsonl`, regular files cited by the loop as one exact
-   inline-code path below `.orbit/evidence/` or `.orbit/quality-gates/`, and a
-   versioned receipt bound to the landed feature branch and every archived
-   byte. Cite files, never proof directories; missing, malformed, or unsafe
-   citations block archival.
+   inline-code path below `.orbit/evidence/`, `.orbit/quality-gates/`, or
+   `.orbit/release-evidence/`, and a versioned receipt bound to the landed
+   feature branch and every archived byte. Cite files, never proof
+   directories; missing, malformed, or unsafe citations block archival.
+   Runtime acceptance receipts still require evidence under
+   `.orbit/evidence/` or `.orbit/quality-gates/` only.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
 7. Update the session index and commit the archive/index.
@@ -272,8 +274,11 @@ passes.
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.
 
-Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 compact
-receipt. Historical/full archives remain valid through their legacy manifests.
+Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 or schema-v3
+compact receipt. Schema-v3 newly written receipts may bind exact cited files
+under `.orbit/release-evidence/`; schema-v2 receipts keep pre-v3
+evidence/quality-gates proof roots only so historical archives remain valid.
+Historical/full archives remain valid through their legacy manifests.
 
 ## Trigger-Only Loop Improvement
 
