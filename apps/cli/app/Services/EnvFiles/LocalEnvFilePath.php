@@ -23,6 +23,15 @@ final readonly class LocalEnvFilePath
     private const string DEVELOPMENT_APP_ENV_PATTERN = '#\A(?:/home/[a-z_][a-z0-9_-]*|/Users/[A-Za-z0-9][A-Za-z0-9._-]*)/apps/[a-z0-9][a-z0-9._-]*/\.env\z#';
 
     /**
+     * Exact Orbit-managed development worktree env paths.
+     * Linux: /home/<user>/apps/<project>/.worktrees/<workspace>/.env
+     * macOS: /Users/<user>/apps/<project>/.worktrees/<workspace>/.env
+     *
+     * One project segment, literal `.worktrees`, one workspace segment, terminal `.env`.
+     */
+    private const string DEVELOPMENT_WORKTREE_ENV_PATTERN = '#\A(?:/home/[a-z_][a-z0-9_-]*|/Users/[A-Za-z0-9][A-Za-z0-9._-]*)/apps/[a-z0-9][a-z0-9._-]*/\.worktrees/[a-z0-9][a-z0-9._-]*/\.env\z#';
+
+    /**
      * Exact Codex worktree workspace env paths used by registered workspaces.
      * Linux: /home/<user>/.codex/worktrees/<id>/<project>/.env
      * macOS: /Users/<user>/.codex/worktrees/<id>/<project>/.env
@@ -51,6 +60,13 @@ final readonly class LocalEnvFilePath
         if (is_link($path)) {
             throw $this->invalid();
         }
+
+        // Existing targets must be regular files. A directory (or other non-file)
+        // must not be accepted: atomic replace via rename/mv would otherwise
+        // move the staged temp into the directory and report a false success.
+        if (file_exists($path) && ! is_file($path)) {
+            throw $this->invalid();
+        }
     }
 
     public function isReadableFile(string $path): bool
@@ -75,6 +91,7 @@ final readonly class LocalEnvFilePath
         if (
             preg_match(self::PRODUCTION_APP_ENV_PATTERN, $path) === 1
             || preg_match(self::DEVELOPMENT_APP_ENV_PATTERN, $path) === 1
+            || preg_match(self::DEVELOPMENT_WORKTREE_ENV_PATTERN, $path) === 1
             || preg_match(self::CODEX_WORKTREE_ENV_PATTERN, $path) === 1
         ) {
             return true;

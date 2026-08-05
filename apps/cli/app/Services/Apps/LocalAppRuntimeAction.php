@@ -49,6 +49,7 @@ final readonly class LocalAppRuntimeAction
     {
         $spec = LocalAppRuntimeContainerSpec::from($payload['spec'] ?? null);
         $runtimeConfig = $this->runtimeConfig($payload['runtime_config'] ?? null);
+        $restartIfRunning = ($payload['restart_if_running'] ?? false) === true;
 
         $this->ensureNetwork($spec->network);
         $inspection = $this->inspectContainer($spec->name);
@@ -58,7 +59,17 @@ final readonly class LocalAppRuntimeAction
 
         if ($hadExistingContainer && hash_equals($spec->expectedHash, $observedHash ?? '')) {
             if ($this->isRunning($inspection)) {
-                return $this->containerApplyResult($spec->name, 'unchanged', true, false);
+                if (! $restartIfRunning) {
+                    return $this->containerApplyResult($spec->name, 'unchanged', true, false);
+                }
+
+                $restart = $this->runProcess(['docker', 'restart', $spec->name]);
+
+                if (! $restart->isSuccessful()) {
+                    throw $this->containerFailure('restart', $spec->name, $restart, $hadExistingContainer);
+                }
+
+                return $this->containerApplyResult($spec->name, 'restarted', true, true);
             }
 
             $start = $this->runProcess(['docker', 'start', $spec->name]);

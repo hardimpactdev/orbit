@@ -8,12 +8,20 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class RemoteEnvFile
 {
     public function __construct(
         private RunsInternalCommands $localExecutor,
     ) {}
 
+    /**
+     * Legacy generic read used by initializer, database, doctor, and app paths.
+     * Failures and malformed success envelopes collapse to null so existing
+     * callers that treat null as "absent/empty" keep their prior behavior.
+     */
     public function read(Node $node, string $path): ?string
     {
         $result = $this->run($node, [
@@ -28,6 +36,42 @@ final readonly class RemoteEnvFile
         $contents = $this->data($result)['contents'] ?? null;
 
         return is_string($contents) ? $contents : null;
+    }
+
+    /**
+     * Strict read for workspace env apply only.
+     *
+     * Returns null solely for explicit `env_file.not_found`. Other failures and
+     * successful envelopes without a string `contents` field throw so apply
+     * cannot clobber an unread file by treating a protocol error as empty.
+     */
+    public function readForApply(Node $node, string $path): ?string
+    {
+        $result = $this->run($node, [
+            'action' => 'read',
+            'path' => $path,
+        ]);
+
+        if ($result->successful()) {
+            $contents = $this->data($result)['contents'] ?? null;
+
+            if (! is_string($contents)) {
+                throw new RuntimeException(
+                    "Env file read response for {$path} is missing string contents.",
+                );
+            }
+
+            return $contents;
+        }
+
+        $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+        $code = $error['code'] ?? null;
+
+        if ($code === 'env_file.not_found') {
+            return null;
+        }
+
+        throw new RuntimeException($this->failureMessage($result, $error, "Failed to read env file at {$path}."));
     }
 
     public function write(
@@ -49,8 +93,26 @@ final readonly class RemoteEnvFile
         $result = $this->run($node, $payload);
 
         if (! $result->successful()) {
-            throw new RuntimeException($result->output());
+            $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+
+            throw new RuntimeException($this->failureMessage($result, $error, "Failed to write env file at {$path}."));
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $error
+     */
+    private function failureMessage(RemoteShellResult $result, array $error, string $fallback): string
+    {
+        $message = $error['message'] ?? null;
+
+        if (is_string($message) && trim($message) !== '') {
+            return $message;
+        }
+
+        $output = trim($result->errorOutput().' '.$result->stdout);
+
+        return $output !== '' ? $output : $fallback;
     }
 
     /**
