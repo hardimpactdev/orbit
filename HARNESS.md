@@ -296,6 +296,11 @@ Manual LAND remains validate-then-execute for each destructive mutation:
 7. Update the session index and commit the archive/index. Cleanup requires
    those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
+   - Cleanup in this order so each gated Solo ownership check remains
+     satisfiable: stop session-owned running/starting processes; delete the
+     session-owned Solo project (exact path == feature worktree); remove the
+     exact clean merged worktree; delete the exact merged feature branch.
+     Solo project deletion must complete before worktree removal.
    - Validate each cleanup mutation with
      `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+require_once dirname(__DIR__, 5).'/bin/orbit-finalization-solo-land.php';
+
 /**
  * Slice 6 minimal RED contract: ownership, archive-commit ordering, one-step resume.
  * Fixture Git + fake Solo CLI only; no live destructive cleanup.
@@ -558,6 +560,126 @@ it('blocks cleanup when a compact receipt is tracked but a required loop entry i
     }
 });
 
+it('silent-passes benign chained quoted solo searches and read-only Solo CLI in hook mode', function (
+    string $command,
+): void {
+    [$repo, $worktree] = land_create_fixture();
+
+    try {
+        $hook = land_run_hook($repo, $command, explicit: false);
+
+        expect($hook->getExitCode())
+            ->toBe(0, $hook->getErrorOutput().$hook->getOutput())
+            ->and($hook->getErrorOutput().$hook->getOutput())
+            ->not->toContain('FINALIZATION: BLOCKED')
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+})->with([
+    'quoted solo in rg chain' => ["rg 'solo processes stop' README.md && true"],
+    'read-only processes list' => ['solo processes list --json'],
+    'read-only projects get' => ['solo projects get 73 --json'],
+    'processes restart non-LAND' => ['solo processes restart 501 --json'],
+]);
+
+it('explicit wrapper fails loud for unclassifiable read-only Solo commands but blocks malformed LAND shapes', function (
+    string $soloArgs,
+    int $exit,
+    string $needle,
+): void {
+    [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: true);
+
+    try {
+        $process = land_run_finalization($repo, escapeshellarg($solo['cli']).' '.$soloArgs);
+
+        expect($process->getExitCode())
+            ->toBe($exit, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch($needle);
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+})->with([
+    'explicit list unclassifiable' => [
+        'processes list --json',
+        64,
+        '/could not classify|unclassifiable|orbit finalization gate/',
+    ],
+    'malformed stop' => ['processes stop --json', 2, '/exactly one numeric|invalid|blocked/'],
+]);
+
+it('refuses remove-worktree when the path is linked to a different branch than --branch', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: true);
+    $other = land_add_unrelated_worktree($repo);
+
+    try {
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+        land_fake_solo_state($solo, ['projects' => [], 'processes' => []]);
+
+        $status = land_run_land($repo, [
+            '--branch=feature',
+            "--worktree={$other}",
+            '--solo-project-id=73',
+            "--solo-cli={$solo['cli']}",
+            '--status',
+        ]);
+
+        expect($status->getExitCode())
+            ->toBe(1, $status->getErrorOutput().$status->getOutput())
+            ->and(strtolower($status->getErrorOutput()))
+            ->toMatch('/linked to|not .*feature|worktree/');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+        if (is_dir($other)) {
+            new Process(['rm', '-rf', $other])->run();
+        }
+    }
+});
+
+it('aborts full execute when a mutation leaves phase and next_action unchanged', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(
+        accepted: true,
+        merged: true,
+        processes: [
+            501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+        ],
+    );
+
+    try {
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+        land_fake_solo_state($solo, [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
+            ],
+            'processes' => [
+                501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+            ],
+            'stop_noop' => true,
+        ]);
+
+        $full = land_run_land($repo, land_args($worktree, $solo));
+
+        expect($full->getExitCode())
+            ->toBe(1, $full->getErrorOutput().$full->getOutput())
+            ->and(strtolower($full->getErrorOutput().$full->getOutput()))
+            ->toMatch('/no progress|unchanged/');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
+
+it('shares archive slug fallback session not feature for punctuation-only names', function (): void {
+    expect(orbit_land_archive_slug('@@@'))
+        ->toBe('session')
+        ->and(orbit_land_archive_slug('My Feature'))
+        ->toBe('my-feature');
+});
+
 it('allows legacy full archive cleanup when loop and agent manifests are tracked and clean', function (): void {
     [$repo, $worktree] = land_create_fixture();
 
@@ -967,7 +1089,9 @@ function land_write_fake_solo_cli(string $repo): array
                 \$fail('not_found', "process {\$id} not found");
             }
             \$key = isset(\$state['processes'][\$id]) ? \$id : (string) \$id;
-            \$state['processes'][\$key]['status'] = 'stopped';
+            if (empty(\$state['stop_noop'])) {
+                \$state['processes'][\$key]['status'] = 'stopped';
+            }
             // Mid-run ownership drift: rebind the owned project path after stop so a
             // single full LAND execute must revalidate before projects delete.
             if (isset(\$state['drift_path_after_stop'], \$state['drift_project_id_after_stop'])) {
@@ -1003,10 +1127,26 @@ function land_fake_solo_state(array $solo, array $payload): void
 
 function land_run_finalization(string $repo, string $command, array $environment = []): Process
 {
+    return land_run_hook($repo, $command, explicit: true, environment: $environment);
+}
+
+/**
+ * @param  array<string, string|false>  $environment
+ */
+function land_run_hook(string $repo, string $command, bool $explicit = true, array $environment = []): Process
+{
+    $env = land_test_environment($environment);
+
+    if ($explicit) {
+        $env['ORBIT_FINALIZATION_EXPLICIT'] = '1';
+    } else {
+        $env['ORBIT_FINALIZATION_EXPLICIT'] = false;
+    }
+
     $process = new Process(
         [PHP_BINARY, repo_path('bin/orbit-codex-pre-tool-use-hook'), $command],
         $repo,
-        land_test_environment(['ORBIT_FINALIZATION_EXPLICIT' => '1', ...$environment]),
+        $env,
     );
     $process->run();
 

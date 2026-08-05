@@ -1650,10 +1650,7 @@ function agent_session_manifest_paths(string $agentSessionsDir): array
 
 function archive_slug(string $value): string
 {
-    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
-    $slug = trim($slug, '-');
-
-    return $slug === '' ? 'session' : $slug;
+    return orbit_land_archive_slug($value);
 }
 
 /**

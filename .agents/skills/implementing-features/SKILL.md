@@ -289,6 +289,11 @@ Manual equivalent:
    only for failure, escalation, security/release scope, or explicit request.
 6. Commit the archive/index (cleanup requires those bytes tracked/committed).
 7. After the archive/index commit:
+   - Cleanup in order: stop session-owned processes; delete the session-owned
+     Solo project (exact path == feature worktree); remove the exact clean
+     merged worktree; delete the exact merged feature branch. Solo project
+     deletion must complete before worktree removal so ownership checks remain
+     satisfiable.
    - Validate each cleanup mutation with
      `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.

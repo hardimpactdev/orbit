@@ -279,6 +279,9 @@ function solo_error_message(array $decoded): string
 }
 
 /**
+ * Classify Solo LAND boundary actions by command position in each chain segment.
+ * Quoted strings containing "solo" (e.g. rg 'solo') are not command positions.
+ *
  * @return list<array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}>
  */
 function solo_boundary_actions(string $command): array
@@ -289,30 +292,44 @@ function solo_boundary_actions(string $command): array
         return [];
     }
 
-    if (preg_match('/(?:&&|\|\||;|\n)/', $trimmed) === 1) {
-        return solo_command_mentions_cli($trimmed)
-            ? [[
-                'type' => 'invalid',
-                'subject' => 'solo LAND command',
-                'reason' => 'solo process-stop and project-delete boundaries must be a single unchained command',
-            ]]
-            : [];
-    }
+    $segments = preg_split('/\s*(?:&&|\|\||;|\n)\s*/', $trimmed) ?: [];
+    $segments = array_values(array_filter($segments, static fn (string $segment): bool => trim($segment) !== ''));
+    $actions = [];
 
-    $action = classify_solo_land_command($trimmed);
+    foreach ($segments as $segment) {
+        $action = classify_solo_land_command(trim($segment));
 
-    return $action === null ? [] : [$action];
-}
-
-function solo_command_mentions_cli(string $command): bool
-{
-    foreach (shell_words($command) as $word) {
-        if (is_solo_cli_binary($word)) {
-            return true;
+        if ($action !== null) {
+            $actions[] = $action;
         }
     }
 
-    return false;
+    if ($actions === []) {
+        return [];
+    }
+
+    // LAND Solo stop/delete must stand alone; chaining with any other segment is invalid.
+    if (count($segments) > 1 || count($actions) > 1) {
+        return [[
+            'type' => 'invalid',
+            'subject' => 'solo LAND command',
+            'reason' => 'solo process-stop and project-delete boundaries must be a single unchained command',
+        ]];
+    }
+
+    return $actions;
+}
+
+/**
+ * Shared archive slug primitive used by finalization cleanup discovery and LAND.
+ * Empty/punctuation-only values fall back to `session` (not `feature`).
+ */
+function orbit_land_archive_slug(string $value): string
+{
+    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
+    $slug = trim($slug, '-');
+
+    return $slug === '' ? 'session' : $slug;
 }
 
 /**
@@ -439,14 +456,32 @@ function classify_solo_land_command(string $command): ?array
         ];
     }
 
-    if ($positional !== [] && in_array($positional[0], ['processes', 'projects'], true)) {
+    // Malformed LAND shapes only: stop/delete present but not the exact form.
+    if (
+        count($positional) >= 2
+        && $positional[0] === 'processes'
+        && $positional[1] === 'stop'
+    ) {
         return [
             'type' => 'invalid',
-            'subject' => 'solo LAND command',
-            'reason' => 'solo LAND supports only `processes stop <id>` and `projects delete <id>` with one numeric target',
+            'subject' => 'solo processes stop',
+            'reason' => 'solo processes stop requires exactly one numeric process id and no extra operands',
         ];
     }
 
+    if (
+        count($positional) >= 2
+        && $positional[0] === 'projects'
+        && $positional[1] === 'delete'
+    ) {
+        return [
+            'type' => 'invalid',
+            'subject' => 'solo projects delete',
+            'reason' => 'solo projects delete requires exactly one numeric project id and no extra operands',
+        ];
+    }
+
+    // Read-only / non-LAND Solo subcommands (list, get, restart, ...) silent-pass.
     return null;
 }
 
