@@ -65,6 +65,13 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
+    public function ensureShellIntegrations(): array
+    {
+        $this->calls[] = 'ensure_shell_integrations';
+
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
     public function runMigrations(): array
     {
         $this->calls[] = 'run_migrations';

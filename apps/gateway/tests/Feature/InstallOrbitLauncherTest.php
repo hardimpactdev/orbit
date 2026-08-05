@@ -55,6 +55,117 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->not->toContain('cat > "$config_file"');
     });
 
+    it('declares zsh shell integration with same-directory mv snippet replace and append-only zshrc updates', function (): void {
+        $installer = File::get(repo_path('bin/install-orbit'));
+
+        expect($installer)
+            ->toContain('ensure_zsh_shell_integration')
+            ->toContain("alias orbit='noglob orbit'")
+            ->toContain('# >>> orbit zsh integration >>>')
+            ->toContain('mktemp "${snippet_dir}/.zsh-noglob.XXXXXX"')
+            ->toContain('mv -f "$tmp_file" "$snippet_path"')
+            ->toContain('tail -c 1 "$zshrc_path"')
+            ->toContain('grep -Fq "$begin_marker" "$zshrc_path"')
+            ->not->toContain('existing="$(cat "$zshrc_path"')
+            ->not->toContain('install -m 0600 "$tmp_file" "$snippet_path"')
+            ->not->toMatch('/^\s*cat\s+>\s*"\$snippet_path"/m')
+            ->not->toContain('setopt nonomatch')
+            ->not->toContain('unsetopt nomatch');
+
+        expect(strrpos($installer, 'write_cli_config_skeleton'))
+            ->toBeLessThan(strrpos($installer, 'ensure_zsh_shell_integration'));
+        expect(strrpos($installer, 'Ensure zsh shell integration'))
+            ->toBeLessThan(strrpos($installer, 'Verify Orbit'));
+    });
+
+    it('executes ensure_zsh_shell_integration for zsh with symlink-safe snippet and zshrc append', function (): void {
+        $root = sys_get_temp_dir().'/orbit-install-zsh-'.bin2hex(random_bytes(4));
+        $home = $root.'/home';
+        $dotfiles = $home.'/dotfiles';
+        $hostileTarget = $root.'/hostile-target';
+        $zshrcTarget = $dotfiles.'/zshrc';
+        $snippetPath = $home.'/.config/orbit/shell/zsh-noglob.zsh';
+
+        try {
+            File::ensureDirectoryExists($dotfiles);
+            File::ensureDirectoryExists($home.'/.config/orbit/shell');
+            File::put($hostileTarget, "do-not-truncate\n");
+            File::put($zshrcTarget, "export CUSTOM=1"); // no trailing newline
+            symlink($hostileTarget, $snippetPath);
+            symlink($zshrcTarget, $home.'/.zshrc');
+            chmod($zshrcTarget, 0640);
+
+            expect(is_link($snippetPath))->toBeTrue()
+                ->and(readlink($snippetPath))->toBe($hostileTarget);
+
+            $process = installOrbitEnsureZshIntegrationProcess(
+                home: $home,
+                shell: '/bin/zsh',
+            );
+            $process->run();
+
+            expect($process->isSuccessful())
+                ->toBeTrue($process->getErrorOutput().$process->getOutput())
+                // Replaced the snippet path itself; did not write through the symlink.
+                ->and(is_link($snippetPath))->toBeFalse()
+                ->and(is_file($snippetPath))->toBeTrue()
+                ->and(file_get_contents($snippetPath))
+                ->toContain("alias orbit='noglob orbit'")
+                ->and(file_get_contents($hostileTarget))->toBe("do-not-truncate\n")
+                ->and(is_link($home.'/.zshrc'))->toBeTrue()
+                ->and(readlink($home.'/.zshrc'))->toBe($zshrcTarget)
+                ->and(substr(sprintf('%o', fileperms($zshrcTarget)), -4))->toBe('0640')
+                ->and(file_get_contents($zshrcTarget))
+                ->toStartWith("export CUSTOM=1\n")
+                ->and(file_get_contents($zshrcTarget))
+                ->toContain('# >>> orbit zsh integration >>>')
+                ->and(file_get_contents($zshrcTarget))
+                ->toContain('zsh-noglob.zsh');
+
+            // Idempotent second run leaves a single managed block and still leaves
+            // the former hostile symlink target untouched.
+            $second = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $second->run();
+
+            expect($second->isSuccessful())
+                ->toBeTrue($second->getErrorOutput().$second->getOutput())
+                ->and(substr_count(file_get_contents($zshrcTarget), '# >>> orbit zsh integration >>>'))
+                ->toBe(1)
+                ->and(file_get_contents($hostileTarget))->toBe("do-not-truncate\n")
+                ->and(is_link($snippetPath))->toBeFalse();
+        } finally {
+            if (is_dir($root)) {
+                File::deleteDirectory($root);
+            }
+        }
+    });
+
+    it('skips ensure_zsh_shell_integration when the active shell is not zsh', function (): void {
+        $root = sys_get_temp_dir().'/orbit-install-zsh-bash-'.bin2hex(random_bytes(4));
+        $home = $root.'/home';
+
+        try {
+            File::ensureDirectoryExists($home);
+
+            $process = installOrbitEnsureZshIntegrationProcess(
+                home: $home,
+                shell: '/bin/bash',
+            );
+            $process->run();
+
+            expect($process->isSuccessful())
+                ->toBeTrue($process->getErrorOutput().$process->getOutput())
+                ->and(File::exists($home.'/.zshrc'))->toBeFalse()
+                ->and(File::exists($home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse()
+                ->and($process->getOutput().$process->getErrorOutput())
+                ->toContain('skipping zsh shell integration');
+        } finally {
+            if (is_dir($root)) {
+                File::deleteDirectory($root);
+            }
+        }
+    });
+
     it('dispatches public commands through the source CLI entrypoint', function (): void {
         $capture = orbitLauncherProbe(arguments: ['node:list', '--json']);
 
@@ -153,6 +264,46 @@ describe('install-orbit always-cli launcher contract', function (): void {
         expect(array_keys($config))->toBe(['gateway', 'local_executor_binary']);
     });
 });
+
+/**
+ * Source and run ensure_zsh_shell_integration from bin/install-orbit with local
+ * fail/run stubs so the installer path is exercised without a full install.
+ */
+function installOrbitEnsureZshIntegrationProcess(string $home, string $shell): Process
+{
+    $installer = repo_path('bin/install-orbit');
+    $script = <<<'BASH'
+set -euo pipefail
+
+fail() {
+    local code="$1"
+    shift
+    printf 'orbit-install: error [%s] %s\n' "$code" "$*" >&2
+    exit 1
+}
+
+run() {
+    "$@"
+}
+
+# shellcheck disable=SC1090
+source /dev/stdin <<<"$(sed -n '/^ensure_zsh_shell_integration()/,/^}$/p' "$ORBIT_INSTALLER_PATH")"
+ensure_zsh_shell_integration
+BASH;
+
+    return new Process(
+        ['bash', '-c', $script],
+        null,
+        [
+            'HOME' => $home,
+            'ORBIT_CONFIG_HOME' => $home,
+            'SHELL' => $shell,
+            'ORBIT_INSTALLER_PATH' => $installer,
+            'PATH' => getenv('PATH') ?: '/usr/bin:/bin:/usr/sbin:/sbin',
+            'TMPDIR' => sys_get_temp_dir(),
+        ],
+    );
+}
 
 /**
  * @param  list<string>  $arguments

@@ -41,6 +41,13 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
     /** @var array{issues: int|null} */
     public array $doctorResult = ['issues' => 0];
 
+    /** @var array{successful: bool, exit_code: int, output: string} */
+    public array $shellIntegrationResult = [
+        'successful' => true,
+        'exit_code' => 0,
+        'output' => '',
+    ];
+
     public function pullSource(): array
     {
         $this->calls[] = 'pull_source';
@@ -75,6 +82,13 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         $this->calls[] = 'install_dependencies';
 
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function ensureShellIntegrations(): array
+    {
+        $this->calls[] = 'ensure_shell_integrations';
+
+        return $this->shellIntegrationResult;
     }
 
     public function runMigrations(): array
@@ -194,7 +208,7 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->fromVersion)
             ->toBe('0.1.131')
             ->and($updater->calls)
-            ->toBe([])
+            ->toBe(['ensure_shell_integrations'])
             ->and($result->stepResults)
             ->toBe(['check' => 'skipped']);
     });
@@ -214,9 +228,34 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->fromVersion)
             ->toBe('0.1.174')
             ->and($updater->calls)
-            ->toBe([])
+            ->toBe(['ensure_shell_integrations'])
             ->and($result->stepResults)
             ->toBe(['check' => 'skipped']);
+    });
+
+    it('fails when shell integration ensure fails on an already-current install', function (): void {
+        config()->set('app.version', '0.1.131');
+        fakeRunnerLatest('0.1.131');
+
+        $updater = new RunnerFakeUpdater;
+        $updater->shellIntegrationResult = [
+            'successful' => false,
+            'exit_code' => 1,
+            'output' => 'Failed to ensure zsh shell integration: HOME is not set.',
+        ];
+
+        $result = makeRunner($updater)->run();
+
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_FAILED)
+            ->and($result->failedStep)
+            ->toBe('check')
+            ->and($result->output)
+            ->toContain('zsh shell integration')
+            ->and($updater->calls)
+            ->toBe(['ensure_shell_integrations'])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'failed']);
     });
 
     it('skips with gateway-behind when the gateway is older than the latest release', function (): void {
@@ -406,7 +445,7 @@ describe('LocalUpdateRunner', function (): void {
         expect($second->status)
             ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
             ->and($updaterForSecondRun->calls)
-            ->toBeEmpty()
+            ->toBe(['ensure_shell_integrations'])
             ->and($second->stepResults)
             ->toBe(['check' => 'skipped']);
     });

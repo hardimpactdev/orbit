@@ -205,6 +205,10 @@ render_plan() {
     printf '  │\n'
     printf '  ○  Download and link Orbit CLI binary\n'
     printf '  │\n'
+    printf '  ○  Write CLI config skeleton\n'
+    printf '  │\n'
+    printf '  ○  Ensure zsh shell integration\n'
+    printf '  │\n'
     printf '  ○  Verify Orbit\n'
     printf '  │\n'
     printf '  └  Log: %s\n\n' "$LOG_FILE"
@@ -969,6 +973,103 @@ verify_install() {
     fi
 }
 
+# Ensure the supported zsh integration for unquoted Orbit namespace wildcards
+# such as process:*. Only runs when the active login shell is zsh so bash-only
+# hosts do not receive a new ~/.zshrc. The Orbit-owned snippet may be rewritten
+# on upgrade; ~/.zshrc is append-only for the managed source block so symlink
+# targets and existing modes stay intact. Failure is not silent.
+ensure_zsh_shell_integration() {
+    local target_home
+    local shell_name
+    local snippet_dir
+    local snippet_path
+    local zshrc_path
+    local begin_marker
+    local end_marker
+    local block
+    local tmp_file
+
+    shell_name="$(basename "${SHELL:-}")"
+    case "$shell_name" in
+        zsh) ;;
+        *)
+            printf 'orbit-install: skipping zsh shell integration (SHELL=%s)\n' "${SHELL:-unset}"
+            return 0
+            ;;
+    esac
+
+    target_home="${ORBIT_CONFIG_HOME:-$HOME}"
+
+    if [ -z "$target_home" ]; then
+        fail validation_failed "Failed to ensure zsh shell integration: HOME is not set."
+    fi
+
+    snippet_dir="${target_home}/.config/orbit/shell"
+    snippet_path="${snippet_dir}/zsh-noglob.zsh"
+    zshrc_path="${target_home}/.zshrc"
+    begin_marker='# >>> orbit zsh integration >>>'
+    end_marker='# <<< orbit zsh integration <<<'
+
+    run mkdir -p "$snippet_dir"
+    run chmod 0700 "$snippet_dir"
+
+    # Atomic same-directory replacement: never redirect writes onto the final
+    # snippet path (that follows a hostile or stale symlink and can truncate its
+    # target) and never treat install-as-copy as atomic. Stage beside the final
+    # path so `mv -f` replaces the destination path itself on the same filesystem.
+    tmp_file="$(mktemp "${snippet_dir}/.zsh-noglob.XXXXXX")"
+    cat > "$tmp_file" <<'ZSH'
+# Orbit-managed zsh integration.
+# Preserve literal argv for Orbit namespace wildcards such as process:* and
+# node:* when operators type unquoted flags. Applies only to the orbit command
+# via noglob; does not set NONOMATCH or change globbing for other commands.
+alias orbit='noglob orbit'
+ZSH
+
+    if [ ! -s "$tmp_file" ]; then
+        run rm -f "$tmp_file"
+        fail validation_failed "Failed to ensure zsh shell integration: could not stage ${snippet_path}."
+    fi
+
+    if ! run chmod 0600 "$tmp_file"; then
+        run rm -f "$tmp_file"
+        fail validation_failed "Failed to ensure zsh shell integration: could not chmod staged ${snippet_path}."
+    fi
+
+    if ! run mv -f "$tmp_file" "$snippet_path"; then
+        run rm -f "$tmp_file"
+        fail validation_failed "Failed to ensure zsh shell integration: could not replace ${snippet_path}."
+    fi
+
+    if [ ! -s "$snippet_path" ] || [ -L "$snippet_path" ]; then
+        fail validation_failed "Failed to ensure zsh shell integration: snippet is missing or still a symlink: ${snippet_path}."
+    fi
+
+    block="${begin_marker}
+[ -f $(printf '%q' "$snippet_path") ] && . $(printf '%q' "$snippet_path")
+${end_marker}
+"
+
+    if [ -e "$zshrc_path" ] || [ -L "$zshrc_path" ]; then
+        # Inspect the file itself — never `existing="$(cat ...)"`, which strips
+        # trailing newlines and mis-detects whether a separator newline is needed.
+        if grep -Fq "$begin_marker" "$zshrc_path" 2>/dev/null; then
+            printf 'orbit-install: zsh shell integration already present in %s\n' "$zshrc_path"
+            return 0
+        fi
+
+        # Append only — never rewrite the whole file (preserves symlinks/modes).
+        if [ -s "$zshrc_path" ] && [ "$(tail -c 1 "$zshrc_path" | wc -l | tr -d ' ')" = "0" ]; then
+            printf '\n' >>"$zshrc_path" || fail validation_failed "Failed to ensure zsh shell integration: could not append to ${zshrc_path}."
+        fi
+
+        printf '%s' "$block" >>"$zshrc_path" || fail validation_failed "Failed to ensure zsh shell integration: could not append to ${zshrc_path}."
+        return 0
+    fi
+
+    printf '%s' "$block" >"$zshrc_path" || fail validation_failed "Failed to ensure zsh shell integration: could not write ${zshrc_path}."
+}
+
 finalize_target_ownership() {
     local parent
     local parent_owner
@@ -1053,6 +1154,10 @@ main() {
 
     start_step "Write CLI config skeleton"
     write_cli_config_skeleton
+    complete_step
+
+    start_step "Ensure zsh shell integration"
+    ensure_zsh_shell_integration
     complete_step
 
     start_step "Verify Orbit"

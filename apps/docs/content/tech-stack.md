@@ -1001,18 +1001,24 @@ Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
 `ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install
 or adoption. Normal `update` and `update:all` flows refresh the owner-user
-local launcher and do not mutate protected system launchers implicitly. In
-source-dev Docker and Incus topologies, `/usr/local/bin/orbit` points directly
-at `<source>/apps/cli/orbit`, the current checkout is mounted or copied into
-the topology, and mutable node-local Orbit state lives under `~/.config/orbit`.
-Internal executor commands verify operation tokens through the gateway API, and
-nodes do not store executor token signing material. The
-installer creates the local SQLite database where appropriate, enables SQLite
-WAL/busy-timeout settings for the gateway database, runs migrations through the
-gateway image before starting Swarm services, and links `orbit` into the local
-executable path. Human output is a quiet step tree by default; pass `--verbose`
-only when the underlying package or shell command output is needed for
-debugging.
+local launcher and do not mutate protected system launchers implicitly. When
+the active login shell is zsh, install and update also ensure a supported zsh
+integration: an Orbit-owned snippet at
+`~/.config/orbit/shell/zsh-noglob.zsh` with `alias orbit='noglob orbit'`,
+sourced from an append-only managed block in `~/.zshrc`. That integration is
+command-scoped only (no global `NONOMATCH` / `nonomatch`) so unquoted namespace
+wildcards such as `process:*` reach Orbit literally; bash-only hosts skip it
+and do not receive a new `~/.zshrc`. In source-dev Docker and Incus topologies,
+`/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`, the
+current checkout is mounted or copied into the topology, and mutable node-local
+Orbit state lives under `~/.config/orbit`. Internal executor commands verify
+operation tokens through the gateway API, and nodes do not store executor token
+signing material. The installer creates the local SQLite database where
+appropriate, enables SQLite WAL/busy-timeout settings for the gateway database,
+runs migrations through the gateway image before starting Swarm services, and
+links `orbit` into the local executable path. Human output is a quiet step tree
+by default; pass `--verbose` only when the underlying package or shell command
+output is needed for debugging.
 
 The installer does not create a client identity for the gateway to trust. That identity is minted later — by `node:new --template=gateway` when bootstrapping the first gateway, or by a later node enrollment flow before the client machine runs `gateway:add`.
 

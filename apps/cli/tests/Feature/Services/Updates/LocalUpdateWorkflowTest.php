@@ -75,6 +75,13 @@ final class LocalUpdateWorkflowFakeUpdater implements RunsLocalUpdate
         return $this->results['install_dependencies'];
     }
 
+    public function ensureShellIntegrations(): array
+    {
+        $this->calls[] = 'ensure_shell_integrations';
+
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
     /**
      * @return array{successful: bool, exit_code: int, output: string}
      */

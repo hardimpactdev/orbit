@@ -2292,6 +2292,11 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
 
+            public function ensureShellIntegrations(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
             public function runMigrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
@@ -2384,6 +2389,11 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
             }
 
             public function installDependencies(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
+            public function ensureShellIntegrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
@@ -2638,6 +2648,13 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
         $this->calls[] = 'install_dependencies';
 
         return $this->results['install_dependencies'];
+    }
+
+    public function ensureShellIntegrations(): array
+    {
+        $this->calls[] = 'ensure_shell_integrations';
+
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
     /**

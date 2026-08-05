@@ -67,6 +67,18 @@ interface RunsLocalUpdate
     public function installDependencies(): array;
 
     /**
+     * Ensure supported shell integrations (for example zsh noglob for namespace
+     * wildcards) without downloading or replacing the CLI binary.
+     *
+     * Returns a step-shaped result so callers can surface failure instead of
+     * treating a broken shell integration as success. Non-zsh shells succeed as
+     * a no-op skip.
+     *
+     * @return array{successful: bool, exit_code: int, output: string}
+     */
+    public function ensureShellIntegrations(): array;
+
+    /**
      * Run Orbit database migrations inside orbit-gateway.
      *
      * Vestigial: `orbit update` no longer runs gateway migrations. Retained for

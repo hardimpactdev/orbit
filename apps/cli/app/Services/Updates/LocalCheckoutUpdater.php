@@ -45,13 +45,17 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     private readonly VersionOutputParser $versionOutputParser;
 
+    private readonly ZshShellIntegration $zshShellIntegration;
+
     public function __construct(
         private readonly CheckoutPathResolver $checkoutPathResolver,
         ?InstallMetadataStore $installMetadata = null,
         ?VersionOutputParser $versionOutputParser = null,
+        ?ZshShellIntegration $zshShellIntegration = null,
     ) {
         $this->installMetadata = $installMetadata ?? new InstallMetadataStore;
         $this->versionOutputParser = $versionOutputParser ?? new VersionOutputParser;
+        $this->zshShellIntegration = $zshShellIntegration ?? new ZshShellIntegration;
     }
 
     /**
@@ -233,6 +237,21 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 releasedAt: $releasedAt,
             );
 
+            // Existing installs upgraded by `orbit update` must receive the same
+            // zsh noglob integration that `bin/install-orbit` writes on first install.
+            // Failure is not silent: the binary may already be replaced, but the
+            // public step must not report success when shell integration failed.
+            $shell = $this->ensureShellIntegrations();
+
+            if (! $shell['successful']) {
+                return [
+                    'successful' => false,
+                    'exit_code' => $shell['exit_code'],
+                    'output' => $shell['output'],
+                    'skipped' => false,
+                ];
+            }
+
             return [
                 'successful' => true,
                 'exit_code' => 0,
@@ -242,6 +261,33 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         } finally {
             $this->discard($stagedPath);
         }
+    }
+
+    /**
+     * Ensure supported shell integrations for existing installs that skip a binary
+     * download because the CLI is already current.
+     *
+     * @return array{successful: bool, exit_code: int, output: string}
+     */
+    public function ensureShellIntegrations(): array
+    {
+        $result = $this->zshShellIntegration->ensure();
+
+        if (! $this->zshShellIntegration->succeeded($result)) {
+            return [
+                'successful' => false,
+                'exit_code' => 1,
+                'output' => $result['message'] !== ''
+                    ? $result['message']
+                    : 'Failed to ensure zsh shell integration.',
+            ];
+        }
+
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+        ];
     }
 
     /**

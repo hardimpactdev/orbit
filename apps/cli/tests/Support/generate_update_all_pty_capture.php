@@ -122,6 +122,11 @@ $source = <<<PHP
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];
         }
 
+        public function ensureShellIntegrations(): array
+        {
+            return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+        }
+
         public function runMigrations(): array
         {
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];

@@ -77,6 +77,28 @@ final readonly class LocalUpdateRunner
         }
 
         if (! version_compare($latest, $local, '>')) {
+            // Still refresh shell integrations so existing installs receive the
+            // zsh noglob alias without waiting for a newer binary release.
+            $shell = $this->updater->ensureShellIntegrations();
+
+            if (! $shell['successful']) {
+                $this->emit(
+                    $onStep,
+                    self::STEP_CHECK,
+                    'fail',
+                    $shell['output'] !== '' ? $shell['output'] : 'Failed to ensure shell integration',
+                );
+
+                return new LocalUpdateResult(
+                    status: LocalUpdateResult::STATUS_FAILED,
+                    stepResults: [self::STEP_CHECK => 'failed'],
+                    failedStep: self::STEP_CHECK,
+                    output: $shell['output'],
+                    fromVersion: $local,
+                    latestVersion: $local,
+                );
+            }
+
             $this->emit($onStep, self::STEP_CHECK, 'skip', "Skipped: {$local} is already installed");
 
             return new LocalUpdateResult(

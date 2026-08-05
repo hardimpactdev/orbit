@@ -85,6 +85,15 @@ fields and does not prompt.
   Orbit does not fall back to `config('app.version')`, `0.0.0`, or any other
   guessed version, and does not write install metadata under a version inferred
   from human table text or the first dotted triple in mixed progress output.
+- After a successful binary replace, and also when the installed CLI is already
+  current, ensure the supported zsh shell integration when the active login
+  shell is zsh: rewrite the Orbit-owned snippet at
+  `~/.config/orbit/shell/zsh-noglob.zsh` (`alias orbit='noglob orbit'`) and
+  append a managed source block to `~/.zshrc` only when the begin marker is
+  absent. The integration is command-scoped only; it must not set global
+  `NONOMATCH` / `nonomatch`. Bash-only hosts skip without creating `~/.zshrc`.
+  A failed ensure is a failed update step (not silent success), even when the
+  binary swap already completed.
 
 ### Version check and the gateway-first gate
 
@@ -207,7 +216,9 @@ Primary CLI test owners:
 | `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: gate outcomes, JSON success/skip and error envelopes, human progress tree, failure prose, and local-installation-unavailable handling. |
 | `apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php` | Gate decisions (check-failed, already-installed, gateway-behind, proceed), step ordering (check→download→replace→doctor), and result fields (`fromVersion`/`toVersion`/`latestVersion`/`doctorIssues`). |
 | `apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php` | Gateway version read from `/api/status` and unknown-version handling (no gateway, unreachable, unparseable, `0.0.0`). |
-| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local-installation binary download/replace split (`downloadBinary`/`replaceBinary`), source-checkout branch handling, structured `--version --local --json` entry-point verification (including fail-closed malformed output), post-update doctor parsing, and offline proof via `ORBIT_BINARY_URL=file://`. |
+| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local-installation binary download/replace split (`downloadBinary`/`replaceBinary`), source-checkout branch handling, structured `--version --local --json` entry-point verification (including fail-closed malformed output), post-update doctor parsing, offline proof via `ORBIT_BINARY_URL=file://`, and zsh shell integration ensure after successful replace. |
+| `apps/cli/tests/Feature/Services/Updates/ZshShellIntegrationTest.php` | zsh NOMATCH shell-boundary regression for unquoted `process:*`, command-scoped `noglob` alias, append-only/symlink-safe `~/.zshrc` updates, zsh-only install skip for bash, and coherent ensure failure when HOME is missing. |
+| `apps/gateway/tests/Feature/InstallOrbitLauncherTest.php` | `bin/install-orbit` zsh integration shape plus executable ensure path (atomic same-dir snippet replace that leaves a hostile symlink target untouched; append-only `~/.zshrc`; bash skip). |
 | `apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php` | Shared structured version JSON parsing used by local checkout and fleet install metadata. |
 | `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Local install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths; the historical class name does not narrow the public contract to checkouts. |
 

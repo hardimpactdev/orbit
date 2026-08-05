@@ -63,11 +63,19 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousBinPath = getenv('ORBIT_BIN_PATH');
         $this->previousMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
         $this->previousHome = getenv('HOME');
+        $this->previousShell = getenv('SHELL');
+
+        // Keep shell integration writes inside the sandbox and default to bash so
+        // ordinary updater tests do not create a real operator ~/.zshrc.
+        $this->sandboxHome = $this->installRoot.'/home';
+        @mkdir($this->sandboxHome, recursive: true);
 
         putenv("ORBIT_INSTALL_PATH={$this->installRoot}");
         putenv("ORBIT_BINARY_URL={$this->binaryUrl}");
         putenv("ORBIT_BIN_PATH={$this->linkPath}");
         putenv("ORBIT_INSTALL_METADATA_PATH={$this->installRoot}/install.json");
+        putenv("HOME={$this->sandboxHome}");
+        putenv('SHELL=/bin/bash');
     });
 
     afterEach(function (): void {
@@ -82,6 +90,7 @@ describe('LocalCheckoutUpdater', function (): void {
             ? putenv('ORBIT_INSTALL_METADATA_PATH')
             : putenv("ORBIT_INSTALL_METADATA_PATH={$this->previousMetadataPath}");
         $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
+        $this->previousShell === false ? putenv('SHELL') : putenv("SHELL={$this->previousShell}");
 
         foreach (glob($this->binaryDest.'.download.*') ?: [] as $path) {
             @unlink($path);
@@ -265,6 +274,25 @@ describe('LocalCheckoutUpdater', function (): void {
                 && in_array('--version', $process->command, strict: true)
             ),
         );
+    });
+
+    it('ensures zsh shell integration after a successful binary replace', function (): void {
+        putenv('SHELL=/bin/zsh');
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $download = $updater->downloadBinary();
+        $replace = $updater->replaceBinary($download['staged_path'], $download['version']);
+
+        $snippet = $this->sandboxHome.'/.config/orbit/shell/zsh-noglob.zsh';
+        $zshrc = $this->sandboxHome.'/.zshrc';
+
+        expect($replace['successful'])->toBeTrue()
+            ->and(is_file($snippet))->toBeTrue()
+            ->and(file_get_contents($snippet))->toContain("alias orbit='noglob orbit'")
+            ->and(is_file($zshrc))->toBeTrue()
+            ->and(file_get_contents($zshrc))->toContain('# >>> orbit zsh integration >>>');
     });
 
     it('does not relink a shadowing launcher resolved through PATH', function (): void {

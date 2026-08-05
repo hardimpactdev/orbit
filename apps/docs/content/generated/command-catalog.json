@@ -12842,7 +12842,9 @@
                 "apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php",
                 "apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php",
                 "apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php",
-                "apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php"
+                "apps/cli/tests/Feature/Services/Updates/ZshShellIntegrationTest.php",
+                "apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php",
+                "apps/gateway/tests/Feature/InstallOrbitLauncherTest.php"
             ],
             "verification_hints": [
                 {
@@ -12881,11 +12883,25 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Updates/LocalUpdateRunnerTest.php"
                 },
                 {
+                    "repo_test_path": "apps/cli/tests/Feature/Services/Updates/ZshShellIntegrationTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Services/Updates/ZshShellIntegrationTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Updates/ZshShellIntegrationTest.php"
+                },
+                {
                     "repo_test_path": "apps/cli/tests/Unit/Services/Version/VersionOutputParserTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Unit/Services/Version/VersionOutputParserTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Unit/Services/Version/VersionOutputParserTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/InstallOrbitLauncherTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/InstallOrbitLauncherTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstallOrbitLauncherTest.php"
                 }
             ],
             "p4_mapping": {

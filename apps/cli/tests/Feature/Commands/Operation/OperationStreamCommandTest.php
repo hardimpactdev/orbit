@@ -198,6 +198,11 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
+    public function ensureShellIntegrations(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
     /**
      * @return array{successful: bool, exit_code: int, output: string}
      */

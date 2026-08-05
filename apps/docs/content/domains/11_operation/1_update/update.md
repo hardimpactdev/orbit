@@ -53,9 +53,15 @@ orbit update --json
    entry point (updated binary artifact in production, mounted source entry
    point in source-mounted lanes). Production self-update does not discover or
    rewrite protected unmanaged launchers such as `/usr/local/bin/orbit`.
-5. Run `orbit doctor` in verify mode for the local node and report the issue
+5. Ensure the supported zsh shell integration when the active login shell is
+   zsh (including already-current installs that skip a binary download) so
+   unquoted namespace wildcards such as `process:*` reach Orbit literally.
+   Failure to ensure that integration is reported as an update failure rather
+   than silent success. Bash-only hosts skip this step without creating
+   `~/.zshrc`.
+6. Run `orbit doctor` in verify mode for the local node and report the issue
    count without failing an otherwise completed binary update.
-6. Report the local update result.
+7. Report the local update result.
 
 The command affects only the current Orbit CLI installation. On a gateway host,
 it updates the host CLI binary or source-dev CLI entrypoint; it does not replace
