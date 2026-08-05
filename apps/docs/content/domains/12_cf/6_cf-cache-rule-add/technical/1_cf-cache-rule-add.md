@@ -39,8 +39,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   zone. Projects store no server, path, URL, or domain.
 - Fails before provider mutation when the resolved instance has no Cloudflare-
   backed domain.
-- Code follow-up: the gateway zone resolver may still read a legacy
-  project-level domain field; product contract is instance-owned domain only.
+- Product contract resolves zones from instance-owned domains only. Projects
+  store no domain.
 
 ### Cache Rule Rules
 

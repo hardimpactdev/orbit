@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `--version` | Always. | Never. | None. | Plausible CE semantic version string such as `3.2.2`. Public CLI surface is `--version`; the local Symfony option is rewritten to an internal name because Symfony reserves `--version` globally. Gateway request body and process labels use the generic `version` field. |
+| `version` | `--version` | Always. | Never. | None. | Plausible CE version such as `3.2.2`. Public flag is `--version`. |
 | `node` | `--node` | Optional. | Never. | The fleet's singleton visible active analytics node. | Must match the active node with the `analytics` role. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 

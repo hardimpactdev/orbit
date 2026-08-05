@@ -39,7 +39,7 @@ These rules define the analytics command domain and its role boundary.
   well as the backing node identities and does not install or own either
   database. Runtime resolution requires that stored process identity; there is
   no ongoing single-candidate fallback. A one-time migration may backfill an
-  unambiguous historical assignment, and multiple candidates without a stored
+  unambiguous stored assignment, and multiple candidates without a stored
   identity fail clearly instead of choosing one. Both services use generated
   credentials encrypted in gateway storage and publish only on WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:

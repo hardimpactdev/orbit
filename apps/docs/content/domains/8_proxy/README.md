@@ -229,7 +229,16 @@ The remaining fields describe placement, backend target, TLS, and status.
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
-| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, `converged`, or `removed` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`. Healthy custom `proxy:add` completes as `pending` then `converged`; apply failure leaves `failed` or `partial` for doctor repair. `intent_only` remains only for older custom rows without one-step enactment evidence. `removed` is the removal-terminal value returned by successful `proxy:remove` payloads. Orbit never upgrades registry intent to `converged` (or any enacted status) merely because the database row exists. |
+| `status` | string | Persisted enactment status, not a live probe. |
+
+`status` values are `unknown`, `intent_only`, `pending`, `partial`, `failed`,
+`converged`, and `removed`. Rows without enactment evidence are `unknown`.
+Healthy custom `proxy:add` completes as `pending` then `converged`. Apply
+failure leaves `failed` or `partial` for doctor repair. `intent_only` remains
+only for custom rows that lack one-step enactment evidence. `removed` is the
+removal-terminal value returned by successful `proxy:remove` payloads. Orbit
+never upgrades registry intent to `converged` (or any enacted status) merely
+because the database row exists.
 
 ## Commands
 

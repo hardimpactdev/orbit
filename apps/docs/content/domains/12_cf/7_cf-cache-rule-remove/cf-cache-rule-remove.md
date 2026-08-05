@@ -29,7 +29,7 @@ Run `orbit cf-cache-rule:remove <project>` to remove the Cloudflare cache rule
 that Orbit manages for the resolved instance's zone.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
-cache rule for the instance-owned domain's Cloudflare zone. It does not remove
+cache rule for the zone that owns the instance public domain. It does not remove
 instance domains, DNS records, proxy routes, or instance deployment policy.
 Projects store no domain; the public domain is instance placement state.
 

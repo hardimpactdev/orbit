@@ -5,6 +5,9 @@ before adding, changing, debugging, or running E2E tests.
 
 ## Related product docs
 
+Use these product docs when a verification lane depends on contracts outside
+this testing tree.
+
 - [Command contracts](../domains/README.md) — behavior contracts under test.
 - [Machine-readable command catalog](../command-catalog.md) — catalog drift
   guards and regeneration.

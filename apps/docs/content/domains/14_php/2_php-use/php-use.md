@@ -66,8 +66,8 @@ mutate Composer constraints.
 
 ## Output
 
-Your output shows the resolved target, selected version, and single-instance
-reconciliation result facts for a project-policy write.
+Output shows the resolved target, selected version, and the reconciliation
+result for that one instance after the project-policy write.
 
 Human output renders progress and a short result summary. Use `--json` for
 machine-readable output.

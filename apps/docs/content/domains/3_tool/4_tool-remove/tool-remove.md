@@ -25,7 +25,7 @@ orbit tool:remove composer --node=app-1 --json --force
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog, or a documented removal-only
-  legacy slug accepted by this command (`openclaw`, `opencode-cli`,
+  residual slug accepted by this command (`openclaw`, `opencode-cli`,
   `polyscope-server`).
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--instance`: Resolve the target node from a concrete instance. Bare logical
@@ -88,7 +88,7 @@ orbit tool:remove openclaw --node=<agent-node> --force --json
 
 That path runs even when no `NodeTool` row remains. It stops residual
 OpenClaw systemd/user units, uses privileged `sudo ss` to terminate
-listeners on historical port `18789` (including agent-owned PIDs), kills
+listeners on port `18789` (including agent-owned PIDs), kills
 leftover agent-owned OpenClaw processes, deletes `/home/agent/.openclaw`,
 clears matching process intent, and only then removes tool-owned proxy
 backend/TLS plus registry rows. Hermes is not affected.
@@ -97,7 +97,7 @@ Host cleanup success is **verified**: the script exits nonzero (and
 `tool:remove` fails with `tool.remote_action_failed`, without deleting
 proxy/tool rows after the script step) if port `18789` is still listening,
 an OpenClaw process remains, or `/home/agent/.openclaw` still exists.
-Successful historical process-unit removal alone is not sufficient proof
+Successful process-unit removal alone is not sufficient proof
 that the runtime is gone.
 
 ## Output

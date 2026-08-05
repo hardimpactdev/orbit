@@ -51,22 +51,24 @@ These terms describe the update workflow and its components.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such
   as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
-- **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, and doctor verify. Local `update` does not install dependencies or run gateway migrations.
+- **Update step:** One ordered local installation action. It updates the native
+  CLI artifact or refreshes a source-mounted checkout. It then verifies the
+  launcher and runs doctor verify. Local `update` does not install dependencies
+  or run gateway migrations.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
 Fleet update runs through gateway-owned authority. The CLI starts a gateway
-operation, replays its event journal by cursor, follows live frames through the
-private operations WebSocket/Reverb plane, and updates the caller-local CLI
-after the gateway phase succeeds. The gateway persists the immutable update
-plan, starts a one-shot runner from the target `orbit-gateway` image, and the
-runner owns the read-only fleet-version probe, finalized-release all-current
-short-circuit, topology-candidate artifact-identity compare (apply only when
-desired hash/digest differs or tracked state is missing), gateway replacement,
-scheduled service recovery, workload fan-out, and final verification. Clients
-are never remote
-update targets. A target succeeds only when all required update steps succeed;
-target results include both successful and failed targets when a fleet update
-partially fails.
+operation, replays its event journal by cursor, and follows live frames through
+the private operations WebSocket/Reverb plane. After the gateway phase succeeds,
+the CLI updates the caller-local binary.
+
+The gateway persists the immutable update plan and starts a one-shot runner from
+the target `orbit-gateway` image. The runner owns the fleet-version probe, the
+all-current short-circuit, candidate artifact-identity compare, gateway
+replacement, scheduled service recovery, workload fan-out, and final
+verification. Clients are never remote update targets. A target succeeds only
+when all required update steps succeed. Target results include both successful
+and failed targets when a fleet update partially fails.
 
 The update plan selects both the Orbit CLI artifact and the matching
 platform/architecture Orbit Agent artifact for supported Agent-eligible nodes.

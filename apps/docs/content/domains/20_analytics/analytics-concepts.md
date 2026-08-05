@@ -23,8 +23,8 @@ These terms describe the analytics role and the routes around it.
   only on the database node's WireGuard address.
 - **Analytics PostgreSQL selection:** Analytics role settings persist the
   selected PostgreSQL process ID. Runtime resolution requires that stored
-  process identity; there is no ongoing single-candidate compatibility tier.
-  A one-time fleet migration may backfill the stored identity from a previously
+  process identity. Runtime resolution does not fall back to an unstored single candidate.
+  A one-time fleet migration may backfill the stored identity from an
   unambiguous assignment. Multiple candidates without a stored process ID fail
   with a clear ambiguity error; candidate ordering never selects a database.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal

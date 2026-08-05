@@ -28,7 +28,7 @@ Run `orbit cf-cache-rule:add <project>` to create or converge the standard
 Cloudflare cache rule for the resolved instance's zone.
 
 `cf-cache-rule:add` asks the gateway to create or converge the standard
-Cloudflare cache rule for the instance-owned domain's Cloudflare zone. The rule
+Cloudflare cache rule for the zone that owns the instance public domain. The rule
 lets Cloudflare cache public responses while respecting origin `Cache-Control`
 headers.
 

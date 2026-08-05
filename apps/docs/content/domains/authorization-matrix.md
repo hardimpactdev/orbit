@@ -196,14 +196,22 @@ These paths exist before useful grants can exist:
 ### Local-Only
 
 These commands mutate or inspect only the caller's local machine and do not need
-a gateway permission check:
+a gateway permission check.
+
+Local node and DNS helpers:
 
 - `node:default`
 - `dns:resolve-tld`
 - `dns:list`
+
+Local gateway selection and trust:
+
 - `gateway:list`
 - `gateway:trust`
 - `gateway:use`
+
+Local maintenance surfaces:
+
 - `update`
 - `version`
 - `profile`

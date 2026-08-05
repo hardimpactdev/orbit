@@ -39,27 +39,37 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Restart Rules
 
-1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context. Reject combining `app` with `node`, `instance`, or `workspace`. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
-2. Resolve the selected process set:
+1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context.
+2. Reject combining `app` with `node`, `instance`, or `workspace`.
+3. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+4. Resolve the selected process set:
+
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
-3. Send the request to the gateway. The gateway authenticates the caller from the actual WireGuard peer source IP (same model as CLI/TypeScript SDK; no bearer and no client peer-IP identity header), then checks the grant, `process:restart`, and target-node authorization. Browser callers that send `Origin` also pass CORS Origin admission against the requested `app` hostname; CORS never establishes identity.
-4. Derive and validate every runtime-unit identity for the selected context
+5. Send the request to the gateway.
+6. The gateway authenticates the caller from the actual WireGuard peer source IP.
+   Authentication matches the CLI/TypeScript SDK model. There is no bearer and no
+   client peer-IP identity header.
+7. After authentication, the gateway checks the grant, `process:restart`, and target-node
+   authorization.
+8. Browser callers that send `Origin` also pass CORS Origin admission against the
+   requested `app` hostname. CORS never establishes identity.
+9. Derive and validate every runtime-unit identity for the selected context
    before runtime or hibernation side effects begin.
-5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
+10. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
    the scope's hibernation lock and mark the group asleep while it restarts.
-6. For each selected runtime unit, record and publish a durable transitional
+11. For each selected runtime unit, record and publish a durable transitional
    `restarting` process event before the runtime call.
-7. Restart each runtime unit through the gateway on the resolved node or instance
+12. Restart each runtime unit through the gateway on the resolved node or instance
    serving node. On success, record and publish a durable `started` event. On
    backend false or thrown driver error, record and publish a durable `failed`
    event (status becomes `unknown`) before rethrowing or reporting the failure
    so status is never stuck transitional.
-8. After a successful bulk development restart, mark the group awake before
+13. After a successful bulk development restart, mark the group awake before
    releasing the hibernation lock. A failed restart remains asleep so its next
    HTTP request reconciles uncertain backend state. Named, node-owned, and
    `app-prod` actions do not change a group-level hibernation marker.
-9. Render the selected output.
+14. Render the selected output.
 
 `process:restart` does not change process configuration and does not repair divergent runtime-unit files. In bulk mode, successful restarts are not rolled back when a later process fails; the failure renderer reports partial runtime results.
 
