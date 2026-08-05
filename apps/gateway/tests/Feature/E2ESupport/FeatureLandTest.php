@@ -317,7 +317,9 @@ it('fail-closes Solo lookup errors and only treats explicit not_found as idempot
         $cli = match ($mode) {
             'unavailable' => "{$repo}.solo-fake/missing-solo-cli",
             'malformed' => land_write_broken_solo_cli($repo, 'malformed'),
+            'malformed_stderr' => land_write_broken_solo_cli($repo, 'malformed_stderr'),
             'error' => land_write_broken_solo_cli($repo, 'error'),
+            'error_stderr' => land_write_broken_solo_cli($repo, 'error_stderr'),
             'not_found' => $solo['cli'],
             'not_found_stderr' => land_write_broken_solo_cli($repo, 'not_found_stderr'),
             default => throw new RuntimeException($mode),
@@ -340,11 +342,73 @@ it('fail-closes Solo lookup errors and only treats explicit not_found as idempot
 })->with([
     'binary unavailable' => ['unavailable', 2, '/unavailable|failed|blocked/'],
     'malformed json' => ['malformed', 2, '/malformed|failed|blocked/'],
+    'malformed stderr text' => ['malformed_stderr', 2, '/malformed|failed|blocked|not-json/'],
     'non-not-found error' => ['error', 2, '/failed|blocked|permission/'],
-    'explicit not_found' => ['not_found', 0, '/finalization: pass/'],
-    // Live Solo CLI emits not_found envelopes on stderr with empty stdout.
-    'explicit not_found on stderr' => ['not_found_stderr', 0, '/finalization: pass/'],
+    'non-not-found error on stderr' => ['error_stderr', 2, '/failed|blocked|permission/'],
+    // Stateful fake emits structured not_found on stderr (live Solo parity).
+    'explicit not_found via fake stderr' => ['not_found', 0, '/finalization: pass/'],
+    // Isolated shell stub: not_found JSON on stderr, empty stdout, exit 65.
+    'explicit not_found on stderr stub' => ['not_found_stderr', 0, '/finalization: pass/'],
 ]);
+
+it('resumes LAND after project delete when Solo not_found is structured stderr only', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(
+        accepted: true,
+        merged: false,
+        processes: [
+            501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+        ],
+    );
+
+    try {
+        // Interrupted after session-owned Solo project deletion: projects get must
+        // return structured not_found on stderr (empty stdout, exit 65) and LAND
+        // must resume remove-worktree → delete-branch → done without re-running
+        // completed mutations.
+        land_seed_boundary($repo, $worktree, $solo, 'after-project-deleted');
+
+        $probe = new Process(
+            [$solo['cli'], 'projects', 'get', '73', '--json'],
+            $repo,
+        );
+        $probe->run();
+        expect($probe->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(trim($probe->getOutput()))
+            ->toBe('')
+            ->and($probe->getErrorOutput())
+            ->toMatch('/"code"\s*:\s*"not_found"/');
+
+        $status = land_run_land($repo, land_args($worktree, $solo, ['--status']));
+        expect($status->getExitCode())
+            ->toBe(0, $status->getErrorOutput().$status->getOutput())
+            ->and($status->getOutput())
+            ->toContain('phase=remove-worktree');
+
+        $headBefore = trim(new Process(['git', 'rev-parse', 'HEAD'], $repo)->mustRun()->getOutput());
+        $resume = land_run_land($repo, land_args($worktree, $solo));
+        expect($resume->getExitCode())
+            ->toBe(0, $resume->getErrorOutput().$resume->getOutput())
+            ->and($resume->getOutput())
+            ->toContain('phase=done')
+            ->and(is_dir($worktree))
+            ->toBeFalse()
+            ->and(land_branch_exists($repo, 'feature'))
+            ->toBeFalse();
+
+        $again = land_run_land($repo, land_args($worktree, $solo));
+        $headAfter = trim(new Process(['git', 'rev-parse', 'HEAD'], $repo)->mustRun()->getOutput());
+        expect($again->getExitCode())
+            ->toBe(0, $again->getErrorOutput().$again->getOutput())
+            ->and($again->getOutput())
+            ->toContain('phase=done')
+            ->and($headAfter)
+            ->toBe($headBefore);
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
 
 it('strictly classifies Solo destructive commands', function (string $commandSuffix, string $needle): void {
     [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: true);
@@ -977,8 +1041,9 @@ function land_write_fake_solo_cli(string $repo): array
             \$statePath = rtrim(\$appDataDir, '/').'/state.json';
         }
         if (! is_file(\$statePath)) {
-            // Mirror live Solo CLI when the app/data dir is not available.
-            fwrite(STDOUT, json_encode(['ok' => false, 'error' => ['code' => 'app_not_running', 'message' => 'solo app data unavailable']], JSON_THROW_ON_ERROR).PHP_EOL);
+            // Mirror live Solo CLI when the app/data dir is not available:
+            // structured error envelope on stderr, empty stdout, nonzero exit.
+            fwrite(STDERR, json_encode(['ok' => false, 'error' => ['code' => 'app_not_running', 'message' => 'solo app data unavailable']], JSON_THROW_ON_ERROR).PHP_EOL);
             exit(1);
         }
         \$state = json_decode((string) file_get_contents(\$statePath), true, flags: JSON_THROW_ON_ERROR);
@@ -986,9 +1051,11 @@ function land_write_fake_solo_cli(string $repo): array
             file_put_contents(\$statePath, json_encode(\$state, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT).PHP_EOL);
             fwrite(STDOUT, json_encode(['ok' => true, 'data' => \$payload], JSON_THROW_ON_ERROR).PHP_EOL);
         };
+        // Live Solo CLI emits error envelopes on stderr with empty stdout and a
+        // nonzero exit (observed exit 65 for not_found). Success stays on stdout.
         \$fail = static function (string \$code, string \$message): void {
-            fwrite(STDOUT, json_encode(['ok' => false, 'error' => ['code' => \$code, 'message' => \$message]], JSON_THROW_ON_ERROR).PHP_EOL);
-            exit(1);
+            fwrite(STDERR, json_encode(['ok' => false, 'error' => ['code' => \$code, 'message' => \$message]], JSON_THROW_ON_ERROR).PHP_EOL);
+            exit(65);
         };
         \$project = static function (array \$state, int \$id): ?array {
             return \$state['projects'][\$id] ?? \$state['projects'][(string) \$id] ?? null;
@@ -1269,9 +1336,12 @@ function land_write_broken_solo_cli(string $repo, string $mode): string
     $path = "{$repo}.solo-fake/broken-{$mode}-solo-cli";
     $body = match ($mode) {
         'malformed' => "#!/bin/sh\necho 'not-json'\nexit 0\n",
+        'malformed_stderr' => "#!/bin/sh\necho 'not-json' >&2\nexit 1\n",
         'error'
             => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"permission_denied\",\"message\":\"permission denied\"}}'\nexit 1\n",
-        // Mirror live Solo CLI: error JSON on stderr, empty stdout, non-zero exit.
+        'error_stderr'
+            => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"permission_denied\",\"message\":\"permission denied\"}}' >&2\nexit 1\n",
+        // Mirror live Solo CLI: structured not_found JSON on stderr, empty stdout, exit 65.
         'not_found_stderr'
             => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"Project 73 not found\",\"command\":\"projects get\"}}' >&2\nexit 65\n",
         default => throw new RuntimeException($mode),

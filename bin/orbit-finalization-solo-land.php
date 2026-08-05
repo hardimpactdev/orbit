@@ -41,12 +41,14 @@ function solo_cli_lookup(string $soloCli, array $args, string $cwd, ?string $app
     $result = solo_run_process(array_merge($command, $args), $cwd);
     $stdout = trim($result['stdout']);
     $stderr = trim($result['stderr']);
-    // Live Solo CLI emits error envelopes on stderr; the test fake uses stdout.
-    // Prefer stdout JSON, then fall back to stderr so not_found stays idempotent.
+    // Live Solo CLI emits error envelopes on stderr (empty stdout, nonzero exit).
+    // Decode structured JSON from stdout first, then stderr. Only an explicit
+    // envelope with error.code=not_found is idempotent; plain text / malformed
+    // streams and other error codes remain fail-closed.
     $decoded = solo_decode_json_object($stdout) ?? solo_decode_json_object($stderr);
 
     if ($result['exit_code'] !== 0) {
-        if (is_array($decoded) && solo_is_not_found($decoded)) {
+        if (solo_is_not_found_envelope($decoded)) {
             return ['status' => 'not_found', 'reason' => solo_error_message($decoded)];
         }
 
@@ -61,7 +63,7 @@ function solo_cli_lookup(string $soloCli, array $args, string $cwd, ?string $app
     }
 
     if (array_key_exists('ok', $decoded) && $decoded['ok'] === false) {
-        if (solo_is_not_found($decoded)) {
+        if (solo_is_not_found_envelope($decoded)) {
             return ['status' => 'not_found', 'reason' => solo_error_message($decoded)];
         }
 
@@ -149,8 +151,13 @@ function solo_list_processes(string $soloCli, int $projectId, string $cwd, ?stri
             if ((int) $owner !== $projectId) {
                 return [
                     'status' => 'error',
-                    'reason' => 'solo processes list returned process '.(int) $id.' owned by project '.(int) $owner
-                        .' while requesting project '.$projectId,
+                    'reason' =>
+                        'solo processes list returned process '
+                            .(int) $id
+                            .' owned by project '
+                            .(int) $owner
+                            .' while requesting project '
+                            .$projectId,
                 ];
             }
 
@@ -262,6 +269,17 @@ function solo_decode_json_object(string $payload): ?array
     }
 
     return $decoded;
+}
+
+/**
+ * Explicit structured not_found only. Non-array payloads and other error codes
+ * never become idempotent absence.
+ *
+ * @param  array<string, mixed>|null  $decoded
+ */
+function solo_is_not_found_envelope(?array $decoded): bool
+{
+    return is_array($decoded) && solo_is_not_found($decoded);
 }
 
 /**
@@ -515,7 +533,11 @@ function check_solo_process_stop(string $root, array $action): array
     $appDataDir = $action['app_data_dir'] ?? null;
     $callerProcess = getenv('SOLO_PROCESS_ID');
 
-    if (is_string($callerProcess) && preg_match('/^\d+$/', $callerProcess) === 1 && (int) $callerProcess === $processId) {
+    if (
+        is_string($callerProcess)
+        && preg_match('/^\d+$/', $callerProcess) === 1
+        && (int) $callerProcess === $processId
+    ) {
         return block_result($subject, "refuses self-stop of caller SOLO_PROCESS_ID={$processId}");
     }
 
@@ -543,7 +565,11 @@ function check_solo_process_stop(string $root, array $action): array
     $projectId = (int) $projectId;
     $callerProject = getenv('SOLO_PROJECT_ID');
 
-    if (is_string($callerProject) && preg_match('/^\d+$/', $callerProject) === 1 && (int) $callerProject === $projectId) {
+    if (
+        is_string($callerProject)
+        && preg_match('/^\d+$/', $callerProject) === 1
+        && (int) $callerProject === $projectId
+    ) {
         return block_result(
             $subject,
             "refuses self-project cleanup while SOLO_PROJECT_ID={$projectId} matches the target process owner",
@@ -595,7 +621,11 @@ function check_solo_project_delete(string $root, array $action): array
 
     $callerProject = getenv('SOLO_PROJECT_ID');
 
-    if (is_string($callerProject) && preg_match('/^\d+$/', $callerProject) === 1 && (int) $callerProject === $projectId) {
+    if (
+        is_string($callerProject)
+        && preg_match('/^\d+$/', $callerProject) === 1
+        && (int) $callerProject === $projectId
+    ) {
         return block_result(
             $subject,
             "refuses self-project cleanup while SOLO_PROJECT_ID={$projectId} matches the target project",
@@ -640,7 +670,11 @@ function check_solo_project_delete(string $root, array $action): array
     if ($nonTerminal !== []) {
         return block_result(
             $subject,
-            'solo project '.$projectId.' still has non-terminal processes ('.implode(', ', $nonTerminal).'); wait until running/starting/stopping processes are terminal before projects delete',
+            'solo project '
+            .$projectId
+            .' still has non-terminal processes ('
+            .implode(', ', $nonTerminal)
+            .'); wait until running/starting/stopping processes are terminal before projects delete',
         );
     }
 
