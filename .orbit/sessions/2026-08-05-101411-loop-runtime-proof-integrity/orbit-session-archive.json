@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-05T08:14:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-runtime-proof-integrity/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-101411-loop-runtime-proof-integrity",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T080314Z-79f48dc14dd1.json"
+    ],
+    "entry_digests": {
+        "loop.md": "2891119e7b95302ea742c69f6a48abdfebf7fa1ed76ada77fe6f043f8acfb542",
+        "quality-gates/quality-check-2026-08-05T080314Z-79f48dc14dd1.json": "d28695bcff38e3ad1de9d8b3a932f0c46a93584b6c65df852b97f1e556c8c890"
+    },
+    "slug": "loop-runtime-proof-integrity",
+    "requested_slug": "loop-runtime-proof-integrity",
+    "compatible_slugs": [
+        "loop-runtime-proof-integrity"
+    ],
+    "branch": "codex/loop-runtime-proof-integrity",
+    "candidate_commit": "f5245f222caedb4a51bd866ef9f644dbeaec8c09",
+    "accepted_feature_tip": "f5245f222caedb4a51bd866ef9f644dbeaec8c09",
+    "accepted_main_tip": "be3ea58c20a1e4debe79a68e1488354d9f8d3f95",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

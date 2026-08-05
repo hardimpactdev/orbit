@@ -161,12 +161,13 @@ Docs-only diffs need a successful `docs-lint` or broader `quality-check`
 artifact. Any non-docs diff needs a successful `quality-check` artifact.
 
 For PHP files, the hook applies one more rule. If the PHP file is outside
-`apps/docs/` and outside tests, the final packet also needs
-`Retained topology proof: passed`. PHP under `apps/docs/` is docs tooling and
-does not need retained topology proof unless the slice also changes topology
-behavior. The retained topology row must name the topology id/kind, inspected
-roles or nodes, exact command, and captured terminal/session or artifact
-evidence.
+`apps/docs/`, outside tests, and outside repository tooling under `bin/`, the
+final packet also needs `Retained topology proof: passed`. Repository tooling
+under `bin/` still requires diff-routed `composer quality-check` but has no
+retained topology target. PHP under `apps/docs/` is docs tooling and does not
+need retained topology proof unless the slice also changes topology behavior.
+The retained topology row must name the topology id/kind, inspected roles or
+nodes, exact command, and captured terminal/session or artifact evidence.
 
 For native Orbit Agent/Tauri changes, the hook applies a host topology rule
 instead. Non-Markdown files under `apps/macos/` require the final packet to run

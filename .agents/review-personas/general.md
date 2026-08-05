@@ -37,8 +37,11 @@ name or word-presence assertions as proof of the requested primitive.
 When the Goal claims runtime reachability or convergence, require evidence that
 directly exercises the claimed final outcome. Configuration validation,
 artifact presence, and successful intermediate hops are supporting evidence,
-not substitutes. A failed or explicitly excluded final hop means
-`Verification.runtime` cannot be recorded as `passed`; return `FIX`.
+not substitutes. A failed, excluded, still-required, or deferred final hop
+means `Verification.runtime` cannot be recorded as `passed`; return `FIX`. For
+non-`automated` venues, require the candidate-bound structured runtime receipt
+on the existing `Verification.runtime` row rather than free-form pass claims
+or post-LAND/post-merge follow-up proof.
 
 Classify `BLAST_RADIUS: complete` when the change affects a product decision, ownership boundary, transport, shared vocabulary, or shared schema. Before that
 classification, inspect beyond the candidate diff with one bounded

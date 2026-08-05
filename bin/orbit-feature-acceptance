@@ -98,7 +98,7 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
         throw new RuntimeException($runtimeProblem);
@@ -159,7 +159,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
         throw new RuntimeException($runtimeProblem);
