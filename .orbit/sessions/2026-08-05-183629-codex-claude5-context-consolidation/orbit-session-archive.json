@@ -1,0 +1,40 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T16:36:29+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-claude5-context-consolidation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-183629-codex-claude5-context-consolidation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/consolidation-old-to-new-map.md",
+        "evidence/green-contract-tests-after-fix-round.json",
+        "evidence/green-contract-tests-post-main-merge.json",
+        "evidence/postchange-probe-process-1451.md",
+        "evidence/red-baseline-probe-process-1448.md",
+        "evidence/red-contract-tests-before-consolidation.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T162635Z-4f419487b8fd.json"
+    ],
+    "entry_digests": {
+        "evidence/consolidation-old-to-new-map.md": "c8a997efe1a504f5799bc66324ac9422db71f1669b4a45fd73a1d6133019788f",
+        "evidence/green-contract-tests-after-fix-round.json": "9731f2abd04f993d63cce9709c4e49ed4592b23c8389f9360b9bdee0f0ad801d",
+        "evidence/green-contract-tests-post-main-merge.json": "dd13d2712e6318385ecd7b0f25e6e5b1bc692b735226624cec946b63ba63cd5c",
+        "evidence/postchange-probe-process-1451.md": "9bce84c1bced32411f83e5bf4b0050875b77a8cc5dd273d96a35592ff8984339",
+        "evidence/red-baseline-probe-process-1448.md": "b3d6c8c77d22aea3e00bb54f2c5a060a1da64660cbf72a2ad32fdb0f0d0e6228",
+        "evidence/red-contract-tests-before-consolidation.json": "5589cb66bba3b7f443cd2e0ed011cea22fd201ac02559d8c989d3d92c7e0c21a",
+        "loop.md": "b22dbfcf9206919132d462f701c80b11db6f18540fb23d412063edb7ddcc89bc",
+        "quality-gates/quality-check-2026-08-05T162635Z-4f419487b8fd.json": "0119a7054c843b882b481ee87731ca21dc564680c28130c2e5636648864be697"
+    },
+    "slug": "codex-claude5-context-consolidation",
+    "requested_slug": "codex-claude5-context-consolidation",
+    "compatible_slugs": [
+        "codex-claude5-context-consolidation"
+    ],
+    "branch": "codex/claude5-context-consolidation",
+    "candidate_commit": "0e2300e67557f2811b0737badcf0941fcb3a8c5a",
+    "accepted_feature_tip": "0e2300e67557f2811b0737badcf0941fcb3a8c5a",
+    "accepted_main_tip": "3da61146f3e5cddf932973bada97cd9ae93a5cbf",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
