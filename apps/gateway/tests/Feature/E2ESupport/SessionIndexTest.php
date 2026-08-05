@@ -1397,6 +1397,41 @@ it('fails check mode when the committed session index is stale', function (): vo
     }
 });
 
+it('rejects receipt candidate_commit values with an embedded trailing newline', function (): void {
+    $workspace = session_index_workspace('candidate-trailing-newline');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $hex = '1d9deacb42810f202ac39b45af6e1ca79652564d';
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-160000-newline-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-160000-newline-identity", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $hex."\n",
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect(session_index_record($index, 'newline-identity')['candidate_commit'])
+            ->toBeNull()
+            ->and($index)
+            ->toHaveKey('record_count', 1)
+            ->toHaveKey('unique_candidate_commit_count', 0);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('stores explicit candidate_commit identity from receipts without guessing history', function (): void {
     $workspace = session_index_workspace('candidate-identity');
 

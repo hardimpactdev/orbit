@@ -191,7 +191,7 @@ function archive_orphan_reason(string $archiveDir): ?string
 
 function is_explicit_candidate_commit(string $value): bool
 {
-    return preg_match('/^[0-9a-f]{40}$/', $value) === 1;
+    return preg_match('/^[0-9a-f]{40}\z/', $value) === 1;
 }
 
 /**
