@@ -495,9 +495,9 @@ it('keeps LOOP.md.example free of malformed compact proof path markers', functio
         ->not->toContain('.orbit/evidence/...')
         ->not->toContain('target=<target>|command=<cmd>')
         ->not->toContain('`.orbit/evidence/`')
-        ->not->toContain('`.orbit/quality-gates/`')
-        ->toContain('exactly one of target= or command=')
-        ->toContain('`.orbit/evidence/runtime-proof.txt`');
+        ->not->toContain('`.orbit/quality-gates/`')->toContain('exactly one of target= or command=')->toContain(
+            '`.orbit/evidence/runtime-proof.txt`',
+        );
 });
 
 it('rejects deferred or failed final-hop runtime claims and accepts structured completed proof', function (
@@ -899,73 +899,23 @@ it('rejects runtime evidence when the worktree .orbit root is a symlink', functi
             venue: 'retained-incus',
         );
         $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
-        $runtime = acceptance_test_structured_runtime($tip);
-        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
-        $loop = preg_replace(
-            '/^(\s*)- runtime: .+$/m',
-            '${1}- runtime: '.$runtime,
-            $loop,
-            1,
-        ) ?? $loop;
-        file_put_contents("{$fixture}/.orbit/loop.md", $loop);
+        acceptance_test_write_runtime_row($fixture, acceptance_test_structured_runtime($tip));
+        acceptance_test_replace_orbit_root_with_symlink($fixture, $outside);
 
-        mkdir("{$outside}/evidence", recursive: true);
-        file_put_contents("{$outside}/evidence/runtime-proof.txt", "escaped orbit root\n");
-        file_put_contents("{$outside}/loop.md", $loop);
-
-        $knownOrbitFiles = [
-            "{$fixture}/.orbit/evidence/runtime-proof.txt",
-            "{$fixture}/.orbit/loop.md",
-        ];
-
-        foreach ($knownOrbitFiles as $path) {
-            if (is_file($path) || is_link($path)) {
-                unlink($path);
-            }
-        }
-
-        $evidenceDir = "{$fixture}/.orbit/evidence";
-
-        if (is_dir($evidenceDir) && ! is_link($evidenceDir)) {
-            acceptance_test_remove_empty_dir($evidenceDir);
-        }
-
-        $orbitDir = "{$fixture}/.orbit";
-
-        if (is_dir($orbitDir) && ! is_link($orbitDir)) {
-            acceptance_test_remove_empty_dir($orbitDir);
-        }
-
-        symlink($outside, $orbitDir);
-
-        $markdown = (string) file_get_contents("{$fixture}/.orbit/loop.md");
-        $problem = orbitLoopRuntimeProofProblem($markdown, 'retained-incus', $tip, $fixture);
+        $problem = orbitLoopRuntimeProofProblem(
+            (string) file_get_contents("{$fixture}/.orbit/loop.md"),
+            'retained-incus',
+            $tip,
+            $fixture,
+        );
 
         expect($problem)
-            ->not->toBeNull()
+            ->not
+            ->toBeNull()
             ->toContain('symlink')
             ->toContain('remain in PROVE');
     } finally {
-        if (is_link("{$fixture}/.orbit")) {
-            unlink("{$fixture}/.orbit");
-        }
-
-        if (is_file("{$outside}/evidence/runtime-proof.txt") || is_link("{$outside}/evidence/runtime-proof.txt")) {
-            unlink("{$outside}/evidence/runtime-proof.txt");
-        }
-
-        if (is_file("{$outside}/loop.md") || is_link("{$outside}/loop.md")) {
-            unlink("{$outside}/loop.md");
-        }
-
-        if (is_dir("{$outside}/evidence") && ! is_link("{$outside}/evidence")) {
-            acceptance_test_remove_empty_dir("{$outside}/evidence");
-        }
-
-        if (is_dir($outside) && ! is_link($outside)) {
-            acceptance_test_remove_empty_dir($outside);
-        }
-
+        acceptance_test_cleanup_orbit_root_symlink($fixture, $outside);
         acceptance_test_remove($fixture);
     }
 });
@@ -1413,6 +1363,50 @@ function acceptance_test_seed_runtime_evidence(
     file_put_contents($path, "runtime proof fixture\n");
 }
 
+function acceptance_test_write_runtime_row(string $fixture, string $runtime): void
+{
+    $loopPath = "{$fixture}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    $loop =
+        preg_replace(
+            '/^(\s*)- runtime: .+$/m',
+            '${1}- runtime: '.$runtime,
+            $loop,
+            1,
+        ) ?? $loop;
+    file_put_contents($loopPath, $loop);
+}
+
+function acceptance_test_replace_orbit_root_with_symlink(string $fixture, string $outside): void
+{
+    $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+    mkdir("{$outside}/evidence", recursive: true);
+    file_put_contents("{$outside}/evidence/runtime-proof.txt", "escaped orbit root\n");
+    file_put_contents("{$outside}/loop.md", $loop);
+
+    acceptance_test_unlink_if_present("{$fixture}/.orbit/evidence/runtime-proof.txt");
+    acceptance_test_unlink_if_present("{$fixture}/.orbit/loop.md");
+    acceptance_test_remove_empty_dir("{$fixture}/.orbit/evidence");
+    acceptance_test_remove_empty_dir("{$fixture}/.orbit");
+    symlink($outside, "{$fixture}/.orbit");
+}
+
+function acceptance_test_cleanup_orbit_root_symlink(string $fixture, string $outside): void
+{
+    acceptance_test_unlink_if_present("{$fixture}/.orbit");
+    acceptance_test_unlink_if_present("{$outside}/evidence/runtime-proof.txt");
+    acceptance_test_unlink_if_present("{$outside}/loop.md");
+    acceptance_test_remove_empty_dir("{$outside}/evidence");
+    acceptance_test_remove_empty_dir($outside);
+}
+
+function acceptance_test_unlink_if_present(string $path): void
+{
+    if (is_file($path) || is_link($path)) {
+        unlink($path);
+    }
+}
+
 function acceptance_test_remove_empty_dir(string $directory): void
 {
     if (! is_dir($directory) || is_link($directory)) {
@@ -1425,11 +1419,7 @@ function acceptance_test_remove_empty_dir(string $directory): void
     ));
 
     foreach ($entries as $entry) {
-        $path = $directory.'/'.$entry;
-
-        if (is_link($path) || is_file($path)) {
-            unlink($path);
-        }
+        acceptance_test_unlink_if_present($directory.'/'.$entry);
     }
 
     $remaining = array_values(array_filter(
