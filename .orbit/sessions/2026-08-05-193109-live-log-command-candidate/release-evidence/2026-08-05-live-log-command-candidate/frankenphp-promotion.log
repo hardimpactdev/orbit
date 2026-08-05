@@ -1,0 +1,5 @@
+build_id=20260805T171324Z-a92c01a95
+candidate_image=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260805T171324Z-a92c01a95
+stable_image=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm
+digest=sha256:74346ca95c6ca3bc22e6330298aa1ec2deecc07d047d416b8e27512f5063a10e
+promoted_at=2026-08-05T17:28:03Z

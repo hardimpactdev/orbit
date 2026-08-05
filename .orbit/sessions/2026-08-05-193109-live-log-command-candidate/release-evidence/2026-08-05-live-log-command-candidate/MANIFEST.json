@@ -1,0 +1,114 @@
+{
+  "kind": "no-github-live-candidate-release-evidence",
+  "version": "0.1.190",
+  "build_id": "20260805T171324Z-a92c01a95",
+  "commit": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8",
+  "worktree": "/Users/nckrtl/orbit/.worktrees/codex-live-log-command-candidate",
+  "files": [
+    {
+      "path": "00-failed-prior-attempt.json",
+      "bytes": 349,
+      "sha256": "bfb37f17b12b09ddde33badc3abcaa2fc4141c9f39396bb350c2f7666df036a6"
+    },
+    {
+      "path": "01-identity.txt",
+      "bytes": 358,
+      "sha256": "de30178dd296edea065a2fcffbdf7b4ba935aa94549b2fd3faf337b8c6dd549f"
+    },
+    {
+      "path": "02-secret-scan.txt",
+      "bytes": 18,
+      "sha256": "e8d8516dbe519462335c76715e019d62260777ad3f3bd284d5c971b45b14f6e3"
+    },
+    {
+      "path": "19-rca-summary.json",
+      "bytes": 1293,
+      "sha256": "ba7af6a7ce8371dbda5d97c11934b722ecb41b708063ff697e1cb996875edc87"
+    },
+    {
+      "path": "21-secret-scan.txt",
+      "bytes": 18,
+      "sha256": "e8d8516dbe519462335c76715e019d62260777ad3f3bd284d5c971b45b14f6e3"
+    },
+    {
+      "path": "23-quality-check-artifact.json",
+      "bytes": 3258,
+      "sha256": "1a45bef443ac52df851a166b5113fff563a6ba6920623a58ac71b2a7d7bb8db9"
+    },
+    {
+      "path": "25-pre-retry-doctor-summary.json",
+      "bytes": 7331,
+      "sha256": "a96946e3af1a50837bbf3c54b87f14391a58726e2e67f8b05cdc7b5598ae232a"
+    },
+    {
+      "path": "27-push-origin-main.txt",
+      "bytes": 705,
+      "sha256": "139eae9aef034de3c072e5a625f62326c498d732c703b7f5ddd06c79a644d926"
+    },
+    {
+      "path": "29-candidate-state.txt",
+      "bytes": 3210,
+      "sha256": "777d1eb90b5c5ccc5b94579d7d462e13c2977e3ea4c377e8eee8d750b03bc77d"
+    },
+    {
+      "path": "30-manifest-update.txt",
+      "bytes": 353,
+      "sha256": "0c34d7a980bc93d9337dd70e0ea715ec4773d5fe78d46fdccc9e6fb66d5f5d83"
+    },
+    {
+      "path": "33-activity-show-454857-sanitized.json",
+      "bytes": 570,
+      "sha256": "5988625384f4a3922d02878b37f6f9b796e5f31a902ff63121b569f620cb4695"
+    },
+    {
+      "path": "34-post-gateway-status.json",
+      "bytes": 107,
+      "sha256": "8f83b8f278ed5c70baaf9bee0445a41cacf9afc938dcf97432b5af29bc8e5cd5"
+    },
+    {
+      "path": "37-doctor-classification.json",
+      "bytes": 3279,
+      "sha256": "17877b42e647f6dec6a0bd17b41e0b4e0a84d953edb467b9a0493322edbfea9b"
+    },
+    {
+      "path": "37-doctor-promote-decision.json",
+      "bytes": 760,
+      "sha256": "38801a1817f066dc6735248c7ebb66b4aec53f706c909e3019d4e0dce118d08d"
+    },
+    {
+      "path": "37-post-doctor-delta.json",
+      "bytes": 7642,
+      "sha256": "ca3e516c2e4fba3432ab0f411b9d9efd97ad7f4ca4881da782dc0d02130e4e57"
+    },
+    {
+      "path": "37-post-doctor-summary.json",
+      "bytes": 11104,
+      "sha256": "54c3f078d63bf7e883a50ada9c7014e007cfc9fa26571a1161812d6f70f8d69f"
+    },
+    {
+      "path": "38-log-command-proof-sanitized.json",
+      "bytes": 4650,
+      "sha256": "f80cdd8056a91281a973d5ea9642af6bb5d06aa8df77b1ca98f55ba4a87534ef"
+    },
+    {
+      "path": "39-frankenphp-promotion.log",
+      "bytes": 328,
+      "sha256": "13fc261ef1dffa20b58ee8f1336f6a1bd58cd82fc271c3e0b512b2186f1dfd34"
+    },
+    {
+      "path": "40-final-report.json",
+      "bytes": 3530,
+      "sha256": "48570d0ad9f675a616d42186e6405962abade6a9e154a2997b14cc7c56b18680"
+    },
+    {
+      "path": "candidate.env",
+      "bytes": 1720,
+      "sha256": "37fb70cad7c107ba663b9bb87be0b7421f29b92eb33f994f7dfe0d7adf084116"
+    },
+    {
+      "path": "frankenphp-promotion.log",
+      "bytes": 328,
+      "sha256": "13fc261ef1dffa20b58ee8f1336f6a1bd58cd82fc271c3e0b512b2186f1dfd34"
+    }
+  ]
+}

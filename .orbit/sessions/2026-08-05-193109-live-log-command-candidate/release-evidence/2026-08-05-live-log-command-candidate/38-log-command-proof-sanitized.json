@@ -1,0 +1,191 @@
+[
+  {
+    "check": "command_presence",
+    "commands": {
+      "instance:log": true,
+      "workspace:log": true,
+      "app:log": true,
+      "process:log": true
+    }
+  },
+  {
+    "check": "process_discover",
+    "cmd": [
+      "./apps/cli/orbit",
+      "process:list",
+      "--instance=nckrtl.development",
+      "--json"
+    ],
+    "count": 2,
+    "names": [
+      "frankenphp-nckrtl",
+      "vp-dev"
+    ],
+    "sample": [
+      {
+        "name": "frankenphp-nckrtl",
+        "node": "beast",
+        "app": "nckrtl",
+        "instance": "development",
+        "status": "stopped"
+      },
+      {
+        "name": "vp-dev",
+        "node": "beast",
+        "app": "nckrtl",
+        "instance": "development",
+        "status": "stopped"
+      }
+    ]
+  },
+  {
+    "ok": true,
+    "success": true,
+    "data_meta": {
+      "top_keys": [
+        "file_exists",
+        "lines",
+        "lines_requested",
+        "node",
+        "path",
+        "target"
+      ],
+      "target": {
+        "type": "instance",
+        "app": "nckrtl",
+        "instance": "development",
+        "workspace": null,
+        "selector": "nckrtl.development"
+      },
+      "node": "beast",
+      "path": "storage/logs/laravel.log",
+      "line_count": 1
+    },
+    "rc": 0,
+    "cmd": [
+      "./apps/cli/orbit",
+      "instance:log",
+      "nckrtl.development",
+      "--lines=1",
+      "--json"
+    ],
+    "label": "instance-log",
+    "raw_bytes": 256
+  },
+  {
+    "check": "workspace:log_help",
+    "rc": 0,
+    "help_head": "Description:\n  Read or follow the fixed Laravel application log for a Workspace.\n\nUsage:\n  workspace:log [options] [--] [<target>]\n\nArguments:\n  target                     Workspace name or workspace URL/hostname\n\nOptions:\n      --instance[=INSTANCE]  Parent instance selector (app.instance) when the workspace slug is ambiguous\n      --lines[=LINES]        Number of historical lines [default: \"100\"]\n      --follow               Follow log output\n      --node[=NODE]          Serving node constraint\n      --json                 \n  -h, --help                 Display help for the given command. When no command is given display help for the list command\n      --silent               Do not output any message\n  -q, --quiet                Only errors are displayed. All other output is suppressed\n  -V, --version              Display this application version\n      --ansi|--no-ansi       Force (or d"
+  },
+  {
+    "ok": true,
+    "success": true,
+    "data_meta": {
+      "top_keys": [
+        "file_exists",
+        "lines",
+        "lines_requested",
+        "node",
+        "path",
+        "target"
+      ],
+      "target": {
+        "type": "workspace",
+        "app": "dngdmt",
+        "instance": "development",
+        "workspace": "larastan-static-analysis",
+        "selector": "larastan-static-analysis"
+      },
+      "node": "beast",
+      "path": "storage/logs/laravel.log",
+      "line_count": 0
+    },
+    "rc": 0,
+    "cmd": [
+      "./apps/cli/orbit",
+      "workspace:log",
+      "larastan-static-analysis",
+      "--lines=1",
+      "--json"
+    ],
+    "label": "workspace-log",
+    "raw_bytes": 280
+  },
+  {
+    "check": "process:log_listed",
+    "present": true
+  },
+  {
+    "ok": false,
+    "error_code": "validation_failed",
+    "error_message": "Host 'servauto-app.test' is not an instance or workspace proxy route.",
+    "meta": {
+      "field": "target",
+      "host": "servauto-app.test"
+    },
+    "rc": 1,
+    "cmd": [
+      "./apps/cli/orbit",
+      "app:log",
+      "https://servauto-app.test",
+      "--lines=1",
+      "--json"
+    ],
+    "label": "app-log",
+    "raw_bytes": 174
+  },
+  {
+    "ok": true,
+    "success": true,
+    "data_meta": {
+      "top_keys": [
+        "file_exists",
+        "lines",
+        "lines_requested",
+        "node",
+        "path",
+        "target"
+      ],
+      "target": {
+        "type": "instance",
+        "app": "nckrtl",
+        "instance": "nmbp",
+        "workspace": null,
+        "selector": "nckrtl.nmbp"
+      },
+      "node": "NMBP",
+      "path": "storage/logs/laravel.log",
+      "line_count": 1
+    },
+    "rc": 0,
+    "cmd": [
+      "./apps/cli/orbit",
+      "app:log",
+      "https://nckrtl.nmbp",
+      "--lines=1",
+      "--json"
+    ],
+    "label": "app-log",
+    "raw_bytes": 241
+  },
+  {
+    "ok": true,
+    "success": true,
+    "data_meta": {
+      "top_keys": [
+        "logs"
+      ]
+    },
+    "rc": 0,
+    "cmd": [
+      "./apps/cli/orbit",
+      "process:log",
+      "frankenphp-nckrtl",
+      "--instance=nckrtl.development",
+      "--lines=1",
+      "--json"
+    ],
+    "label": "process-log",
+    "raw_bytes": 375
+  }
+]

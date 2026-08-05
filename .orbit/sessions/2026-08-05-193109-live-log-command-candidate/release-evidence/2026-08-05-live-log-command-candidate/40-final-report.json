@@ -1,0 +1,73 @@
+{
+  "mode": "no-github-current-version-live-candidate-refresh",
+  "version": "0.1.190",
+  "completed_at_utc": "2026-08-05T17:28:27Z",
+  "source": {
+    "commit": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8",
+    "worktree": "/Users/nckrtl/orbit/.worktrees/codex-live-log-command-candidate",
+    "branch": "codex/live-log-command-candidate",
+    "primary_main": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8",
+    "origin_main": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8"
+  },
+  "failed_prior_attempt": {
+    "build_id": "20260805T162728Z-3da61146f",
+    "activity_id": 453501,
+    "operation_run_id": "262b355e-4cca-43e6-aedf-cc9bc40fa77b",
+    "result": "failed migration OOM 128MiB; not promoted; preserved"
+  },
+  "candidate": {
+    "build_id": "20260805T171324Z-a92c01a95",
+    "commit": "a92c01a958ea9dae08eca8e72b8b6c4b3e6eb0f8",
+    "channel": "live-test",
+    "manifest_url": "https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json",
+    "gateway_image": "ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260805T171324Z-a92c01a95",
+    "gateway_digest": "sha256:d33c9c7ad2f3afa81e8fb2668862cc59a353e7bf7f25f9af1da7eb080c9bb145",
+    "reverb_image": "ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-20260805T171324Z-a92c01a95",
+    "reverb_digest": "sha256:00c8467cc08c6c0073a4fda293a979d6cae013531dd5c69aa1bb5c128c83660b",
+    "frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260805T171324Z-a92c01a95",
+    "frankenphp_digest": "sha256:74346ca95c6ca3bc22e6330298aa1ec2deecc07d047d416b8e27512f5063a10e",
+    "stable_frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm",
+    "sha256_linux_amd64": "600db51839a7927ade6a4caa4063d530cf3ae1f0ec26da4668887033eafd467c",
+    "sha256_darwin_arm64": "7a0aeb8d5bccc9771c2694c47c4967ddadce25daf56e16ad878cc9fe9b480f22",
+    "sha256_agent_linux_amd64": "d33cb301468e274797f3c8c4e30bfb82aaa623dc6dde7b18f452d2658b21a5de",
+    "sha256_agent_darwin_arm64": "dc8cd905f5ddaaf9e49cb515ff5ab9e8e785bf715a96c95e856fa97d0fe52769"
+  },
+  "update_all": {
+    "activity_id": 454857,
+    "operation_run_id": "3fd4f414-c719-47a7-afa6-4af4ea99ce65",
+    "status": "completed",
+    "gateway_image_digest": "sha256:d33c9c7ad2f3afa81e8fb2668862cc59a353e7bf7f25f9af1da7eb080c9bb145",
+    "manifest_source": "topology-candidate",
+    "stream_exit": 0,
+    "migrations": "done",
+    "verification": "all steps done"
+  },
+  "doctor": {
+    "pre_retry_count": 22,
+    "post_count": 39,
+    "classification": "inspection-unblocked proxy mismatches + App vocabulary grant invalid_intent residuals; not treated as fleet-update verification failure",
+    "delta_path": ".orbit/evidence/live-log-command-candidate/37-post-doctor-delta.json"
+  },
+  "log_command_proof": {
+    "instance_log": true,
+    "workspace_log": true,
+    "app_log": true,
+    "process_log": true,
+    "evidence": ".orbit/evidence/live-log-command-candidate/38-log-command-proof-sanitized.json"
+  },
+  "runtime_promotion": {
+    "status": "PASS",
+    "promoted_digest": "sha256:74346ca95c6ca3bc22e6330298aa1ec2deecc07d047d416b8e27512f5063a10e",
+    "stable_tag": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm",
+    "matches_candidate": true
+  },
+  "boundaries": {
+    "github_release": false,
+    "version_tag": false,
+    "final_gateway_version_tag": false,
+    "live_test_channel_left_selected": true,
+    "VERSION_unchanged": "0.1.190",
+    "e2e_not_run": true
+  },
+  "evidence_dir": ".orbit/evidence/live-log-command-candidate"
+}

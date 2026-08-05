@@ -1,0 +1,19 @@
+{
+  "id": 454857,
+  "type": "update:all",
+  "occurred_at": "2026-08-05T17:22:07+00:00",
+  "subject": {
+    "type": "operation_run",
+    "name": "3fd4f414-c719-47a7-afa6-4af4ea99ce65"
+  },
+  "description": "update:all",
+  "properties": {
+    "scope": "fleet",
+    "operation_run_id": "3fd4f414-c719-47a7-afa6-4af4ea99ce65",
+    "status": "completed",
+    "target_version": "0.1.190",
+    "gateway_image_digest": "sha256:d33c9c7ad2f3afa81e8fb2668862cc59a353e7bf7f25f9af1da7eb080c9bb145",
+    "manifest_version": "0.1.190",
+    "manifest_source": "topology-candidate"
+  }
+}

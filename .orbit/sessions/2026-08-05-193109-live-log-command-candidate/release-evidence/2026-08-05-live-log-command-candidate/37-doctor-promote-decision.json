@@ -1,0 +1,11 @@
+{
+  "decision": "accept_with_followups",
+  "rationale": [
+    "update:all durable activity 454857 completed; gateway digest matches candidate; fleet verification steps all done",
+    "proxy.route_mismatch (26) classifies as inspection-unblocked pre-existing route/intent divergence after blocked_inspection proxy probes cleared",
+    "node.access_permission_invalid (4) is invalid_intent residual from App vocabulary cutover permission strings not in doctor allowlist; not fleet-update verification failure",
+    "pre-existing genuine_drift (runtime_config_extra, route_extra, database, workspace.path_missing) still present or reduced; gateway tool/process blocked findings largely cleared"
+  ],
+  "do_not_remediate": true,
+  "promote_runtime_allowed": true
+}

@@ -1,0 +1,10 @@
+{
+  "build_id": "20260805T162728Z-3da61146f",
+  "activity_id": 453501,
+  "operation_run_id": "262b355e-4cca-43e6-aedf-cc9bc40fa77b",
+  "status": "failed",
+  "failure": "gateway migrations OOM at 128MiB before service replacement",
+  "promoted": false,
+  "preserved_as_evidence_only": true,
+  "superseded_by_build_id": "20260805T171324Z-a92c01a95"
+}

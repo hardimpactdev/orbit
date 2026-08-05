@@ -1,0 +1,370 @@
+{
+  "issue_count": 39,
+  "by_disposition": {
+    "invalid_intent": 4,
+    "genuine_drift": 33,
+    "runtime_incident": 1,
+    "blocked_inspection": 1
+  },
+  "nodes": [
+    {
+      "node": "NMBP",
+      "healthy": false,
+      "issues": 12
+    },
+    {
+      "node": "agent",
+      "healthy": true,
+      "issues": 0
+    },
+    {
+      "node": "beast",
+      "healthy": false,
+      "issues": 25
+    },
+    {
+      "node": "database1",
+      "healthy": true,
+      "issues": 0
+    },
+    {
+      "node": "gateway",
+      "healthy": true,
+      "issues": 0
+    },
+    {
+      "node": "ingress1",
+      "healthy": true,
+      "issues": 0
+    },
+    {
+      "node": "main1",
+      "healthy": false,
+      "issues": 1
+    },
+    {
+      "node": "mini",
+      "healthy": true,
+      "issues": 0
+    },
+    {
+      "node": "services1",
+      "healthy": false,
+      "issues": 1
+    }
+  ],
+  "issues_sanitized": [
+    {
+      "node": "NMBP",
+      "family": "node",
+      "code": "node.access_permission_invalid",
+      "kind": "divergent",
+      "disposition": "invalid_intent",
+      "summary": "Node access grant stores unknown permission strings: app:credentials, app:mount, app:register, app:root, app:update, app:worker."
+    },
+    {
+      "node": "NMBP",
+      "family": "instance",
+      "code": "instance.runtime_config_extra",
+      "kind": "extra",
+      "disposition": "genuine_drift",
+      "summary": "Managed runtime config for 'servauto-app-development' exists on node but no matching active PHP app record."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route laravel-toolbar.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-new-dawn.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-demo-dynamo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-upstream-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-inertia-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-classic-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route mealou.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route hauzer.test differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "database_connection",
+      "code": "database_connection.env_mismatch",
+      "kind": "mismatch",
+      "disposition": "genuine_drift",
+      "summary": "database_connection.env_mismatch"
+    },
+    {
+      "node": "beast",
+      "family": "node",
+      "code": "node.access_permission_invalid",
+      "kind": "divergent",
+      "disposition": "invalid_intent",
+      "summary": "Node access grant stores unknown permission strings: app:register."
+    },
+    {
+      "node": "beast",
+      "family": "instance",
+      "code": "instance.runtime_config_extra",
+      "kind": "extra",
+      "disposition": "genuine_drift",
+      "summary": "Managed runtime config for 'hauzer-development' exists on node but no matching active PHP app record."
+    },
+    {
+      "node": "beast",
+      "family": "workspace",
+      "code": "workspace.path_missing",
+      "kind": "missing",
+      "disposition": "runtime_incident",
+      "summary": "Workspace Y-Fol-DNG-202603-020 path is missing on the parent app node."
+    },
+    {
+      "node": "beast",
+      "family": "process",
+      "code": "process.runtime_unit_extra",
+      "kind": "extra",
+      "disposition": "genuine_drift",
+      "summary": "Managed process runtime unit 'orbit-app-hauzer-development' has no active app runtime intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route best-pracices-index.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route circleksinterklaasfeest.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route ditis-hr.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dngdmt.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dutchlaravelfoundation.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route lindaretel.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route nckrtl.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route ohdear.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route orbit-docs.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route platform11.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route servauto-training.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route srpm.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route tankwerk.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dlf-leden.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route booster.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route craft-starterkit-react.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route servauto-app.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_extra",
+      "kind": "extra",
+      "disposition": "genuine_drift",
+      "summary": "Proxy route 'hauzer.test' exists on node but not in gateway registry."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_extra",
+      "kind": "extra",
+      "disposition": "genuine_drift",
+      "summary": "Proxy route 'servauto-app.nmbp' exists on node but not in gateway registry."
+    },
+    {
+      "node": "beast",
+      "family": "database_connection",
+      "code": "database_connection.unverifiable",
+      "kind": "extra",
+      "disposition": "blocked_inspection",
+      "summary": "database_connection.unverifiable"
+    },
+    {
+      "node": "beast",
+      "family": "database_connection",
+      "code": "database_connection.target_missing",
+      "kind": "missing",
+      "disposition": "genuine_drift",
+      "summary": "database_connection.target_missing"
+    },
+    {
+      "node": "main1",
+      "family": "node",
+      "code": "node.access_permission_invalid",
+      "kind": "divergent",
+      "disposition": "invalid_intent",
+      "summary": "Node access grant stores unknown permission strings: app:register."
+    },
+    {
+      "node": "services1",
+      "family": "node",
+      "code": "node.access_permission_invalid",
+      "kind": "divergent",
+      "disposition": "invalid_intent",
+      "summary": "Node access grant stores unknown permission strings: app:credentials, app:mount, app:register, app:root, app:update, app:worker."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "mode": "read_only_rca",
+  "activity_id": 453501,
+  "operation_run_id": "262b355e-4cca-43e6-aedf-cc9bc40fa77b",
+  "operation_id": "72f38129-e17f-4b36-b6ad-2b3cb56ead99",
+  "status": "failed",
+  "failed_step": "runner",
+  "stream_failed_step_keys": ["migrations", "gateway"],
+  "target_version": "0.1.190",
+  "candidate_build_id": "20260805T162728Z-3da61146f",
+  "planned_gateway_image": "ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260805T162728Z-3da61146f@sha256:f8f0f7b3b9c9825a3a97ec7b89a6b0c750fe67c032c526f94e957691507320db",
+  "error_code": "update_runner_failed",
+  "migration": "2026_08_05_120000_rename_app_instances_to_instances_and_project_permissions_to_app",
+  "php_memory_limit_observed_bytes": 134217728,
+  "php_memory_limit_candidate_image": "128M",
+  "php_memory_limit_source": "PHP CLI default (orbit-gateway.ini only sets max_execution_time=0; runGatewayMigrations does not pass -d memory_limit)",
+  "migration_command_shape": "docker run --rm --network <orbit-network> --mount bind config_root --env APP_ENV/APP_DEBUG/DB_* / ORBIT_CONFIG_ROOT <candidate_image> php artisan migrate --force --no-interaction",
+  "gateway_service_image_replaced": false,
+  "promotion": "not_attempted",
+  "retry_same_candidate_without_source_change": "expected_same_failure"
+}

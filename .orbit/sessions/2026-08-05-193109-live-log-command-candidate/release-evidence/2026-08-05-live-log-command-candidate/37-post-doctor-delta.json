@@ -1,0 +1,270 @@
+{
+  "pre_count": 22,
+  "post_count": 39,
+  "new_only": [
+    [
+      "NMBP",
+      "node.access_permission_invalid"
+    ],
+    [
+      "NMBP",
+      "proxy.route_mismatch"
+    ],
+    [
+      "beast",
+      "node.access_permission_invalid"
+    ],
+    [
+      "beast",
+      "proxy.route_mismatch"
+    ],
+    [
+      "main1",
+      "node.access_permission_invalid"
+    ],
+    [
+      "services1",
+      "node.access_permission_invalid"
+    ]
+  ],
+  "gone": [
+    [
+      "NMBP",
+      "process.remote_shell_probe_failed"
+    ],
+    [
+      "agent",
+      "tool.agent_consumer_url_unreachable"
+    ],
+    [
+      "gateway",
+      "process.runtime_backend_unavailable"
+    ],
+    [
+      "gateway",
+      "process.wireguard_self_route_unavailable"
+    ],
+    [
+      "gateway",
+      "proxy.node_probe_failed"
+    ],
+    [
+      "gateway",
+      "tool.capability_missing"
+    ],
+    [
+      "ingress1",
+      "proxy.node_probe_failed"
+    ]
+  ],
+  "release_regressions": [
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route laravel-toolbar.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-new-dawn.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-demo-dynamo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-upstream-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-inertia-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route horizon-classic-demo.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route mealou.nmbp differs from gateway proxy intent."
+    },
+    {
+      "node": "NMBP",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route hauzer.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route best-pracices-index.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route circleksinterklaasfeest.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route ditis-hr.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dngdmt.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dutchlaravelfoundation.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route lindaretel.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route nckrtl.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route ohdear.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route orbit-docs.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route platform11.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route servauto-training.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route srpm.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route tankwerk.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route dlf-leden.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route booster.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route craft-starterkit-react.test differs from gateway proxy intent."
+    },
+    {
+      "node": "beast",
+      "family": "proxy",
+      "code": "proxy.route_mismatch",
+      "kind": "divergent",
+      "disposition": "genuine_drift",
+      "summary": "Proxy backend route servauto-app.test differs from gateway proxy intent."
+    }
+  ]
+}
