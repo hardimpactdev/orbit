@@ -17,6 +17,11 @@ final readonly class RemoteEnvFile
         private RunsInternalCommands $localExecutor,
     ) {}
 
+    /**
+     * Legacy generic read used by initializer, database, doctor, and app paths.
+     * Failures and malformed success envelopes collapse to null so existing
+     * callers that treat null as "absent/empty" keep their prior behavior.
+     */
     public function read(Node $node, string $path): ?string
     {
         $result = $this->run($node, [
@@ -24,14 +29,32 @@ final readonly class RemoteEnvFile
             'path' => $path,
         ]);
 
-        if ($result->successful()) {
-            $data = $this->data($result);
-            $contents = $data['contents'] ?? null;
+        if (! $result->successful()) {
+            return null;
+        }
 
-            // Only an explicit not-found error means "absent". A successful
-            // transport response without a string contents field is a protocol
-            // failure — never treat it as empty or the next write may clobber
-            // an unread file.
+        $contents = $this->data($result)['contents'] ?? null;
+
+        return is_string($contents) ? $contents : null;
+    }
+
+    /**
+     * Strict read for workspace env apply only.
+     *
+     * Returns null solely for explicit `env_file.not_found`. Other failures and
+     * successful envelopes without a string `contents` field throw so apply
+     * cannot clobber an unread file by treating a protocol error as empty.
+     */
+    public function readForApply(Node $node, string $path): ?string
+    {
+        $result = $this->run($node, [
+            'action' => 'read',
+            'path' => $path,
+        ]);
+
+        if ($result->successful()) {
+            $contents = $this->data($result)['contents'] ?? null;
+
             if (! is_string($contents)) {
                 throw new RuntimeException(
                     "Env file read response for {$path} is missing string contents.",

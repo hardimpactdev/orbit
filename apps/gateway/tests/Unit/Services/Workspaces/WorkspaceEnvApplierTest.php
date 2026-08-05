@@ -187,6 +187,7 @@ it('aborts apply before writing when a remote env read returns a successful enve
     expect(fn () => app(WorkspaceEnvApplier::class)->apply($workspace, ['APP_ENV' => 'testing']))
         ->toThrow(\App\Services\Workspaces\WorkspaceEnvApplyException::class);
 
+    // WorkspaceEnvApplier uses readForApply; a malformed success must not write.
     expect($executor->actions)
         ->toBe(['read'])
         ->not->toContain('write');

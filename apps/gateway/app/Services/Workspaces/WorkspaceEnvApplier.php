@@ -140,7 +140,7 @@ final readonly class WorkspaceEnvApplier
             return $contents;
         }
 
-        return app(RemoteEnvFile::class)->read($node, $path) ?? '';
+        return app(RemoteEnvFile::class)->readForApply($node, $path) ?? '';
     }
 
     private function writeContents(Node $node, string $path, string $contents, ?string $runtimeUser): void

@@ -12,7 +12,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('returns string contents from a well-formed successful read', function (): void {
+it('legacy read returns string contents from a well-formed successful response', function (): void {
     $executor = new RemoteEnvFileRecordingExecutor([
         remote_env_file_success_result(['path' => '/home/orbit/apps/demo/.env', 'contents' => "APP_ENV=local\n"]),
     ]);
@@ -26,25 +26,73 @@ it('returns string contents from a well-formed successful read', function (): vo
         ->toBe(['read']);
 });
 
-it('returns null only for explicit env_file.not_found', function (): void {
+it('legacy read collapses failures and malformed success envelopes to null', function (
+    string $stdout,
+    int $exitCode,
+): void {
+    $executor = new RemoteEnvFileRecordingExecutor([
+        new RemoteShellResult(exitCode: $exitCode, stdout: $stdout, stderr: '', durationMs: 1),
+    ]);
+    $node = Node::factory()->create();
+
+    expect(new RemoteEnvFile($executor)->read($node, '/home/orbit/apps/demo/.env'))->toBeNull();
+})->with([
+    'transport failure without envelope' => ['', 1],
+    'not_found error code' => [
+        json_encode([
+            'error' => ['code' => 'env_file.not_found', 'message' => 'Env file was not found.'],
+        ], JSON_THROW_ON_ERROR)."\n",
+        1,
+    ],
+    'other read failure' => [
+        json_encode([
+            'error' => ['code' => 'env_file.read_failed', 'message' => 'Env file could not be read.'],
+        ], JSON_THROW_ON_ERROR)."\n",
+        1,
+    ],
+    'missing contents key' => [
+        json_encode([
+            'success' => ['data' => ['path' => '/home/orbit/apps/demo/.env']],
+        ], JSON_THROW_ON_ERROR)."\n",
+        0,
+    ],
+    'null contents' => [
+        json_encode([
+            'success' => ['data' => ['path' => '/home/orbit/apps/demo/.env', 'contents' => null]],
+        ], JSON_THROW_ON_ERROR)."\n",
+        0,
+    ],
+    'empty stdout success' => ['', 0],
+]);
+
+it('readForApply returns string contents from a well-formed successful response', function (): void {
+    $executor = new RemoteEnvFileRecordingExecutor([
+        remote_env_file_success_result(['path' => '/home/orbit/apps/demo/.env', 'contents' => "APP_ENV=local\n"]),
+    ]);
+    $node = Node::factory()->create();
+
+    $contents = new RemoteEnvFile($executor)->readForApply($node, '/home/orbit/apps/demo/.env');
+
+    expect($contents)->toBe("APP_ENV=local\n");
+});
+
+it('readForApply returns null only for explicit env_file.not_found', function (): void {
     $executor = new RemoteEnvFileRecordingExecutor([
         remote_env_file_error_result('env_file.not_found', 'Env file was not found.'),
     ]);
     $node = Node::factory()->create();
 
-    $contents = new RemoteEnvFile($executor)->read($node, '/home/orbit/apps/demo/.env');
-
-    expect($contents)->toBeNull();
+    expect(new RemoteEnvFile($executor)->readForApply($node, '/home/orbit/apps/demo/.env'))->toBeNull();
 });
 
-it('throws when a successful read envelope lacks string contents', function (string $stdout): void {
+it('readForApply throws when a successful envelope lacks string contents', function (string $stdout): void {
     $executor = new RemoteEnvFileRecordingExecutor([
         new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 1),
     ]);
     $node = Node::factory()->create();
     $path = '/home/orbit/apps/demo/.env';
 
-    expect(fn () => new RemoteEnvFile($executor)->read($node, $path))
+    expect(fn () => new RemoteEnvFile($executor)->readForApply($node, $path))
         ->toThrow(\RuntimeException::class, "Env file read response for {$path} is missing string contents.");
 })->with([
     'missing contents key' =>
@@ -63,17 +111,17 @@ it('throws when a successful read envelope lacks string contents', function (str
     'empty stdout' => '',
 ]);
 
-it('throws on non-not-found read failures', function (): void {
+it('readForApply throws on non-not-found read failures', function (): void {
     $executor = new RemoteEnvFileRecordingExecutor([
         remote_env_file_error_result('env_file.read_failed', 'Env file could not be read.'),
     ]);
     $node = Node::factory()->create();
 
-    expect(fn () => new RemoteEnvFile($executor)->read($node, '/home/orbit/apps/demo/.env'))
+    expect(fn () => new RemoteEnvFile($executor)->readForApply($node, '/home/orbit/apps/demo/.env'))
         ->toThrow(\RuntimeException::class, 'Env file could not be read.');
 });
 
-it('never writes after a malformed successful read', function (): void {
+it('readForApply never proceeds to write after a malformed successful read', function (): void {
     $path = '/home/orbit/apps/demo/.env';
     $executor = new RemoteEnvFileRecordingExecutor([
         new RemoteShellResult(
@@ -93,8 +141,7 @@ it('never writes after a malformed successful read', function (): void {
     $caught = null;
 
     try {
-        $contents = $envFile->read($node, $path);
-        // Callers only write after a successful read; this path must not be reached.
+        $contents = $envFile->readForApply($node, $path);
         $envFile->write($node, $path, $contents ?? '');
     } catch (\RuntimeException $exception) {
         $caught = $exception;
