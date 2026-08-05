@@ -41,8 +41,9 @@ Use this command to inspect process configuration and last known state without l
   renders service, version, and endpoint for every managed service process.
 - **Lifecycle Events**: Shows the latest durable process lifecycle event when one exists.
 - **Status**: Each list item includes a concrete `status` normalized from the
-  latest durable event (`running`, `stopped`, `crashed`, or `unknown` when no
-  event exists).
+  latest durable lifecycle event: `starting`, `running`, `stopping`, `stopped`,
+  `restarting`, `crashed`, or `unknown` (no event yet, or latest event
+  `failed`).
 - **No Live Probing**: Does not SSH to the owning node and does not run live runtime probes.
 
 ## Related

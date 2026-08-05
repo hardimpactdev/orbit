@@ -55,10 +55,10 @@ $apps = multisearch(
 
 ## Reference Implementations
 
-No node commands use `multisearch` at plan time.
-
-- None in the node domain at plan time. Add a row here when a node command
-  adopts `multisearch`.
+No public command currently uses `multisearch` as its interactive primitive.
+Prefer repeated `search` / `datatable` selection or a documented multi-value
+option when more than one registry entity must be chosen. Add a row here when a
+command adopts `multisearch`.
 
 ## Cross References
 

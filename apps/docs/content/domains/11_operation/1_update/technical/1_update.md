@@ -152,10 +152,10 @@ but the public `Replacing binary` row still runs and settles as `Done`.
 - Treat the configured release source as the version source. The download step
   targets the release source without selecting arbitrary release tags, channels,
   or versions beyond what the configured URL provides.
-- Do not perform automatic rollback. If dependency installation or migrations
-  fail after the binary download succeeds, report the failed step and leave
-  already completed local changes in place so the operator can repair and rerun
-  the update.
+- Do not perform automatic rollback. If `replace` fails after `download`
+  succeeded, or if a later `doctor` verify step fails after replace, report the
+  failed step and leave already completed local changes in place so the operator
+  can repair and rerun the update.
 - Do not hide partial local state behind a success result. Any failed step
   returns failure and identifies the failed step.
 

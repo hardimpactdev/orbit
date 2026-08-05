@@ -102,7 +102,7 @@ The following steps describe what the command does during a successful run.
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
   Adoption is based on explicit command input and, when `[name]` is omitted,
   local Codex Git-worktree metadata for an explicit `--path`.
-  `workspace:setup` does not consult a external workspace adapter service and does
+  `workspace:setup` does not consult an external workspace service and does
   not inspect project files to invent workspace identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in

@@ -38,7 +38,7 @@ This command follows the shared
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `dry_run` | `--dry-run` | Never. | No `--restore` or `--adopt` flag is present. | `false`. | Returns planned bulk actions without invoking family fixers or adopters. |
-| `json` | `--json` | Optional. | `--stream-json` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `json` | `--json` | Optional. | `--stream-json` or `--fix` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. Mutually exclusive with `--fix` and `--stream-json`. |
 | `stream_json` | `--stream-json` | Optional. | `--json` or `--fix` is present. | `false`. | Selects the stream JSON renderer and non-interactive input mode. |
 
 ## Target Eligibility and Category Set
@@ -270,6 +270,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
 | Dry-run mode invalid | `--dry-run` is supplied without `--restore` or `--adopt`. | Failure before probes |
 | Ambiguous JSON renderer | `--json` and `--stream-json` are supplied together. | Failure before gateway I/O |
+| Interactive JSON invalid | `--json` and `--fix` are supplied together. | `validation_failed` before gateway I/O |
 | Interactive stream invalid | `--fix` and `--stream-json` are supplied together. | Failure before gateway I/O |
 
 The shared exit status policy applies: `0` for healthy success, `1` for

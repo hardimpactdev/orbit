@@ -175,7 +175,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   (`error.code=project.creation_failed`).
 - **Retryable Artifact Drift**: After configuration is durable, runtime container or runtime
   configuration drift is reported as `success.meta.warnings[]` with singular
-  `project.*` or `instance.*` product codes and their matching public family.
+  `instance.*` product codes (and `process.*` for concrete runtime units) and
+  their matching public family.
 - **Activation Failures**:
   - Hard validation errors (malformed domain, registry conflict, internal
     proxy route registry write failure) fail before side effects with the

@@ -65,8 +65,8 @@ The workspaces probe reads gateway workspace records and checks these layers:
    never uses that issue as permission to target an `app-prod` node.
 4. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
-   app root. Generic and adapter-owned workspace sources may live outside the
-   parent project path.
+   project root. Workspace sources may live outside the parent project path,
+   including external agent worktree directories.
 5. **PHP runtime:** active workspaces have an effective PHP image that can serve
    the workspace runtime on the owning node. Concrete FrankenPHP unit presence
    and shape are process-family checks. Workspaces still
@@ -110,7 +110,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | A generic workspace path equals the parent project root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
+| `workspace.path_outside_policy` | The workspace path equals the parent project root instead of a distinct workspace path. |
 | `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
@@ -122,33 +122,19 @@ Each code below corresponds to a specific layer in the workspaces probe.
 
 ## Workspace Fix Map
 
-Workspace family restore actions are report-only in the current Docker-first runtime: `doctor --restore` does not auto-fix workspace codes (disposition is not `genuine_drift`).
+Workspace family restore actions are report-only in the current Docker-first
+runtime. Catalog dispositions for workspace codes are `runtime_incident`,
+`blocked_inspection`, or `invalid_intent` — never `genuine_drift` — so
+`doctor --restore` does not auto-fix workspace codes. Operator repair paths
+are explicit commands such as `workspace:setup`, `workspace:remove`, or
+manual path/registry correction after reading the probe findings.
 
-The table below shows what `doctor --restore` does for each fixable code.
-
-| Code | `doctor --restore` behavior |
-| --- | --- |
-| `workspace.path_missing` | Recreate the workspace path only when gateway workspace configuration has enough source information and the repair will not overwrite unrelated files. |
-| `workspace.runtime_config_missing` | Reinstall managed workspace runtime configuration from gateway workspace configuration. |
-| `workspace.runtime_config_mismatch` | Rewrite managed workspace runtime configuration to match gateway workspace configuration. |
-| `workspace.security.system_user` | Restore the development workspace runtime user and group when workspace configuration is complete. |
-| `workspace.security.fs_permissions` | Reapply development workspace ownership and permission policy. |
-| `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity is absent from active workspace configuration. |
-
-`doctor --restore` does not handle `workspace.record_incomplete`,
-`workspace.parent_project_invalid`, `workspace.instance_invalid`, `workspace.path_unusable`,
-`workspace.path_outside_policy`, `workspace.php_version_unavailable`,
-`workspace.unsupported_for_production`, `workspace.unregistered_path`, or
-`workspace.php_hint_unsupported`.
-
-Unsupported PHP versions require explicit command or operator work. References
-to a missing parent project or invalid instance also require
-explicit operator work. Failed setup and teardown runs are visible through
-`workspace:history` and `workspace:log`; doctor verifies current workspace
-reality and does not rewrite past runs. Workspace doctor never creates
-parent projects, changes workspace names, moves a workspace to another app, edits
-setup or teardown step definitions, edits workspace-owned proxy routes,
-edits inherited runtime units, or changes node reachability.
+Failed setup and teardown runs are visible through `workspace:history` and
+`workspace:log`; doctor verifies current workspace reality and does not rewrite
+past runs. Workspace doctor never creates parent projects, changes workspace
+names, moves a workspace to another project, edits setup or teardown step
+definitions, edits workspace-owned proxy routes, edits inherited runtime units,
+or changes node reachability.
 
 Workspace doctor is a development surface. An explicit `app-prod` node may
 not select the workspace family or an explicit workspace scope. The gateway

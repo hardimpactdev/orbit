@@ -40,7 +40,7 @@ Run `instance:websocket enable` to attach an app to the fleet WebSocket service.
 
 1. Resolves exactly one concrete instance and its serving node.
 2. Creates that instance's WebSocket binding when none exists, generating a
-   binding-specific `reverb_app_id`, a random `reverb_app_key`, and a
+   `reverb_app_id` equal to the project name, a random `reverb_app_key`, and a
    random `reverb_app_secret`. Updates the existing binding when one is present.
 3. Sets `enabled=true`, records the supplied public hosts, and derives the
    `allowed_origins` list from the selected instance domain (`https://<domain>`).

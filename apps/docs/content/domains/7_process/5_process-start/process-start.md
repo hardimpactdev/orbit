@@ -6,7 +6,8 @@ Start one process, or all processes, in a node, instance, workspace, or app
 hostname runtime context.
 
 `process:start` starts derived runtime units through the gateway on the owning
-node and records durable `started` events.
+node and records durable lifecycle events (`starting` before the runtime call,
+then `started` on success or `failed` on backend failure).
 
 ## Usage
 
@@ -30,7 +31,9 @@ Use this command to start one process or all processes for a resolved node, inst
 - **Placement**: Instance, workspace, and app-hostname runtime units are started on the instance's serving node.
 - **Single Process**: When `[name]` is supplied, starts that process only.
 - **All Processes**: Omitting `[name]` starts every process definition for the selected context in process order.
-- **Event Recording**: Records and publishes a `started` process event after each successful start.
+- **Event Recording**: Records and publishes a transitional `starting` process
+  event before each runtime call, then a terminal `started` event on success or
+  `failed` when the backend returns false or throws.
 - **Configuration Unchanged**: Does not change process configuration.
 
 ## Related

@@ -230,7 +230,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-- **Family:** `project` (see [`instance-doctor.md`](../../instance-doctor.md)).
+- **Family:** `instance` (see [`instance-doctor.md`](../../instance-doctor.md)).
 - **Probe:** `doctor --family=instance --instance=<name>.<development|production>` verifies
   the selected instance's registry configuration and runtime artifacts.
 - **Convergence:** `doctor --family=instance --restore` repairs missing or divergent
@@ -239,9 +239,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Activity Logging
 
 Emitted through the gateway API Loggable contract when the forwarded operator
-path lands. The initial gateway-local implementation slice is tracked in
-`docs/porting/PORTING.md`; API activity emission remains part of the operator-forwarding
-slice.
+path lands. API activity emission remains part of the operator-forwarding slice.
 
 | Field | Value |
 | --- | --- |

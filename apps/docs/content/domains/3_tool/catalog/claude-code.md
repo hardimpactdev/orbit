@@ -11,9 +11,10 @@ These fields describe the Claude Code CLI tool's identity, backend, and support 
 | Slug | `claude-code` |
 | Label | Claude Code |
 | Backend | Anthropic native installer (`https://claude.ai/install.sh`) |
-| Support model | Installable by Orbit on authorized active non-gateway Linux nodes |
+| Support model | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes |
 | Required node role | None |
 | Category | `runtime` |
+| Supported operating systems | `linux`, `macos` |
 
 ## Capabilities
 
@@ -34,10 +35,10 @@ Example:
 orbit tool:install claude-code --node=app-1 --user=agent
 ```
 
-`--user=agent` names an additional existing Linux OS user to install for. It is
-not a node-role eligibility gate and does not create the OS account. This
-pattern lets Hermes or another runtime execute `claude` as the `agent` OS user
-without sharing auth or config with the node's default user.
+`--user=agent` names an additional existing OS user to install for. It is not a
+node-role eligibility gate and does not create the OS account. This pattern lets
+Hermes or another runtime execute `claude` as the `agent` OS user without
+sharing auth or config with the node's default user.
 
 `--tool-version` forwards installer targets accepted by the native script:
 `latest`, `stable`, or a specific version string. `latest` and `stable` are

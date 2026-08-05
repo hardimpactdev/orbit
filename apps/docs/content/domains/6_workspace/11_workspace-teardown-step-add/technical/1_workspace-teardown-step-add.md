@@ -133,7 +133,7 @@ teardown phase, before destructive workspace cleanup.
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
 - **Instance Not Found**: Resolved instance selector does not exist in gateway configuration
-  (`error.code=workspace.instance_not_found`, `error.meta.instance`).
+  (`error.code=instance.not_found`, `error.meta.instance`).
 - **Production app unsupported**: The selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). No
   workspace lifecycle policy is stored.

@@ -29,7 +29,7 @@ The command checks local Solo extension state before making a gateway request. D
 
 ### Gateway Proxy
 
-The command calls `GET /api/solo/project/list` through the configured gateway client. The CLI resolves an omitted target from local `node:default`, then falls back to the authenticated caller node. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node.
+The command calls `GET /api/solo/projects` through the configured gateway client. The CLI resolves an omitted target from local `node:default`, then falls back to the authenticated caller node. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node.
 
 ### Upstream Boundary
 

@@ -37,13 +37,36 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Listing Rules
 
-1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context. Reject combining `app` with `node`, `instance`, or `workspace`. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance. Resolve `app` through exact registered proxy-route domain precedence.
-2. Send the request to the gateway (`GET /api/processes` with the selected query keys). The gateway authenticates the caller from the actual WireGuard peer source IP (same model as CLI/TypeScript SDK; no bearer and no client peer-IP identity header), then checks the grant, `process:read`, and target-node authorization. Browser callers that send `Origin` also pass CORS Origin admission: the Origin host must be a registered app/workspace proxy domain that matches the requested `app` target. CORS never establishes identity. Non-browser CLI calls without `Origin` are unchanged.
-3. Read process definitions from gateway configuration in process order. An instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace. An `app` hostname that resolves to an app route uses the concrete instance context; a workspace route uses that workspace context.
-4. Derive expected runtime-unit identities for the selected context.
-5. For service process definitions, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
-6. Read latest durable lifecycle events for the selected runtime context when events exist and set each item's concrete `status` from that event (`running`, `stopped`, `crashed`, or `unknown` when no event exists).
-7. Render the selected output.
+1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context.
+2. Reject combining `app` with `node`, `instance`, or `workspace`.
+3. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+4. Resolve `app` through exact registered proxy-route domain precedence.
+5. Send the request to the gateway (`GET /api/processes` with the selected query keys).
+6. The gateway authenticates the caller from the actual WireGuard peer source IP.
+   Authentication matches the CLI/TypeScript SDK model. There is no bearer and no
+   client peer-IP identity header.
+7. After authentication, the gateway checks the grant, `process:read`, and
+   target-node authorization.
+8. Browser callers that send `Origin` also pass CORS Origin admission. The Origin
+   host must be a registered app/workspace proxy domain that matches the
+   requested `app` target. CORS never establishes identity. Non-browser CLI calls
+   without `Origin` are unchanged.
+9. Read process definitions from gateway configuration in process order.
+10. An instance context includes only definitions owned by that instance. A
+    workspace context includes workspace-owned definitions and instance-owned
+    definitions inherited by that workspace.
+11. An `app` hostname that resolves to an app route uses the concrete instance
+    context. A workspace route uses that workspace context.
+12. Derive expected runtime-unit identities for the selected context.
+13. For service process definitions, include process-owned connection metadata.
+    That metadata covers definition name, version, service name, endpoint, and
+    credential field names. Credential values are excluded.
+14. Read latest durable lifecycle events for the selected runtime context when
+    events exist.
+15. Set each item's concrete `status` from that event:
+    `starting`, `running` (from `started`), `stopping`, `stopped`, `restarting`,
+    `crashed`, or `unknown` when no event exists or the latest event is `failed`.
+16. Render the selected output.
 
 `process:list` must not SSH to nodes, run live process manager probes, mutate gateway configuration, or change runtime state.
 

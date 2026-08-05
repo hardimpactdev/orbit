@@ -44,7 +44,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /database/tables` |
+| Type | `api:GET /database-connections/tables` |
 | Effect | `read` |
 | Subject | `DatabaseConnection` when resolved; `none` otherwise. |
 | Properties | `connection`, `target`, `target_type`, `driver`, and `table_count`. No raw rows beyond the returned schema result. |

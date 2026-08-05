@@ -55,10 +55,10 @@ $token = password(
 
 ## Reference Implementations
 
-No node commands use `password` at plan time.
+These commands use `password` and are good models to follow.
 
-- None in the node domain at plan time. Add a row here when a node command
-  adopts `password`.
+- `orbit vpn-web-ui:change-password` — prompts for
+  `vpn_web_ui_change_password.password` when the new password is omitted.
 
 ## Cross References
 

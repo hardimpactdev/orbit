@@ -2,17 +2,19 @@
 
 [Back to Process commands.](../README.md)
 
-Restart one process, or all processes, in a node, instance, or workspace runtime
-context.
+Restart one process, or all processes, in a node, instance, workspace, or app
+hostname runtime context.
 
 `process:restart` cycles derived runtime units through the gateway on the owning
-node and records lifecycle events for the transition.
+node and records durable lifecycle events (`restarting` before the runtime call,
+then `started` on success or `failed` on backend failure).
 
 ## Usage
 
 ```bash
 orbit process:restart vite --instance=docs.production
 orbit process:restart vite --instance=docs.development --workspace=feature-docs
+orbit process:restart vite --app=test.app.example
 orbit process:restart orbit-hermes-dashboard --node=app-dev-1
 orbit process:restart vite --instance=docs.production --json
 orbit process:restart --instance=docs.development --workspace=feature-docs
@@ -20,13 +22,19 @@ orbit process:restart --instance=docs.development --workspace=feature-docs
 
 ## Behavior Summary
 
-Use this command to cycle one process or all processes for a resolved node, instance, or workspace context.
+Use this command to cycle one process or all processes for a resolved node, instance, workspace, or app hostname context.
 
-- **Context Resolution**: Resolves the node, instance, or workspace runtime context. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
-- **Placement**: Instance and workspace runtime units are restarted on the instance's serving node.
+- **Context Resolution**: Resolves the node, instance, workspace, or `--app`
+  hostname runtime context. Prefer `<project.instance>`; a bare project slug is
+  accepted only when that project has exactly one instance. `--app` is mutually
+  exclusive with `--node`, `--instance`, and `--workspace`.
+- **Placement**: Instance, workspace, and app-hostname runtime units are restarted on the instance's serving node.
 - **Single Process**: When `[name]` is supplied, restarts that process only.
 - **All Processes**: Omitting `[name]` restarts every process definition for the selected context in process order.
-- **Runtime Effects**: Restarts the derived runtime units through the gateway and records lifecycle events for the stopped and started runtime transitions.
+- **Runtime Effects**: Restarts the derived runtime units through the gateway and
+  records a transitional `restarting` event before each runtime call, then a
+  terminal `started` event on success or `failed` when the backend returns false
+  or throws.
 - **Configuration Unchanged**: Does not change process configuration and does not repair divergent runtime-unit files.
 
 ## Related

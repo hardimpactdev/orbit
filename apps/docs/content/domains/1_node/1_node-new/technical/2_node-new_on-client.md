@@ -59,8 +59,9 @@ First-gateway bootstrap also requires and forwards the distinct mandatory
 Explicit live-role examples include `roles: ['app-prod', 'ingress']` and
 `roles: ['app-dev', 'database']`. Every path forwards the mandatory
 `node_new.tld`; metrics and S3 additionally forward host/user inputs like other
-live workload-role paths. WebSocket role input remains reserved and fails
-before forwarding until its implementation lands.
+live workload-role paths. WebSocket role input remains reserved on `node:new`
+and fails before forwarding with `reason=not_implemented`; assign `websocket`
+through `node role:add` on an existing node instead.
 
 ## First-Gateway Bootstrap
 
@@ -102,7 +103,8 @@ When a gateway is configured:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
   - canonical `roles[]` arrays for role requests;
   - the mandatory `node_new.tld` for every node identity;
-  - `node_new.valkey_node` for future websocket role provisioning;
+  - `node_new.valkey_node` when other live roles require it (websocket remains
+    rejected on this command; use `node role:add` for websocket);
   - `node_new.s3_data_path` for S3 role provisioning;
   - host and user fields for metrics role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.

@@ -167,8 +167,7 @@ Use these commands before or after running `orbit update:all`.
   gateway at a custom release manifest URL
 - [`manifest:remove`](../7_manifest-remove/manifest-remove.md) - restore the
   configured default release manifest source
-- `doctor` - verify drift after updates once the doctor command contract is
-  converted
+- [`doctor`](../3_doctor/doctor.md) - verify drift after updates
 
 ## Technical Contract
 

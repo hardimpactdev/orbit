@@ -19,7 +19,7 @@ Use `data-list` in the following situations.
 
 - The operator should scan several columns and select one row.
 - Selecting a logical entity opens its detail view, such as `project:list`
-  selecting an app and continuing to `project:show`.
+  selecting a project and continuing to `project:show`.
 - The finite registry list benefits from keyboard navigation and `/` search.
 
 ## Avoid When
@@ -58,7 +58,7 @@ $selected = datatable(
         'docs' => ['docs', 'hardimpact/docs', '2', '3'],
         'orbit' => ['orbit', 'hardimpact/orbit', '1', '0'],
     ],
-    label: 'Select an app',
+    label: 'Select a project',
     hint: 'Press / to search',
     required: true,
 );
@@ -67,7 +67,8 @@ $selected = datatable(
 ## Reference Implementation
 
 - `orbit project:list` — renders the Name, Repository, Instances, and Workspaces
-  columns and opens the selected app's `project:show` drill-down.
+  columns and opens the selected project's `project:show` drill-down. The
+  prompt label is `Select a project`.
 
 ## Cross References
 

@@ -48,8 +48,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    before runtime or hibernation side effects begin.
 5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
    the scope's hibernation lock and mark the group asleep while it starts.
-6. Start each runtime unit through the gateway on the resolved node or instance serving node.
-7. Record and publish a durable `started` process event after each successful start.
+6. For each selected runtime unit, record and publish a durable transitional
+   `starting` process event before the runtime call.
+7. Start each runtime unit through the gateway on the resolved node or instance
+   serving node. On success, record and publish a durable `started` event. On
+   backend false or thrown driver error, record and publish a durable `failed`
+   event (status becomes `unknown`) before rethrowing or reporting the failure
+   so status is never stuck transitional.
 8. After a successful bulk development start, mark the group awake before
    releasing the hibernation lock. Named, node-owned, and `app-prod` actions do
    not change a group-level hibernation marker.

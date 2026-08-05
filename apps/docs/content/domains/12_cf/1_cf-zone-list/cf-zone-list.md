@@ -27,7 +27,7 @@ Run `orbit cf-zone:list` to list Cloudflare zones visible to the configured API 
 configured API token. It is an account connectivity and discovery command for
 operators before DNS, cache, or SSL provider work.
 
-The command does not create Orbit app domains, DNS records, proxy routes, or
+The command does not create Orbit instance-owned domains, DNS records, proxy routes, or
 doctor state.
 
 ## Output

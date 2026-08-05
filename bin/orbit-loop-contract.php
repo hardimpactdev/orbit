@@ -777,6 +777,11 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
+        // Narrow docs automation surfaces only. Do not classify all of apps/docs:
+        // apps/docs/resources/** must stay browser; other docs/runtime source stays retained-incus.
+        || str_starts_with($path, 'apps/docs/app/Librarian/')
+        || str_starts_with($path, 'apps/docs/config/librarian-command-docs/')
+        || str_starts_with($path, 'apps/docs/content/generated/')
         || in_array(
             $path,
             [

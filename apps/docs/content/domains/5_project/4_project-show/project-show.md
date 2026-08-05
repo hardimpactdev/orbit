@@ -75,7 +75,7 @@ Workspace rows are exposed only below their owning instance and only for
 ## Output
 
 Human output is a logical registry summary followed by one section per visible
-instance with its effective IDE, processes, bindings, and nested workspace rows.
+instance with its processes, bindings, and nested workspace rows.
 Instance and workspace URLs are shown when the
 registry can derive them. Projects have no server, path, root, URL, domain,
 or environment fields. The `APP DEPS` column is the project's aggregate

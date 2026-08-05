@@ -161,7 +161,7 @@ items.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Schedule slug, unique within the selected concrete target. |
-| `scope` | `instance`, `node`, or `orbit` | Scope that owns the schedule. |
+| `scope` | `instance`, `node`, or `orbit` | Scope that owns the schedule. Public `SchedulePayload` can render stored `orbit` rows. Creatable scopes through `schedule:add` remain `instance` and `node` only. |
 | `target.type` | string | Target kind. |
 | `target.name` | string | Concrete `project.instance` selector, node, or Orbit maintenance target. |
 | `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over agent-push when the target is not the gateway. |

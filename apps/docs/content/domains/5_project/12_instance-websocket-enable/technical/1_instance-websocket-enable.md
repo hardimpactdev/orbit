@@ -47,7 +47,7 @@ This command follows the shared
 1. **Instance resolution.** Resolve one concrete instance and use its
    serving node as the authorization boundary. Ambiguity fails before effects.
 2. **Binding creation or update.** When no binding exists for the selected
-   instance, create one and generate a binding-specific `reverb_app_id`, a 32-character
+   instance, create one and set `reverb_app_id` to the project name, a 32-character
    random `reverb_app_key`, and a 48-character random `reverb_app_secret`.
    When a binding exists, update it in place and keep the existing credentials.
 3. **Binding state.** Set `enabled=true`. Record the supplied public hosts as

@@ -119,7 +119,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_runtime_probe_failed` | Agent-user/runtime inspection raised, returned non-success, or produced an empty/malformed payload, so agent runtime drift is unverifiable for this run. |
 | `tool.agent_consumer_url_unreachable` | An installed autonomous-agent tool's exact consumer HTTPS URL (for example `https://hermes.agent`) is not reachable from the gateway trust path with a 2xx/3xx response. Tool family owns this service-readiness check; proxy family owns route rows, Caddy artifacts, and TLS. Details include `expected_url`, observed state, and `next_command` pointing at `doctor --family=proxy` — no unsafe route restore is invented here. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
-| `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
+| `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; reconverge the `s3` role baseline (restore does not create tool rows). |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
 
 The five `tool.dns_*` codes are owned by the DNS tool capability; see
@@ -169,11 +169,14 @@ credential repair logic.
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
 `tool.config_probe_failed`, `tool.credentials_probe_failed`,
 `tool.agent_runtime_probe_failed`,
-`tool.agent_orbit_cli_inaccessible`, `tool.seaweedfs.credentials_missing`, or
+`tool.agent_orbit_cli_inaccessible`, `tool.agent_consumer_url_unreachable`,
+`tool.seaweedfs.credentials_missing`, or
 `tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be recreated by
-converging the `s3` role baseline; missing credentials remain `runtime_incident`
+reconverging the `s3` role baseline; missing credentials remain `runtime_incident`
 until operators re-run S3 configure — ToolsFixer has no credential restorer;
-restore does not create tool rows).
+restore does not create tool rows). `tool.agent_consumer_url_unreachable` is a
+read-only service-readiness check; route/TLS repair stays with
+`doctor --family=proxy`.
 
 Tools without a safe repair path are reported with the required manual action.
 Tool doctor never creates projects, instances, workspaces, processes, schedules, custom proxy

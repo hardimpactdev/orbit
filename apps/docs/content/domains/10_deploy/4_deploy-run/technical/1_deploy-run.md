@@ -149,12 +149,22 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step failed | A deployment step exits non-zero. | `error.code=deploy.step_failed` |
 | History write failed | The gateway cannot persist the run or final run status. | `error.code=deploy.history_write_failed` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /deploy/run` |
+| Effect | `write` |
+| Subject | `DeploymentRun` when created; `none` otherwise. |
+| Properties | `project`, `instance`, `run_id`, `status`. No step command secrets. |
+| Description | derived |
+
 ## Doctor Relationship
 
 Deployment run history is instance-owned gateway state. `deploy:run` does not own a
 doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use latest
-deployment status when reporting `app.latest_deployment_failed` or
-`app.deployment_run_stuck`.
+deployment status when reporting `instance.latest_deployment_failed` or
+`instance.deployment_run_stuck`.
 
 ## Test Mapping
 

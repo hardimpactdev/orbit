@@ -57,6 +57,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /deploy/steps` |
+| Effect | `read` |
+| Subject | `none` (list). |
+| Properties | `project`, `instance`, `count`. |
+| Description | derived |
+
 ## Doctor Relationship
 
 `deploy:step-list` reads deployment policy that the instance owns. It does not own a

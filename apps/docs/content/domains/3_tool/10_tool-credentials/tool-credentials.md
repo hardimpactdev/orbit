@@ -5,9 +5,9 @@
 Show connection credentials for a managed tool.
 
 `tool:credentials` displays generated or registered connection details for
-tools that declare a credential contract, such as Mailpit, SeaweedFS, Hermes,
-or Hermes. Credentials for runnable services such as MySQL,
-PostgreSQL, and Valkey are not tool credentials.
+tools that declare a credential contract, such as Mailpit, SeaweedFS, or
+Hermes. Credentials for runnable services such as MySQL, PostgreSQL, and
+Valkey are not tool credentials.
 
 ## Usage
 
@@ -30,7 +30,8 @@ orbit tool:credentials hermes --node=agent-1 --json
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from credential-bearing tools visible on the resolved node.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--instance`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--json`: Output JSON.
 
 Target context is required when neither `--node`, `--instance`, nor local

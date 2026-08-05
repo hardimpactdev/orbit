@@ -7,12 +7,12 @@ Update the Plausible CE version used by an active analytics role node.
 ## Usage
 
 ```bash
-orbit analytics:update [--node=<node>] [--version=<version>] [--json]
+orbit analytics:update --requested-version=<version> [--node=<node>] [--json]
 ```
 
 ## Arguments and options
 
-- `--version`: Plausible CE version to apply. Required. Use a plain semantic
+- `--requested-version`: Plausible CE version to apply. Required. Use a plain semantic
   version such as `3.2.2`.
 - `--node`: active analytics role node to update. Optional; defaults to the
   fleet's singleton active analytics node.
@@ -45,9 +45,9 @@ machine-readable envelope.
 ## Examples
 
 ```bash
-orbit analytics:update --version=3.2.2
-orbit analytics:update --node=analytics-1 --version=3.2.2
-orbit analytics:update --version=3.2.2 --json
+orbit analytics:update --requested-version=3.2.2
+orbit analytics:update --node=analytics-1 --requested-version=3.2.2
+orbit analytics:update --requested-version=3.2.2 --json
 ```
 
 ## Related

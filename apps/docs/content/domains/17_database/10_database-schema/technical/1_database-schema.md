@@ -32,8 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the target and connection using the same mapping rules as
   [`database:query`](../../8_database-query/technical/1_database-query.md).
-- Returns driver-reported schema metadata for visible tables, columns, and
-  indexes in one response.
+- Returns driver-reported schema metadata (table inventory including views);
+  per-table columns and indexes come from `database:describe`.
 - Follows SQLite locality for `sqlite`.
 
 ## Renderer Contracts
@@ -45,7 +45,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /database/schema` |
+| Type | `api:GET /database-connections/schema` |
 | Effect | `read` |
 | Subject | `DatabaseConnection` when resolved; `none` otherwise. |
 | Properties | `connection`, `target`, `target_type`, `driver`, and schema object counts. No raw passwords. |

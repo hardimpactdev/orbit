@@ -37,11 +37,12 @@ These terms define the types of routes that the proxy family owns and manages.
   `websocket` and whose kind is `proxy`. It is created from an instance
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
-- **Project analytics route:** Public analytics tracking route whose public owner is
-  `analytics` and whose kind is `proxy`. It is created from a project
-  analytics binding, rendered on an `ingress` node, forwards to `router`, and
-  proxies only Plausible script and event-ingest paths. It must not expose the
-  Plausible dashboard or target a concrete analytics node.
+- **Project analytics route:** Public analytics tracking route whose public
+  owner is `analytics` and whose kind is `proxy`. It is created from an
+  instance analytics binding (instance-owned placement), rendered on an
+  `ingress` node, forwards to `router`, and proxies only Plausible script and
+  event-ingest paths. It must not expose the Plausible dashboard or target a
+  concrete analytics node.
 - **Analytics service route:** Private router route for `analytics.orbit`,
   owned by `router`. It exists while at least one active `analytics` role
   assignment exists in the topology and targets the analytics backend pool
@@ -207,10 +208,10 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that projection changes. It does not own project, instance WebSocket binding, project
+  and restart path when that projection changes. It does not own project, instance WebSocket binding, instance
   analytics binding, workspace, gateway, websocket service, S3 service,
-  analytics service, or tool identity, do not create or remove owner-side
-  records, and do not manage TCP tool service endpoints or firewall policy.
+  analytics service, or tool identity, does not create or remove owner-side
+  records, and does not manage TCP tool service endpoints or firewall policy.
 
   Public WebSocket hosts are ingress routes that forward to router. Router owns
   `websocket.orbit`, websocket backend pools, and private router-to-websocket

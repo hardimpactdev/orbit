@@ -66,6 +66,6 @@ These are the commands in the operation domain.
 2. [`orbit update:all`](2_update-all/update-all.md)
 3. [`orbit doctor`](3_doctor/doctor.md)
 4. [`orbit version`](4_version/version.md)
-5. [`orbit profile [target]`](5_profile/profile.md)
+5. [`orbit profile [url]`](5_profile/profile.md)
 6. [`orbit manifest:update <url>`](6_manifest-update/manifest-update.md)
 7. [`orbit manifest:remove`](7_manifest-remove/manifest-remove.md)

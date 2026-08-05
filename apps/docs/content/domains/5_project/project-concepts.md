@@ -187,9 +187,9 @@ The terms below describe project and instance lifecycle.
   with no Orbit management. The resulting instance reports `adopted=true`.
 - **Instance adoption flag:** Boolean instance field that records whether
   that concrete path was adopted (`true`) or created fresh (`false`). Exposed
-  in the canonical instance JSON as `adopted`.
-  associations owned by that instance. It is not project deletion or doctor
-  drift repair.
+  in the canonical instance JSON as `adopted`. Instance removal deletes one
+  concrete instance and the workspaces and associations owned by that
+  instance; it is not project deletion or doctor drift repair.
 - **Instance setup pipeline:** Ordered instance-owned commands recorded with
   `instance-setup-step:*` and run by `instance:setup` on the selected instance's serving
   node and source path. Setup commands are for finite project bootstrap work

@@ -25,12 +25,12 @@ Use `--filter` to narrow the list:
 | --- | --- |
 | `all` | All visible proxy routes. |
 | `instance` | Instance-owned hostnames. |
-| `project` | Project-owned hostnames without a concrete instance target. |
+| `project` | Project-owned primary hostnames; every row reports its concrete instance target. |
 | `workspace` | Workspace-owned hostnames. |
 | `gateway` | Gateway-owned internal routes such as the gateway API ingress. |
 | `websocket` | Instance-owned public WebSocket hosts and router-owned private service routes such as `websocket.orbit`. |
 | `s3` | S3 public host routes and router-owned private S3 service routes such as `s3.orbit`. |
-| `analytics` | Public project analytics host routes and router-owned private analytics service routes such as `analytics.orbit`. |
+| `analytics` | Public instance analytics host routes and router-owned private analytics service routes such as `analytics.orbit`. |
 | `tool` | Tool-owned proxy routes for node tools or services. |
 | `custom` | User-authored upstream routes created by `proxy:add --upstream`. |
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |

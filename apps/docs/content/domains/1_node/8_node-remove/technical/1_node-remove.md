@@ -145,11 +145,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
 
-Partial WireGuard detach during removal is reported as success with a structured
-warning, not as a command failure. The node record is removed; the stale peer is
-node-family drift. JSON output reports this under `success.meta.warnings` with
-`code=node.wireguard_peer_extra` and
-`next_command=doctor --family=node --restore`.
+Current removal always returns an empty warnings list. Peer removal is reported
+only via `wireguard_peer_removed` (true when a peer row was deleted). Any later
+stale peer on a live fleet is node-family drift handled by doctor, not by a
+remove-time warning payload.
 
 DNS projection reconciliation failure is a command failure. Removal must not
 claim that node- or proxy-owned DNS artifacts are clean before the shared
@@ -164,10 +163,13 @@ already-absent node remains a validation failure.
 ## Doctor Relationship
 
 - Removed nodes disappear from the normal `doctor --family=node` scope.
-- A stale WireGuard peer for a removed node is reported as `extra` node identity
-  reality by the node-family probe. See
+- A stale WireGuard peer for a removed node is reported as `node.wireguard_peer_extra`
+  by the node-family probe. See
   [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `doctor --family=node --restore` may clean stale WireGuard peers.
+- `node.wireguard_peer_extra` is adopt-only: recovery is
+  `doctor --family=node --adopt` when peer attachment is intended. It is not
+  restored by `doctor --family=node --restore`. Other restorable node-family
+  drift may still name `doctor --family=node --restore`.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 
@@ -191,7 +193,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI delete forwarding, force gating, human and JSON renderer output, and lifecycle validation before gateway contact. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway remove authorization, force removal, self-removal denial, and delete envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway remove authorization, force removal, self-removal semantics, and delete envelopes. |
 
 Input-mode-specific test mapping lives in:
 

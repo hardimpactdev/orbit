@@ -77,7 +77,7 @@ with [`database-doctor.md`](../../database-doctor.md).
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /database/query` |
+| Type | `api:POST /database-connections/query` |
 | Effect | `read` for read-only SQL; `write` when `--write` is accepted. |
 | Subject | `DatabaseConnection` when resolved; `none` for pre-resolution failure. |
 | Properties | `connection`, `target`, `target_type`, `driver`, `statement_class`, `row_count`, `elapsed_ms`, and optional statement fingerprint. No raw password, no raw result rows. |

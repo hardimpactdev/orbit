@@ -98,8 +98,7 @@ Use these commands before or after running `orbit update`.
 
 - [`update:all`](../2_update-all/update-all.md) - update the local installation and
   every managed Orbit installation
-- `doctor` - verify drift after updates once the doctor command contract is
-  converted
+- [`doctor`](../3_doctor/doctor.md) - verify drift after updates
 
 ## Technical Contract
 

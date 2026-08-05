@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for Linux node-, app-, and workspace-owned host command processes; `launchd` for macOS node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. Host-command processes use `systemd` on Linux and `launchd` on macOS. Managed services accept `docker`, and accept `docker-swarm` only when their catalog entry and Linux node platform admit it. |
 | `replace_containers` | repeated `--replace-container` | Optional migration cleanup for node-owned Docker managed services. | When `service` is absent, `node` is absent, or runtime is not `docker`. | Empty list. | Each value must be an explicit Docker container name. Non-interactive mode requires `--force`. The gateway removes only these named containers before writing new process configuration. |
 | `force` | `--force` | Non-interactive `replace_containers`. | Never. | `false`. | Confirms destructive replacement-container cleanup without prompting. Ignored when no replacement containers are supplied. |
-| `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
+| `no_start` | `--no-start` | Optional. | Never. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 `process_command` is positional here because it is required to create a process definition. The sibling `process:update` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
@@ -69,9 +69,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, policy fields, and durable display `label` (defaulting to the identity key when omitted).
 7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both project and instance slugs.
 8. Render the derived runtime units on the resolved node or instance serving node through the selected runtime backend.
-9. Start rendered runtime units by default unless `--no-start` is present.
-10. Record `started` events for units that start successfully.
-11. Render the selected output.
+9. Start rendered runtime units by default unless `--no-start` is present. When
+   starting, record and publish a durable transitional `starting` event before
+   each runtime call, then a terminal `started` event on success or `failed`
+   when the backend returns false or throws (same starting→started/failed
+   pattern as `process:start`).
+10. Render the selected output.
 
 If process configuration is written but runtime-unit apply or optional start fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
 

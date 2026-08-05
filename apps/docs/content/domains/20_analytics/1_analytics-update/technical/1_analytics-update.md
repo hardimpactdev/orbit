@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit analytics:update [--node=<node>] [--version=<version>] [--json]
+orbit analytics:update --requested-version=<version> [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -24,13 +24,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `--version` | Always. | Never. | None. | Plausible CE semantic version string such as `3.2.2`. |
+| `version` | `--requested-version` | Always. | Never. | None. | Plausible CE version such as `3.2.2`. Command option is `--requested-version` (see `orbit analytics:update --help`). The native launcher may rewrite a convenience `--version=` flag to this option; global `-V/--version` remains framework version display. |
 | `node` | `--node` | Optional. | Never. | The fleet's singleton visible active analytics node. | Must match the active node with the `analytics` role. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Input Resolution
 
-1. Resolve `version` from `--version`. Reject missing or malformed values before
+1. Resolve the requested Plausible CE version from `--requested-version`. Reject missing or malformed values before
    gateway side effects.
 2. Resolve `node` from `--node` or the single visible active analytics role
    node.
@@ -68,7 +68,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Active analytics node required | No visible active analytics node exists, or `--node` does not select one. | `error.code=validation_failed`, `error.meta.field=node`, `error.meta.required_role=analytics` |
-| Version required | `--version` is absent or malformed. | `error.code=validation_failed`, `error.meta.field=version` |
+| Version required | `--requested-version` is absent or malformed. | `error.code=validation_failed`, `error.meta.field=version` |
 | Process missing | The selected analytics node has no Plausible CE process row. | `error.code=process.not_found` |
 
 ## Doctor Relationship

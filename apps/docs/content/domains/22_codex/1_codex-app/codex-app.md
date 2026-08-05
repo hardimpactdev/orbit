@@ -2,6 +2,7 @@
 
 `codex:app` registers one concrete Orbit instance in Codex App on an
 eligible target node. It is for Codex App's project list, not for app runtime
+placement, workspace registration, or node identity material.
 
 ## Usage
 
@@ -51,5 +52,7 @@ codex://codex-app/apply-config
 ```
 
 The command does not register a workspace, register a Codex-managed worktree,
+write app runtime files, or create node roles, grants, SSH keys, host keys, or
+WireGuard identity material.
 
 See [`codex:app` technical contract](technical/1_codex-app.md).

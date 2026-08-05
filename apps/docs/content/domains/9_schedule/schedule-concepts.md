@@ -22,7 +22,8 @@ These terms define the core entities in the schedule domain.
   resolution fails without side effects.
 - **Node-scoped schedule:** Schedule whose scope is `node`. Executes on the
   selected node, dispatched by the gateway scheduler.
-- **Orbit-scoped schedule:** Schedule whose scope is `orbit`. Used for
+- **Orbit-scoped schedule:** Schedule whose scope is `orbit` (not creatable through
+  `schedule:add`; creatable scopes are instance and node only). Used for
   Orbit-owned maintenance work; runs on the gateway unless a command
   documents another serving node.
 - **Laravel scheduler:** Conventional instance-scoped schedule that runs

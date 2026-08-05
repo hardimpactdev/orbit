@@ -22,10 +22,12 @@ These terms describe the analytics role and the routes around it.
   ClickHouse 24.12 Alpine; both are authenticated Docker services published
   only on the database node's WireGuard address.
 - **Analytics PostgreSQL selection:** Analytics role settings persist the
-  selected PostgreSQL process ID. Existing assignments with exactly one
-  PostgreSQL candidate remain compatible and may be backfilled. A legacy
-  assignment with multiple candidates and no stored process ID fails with a
-  clear ambiguity error; candidate ordering never selects a database.
+  selected PostgreSQL process ID. Assignment-time creation requires that stored
+  identity. A one-time fleet migration may backfill the stored identity from an
+  unambiguous assignment. Multiple candidates without a stored process ID fail
+  with a clear ambiguity error. A residual runtime single-candidate fallback
+  still chooses the lone PostgreSQL process when stored identity is absent;
+  that fallback remains until removed and is not the assignment-time contract.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal
   dashboard and admin endpoint served through router. Analytics role deployment
   converges its route and TLS after Plausible is healthy; removal deletes the

@@ -39,22 +39,37 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Stop Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
-2. Resolve the selected process set:
+1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context.
+2. Reject combining `app` with `node`, `instance`, or `workspace`.
+3. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+4. Resolve the selected process set:
+
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
-3. Send the request to the gateway. The gateway authenticates the caller from the actual WireGuard peer source IP (same model as CLI/TypeScript SDK; no bearer and no client peer-IP identity header), then checks the grant, `process:stop`, and target-node authorization. Browser callers that send `Origin` also pass CORS Origin admission against the requested `app` hostname; CORS never establishes identity.
-4. Derive and validate every runtime-unit identity for the selected context
+5. Send the request to the gateway.
+6. The gateway authenticates the caller from the actual WireGuard peer source IP.
+   Authentication matches the CLI/TypeScript SDK model. There is no bearer and no
+   client peer-IP identity header.
+7. After authentication, the gateway checks the grant, `process:stop`, and target-node
+   authorization.
+8. Browser callers that send `Origin` also pass CORS Origin admission against the
+   requested `app` hostname. CORS never establishes identity.
+9. Derive and validate every runtime-unit identity for the selected context
    before runtime or hibernation side effects begin.
-5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
+10. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
    the scope's hibernation lock and mark the group asleep before stopping it.
-6. Stop each runtime unit through the gateway on the resolved node or instance serving node.
-7. Record and publish a durable `stopped` process event after each successful stop.
-8. Keep the group asleep after a successful or failed bulk development stop
+11. For each selected runtime unit, record and publish a durable transitional
+   `stopping` process event before the runtime call.
+12. Stop each runtime unit through the gateway on the resolved node or instance
+   serving node. On success, record and publish a durable `stopped` event. On
+   backend false or thrown driver error, record and publish a durable `failed`
+   event (status becomes `unknown`) before rethrowing or reporting the failure
+   so status is never stuck transitional.
+13. Keep the group asleep after a successful or failed bulk development stop
    so its next HTTP request runs activation and reconciles uncertain backend
    state. Named, node-owned, and `app-prod` actions do not change a group-level
    hibernation marker.
-9. Render the selected output.
+14. Render the selected output.
 
 `process:stop` does not change process configuration and does not remove the runtime unit artifact. In bulk mode, successful stops are not rolled back when a later process fails; the failure renderer reports partial runtime results.
 
@@ -70,7 +85,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | `[name]` is supplied and the named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
 | No processes configured | `[name]` is omitted and the resolved context has no process definitions. | Failure (`error.code=process.none_configured`). |
-| Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--app` is combined with `--node`, `--instance`, or `--workspace`; `--node` is combined with `--instance` or `--workspace`; or no node/instance/workspace/`app` context resolves. | Failure (`error.code=validation_failed`). |
 | Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Runtime action failed | The gateway cannot stop the runtime unit on the resolved node or instance serving node. | Failure (`error.code=process.runtime_action_failed`). |
 

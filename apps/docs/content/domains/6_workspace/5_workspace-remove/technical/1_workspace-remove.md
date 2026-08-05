@@ -160,9 +160,10 @@ runs.
 4. **Teardown Steps:** Configured teardown steps run before runtime container and worktree
    removal so they observe a stable workspace lifecycle environment.
 5. **Authorization:**
-   - Control and gateway peers must be authorized by the gateway to manage
-     the target workspace or its parent project.
-   - Instance-role peers are denied by the gateway before any side effects.
+   - The gateway authorizes `workspace:remove` on the workspace's instance
+     serving node through the caller's grant. Grants containing workspace
+     permissions are invalid when either endpoint carries `app-prod`, so
+     production app services can never operate workspaces.
 6. **Idempotence Boundary:**
    - If the workspace record exists, the command proceeds.
    - If the workspace record is absent, the command fails with
@@ -218,14 +219,15 @@ family doctor — not a removal failure.
 - Workspace-owned artifacts remaining after a failed cleanup are detected as
   orphaned workspace drift by [`workspace-doctor.md`](../../workspace-doctor.md)
   and the affected family doctors:
-  - `workspace.artifact_extra` — orphaned worktree or runtime container
-    (`doctor --family=workspace --restore`).
+  - `workspace.artifact_extra` — orphaned worktree or runtime configuration
+    (workspace doctor is report-only; inspect with
+    `doctor --family=workspace` and remove leftover artifacts explicitly).
   - `proxy.route_extra` — orphaned workspace-owned proxy route
     (`doctor --family=proxy --restore`).
   - `process.runtime_unit_extra` — orphaned inherited runtime unit
     (`doctor --family=process --restore`).
 - `workspace:remove` does not duplicate drift item shapes for each family; it
-  points operators at the affected `doctor --family=<family> --restore` via the
+  points operators at the owning family's repair or report path via the
   warning's `next_command`.
 
 ## Test Mapping

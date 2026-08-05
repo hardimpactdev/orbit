@@ -12,10 +12,11 @@ acts on the selection.
 Use `datatable` in the following situations.
 
 - The command needs to select a single entity from a list and immediately
-  act on it (`orbit profile` selecting an app to profile).
-- The command asks for an existing Orbit family instance such as an app, node,
-  workspace, process, schedule, or tool, and the candidates are finite registry
-  rows available at prompt time.
+  act on it (`orbit s3:publish` selecting an s3 node when more than one is
+  visible).
+- The command asks for an existing Orbit registry entity such as a project,
+  node, workspace, process, schedule, or tool, and the candidates are finite
+  registry rows available at prompt time.
 - The list may grow beyond a handful of rows, so a flat `select` would be
   awkward and a search/filter is valuable.
 
@@ -56,26 +57,24 @@ resolves it back to a domain entity.
 use function Laravel\Prompts\datatable;
 
 $selected = datatable(
-    headers: ['Host', 'Node', 'Repository'],
+    headers: ['Name', 'Roles', 'Status'],
     rows: [
-        'app-1' => ['app-1.test', 'app-1', 'orbit/example-1'],
-        'app-2' => ['app-2.example.com', 'app-2', 'orbit/example-2'],
+        's3-1' => ['s3-1', 's3', 'active'],
+        's3-2' => ['s3-2', 's3', 'active'],
     ],
-    label: 'Select an app to profile',
+    label: 'Select an s3 node',
     hint: 'Press / to search',
 );
 ```
 
 ## Reference Implementation
 
-This command uses `datatable` and is the canonical model to follow.
+These commands use `datatable` and are good models to follow.
 
-- `orbit profile` — selects the target app when no positional argument is
-  given. See `apps/gateway/app/Console/Commands/ProfileCommand.php` and
-  `docs/domains/11_operation/5_profile/technical/5.1_profile_input-mode_interactive.md`.
-- `orbit project:remove`, `orbit node:show`, `orbit workspace:show`,
-  `orbit process:update`, and `orbit schedule:run` — select existing registry
-  rows before acting on them.
+- `orbit project:list` — project selection datatable (`Select a project`).
+- Other registry list commands that call `Laravel\Prompts\datatable` through
+  shared helpers. Do not cite `s3:credentials` (no prompt), or unbacked
+  `project:remove` / `process:update` rows as datatable references.
 
 ## Cross References
 

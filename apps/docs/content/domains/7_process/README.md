@@ -66,10 +66,13 @@ These rules describe how runtime units are derived from process definitions.
   runtime backend, runtime configuration, and crash notification policy. The
   rendering context supplies per-instance fields such as node/project/instance/workspace
   identity, path, URL, environment, ports, and volumes.
-- Runtime unit names use Orbit-owned backend-safe names such as
-  `orbit_<scope>_<process>`. Instance/workspace identities include both project
-  and instance slugs so two instances of one project cannot collide. When process identity is renamed, Orbit replaces
-  derived runtime units and removes names from the previous identity instead of leaving
+- Runtime unit names for instance and workspace units use the five-part form
+  `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_docs_development_main_vite`). Node-owned units use the bare process
+  slug as the unit name. Including both project and instance slugs prevents two
+  instances of one project from colliding. When process identity is renamed,
+  Orbit replaces derived runtime units and removes names from the previous
+  identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
@@ -85,9 +88,8 @@ Restart policy is process configuration. Each derived main-instance or workspace
 
 Process definitions store a crash-notification policy. The only supported
 value is `none`. Orbit does not deliver crash notifications through an agent
-IDE or other external adapter. Historical rows that stored a removed
-`agent_ide` policy are cleared to `none` by the Release A storage cleanup
-migration.
+IDE or other external adapter. Rows that still store a removed `agent_ide`
+policy are cleared to `none` by the Release A storage cleanup migration.
 
 ### Crash event history
 
@@ -287,7 +289,7 @@ Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by the
 
 With `crash_notification=none`, Orbit does not install external crash hooks or
 post crash notifications to third-party tools. Operators still use process list,
-logs, and doctor to observe unit health. Historical crash rows that remain in
+logs, and doctor to observe unit health. Crash rows that remain in
 storage after Release A cleanup are inspection-only; there is no active product
 command that ingests or fans out crash notifications.
 

@@ -46,7 +46,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /database/describe` |
+| Type | `api:GET /database-connections/describe` |
 | Effect | `read` |
 | Subject | `DatabaseConnection` when resolved; `none` otherwise. |
 | Properties | `connection`, `target`, `target_type`, and `table`. No raw passwords. |

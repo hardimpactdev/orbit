@@ -34,7 +34,8 @@ orbit tool:install codex-cli --node=app-1 --user=agent
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node.
-- `--instance`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--tool-version`: Specific tool version supported by the tool definition.
   Tools that do not explicitly support install versions fail with
   `validation_failed`.
@@ -113,7 +114,7 @@ outcome alongside the tool entity. See the [JSON renderer contract](technical/6.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app.
+  or instance.
 - The tool definition supports managed installation on the resolved node.
 - Every declared install constraint is satisfied. Docker-backed tools require a
   reachable Docker-compatible provider; tools with a runtime user require that

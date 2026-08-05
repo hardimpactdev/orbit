@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | Local `node:default` when no instance or workspace context resolves a node. | Visible node slug. |
-| `instance` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<project.instance>` selector. A bare project fails with `error.meta.reason=instance_required`. |
+| `instance` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<project.instance>` selector. A bare project slug is valid only when that project has exactly one visible instance; zero or multiple instances fail with `error.meta.reason=instance_required`. |
 | `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent project when the workspace name is ambiguous. |
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live image inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |

@@ -219,7 +219,55 @@ describe('tool write commands', function (): void {
             ),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['tool']['state'])->toBe('removed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tool']['state'])
+            ->toBe('removed')
+            ->and($decoded['success']['meta'])
+            ->toBe([])
+            ->and($output)
+            ->toContain('"meta":[]')
+            ->and($output)
+            ->not->toContain('"meta":{}');
+    });
+
+    it('re-encodes empty gateway object meta as an empty array for tool:remove --json', function (): void {
+        // ToolRemoveController returns 'meta' => (object) [], which JSON-encodes as {}.
+        // GatewayApiClient json_decode(associative: true) turns that into [], and
+        // EmitsCanonicalEnvelopes::renderSuccess re-emits JsonEnvelope success.meta as [].
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(\App\Services\GatewayApiClient::class);
+        Http::fake([
+            'https://gateway.test/*' => Http::response(
+                '{"success":{"data":{"tool":{"name":"composer","node":"app-1","routes_removed":1}},"meta":{}}}',
+                200,
+                ['Content-Type' => 'application/json'],
+            ),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'tool:remove', [
+            'tool' => 'composer',
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tool'])
+            ->toBe([
+                'name' => 'composer',
+                'node' => 'app-1',
+                'routes_removed' => 1,
+            ])
+            ->and($decoded['success']['meta'])
+            ->toBe([])
+            ->and($output)
+            ->toContain('"meta":[]')
+            ->and($output)
+            ->not->toContain('"meta":{}');
     });
 
     it('prompts before removing a tool in interactive mode', function (): void {

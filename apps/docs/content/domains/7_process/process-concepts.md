@@ -13,7 +13,7 @@ These terms define how process definitions are identified, scoped, and ordered.
   on that instance's serving node; node-level processes run directly against
   the owning node.
 - **Process identity slug (`key`):** Stable lowercase identity slug stored
-  internally as `Process.name` and exposed publicly as `key` (with deprecated
+  internally as `Process.name` and exposed publicly as `key` (with
   compatibility alias `name` equal to `key`). Maximum 64 characters. Used for
   runtime unit identity, lifecycle targeting, and uniqueness within the owner
   scope. Renaming the identity does not rewrite the display label.
@@ -121,8 +121,12 @@ These terms describe the runtime objects that Orbit derives from process definit
   process definitions normally render one unit. Instance-scoped inherited
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
-- **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  The canonical form is `orbit_<project>_<instance>_<workspace|main>_<process>`.
+- **Runtime unit filename:** Backend-safe five-part identity for a rendered
+  runtime unit. The canonical form is
+  `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_docs_development_main_vite` and
+  `orbit_docs_development_feature-docs_vite`). Component order is project,
+  instance, workspace (or `main` for the instance checkout), then process.
   When that full identity exceeds the shared backend limit (64 characters for
   the strictest consumer, launchd), Orbit deterministically bounds it by
   retaining a readable prefix and appending a stable 12-character SHA-256
@@ -155,30 +159,34 @@ These terms define per-process behavioral rules that apply to every derived runt
   active unit; it does not opt an app-development instance or workspace out of
   hibernation.
 - **Development hibernation policy:** App-instance and workspace process groups
-  on `app-dev` nodes are installed without host-boot start intent. The first
-  HTTP request wakes the full owning group through one serialized activation
-  operation. Internal wake starts every configured lifecycle process
-  concurrently, then marks the scope awake only after a bounded aggregate
-  readiness check observes every expected runtime unit running. Public bulk
-  `process:start` keeps process-order semantics and does not adopt a
-  process-dependency model. One hour without route activity makes a group
-  eligible for an automatic stop during the next ten-minute sweep. The
-  hibernator runs independently from the Orbit Scheduler. Routes for one scope
-  share its marker, activity state, and lock. Bulk lifecycle actions use that
-  lock and align the marker with the group state; named actions do not change
-  it. Node-owned and `app-prod` processes remain boot-persistent and are outside
-  this policy.
+  on `app-dev` nodes are installed without host-boot start intent.
+
+The first HTTP request wakes the full owning group through one serialized
+activation operation. Internal wake starts every configured lifecycle process
+concurrently, then marks the scope awake only after a bounded aggregate
+readiness check observes every expected runtime unit running. Public bulk
+`process:start` keeps process-order semantics and does not adopt a
+process-dependency model.
+
+One hour without route activity makes a group eligible for an automatic stop
+during the next ten-minute sweep. The hibernator runs independently from the
+Orbit Scheduler. Routes for one scope share its marker, activity state, and
+lock. Bulk lifecycle actions use that lock and align the marker with the group
+state; named actions do not change it. Node-owned and `app-prod` processes
+remain boot-persistent and are outside this policy.
+
 - **Development cold-dependency policy:** An already-hibernated app-instance or
   workspace group becomes eligible for dependency pruning after seven days
-  without HTTP, process-lifecycle, or source-tree activity. Shared source paths
-  use their newest owning-scope activity. Orbit removes only contained,
-  non-symlink Composer or JavaScript dependency directories backed by a
-  deterministic lockfile; it retains lockfiles, build artifacts, and
-  package-manager caches. Later sweeps skip a scope that is already cold. The
-  next HTTP activation restores only the missing dependency families before
-  the concurrent process-start phase and aggregate readiness gate. The
-  activation plan enumerates the scope's effective configured processes
-  dynamically rather than assuming fixed roles such as a queue worker. Failed
+  without HTTP, process-lifecycle, or source-tree activity.
+
+Shared source paths use their newest owning-scope activity. Orbit removes only
+contained, non-symlink Composer or JavaScript dependency directories backed by
+a deterministic lockfile. It retains lockfiles, build artifacts, and
+package-manager caches. Later sweeps skip a scope that is already cold. The
+next HTTP activation restores only the missing dependency families before the
+concurrent process-start phase and aggregate readiness gate. The activation
+plan enumerates the scope's effective configured processes dynamically rather
+than assuming fixed roles such as a queue worker. Failed
   or uncertain pruning leaves the source cold, and Orbit clears that state only
   after dependency restoration and process startup both succeed. Dependencies
   are single-flight across scopes sharing a node and source path, while process
@@ -199,19 +207,23 @@ These terms define per-process behavioral rules that apply to every derived runt
 
 These terms define the durable lifecycle records that process commands produce and consume.
 
-- **Process event:** Durable lifecycle history record. Gateway lifecycle actions
-  record transitional `starting` / `stopping` / `restarting` **before** the
-  runtime call, then terminal `started` / `stopped` on success or `failed` when
-  the backend returns false or throws (exception is rethrown after recording).
-  Ordinary creation/convergence paths that start units (for example
-  `process:add --start`, workspace setup, role/doctor restore starts) use the
-  same starting→started/failed pattern. `process:update --restart` records
-  restarting→started/failed with the current process name snapshot (including
-  renames applied in the same update). Deploy active-release FrankenPHP
-  container restarts are not process lifecycle events. `crashed` events are
-  recorded when the runtime hook on the node reports an exit. Gateway lifecycle
-  event history is the authoritative process runtime state for list and toolbar
-  consumers; list does not live-probe nodes.
+- **Process event:** Durable lifecycle history record for process runtime state.
+
+Gateway lifecycle actions record transitional `starting` / `stopping` /
+`restarting` **before** the runtime call. They then record terminal `started` /
+`stopped` on success, or `failed` when the backend returns false or throws. The
+exception is rethrown after recording.
+
+Ordinary creation and convergence paths that start units use the same
+starting→started/failed pattern. Examples include `process:add` default start,
+workspace setup, and role or doctor restore starts. `process:update --restart`
+records restarting→started/failed with the current process name snapshot,
+including renames applied in the same update.
+
+Deploy active-release FrankenPHP container restarts are not process lifecycle
+events. `crashed` events are recorded when the runtime hook on the node reports
+an exit. Gateway lifecycle event history is authoritative for list and toolbar
+consumers. List does not live-probe nodes.
 - **Process status:** Normalized runtime status from the latest durable
   lifecycle event: `starting`, `running` (`started`), `stopping`, `stopped`,
   `restarting`, `crashed`, and `unknown` (no event yet, or latest event

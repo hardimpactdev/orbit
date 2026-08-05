@@ -53,7 +53,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Orbit Configuration Boundaries
 
-`cf-dns:add` writes Cloudflare provider state only. It must not create app domains, proxy routes, DNS resolver overrides local to the caller, or gateway-owned DNS configuration. Orbit-owned hostnames should normally be created through app and proxy flows that may call provider DNS application internally.
+`cf-dns:add` writes Cloudflare provider state only. It must not create instance domains, proxy routes, DNS resolver overrides local to the caller, or gateway-owned DNS configuration. Orbit-owned hostnames should normally be created through instance and proxy flows that may call provider DNS application internally.
 
 ## Renderer Contracts
 

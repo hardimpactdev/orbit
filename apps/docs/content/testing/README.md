@@ -3,6 +3,21 @@
 This directory is the authoritative lane map for Orbit verification. Read it
 before adding, changing, debugging, or running E2E tests.
 
+## Related product docs
+
+Use these product docs when a verification lane depends on contracts outside
+this testing tree.
+
+- [Command contracts](../domains/README.md) — behavior contracts under test.
+- [Machine-readable command catalog](../command-catalog.md) — catalog drift
+  guards and regeneration.
+- [Runtime execution lanes](../execution-lanes.md) — which lane a topology proof
+  exercises.
+- [Command UX](../ux/README.md) — admitted renderer and prompt primitives.
+- [Quality gates](quality-gates.md) — gate baselines and retained evidence.
+- [Security section pattern](../abstractions/17_security.md) — family-owned
+  security issue keys used in doctor/probe coverage.
+
 ## Ownership
 
 E2E is root-owned monorepo verification, not a gateway product surface. The only
@@ -155,7 +170,7 @@ These rules order the lanes above into a development workflow:
   mount and then to each VM-local runtime overlay. Keep the local worktree as
   source of truth, run commands from the retained VM's runtime overlay, and treat
   VM-side edits as disposable unless explicitly copied back. See
-  `docs/testing/e2e/prepared-topologies.md#retained-dev-topologies`.
+  [prepared topologies — retained dev topologies](e2e/prepared-topologies.md#retained-dev-topologies).
 - Findings from a retained topology should be codified back into focused Pest
   coverage when a deterministic assertion exists. Keep the retained topology
   transcript or artifact as the integrated-topology proof for the feature.
@@ -194,6 +209,7 @@ change.
 | Incus VM-feature behavior and host capacity | [Incus E2E](e2e/incus.md) |
 | E2E environment variables and lease namespaces | [E2E environment](e2e/environment.md) |
 | E2E timing baselines and resource diagnostics | [E2E performance](e2e/performance.md) |
+| Quality-gate lanes, baselines, and retained evidence under `.orbit/quality-gates/` | [Quality gates](quality-gates.md) |
 
 ## Commands
 

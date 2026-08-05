@@ -44,7 +44,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 These rules describe how `schedule:add` resolves scope and writes the gateway schedule row.
 
-- Resolves exactly one target scope: app or node.
+- Resolves exactly one target scope: instance or node.
 - Resolves instance scope to exactly one concrete instance before writing. A
   dotted selector addresses that instance; a bare project selector succeeds only
   when exactly one eligible instance is visible for `schedule:add`.

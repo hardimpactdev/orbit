@@ -1,6 +1,10 @@
 # `orbit tool:restart`
 
-Restart a lifecycle-capable tool on a target node.
+[Back to Tool commands.](../README.md)
+
+Restart a lifecycle-capable tool on a target node. Only tools whose catalog
+definition declares `restart` accept this verb (today: `orbstack` on macOS,
+`dns` on the gateway).
 
 ## Usage
 
@@ -8,7 +12,6 @@ Restart a lifecycle-capable tool on a target node.
 orbit tool:restart <tool> --node=<node>
 orbit tool:restart orbstack --node=<mac-node>
 orbit tool:restart dns
-orbit tool:restart hermes --instance=<project.instance>
 orbit tool:restart orbstack --node=<mac-node> --json
 ```
 

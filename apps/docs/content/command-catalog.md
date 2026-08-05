@@ -38,8 +38,14 @@ composer docs-lint
 The catalog joins existing Orbit sources:
 
 - The live CLI surface from `apps/cli/orbit list --format=json`, generated with
-  Orbit's docs-only extension-surface flag so built-in extension commands are
-  cataloged even when they are hidden from normal local discovery.
+  Orbit's docs-only `ORBIT_CLI_SHOW_ALL_EXTENSION_COMMANDS=1` flag so enabled
+  built-in extension commands appear even when local extension state would
+  normally hide them from discovery.
+- Reserved Solo placeholder commands are deliberately excluded: when that flag
+  is set, Solo placeholders stay hidden so the catalog lists only implemented
+  (or otherwise non-placeholder) public commands. The reserved Solo name set
+  lives in the [extension domain Solo catalog](domains/21_extension/README.md#solo-command-catalog),
+  not in `generated/command-catalog.json`.
 - Command documentation directories under `apps/docs/content/domains`.
 - Command docs registries under `apps/docs/config/librarian-command-docs`.
 - Technical contract test mappings from command technical files.
@@ -76,6 +82,10 @@ Each command entry contains:
 - `docs.repo_directory`, `docs.repo_public`, and `docs.repo_technical` paths
   relative to the repository root for agents that need direct file reads.
 - `linked_test_files` parsed from technical contract test mappings.
+- `verification_hints` derived from those linked tests: each entry has
+  `repo_test_path`, `working_directory`, `runner`, `runner_test_path`, and
+  `suggested_command` so agents can run the narrowest useful check for the
+  command without inventing paths.
 - `p4_mapping` deterministic CLI-to-SDK-to-gateway trace metadata for LLM
   consumers. Values are generated from CLI gateway call sites, SDK request
   classes, gateway routes, controller classes, and statically discoverable

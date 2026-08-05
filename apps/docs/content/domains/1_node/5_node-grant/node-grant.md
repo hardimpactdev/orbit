@@ -70,7 +70,7 @@ The command:
    policy.
 3. Resolves the initial permission set from `--preset` or `--permissions`
    and normalizes it.
-4. Enforces the app-dev-only workspace boundary against both grant endpoints.
+4. Enforces the app-prod workspace-permission rejection against both grant endpoints.
 5. Requires explicit consent for elevated grants. `gateway-admin` or any
    permission set containing `*` on a grant to the gateway prompts an
    interactive confirmation, or requires `--force` in non-interactive mode.

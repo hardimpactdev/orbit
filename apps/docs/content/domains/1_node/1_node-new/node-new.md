@@ -19,7 +19,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -40,7 +40,6 @@ orbit node:new dev-1 --roles=app-dev --host=app-1.ssh.example.com --tld=test
 orbit node:new edge-1 --template=ingress --host=203.0.113.20 --tld=edge
 orbit node:new web-1 --template=app-production --host=203.0.113.21 --tld=web
 orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22 --tld=web-two
-orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --valkey-node=db-1 --tld=realtime
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data --tld=storage
 orbit node:new metrics-1 --template=metrics --host=203.0.113.40 --tld=metrics
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
@@ -97,6 +96,12 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   used when the Agent executes work on that node. Root SSH login and password
   login are disabled. Break-glass access belongs to the operator and remains
   outside Orbit commands.
+- `--gateway-endpoint`: optional IP address or dotted DNS name that this node's
+  WireGuard peer should use to reach the gateway. Defaults to the gateway VPN
+  public endpoint. Forbidden for bare client identities and `--operator`. The
+  WireGuard port is appended by Orbit.
+- `--host-key-fingerprint`: optional expected SSH host key SHA256 fingerprint
+  verified by the initiating CLI during bootstrap.
 - `--ingress`: existing active `ingress` node to use when
   creating a private `app-prod` backend node that does not serve public
   traffic itself.
@@ -119,6 +124,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
+- `--self-grant-permissions`: custom permission set for the self-grant. Optional;
+  requires `--self-grant=custom` specifically (not merely any `--self-grant`).
 - `--agent-tool`: repeatable. Names an agent tool slug to install during
   provisioning when `--roles` includes `agent`. Forbidden when the node has no
   `agent` role. Zero, one, or many may be supplied; no default agent tool is
@@ -156,9 +163,12 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 | `analytics` | `analytics` | — | yes | live |
 | `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
 
-> **Status:** The `websocket` template is documented so the CLI surface stays
-> stable, but current behavior fails before side effects with
-> `validation_failed` until the WebSocket implementation lands. See the
+> **Status:** The `websocket` template and `--roles=websocket` remain accepted
+> names on this command so the CLI surface stays stable, but current behavior
+> fails before side effects with `validation_failed` and
+> `reason=not_implemented`. The live path onto a node is
+> [`node role:add`](../12_node-role-add/node-role-add.md) with role
+> `websocket` (and `--valkey-node`) on an already-provisioned host. See the
 > [JSON renderer contract](technical/6.2_node-new_output-render_json.md#validation-error)
 > for the exact machine-readable failure shape.
 
@@ -203,10 +213,12 @@ Requires `--host` when the template provisions a host.
 
 **`websocket` template**
 
-Provisions a private realtime node and creates an active `websocket` role
-assignment whose settings point at the selected Valkey node.
-
-Requires `--host` and `--valkey-node`. Implementation pending.
+Documented expansion would provision a private realtime node and create an
+active `websocket` role assignment whose settings point at the selected Valkey
+node. Requires `--host` and `--valkey-node`. Current `node:new` rejects the
+template and explicit `websocket` role with `reason=not_implemented`; use
+`node role:add <node> websocket --valkey-node=<node>` after provisioning the
+host.
 
 **`s3` template**
 

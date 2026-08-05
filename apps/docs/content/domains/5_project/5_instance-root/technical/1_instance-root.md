@@ -150,8 +150,8 @@ reuse the vocabulary of the family that owns the drift:
 | --- | --- | --- |
 | `process.runtime_unit_mismatch` | `process` | The instance's concrete runtime container could not be re-applied to match its process-backed runtime definition. |
 | `process.runtime_unit_missing` | `process` | The instance's concrete runtime container could not be rendered or started while applying. |
-| `instance.runtime_config_mismatch` | `project` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
-| `instance.runtime_config_missing` | `project` | Managed app runtime configuration could not be installed while applying. |
+| `instance.runtime_config_mismatch` | `instance` | Managed instance runtime configuration could not be re-applied to match gateway configuration. |
+| `instance.runtime_config_missing` | `instance` | Managed instance runtime configuration could not be installed while applying. |
 
 Process warnings use `doctor --family=process --restore`. Managed-configuration
 warnings use `doctor --family=instance --instance=<project.instance> --restore`.

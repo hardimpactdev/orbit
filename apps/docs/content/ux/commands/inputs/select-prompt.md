@@ -43,9 +43,21 @@ primitive (the concern does not wrap `select` today).
 ```php
 use function Laravel\Prompts\select;
 
-$role = select(
-    label: 'Node role',
-    options: ['gateway', 'app-dev', 'app-prod', 'database', 'agent'],
+$template = select(
+    label: 'Node template',
+    options: [
+        'operator',
+        'app-development',
+        'app-production',
+        'gateway',
+        'ingress',
+        'database',
+        's3',
+        'metrics',
+        'websocket',
+        'analytics',
+        'agent',
+    ],
     required: true,
 );
 ```
@@ -54,7 +66,9 @@ $role = select(
 
 These commands use `select` and are good models to follow.
 
-- `orbit node:new` — `node_new.role`, `node_new.environment` use `select`.
+- Prefer commands that call `Laravel\Prompts\select` for single-choice picks
+  (for example project/node selection helpers that use select prompts). Do not
+  cite `node:new` here; its interactive path uses text prompts, not `select`.
 
 ## Cross References
 

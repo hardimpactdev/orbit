@@ -39,10 +39,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Removes a route when the owner is `custom`.
 - With destructive consent, also removes a non-custom route only when the
   recorded owner reference is proven missing in gateway configuration (orphan
-  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: app,
-  app-analytics, and app-websocket owners require a living project row;
-  workspace owners require a living workspace row. Missing proof means the
-  relation does not resolve (including a null foreign key after cascade null).
+  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `project`,
+  `instance`, `analytics`, and `websocket` owners require the corresponding
+  living project, instance, or binding row; `workspace` owners require a living
+  workspace row. Missing proof means the relation does not resolve (including a
+  null foreign key after cascade null).
 - `--force` never becomes a general ownership bypass. A living project,
   instance, WebSocket, workspace, gateway, S3, or tool owner still denies
   removal with `proxy.owned_route_denied`.
