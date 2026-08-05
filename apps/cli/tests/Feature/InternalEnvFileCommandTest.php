@@ -225,7 +225,8 @@ describe('internal env-file command', function (): void {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
-            foreach (glob($directory.'/.env.tmp.*') ?: [] as $leftover) {
+            $tmpLeftovers = glob($directory.'/.env.tmp.*');
+            foreach ($tmpLeftovers === false ? [] : $tmpLeftovers as $leftover) {
                 unlink($leftover);
             }
             if (is_file($directory.'/outside.env')) {
@@ -273,7 +274,8 @@ describe('internal env-file command', function (): void {
             fclose($pipes[2]);
             $exitCode = proc_close($process);
 
-            $movedInside = glob($path.'/*') ?: [];
+            $dirChildren = glob($path.'/*');
+            $movedInside = $dirChildren === false ? [] : $dirChildren;
 
             expect($exitCode)
                 ->not
@@ -288,7 +290,8 @@ describe('internal env-file command', function (): void {
                 ->toBeFalse();
         } finally {
             if (is_dir($path)) {
-                foreach (glob($path.'/*') ?: [] as $child) {
+                $cleanupChildren = glob($path.'/*');
+                foreach ($cleanupChildren === false ? [] : $cleanupChildren as $child) {
                     if (is_file($child) || is_link($child)) {
                         unlink($child);
                     }
@@ -298,7 +301,8 @@ describe('internal env-file command', function (): void {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
-            foreach (glob($directory.'/.env.tmp.*') ?: [] as $leftover) {
+            $tmpLeftovers = glob($directory.'/.env.tmp.*');
+            foreach ($tmpLeftovers === false ? [] : $tmpLeftovers as $leftover) {
                 unlink($leftover);
             }
             if (is_dir($directory)) {
@@ -326,7 +330,8 @@ describe('internal env-file command', function (): void {
             );
 
             $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-            $movedInside = glob($envPath.'/*') ?: [];
+            $envChildren = glob($envPath.'/*');
+            $movedInside = $envChildren === false ? [] : $envChildren;
 
             expect($exitCode)
                 ->toBe(1)
@@ -338,7 +343,8 @@ describe('internal env-file command', function (): void {
                 ->toBe([]);
         } finally {
             if (is_dir($envPath)) {
-                foreach (glob($envPath.'/*') ?: [] as $child) {
+                $cleanupChildren = glob($envPath.'/*');
+                foreach ($cleanupChildren === false ? [] : $cleanupChildren as $child) {
                     if (is_file($child) || is_link($child)) {
                         unlink($child);
                     }
