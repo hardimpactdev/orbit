@@ -17,12 +17,7 @@ final readonly class LocalProcessLogsAction
 {
     private const int OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS = 1_000_000;
 
-    /**
-     * Operator WS connect + channel auth + HTTP lease can take well over one
-     * second on a real topology (observed ~12s on retained Incus); keep the
-     * target tail open until that lands.
-     */
-    private const int INITIAL_SUBSCRIBER_GRACE_MICROSECONDS = 20_000_000;
+    private const int INITIAL_SUBSCRIBER_GRACE_MICROSECONDS = 1_000_000;
 
     private const int OPERATION_STREAM_POLL_SLEEP_MICROSECONDS = 100_000;
 
@@ -45,7 +40,7 @@ final readonly class LocalProcessLogsAction
         $input = LocalProcessLogsPayload::from($payload);
         $result = $this->run($this->command($input));
 
-        if (! $result->isSuccessful()) {
+        if (!$result->isSuccessful()) {
             throw new LocalProcessLogsFailure(
                 errorCode: 'process_logs_failed',
                 message: 'Process logs could not be read.',
@@ -62,7 +57,7 @@ final readonly class LocalProcessLogsAction
             'data' => [
                 'backend' => $input->backend,
                 'runtime_unit' => $input->runtimeUnit,
-                'output' => $result->getOutput().$result->getErrorOutput(),
+                'output' => $result->getOutput() . $result->getErrorOutput(),
             ],
             'meta' => [],
         ];
@@ -128,7 +123,7 @@ final readonly class LocalProcessLogsAction
         $deadline = microtime(true) + (self::INITIAL_SUBSCRIBER_GRACE_MICROSECONDS / 1_000_000);
 
         while (microtime(true) < $deadline) {
-            if (! $this->shouldStop($input)) {
+            if (!$this->shouldStop($input)) {
                 return;
             }
 

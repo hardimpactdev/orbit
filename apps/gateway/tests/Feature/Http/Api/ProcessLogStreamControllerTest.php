@@ -24,7 +24,7 @@ describe('ProcessLogStreamStartController', function (): void {
         LocalGatewaySettings::current()->fill(['gateway_url' => 'https://gateway.test'])->save();
         Http::preventStrayRequests();
         Http::fake([
-            'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream' => Http::response(
+            'http://' . PROCESS_LOG_STREAM_TARGET_WG_IP . ':9477/v1/commands/stream' => Http::response(
                 "target output is published by the node\n",
                 200,
                 ['Content-Type' => 'text/plain; charset=UTF-8'],
@@ -47,8 +47,12 @@ describe('ProcessLogStreamStartController', function (): void {
         $response = process_log_stream_start_api_call();
         $operationRunId = $response->json('success.data.operation.uuid');
 
+        $content = (string) $response->getContent();
+
         $response
             ->assertAccepted()
+            ->assertHeader('Content-Type', 'application/json')
+            ->assertHeader('Content-Length', (string) strlen($content))
             ->assertJsonPath(
                 'success.data.operation.stream_descriptor_url',
                 "/api/operations/{$operationRunId}/stream",
@@ -56,7 +60,12 @@ describe('ProcessLogStreamStartController', function (): void {
 
         expect($operationRunId)
             ->toBeString()
-            ->not->toBeEmpty();
+            ->not
+            ->toBeEmpty()
+            ->and($response->headers->get('Transfer-Encoding'))
+            ->toBeNull()
+            ->and(strlen($content))
+            ->toBeGreaterThan(0);
 
         app()->terminate();
 
@@ -83,7 +92,7 @@ function process_log_stream_create_app(array $attributes): Project
 {
     $app = Project::factory()->create($attributes);
 
-    if (! $app instanceof Project) {
+    if (!$app instanceof Project) {
         throw new RuntimeException('Expected app factory to create an app model.');
     }
 
@@ -92,11 +101,9 @@ function process_log_stream_create_app(array $attributes): Project
 
 function process_log_stream_create_process(Project $app, string $name): Process
 {
-    $process = Process::factory()
-        ->forOwner($app)
-        ->create(['name' => $name]);
+    $process = Process::factory()->forOwner($app)->create(['name' => $name]);
 
-    if (! $process instanceof Process) {
+    if (!$process instanceof Process) {
         throw new RuntimeException('Expected process factory to create a process model.');
     }
 
@@ -125,11 +132,11 @@ function process_log_stream_first_agent_push_request(): ?Request
     foreach (Http::recorded() as $record) {
         $request = $record[0] ?? null;
 
-        if (! $request instanceof Request) {
+        if (!$request instanceof Request) {
             continue;
         }
 
-        if ($request->url() === 'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream') {
+        if ($request->url() === 'http://' . PROCESS_LOG_STREAM_TARGET_WG_IP . ':9477/v1/commands/stream') {
             return $request;
         }
     }
@@ -142,25 +149,25 @@ function process_log_stream_first_agent_push_request(): ?Request
  */
 function process_log_stream_operation_payload(?Request $request): array
 {
-    if (! $request instanceof Request) {
+    if (!$request instanceof Request) {
         return [];
     }
 
     $input = $request->data()['input'] ?? null;
 
-    if (! is_string($input)) {
+    if (!is_string($input)) {
         return [];
     }
 
     $payload = json_decode($input, associative: true);
 
-    if (! is_array($payload)) {
+    if (!is_array($payload)) {
         return [];
     }
 
     $operationStream = $payload['operation_stream'] ?? null;
 
-    if (! is_array($operationStream)) {
+    if (!is_array($operationStream)) {
         return [];
     }
 
