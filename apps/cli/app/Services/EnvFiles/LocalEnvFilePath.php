@@ -60,6 +60,13 @@ final readonly class LocalEnvFilePath
         if (is_link($path)) {
             throw $this->invalid();
         }
+
+        // Existing targets must be regular files. A directory (or other non-file)
+        // must not be accepted: atomic replace via rename/mv would otherwise
+        // move the staged temp into the directory and report a false success.
+        if (file_exists($path) && ! is_file($path)) {
+            throw $this->invalid();
+        }
     }
 
     public function isReadableFile(string $path): bool

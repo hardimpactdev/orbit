@@ -237,6 +237,118 @@ describe('internal env-file command', function (): void {
         }
     });
 
+    it('rejects publish when an existing .env target is a directory rather than a regular file', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-env-posix-dir-'.bin2hex(random_bytes(4));
+        mkdir($directory, permissions: 0o755);
+        $path = $directory.'/.env';
+        mkdir($path, permissions: 0o755);
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(4));
+
+        try {
+            $script = \App\Services\EnvFiles\RuntimeUserEnvFileWriter::publishScript(
+                temporary: $temporary,
+                path: $path,
+                mode: 0o600,
+            );
+
+            expect($script)->toContain('[ ! -f ');
+
+            $process = proc_open(
+                ['sh', '-c', $script],
+                [
+                    0 => ['pipe', 'r'],
+                    1 => ['pipe', 'w'],
+                    2 => ['pipe', 'w'],
+                ],
+                $pipes,
+            );
+
+            expect($process)->not->toBeFalse();
+
+            fwrite($pipes[0], "SHOULD_NOT_PUBLISH=1\n");
+            fclose($pipes[0]);
+            stream_get_contents($pipes[1]);
+            stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exitCode = proc_close($process);
+
+            $movedInside = glob($path.'/*') ?: [];
+
+            expect($exitCode)
+                ->not
+                ->toBe(0)
+                ->and(is_dir($path))
+                ->toBeTrue()
+                ->and($movedInside)
+                ->toBe([])
+                ->and(is_file($temporary))
+                ->toBeFalse()
+                ->and(file_exists($path.'/SHOULD_NOT_PUBLISH'))
+                ->toBeFalse();
+        } finally {
+            if (is_dir($path)) {
+                foreach (glob($path.'/*') ?: [] as $child) {
+                    if (is_file($child) || is_link($child)) {
+                        unlink($child);
+                    }
+                }
+                rmdir($path);
+            }
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+            foreach (glob($directory.'/.env.tmp.*') ?: [] as $leftover) {
+                unlink($leftover);
+            }
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+        }
+    });
+
+    it('rejects a direct write when an existing managed .env target is a directory', function (): void {
+        $workspace = make_env_file_development_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        mkdir($envPath, permissions: 0o755);
+
+        try {
+            [$exitCode, $output] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'write',
+                    'path' => $envPath,
+                    'contents' => "APP_KEY=should-fail\n",
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+            $movedInside = glob($envPath.'/*') ?: [];
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('validation_failed')
+                ->and(is_dir($envPath))
+                ->toBeTrue()
+                ->and($movedInside)
+                ->toBe([]);
+        } finally {
+            if (is_dir($envPath)) {
+                foreach (glob($envPath.'/*') ?: [] as $child) {
+                    if (is_file($child) || is_link($child)) {
+                        unlink($child);
+                    }
+                }
+                rmdir($envPath);
+            }
+            delete_env_file_development_worktree_workspace($workspace);
+        }
+    });
+
     it('rejects a production env runtime user that does not own the app path', function (): void {
         Process::fake();
 

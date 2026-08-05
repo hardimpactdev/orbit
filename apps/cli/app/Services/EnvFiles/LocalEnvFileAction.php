@@ -27,6 +27,9 @@ final readonly class LocalEnvFileAction
         }
 
         $contents = $this->contents($payload['contents'] ?? null);
+        // Validate before either write path so a directory/symlink .env cannot
+        // reach stage/rename or the runtime-user publish script.
+        $this->paths->assertWritableTarget($path);
         $runtimeUser = $payload['runtime_user'] ?? null;
 
         if ($runtimeUser !== null) {

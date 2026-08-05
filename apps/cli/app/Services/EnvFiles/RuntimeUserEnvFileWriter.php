@@ -15,8 +15,11 @@ final readonly class RuntimeUserEnvFileWriter
      */
     public static function publishScript(string $temporary, string $path, int $mode): string
     {
+        // Reject symlinks and non-regular existing targets (e.g. directories)
+        // before mv. POSIX `mv` into an existing directory exits 0 and moves
+        // the temp inside it, which must never count as publishing .env.
         return sprintf(
-            'set -eu; tmp=%1$s; target=%2$s; trap \'rm -f -- "$tmp"\' EXIT HUP INT TERM; cat > "$tmp"; chmod %3$o "$tmp"; if [ -L "$target" ]; then exit 1; fi; mv -f -- "$tmp" "$target"; trap - EXIT HUP INT TERM',
+            'set -eu; tmp=%1$s; target=%2$s; trap \'rm -f -- "$tmp"\' EXIT HUP INT TERM; cat > "$tmp"; chmod %3$o "$tmp"; if [ -L "$target" ]; then exit 1; fi; if [ -e "$target" ] && [ ! -f "$target" ]; then exit 1; fi; mv -f -- "$tmp" "$target"; trap - EXIT HUP INT TERM',
             escapeshellarg($temporary),
             escapeshellarg($path),
             $mode,
