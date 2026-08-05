@@ -58,8 +58,16 @@ Run the smallest relevant checks first, then the diff-routed broader gate:
 When the Goal claims runtime reachability or convergence, proof must directly
 exercise the claimed final outcome. Configuration validation, artifact
 presence, and successful intermediate hops are supporting evidence, not
-substitutes. A failed or explicitly excluded final hop means
-`Verification.runtime` cannot be recorded as `passed`.
+substitutes. A failed, excluded, still-required, or deferred final hop means
+`Verification.runtime` cannot be recorded as `passed`. Acceptance and
+finalization share that contract for every non-`automated` venue: the existing
+`Verification.runtime` row must carry a candidate-bound structured receipt
+(`candidate=`, `venue=`, `environment=`, `target=` or `command=`, `expected=`,
+`observed=`, `result=passed`, and one exact `evidence=` path under
+`.orbit/evidence/` or `.orbit/quality-gates/`). Free-form wording cannot turn a
+failed or post-LAND/post-merge deferred hop into a pass; remain in PROVE and
+re-prove the final hop. Historical archive reading stays compatible; the
+strict receipt applies when new acceptance or finalization is attempted.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those

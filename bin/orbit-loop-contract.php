@@ -422,7 +422,7 @@ function orbitLoopVenueSatisfies(string $actual, string $required): bool
         && ($actual === $required || $required === 'automated');
 }
 
-function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
+function orbitLoopRuntimeProofProblem(string $markdown, string $venue, ?string $candidateCommit = null): ?string
 {
     if ($venue === 'automated') {
         return null;
@@ -434,7 +434,139 @@ function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
         return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
     }
 
+    $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem((string) $runtime);
+
+    if ($deferredProblem !== null) {
+        return $deferredProblem;
+    }
+
+    $receiptProblem = orbitLoopRuntimeProofReceiptProblem((string) $runtime, $venue, $candidateCommit);
+
+    if ($receiptProblem !== null) {
+        return $receiptProblem;
+    }
+
     return null;
+}
+
+function orbitLoopRuntimeProofDeferredFinalHopProblem(string $runtime): ?string
+{
+    $normalized = strtolower($runtime);
+    $normalized = preg_replace('/\bno\s+failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bprevious\s+failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bexpected\s+failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bfailures?\s+repaired\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\brepaired\s+(?:the\s+)?(?:previous\s+)?failures?\b/', ' ', $normalized) ?? $normalized;
+
+    $blockedPatterns = [
+        '/\bpost-land\b/',
+        '/\bafter\s+land\b/',
+        '/\bpost-merge\b/',
+        '/\bdeferred\b/',
+        '/\bremains\s+required\b/',
+        '/\bfollow-up\s+closure\s+proof\b/',
+        '/\bclosure\s+proof\b/',
+        '/\bwas\s+excluded\b/',
+        '/\bre-proof\s+follows\b/',
+        '/\bproof\s+follows\b/',
+        '/\bfailed\b/',
+        '/\bfailure\b/',
+    ];
+
+    foreach ($blockedPatterns as $pattern) {
+        if (preg_match($pattern, $normalized) === 1) {
+            return 'Verification runtime claims passed while the decisive final hop failed, was excluded, remains required, or is deferred; remain in PROVE and re-prove the final hop';
+        }
+    }
+
+    return null;
+}
+
+function orbitLoopRuntimeProofReceiptProblem(
+    string $runtime,
+    string $venue,
+    ?string $candidateCommit,
+): ?string {
+    if (preg_match('/^passed\s+-\s+(.+)$/is', $runtime, $match) !== 1) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+
+    $fields = orbitLoopRuntimeProofParseFields(trim($match[1]));
+
+    if ($fields === null) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+
+    $required = ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
+
+    foreach ($required as $key) {
+        if (! array_key_exists($key, $fields) || trim($fields[$key]) === '') {
+            return "Verification runtime structured receipt is missing {$key}=; remain in PROVE and re-prove the final hop";
+        }
+    }
+
+    $hasTarget = array_key_exists('target', $fields) && trim($fields['target']) !== '';
+    $hasCommand = array_key_exists('command', $fields) && trim($fields['command']) !== '';
+
+    if ($hasTarget === $hasCommand) {
+        return 'Verification runtime structured receipt requires exactly one of target= or command=; remain in PROVE and re-prove the final hop';
+    }
+
+    if (preg_match('/^[0-9a-f]{40}$/', $fields['candidate']) !== 1) {
+        return 'Verification runtime structured receipt candidate= must be the exact 40-character candidate commit; remain in PROVE and re-prove the final hop';
+    }
+
+    if ($candidateCommit !== null && ! hash_equals($candidateCommit, $fields['candidate'])) {
+        return 'Verification runtime structured receipt candidate= must equal the candidate commit; remain in PROVE and re-prove the final hop';
+    }
+
+    if ($fields['venue'] !== $venue) {
+        return "Verification runtime structured receipt venue= must equal acceptance venue {$venue}; remain in PROVE and re-prove the final hop";
+    }
+
+    if ($fields['result'] !== 'passed') {
+        return 'Verification runtime structured receipt result= must be passed; remain in PROVE and re-prove the final hop';
+    }
+
+    if (preg_match(
+        '/^`(\.orbit\/(?:evidence|quality-gates)\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]*[A-Za-z0-9_-])`$/',
+        $fields['evidence'],
+    ) !== 1) {
+        return 'Verification runtime structured receipt evidence= must be one exact inline-code path under .orbit/evidence/ or .orbit/quality-gates/; remain in PROVE and re-prove the final hop';
+    }
+
+    return null;
+}
+
+/**
+ * @return array<string, string>|null
+ */
+function orbitLoopRuntimeProofParseFields(string $detail): ?array
+{
+    $fields = [];
+    $parts = preg_split('/;\s*/', $detail) ?: [];
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+
+        if ($part === '') {
+            continue;
+        }
+
+        if (preg_match('/^([a-z][a-z0-9_]*)=(.*)$/s', $part, $match) !== 1) {
+            return null;
+        }
+
+        $key = $match[1];
+
+        if (array_key_exists($key, $fields)) {
+            return null;
+        }
+
+        $fields[$key] = trim($match[2]);
+    }
+
+    return $fields === [] ? null : $fields;
 }
 
 function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, string $mainTip): ?string

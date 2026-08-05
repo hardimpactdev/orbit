@@ -156,11 +156,12 @@ it('does not require retained runtime proof for repository tooling', function ()
         $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
         file_put_contents(
             "{$fixture}/.orbit/loop.md",
-            str_replace(
-                '- runtime: passed - retained fixture',
-                '- runtime: not applicable - repository tooling',
+            preg_replace(
+                '/^(\s*)- runtime: .+$/m',
+                '$1- runtime: not applicable - repository tooling',
                 $loop,
-            ),
+                1,
+            ) ?? $loop,
         );
 
         $ready = acceptance_test_run($fixture, ['ready']);
@@ -174,6 +175,7 @@ it('does not require retained runtime proof for repository tooling', function ()
             ->toBe(0, $accepted->getErrorOutput())
             ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
             ->toContain('- Acceptance venue: automated')
+            ->toContain('- runtime: not applicable - repository tooling')
             ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment');
     } finally {
         acceptance_test_remove($fixture);
@@ -455,11 +457,12 @@ it('requires the diff-derived runtime proof before any retained acceptance', fun
         $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
         file_put_contents(
             "{$fixture}/.orbit/loop.md",
-            str_replace(
-                '- runtime: passed - retained fixture',
-                '- runtime: not applicable - skipped',
+            preg_replace(
+                '/^(\s*)- runtime: .+$/m',
+                '$1- runtime: not applicable - skipped',
                 $loop,
-            ),
+                1,
+            ) ?? $loop,
         );
 
         $ready = acceptance_test_run($fixture, ['ready']);
@@ -477,6 +480,92 @@ it('requires the diff-derived runtime proof before any retained acceptance', fun
         acceptance_test_remove($fixture);
     }
 });
+
+it('rejects deferred or failed final-hop runtime claims and accepts structured completed proof', function (
+    string $runtimeDetail,
+    bool $shouldPass,
+    ?string $errorNeedle,
+): void {
+    $fixture = acceptance_test_workspace(
+        'runtime-final-hop-'.substr(md5($runtimeDetail), 0, 10),
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        $runtime = str_replace('<TIP>', $tip, $runtimeDetail);
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        file_put_contents(
+            "{$fixture}/.orbit/loop.md",
+            preg_replace('/^(\s*)- runtime: .+$/m', '$1- runtime: '.$runtime, $loop, 1) ?? $loop,
+        );
+        $before = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        if ($shouldPass) {
+            expect($ready->getExitCode())
+                ->toBe(0, $ready->getErrorOutput())
+                ->and($accepted->getExitCode())
+                ->toBe(0, $accepted->getErrorOutput())
+                ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+                ->toContain('- State: accepted');
+        } else {
+            expect($ready->getExitCode())
+                ->toBe(2)
+                ->and($ready->getErrorOutput())
+                ->toContain((string) $errorNeedle)
+                ->toContain('remain in PROVE')
+                ->and($accepted->getExitCode())
+                ->toBe(2)
+                ->and($accepted->getErrorOutput())
+                ->toContain((string) $errorNeedle)
+                ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+                ->toBe($before)
+                ->toContain('- State: prove');
+        }
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'post-LAND deferral' => [
+        'passed - live update failed writing bare /etc/caddy; post-LAND durable re-proof follows',
+        false,
+        'final hop',
+    ],
+    'post-merge remains required' => [
+        'passed - automated host-boundary simulation; immediate post-merge live candidate verification remains required',
+        false,
+        'final hop',
+    ],
+    'follow-up closure proof' => [
+        'passed - packaging contract green; live rebuild is follow-up closure proof after LAND',
+        false,
+        'final hop',
+    ],
+    'free-form without receipt' => [
+        'passed - retained fixture',
+        false,
+        'structured runtime receipt',
+    ],
+    'valid structured receipt' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0 with no failures; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid repaired failure narrative' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; command=orbit doctor --node=agent-1; expected=healthy; observed=healthy after previous failure repaired; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+]);
 
 it('requires a human-judgment decision on reviewer PASS', function (): void {
     $fixture = acceptance_test_workspace('missing-human-judgment', 'bin/orbit-example');
@@ -833,6 +922,12 @@ function acceptance_test_seed_loop(
     string $blastRadius = 'not-required - local change',
 ): void {
     $reviewedTip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+    // Seed a candidate-bound structured receipt even when the packet still says
+    // venue=automated so ready can upgrade to the diff-derived retained venue.
+    $runtime = acceptance_test_structured_runtime(
+        $reviewedTip,
+        $venue === 'automated' ? 'retained-incus' : $venue,
+    );
 
     file_put_contents("{$fixture}/.orbit/loop.md", <<<MARKDOWN
         # Orbit Feature Loop
@@ -856,7 +951,7 @@ function acceptance_test_seed_loop(
         - Verification:
           - focused: passed - initial focused proof
           - broader: passed - initial broader proof
-          - runtime: passed - retained fixture
+          - runtime: {$runtime}
         - Blast radius: {$blastRadius}
         - Review: {$review}
         - Reviewed feature tip: {$reviewedTip}
@@ -874,6 +969,21 @@ function acceptance_test_seed_loop(
 
         - Events: `.orbit/feedback.jsonl`
         MARKDOWN);
+}
+
+function acceptance_test_structured_runtime(
+    string $candidate,
+    string $venue = 'retained-incus',
+    string $observed = 'exit 0',
+): string {
+    return 'passed - candidate='.$candidate
+        .'; venue='.$venue
+        .'; environment=dev-fixture'
+        .'; target=orbit fixture'
+        .'; expected=exit 0'
+        .'; observed='.$observed
+        .'; result=passed'
+        .'; evidence=`.orbit/evidence/runtime-proof.txt`';
 }
 
 /** @param list<string> $arguments */

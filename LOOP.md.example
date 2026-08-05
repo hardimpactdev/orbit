@@ -48,6 +48,13 @@ review PASS must record `human-judgment=required|not-required` and the exact
 committed HEAD in `Reviewed feature tip`. Blast radius must be `not-required -
 <reason>` or `complete - evidence=<repository-wide search, inventory, or
 lintable check>; result=<summary>` before acceptance; `gaps` returns to BUILD.
-Proof files retained by the compact archive must be cited as one exact
-inline-code path, for example `.orbit/evidence/runtime-proof.txt`; prose,
-directories, padded code spans, and partial paths are not proof citations.
+For non-`automated` venues, `Verification.runtime: passed` must use a
+candidate-bound structured receipt on that same row:
+`candidate=<sha>; venue=<venue>; environment=<env>; target=<target>|command=<cmd>;
+expected=<outcome>; observed=<outcome>; result=passed;
+evidence=\`.orbit/evidence/...\``. A failed, excluded, still-required, or
+deferred final hop cannot be recorded as passed; remain in PROVE and re-prove
+it. Automated venues keep `runtime: not applicable`. Proof files retained by
+the compact archive must be cited as one exact inline-code path, for example
+`.orbit/evidence/runtime-proof.txt`; prose, directories, padded code spans, and
+partial paths are not proof citations.

@@ -402,6 +402,67 @@ it('requires runtime proof for retained automated acceptance before finalization
     }
 });
 
+it('rejects deferred final-hop runtime claims and accepts structured completed proof at finalization', function (
+    string $runtimeDetail,
+    bool $shouldPass,
+    ?string $errorNeedle,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/runtime.php', "<?php\n\n// Updated runtime.\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        $runtime = str_replace('<TIP>', $featureTip, $runtimeDetail);
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - human-judgment=not-required',
+                acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+                runtime: $runtime,
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        if ($shouldPass) {
+            expect($process->getExitCode())
+                ->toBe(0, $process->getErrorOutput())
+                ->and($process->getOutput())
+                ->toContain('FINALIZATION: PASS');
+        } else {
+            expect($process->getExitCode())
+                ->toBe(2)
+                ->and($process->getErrorOutput())
+                ->toContain((string) $errorNeedle)
+                ->toContain('remain in PROVE');
+        }
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'post-LAND deferral' => [
+        'passed - live update failed writing bare /etc/caddy; post-LAND durable re-proof follows',
+        false,
+        'final hop',
+    ],
+    'free-form without receipt' => [
+        'passed - retained fixture',
+        false,
+        'structured runtime receipt',
+    ],
+    'valid structured receipt' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0 with no failures; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+]);
+
 it('requires exact automated acceptance provenance', function (
     string $review,
     string $acceptance,
@@ -680,11 +741,12 @@ it('rejects forged or incomplete reserved quality-check evidence', function (
     try {
         commit_finalization_gate_file($worktree, 'bin/example', "#!/usr/bin/env bash\n");
         write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
         write_compact_feature_loop_for_fixture(
             $repo,
             $worktree,
             venue: 'retained-incus',
-            runtime: 'passed - retained fixture',
+            runtime: finalization_structured_runtime($featureTip),
         );
         $artifactPath = latest_finalization_artifact_path($worktree, 'quality-check');
         $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
@@ -780,7 +842,7 @@ it('requires a user acceptance event matching the accepted candidate source and 
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($featureTip),
             ),
         );
         write_finalization_acceptance_event(
@@ -823,7 +885,7 @@ it('allows exact user acceptance provenance', function (): void {
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($featureTip),
             ),
         );
         write_finalization_acceptance_event(
@@ -861,7 +923,7 @@ it('rejects unnecessary user acceptance at finalization', function (): void {
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
-                runtime: 'passed - retained fixture',
+                runtime: finalization_structured_runtime($featureTip),
             ),
         );
 
@@ -3531,6 +3593,21 @@ function write_compact_feature_loop_for_fixture(
             blastRadius: $blastRadius,
         ),
     );
+}
+
+function finalization_structured_runtime(
+    string $candidate,
+    string $venue = 'retained-incus',
+    string $observed = 'exit 0',
+): string {
+    return 'passed - candidate='.$candidate
+        .'; venue='.$venue
+        .'; environment=dev-fixture'
+        .'; target=orbit fixture'
+        .'; expected=exit 0'
+        .'; observed='.$observed
+        .'; result=passed'
+        .'; evidence=`.orbit/evidence/runtime-proof.txt`';
 }
 
 function write_finalization_acceptance_event(
