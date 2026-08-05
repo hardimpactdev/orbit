@@ -17,6 +17,10 @@ namespace App\Services\Updates;
  * hosts do not receive a new `~/.zshrc`. The Orbit-owned snippet under
  * `~/.config/orbit/shell/` may be rewritten on upgrade; `~/.zshrc` is append-only
  * for the managed source block so symlink targets and existing modes stay intact.
+ *
+ * @mago-expect lint:cyclomatic-complexity -- Ensure branches for zsh skip, HOME failure, and FS write paths.
+ * @mago-expect lint:too-many-methods -- Small pure helpers keep the ensure path readable.
+ * @mago-expect lint:no-error-control-operator -- Soft user-home FS ops (mkdir/chmod/rename/unlink/append).
  */
 final class ZshShellIntegration
 {
@@ -117,14 +121,16 @@ final class ZshShellIntegration
 
     public static function snippetContents(): string
     {
-        return <<<'ZSH'
-            # Orbit-managed zsh integration.
-            # Preserve literal argv for Orbit namespace wildcards such as process:* and
-            # node:* when operators type unquoted flags. Applies only to the orbit command
-            # via noglob; does not set NONOMATCH or change globbing for other commands.
-            alias orbit='noglob orbit'
-
-            ZSH;
+        // Prefer explicit lines over a nowdoc so formatter presets cannot indent
+        // the managed snippet body.
+        return implode("\n", [
+            '# Orbit-managed zsh integration.',
+            '# Preserve literal argv for Orbit namespace wildcards such as process:* and',
+            '# node:* when operators type unquoted flags. Applies only to the orbit command',
+            '# via noglob; does not set NONOMATCH or change globbing for other commands.',
+            "alias orbit='noglob orbit'",
+            '',
+        ]);
     }
 
     public static function zshrcBlock(string $snippetPath): string
@@ -254,6 +260,6 @@ final class ZshShellIntegration
 
     private static function singleQuote(string $value): string
     {
-        return "'".str_replace("'", "'\\''", $value)."'";
+        return "'".str_replace(search: "'", replace: "'\\''", subject: $value)."'";
     }
 }

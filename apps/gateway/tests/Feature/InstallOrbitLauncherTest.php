@@ -90,13 +90,12 @@ describe('install-orbit always-cli launcher contract', function (): void {
             File::ensureDirectoryExists($dotfiles);
             File::ensureDirectoryExists($home.'/.config/orbit/shell');
             File::put($hostileTarget, "do-not-truncate\n");
-            File::put($zshrcTarget, "export CUSTOM=1"); // no trailing newline
+            File::put($zshrcTarget, 'export CUSTOM=1'); // no trailing newline
             symlink($hostileTarget, $snippetPath);
             symlink($zshrcTarget, $home.'/.zshrc');
             chmod($zshrcTarget, 0640);
 
-            expect(is_link($snippetPath))->toBeTrue()
-                ->and(readlink($snippetPath))->toBe($hostileTarget);
+            expect(is_link($snippetPath))->toBeTrue()->and(readlink($snippetPath))->toBe($hostileTarget);
 
             $process = installOrbitEnsureZshIntegrationProcess(
                 home: $home,
@@ -107,14 +106,20 @@ describe('install-orbit always-cli launcher contract', function (): void {
             expect($process->isSuccessful())
                 ->toBeTrue($process->getErrorOutput().$process->getOutput())
                 // Replaced the snippet path itself; did not write through the symlink.
-                ->and(is_link($snippetPath))->toBeFalse()
-                ->and(is_file($snippetPath))->toBeTrue()
+                ->and(is_link($snippetPath))
+                ->toBeFalse()
+                ->and(is_file($snippetPath))
+                ->toBeTrue()
                 ->and(file_get_contents($snippetPath))
                 ->toContain("alias orbit='noglob orbit'")
-                ->and(file_get_contents($hostileTarget))->toBe("do-not-truncate\n")
-                ->and(is_link($home.'/.zshrc'))->toBeTrue()
-                ->and(readlink($home.'/.zshrc'))->toBe($zshrcTarget)
-                ->and(substr(sprintf('%o', fileperms($zshrcTarget)), -4))->toBe('0640')
+                ->and(file_get_contents($hostileTarget))
+                ->toBe("do-not-truncate\n")
+                ->and(is_link($home.'/.zshrc'))
+                ->toBeTrue()
+                ->and(readlink($home.'/.zshrc'))
+                ->toBe($zshrcTarget)
+                ->and(substr(sprintf('%o', fileperms($zshrcTarget)), -4))
+                ->toBe('0640')
                 ->and(file_get_contents($zshrcTarget))
                 ->toStartWith("export CUSTOM=1\n")
                 ->and(file_get_contents($zshrcTarget))
@@ -131,8 +136,10 @@ describe('install-orbit always-cli launcher contract', function (): void {
                 ->toBeTrue($second->getErrorOutput().$second->getOutput())
                 ->and(substr_count(file_get_contents($zshrcTarget), '# >>> orbit zsh integration >>>'))
                 ->toBe(1)
-                ->and(file_get_contents($hostileTarget))->toBe("do-not-truncate\n")
-                ->and(is_link($snippetPath))->toBeFalse();
+                ->and(file_get_contents($hostileTarget))
+                ->toBe("do-not-truncate\n")
+                ->and(is_link($snippetPath))
+                ->toBeFalse();
         } finally {
             if (is_dir($root)) {
                 File::deleteDirectory($root);
@@ -155,8 +162,10 @@ describe('install-orbit always-cli launcher contract', function (): void {
 
             expect($process->isSuccessful())
                 ->toBeTrue($process->getErrorOutput().$process->getOutput())
-                ->and(File::exists($home.'/.zshrc'))->toBeFalse()
-                ->and(File::exists($home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse()
+                ->and(File::exists($home.'/.zshrc'))
+                ->toBeFalse()
+                ->and(File::exists($home.'/.config/orbit/shell/zsh-noglob.zsh'))
+                ->toBeFalse()
                 ->and($process->getOutput().$process->getErrorOutput())
                 ->toContain('skipping zsh shell integration');
         } finally {
@@ -273,23 +282,23 @@ function installOrbitEnsureZshIntegrationProcess(string $home, string $shell): P
 {
     $installer = repo_path('bin/install-orbit');
     $script = <<<'BASH'
-set -euo pipefail
+        set -euo pipefail
 
-fail() {
-    local code="$1"
-    shift
-    printf 'orbit-install: error [%s] %s\n' "$code" "$*" >&2
-    exit 1
-}
+        fail() {
+            local code="$1"
+            shift
+            printf 'orbit-install: error [%s] %s\n' "$code" "$*" >&2
+            exit 1
+        }
 
-run() {
-    "$@"
-}
+        run() {
+            "$@"
+        }
 
-# shellcheck disable=SC1090
-source /dev/stdin <<<"$(sed -n '/^ensure_zsh_shell_integration()/,/^}$/p' "$ORBIT_INSTALLER_PATH")"
-ensure_zsh_shell_integration
-BASH;
+        # shellcheck disable=SC1090
+        source /dev/stdin <<<"$(sed -n '/^ensure_zsh_shell_integration()/,/^}$/p' "$ORBIT_INSTALLER_PATH")"
+        ensure_zsh_shell_integration
+        BASH;
 
     return new Process(
         ['bash', '-c', $script],

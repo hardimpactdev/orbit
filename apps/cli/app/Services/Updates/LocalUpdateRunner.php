@@ -24,6 +24,8 @@ use Orbit\Core\Progress\StreamedStepTree;
  * the human renderer can animate the tree. The `update:all` runner keeps using
  * the simpler {@see LocalUpdateWorkflow}; this runner serves the public `update`
  * command only.
+ *
+ * @mago-expect lint:cyclomatic-complexity -- Gate branches plus shell-integration ensure on already-current installs.
  */
 final readonly class LocalUpdateRunner
 {

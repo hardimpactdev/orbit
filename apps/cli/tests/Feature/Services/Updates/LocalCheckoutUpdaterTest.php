@@ -288,11 +288,16 @@ describe('LocalCheckoutUpdater', function (): void {
         $snippet = $this->sandboxHome.'/.config/orbit/shell/zsh-noglob.zsh';
         $zshrc = $this->sandboxHome.'/.zshrc';
 
-        expect($replace['successful'])->toBeTrue()
-            ->and(is_file($snippet))->toBeTrue()
-            ->and(file_get_contents($snippet))->toContain("alias orbit='noglob orbit'")
-            ->and(is_file($zshrc))->toBeTrue()
-            ->and(file_get_contents($zshrc))->toContain('# >>> orbit zsh integration >>>');
+        expect($replace['successful'])
+            ->toBeTrue()
+            ->and(is_file($snippet))
+            ->toBeTrue()
+            ->and(file_get_contents($snippet))
+            ->toContain("alias orbit='noglob orbit'")
+            ->and(is_file($zshrc))
+            ->toBeTrue()
+            ->and(file_get_contents($zshrc))
+            ->toContain('# >>> orbit zsh integration >>>');
     });
 
     it('does not relink a shadowing launcher resolved through PATH', function (): void {
@@ -546,8 +551,10 @@ describe('LocalCheckoutUpdater', function (): void {
                 ),
             );
         } finally {
-            @chmod($protectedRoot, 0755);
-            @rmdir($protectedRoot);
+            if (is_dir($protectedRoot)) {
+                chmod($protectedRoot, 0755);
+                rmdir($protectedRoot);
+            }
         }
     });
 

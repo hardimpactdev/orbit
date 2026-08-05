@@ -40,7 +40,8 @@ describe('ZshShellIntegration shell boundary', function (): void {
 
         $process = zsh_interactive_orbit_invocation($this->zdotdir, $this->home);
 
-        expect($process->isSuccessful())->toBeFalse()
+        expect($process->isSuccessful())
+            ->toBeFalse()
             ->and($process->getErrorOutput().$process->getOutput())
             ->toMatch('/no matches found: --add=process:\*/');
     });
@@ -52,16 +53,23 @@ describe('ZshShellIntegration shell boundary', function (): void {
         $snippet = file_get_contents($result['snippet_path']);
         $zshrc = file_get_contents($result['zshrc_path']);
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_INSTALLED)
-            ->and($integration->succeeded($result))->toBeTrue()
-            ->and($result['snippet_path'])->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
-            ->and($result['zshrc_path'])->toBe($this->home.'/.zshrc')
-            ->and(is_file($result['snippet_path']))->toBeTrue()
-            ->and($snippet)->toContain("alias orbit='noglob orbit'")
-            ->and($snippet)->not->toMatch('/\bsetopt\s+[^\n]*nonomatch\b/i')
-            ->and($snippet)->not->toMatch('/\bunsetopt\s+[^\n]*nomatch\b/i')
-            ->and($zshrc)->toContain(ZshShellIntegration::BEGIN_MARKER)
-            ->and($zshrc)->toContain(ZshShellIntegration::END_MARKER);
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and($integration->succeeded($result))
+            ->toBeTrue()
+            ->and($result['snippet_path'])
+            ->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
+            ->and($result['zshrc_path'])
+            ->toBe($this->home.'/.zshrc')
+            ->and(is_file($result['snippet_path']))
+            ->toBeTrue()
+            ->and($snippet)
+            ->toContain("alias orbit='noglob orbit'")
+            ->and($snippet)
+            ->not->toMatch('/\bsetopt\s+[^\n]*nonomatch\b/i')->and($snippet)
+            ->not->toMatch('/\bunsetopt\s+[^\n]*nomatch\b/i')->and(
+                $zshrc,
+            )->toContain(ZshShellIntegration::BEGIN_MARKER)->and($zshrc)->toContain(ZshShellIntegration::END_MARKER);
 
         // Prepend a capture function so the alias targets a local function rather than a real binary.
         $zshrc = file_get_contents($this->home.'/.zshrc');
@@ -80,7 +88,7 @@ describe('ZshShellIntegration shell boundary', function (): void {
     });
 
     it('does not weaken glob behavior for non-Orbit commands', function (): void {
-        (new ZshShellIntegration)->ensure(home: $this->home, shell: '/bin/zsh');
+        new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
 
         $process = new Process(
             ['zsh', '-i', '-c', 'ls nosuch-glob-file-*'],
@@ -94,34 +102,47 @@ describe('ZshShellIntegration shell boundary', function (): void {
         $process->setTimeout(10);
         $process->run();
 
-        expect($process->isSuccessful())->toBeFalse()
+        expect($process->isSuccessful())
+            ->toBeFalse()
             ->and($process->getErrorOutput().$process->getOutput())
             ->toMatch('/no matches found: nosuch-glob-file-\*/');
     });
 
     it('skips installation when the active shell is not zsh', function (): void {
-        $result = (new ZshShellIntegration)->ensure(home: $this->home, shell: '/bin/bash');
+        $result = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/bash');
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH)
-            ->and((new ZshShellIntegration)->succeeded($result))->toBeTrue()
-            ->and(file_exists($this->home.'/.zshrc'))->toBeFalse()
-            ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse();
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH)
+            ->and(new ZshShellIntegration()->succeeded($result))
+            ->toBeTrue()
+            ->and(file_exists($this->home.'/.zshrc'))
+            ->toBeFalse()
+            ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))
+            ->toBeFalse();
     });
 
     it('requires an exact shell basename of zsh and rejects suffix lookalikes', function (): void {
         $integration = new ZshShellIntegration;
 
-        expect($integration->isZsh('/bin/zsh'))->toBeTrue()
-            ->and($integration->isZsh('/usr/local/bin/zsh'))->toBeTrue()
-            ->and($integration->isZsh('/bin/bash'))->toBeFalse()
-            ->and($integration->isZsh('/bin/not-zsh'))->toBeFalse()
-            ->and($integration->isZsh('/bin/zsh-5.9'))->toBeFalse();
+        expect($integration->isZsh('/bin/zsh'))
+            ->toBeTrue()
+            ->and($integration->isZsh('/usr/local/bin/zsh'))
+            ->toBeTrue()
+            ->and($integration->isZsh('/bin/bash'))
+            ->toBeFalse()
+            ->and($integration->isZsh('/bin/not-zsh'))
+            ->toBeFalse()
+            ->and($integration->isZsh('/bin/zsh-5.9'))
+            ->toBeFalse();
 
         $result = $integration->ensure(home: $this->home, shell: '/bin/not-zsh');
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH)
-            ->and(file_exists($this->home.'/.zshrc'))->toBeFalse()
-            ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse();
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH)
+            ->and(file_exists($this->home.'/.zshrc'))
+            ->toBeFalse()
+            ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))
+            ->toBeFalse();
     });
 
     it('is idempotent and rewrites only the managed snippet on upgrade', function (): void {
@@ -136,12 +157,19 @@ describe('ZshShellIntegration shell boundary', function (): void {
 
         $second = $integration->ensure(home: $this->home, shell: '/bin/zsh');
 
-        expect($first['status'])->toBe(ZshShellIntegration::STATUS_INSTALLED)
-            ->and($second['status'])->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
-            ->and(file_get_contents($zshrcPath))->toBe($originalZshrc)
-            ->and(file_get_contents($snippetPath))->toContain("alias orbit='noglob orbit'")
-            ->and(file_get_contents($snippetPath))->not->toContain('# stale snippet')
-            ->and(substr_count(file_get_contents($zshrcPath), ZshShellIntegration::BEGIN_MARKER))->toBe(1);
+        expect($first['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and($second['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(file_get_contents($zshrcPath))
+            ->toBe($originalZshrc)
+            ->and(file_get_contents($snippetPath))
+            ->toContain("alias orbit='noglob orbit'")
+            ->and(file_get_contents($snippetPath))
+            ->not
+            ->toContain('# stale snippet')
+            ->and(substr_count(file_get_contents($zshrcPath), ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(1);
     });
 
     it('appends through a .zshrc symlink without replacing it', function (): void {
@@ -152,16 +180,23 @@ describe('ZshShellIntegration shell boundary', function (): void {
         chmod($target, 0640);
         symlink($target, $zshrc);
 
-        $result = (new ZshShellIntegration)->ensure(home: $this->home, shell: '/bin/zsh');
+        $result = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
         $contents = file_get_contents($target);
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_INSTALLED)
-            ->and(is_link($zshrc))->toBeTrue()
-            ->and(readlink($zshrc))->toBe($target)
-            ->and(substr(sprintf('%o', fileperms($target)), -4))->toBe('0640')
-            ->and($contents)->toContain('export CUSTOM=1')
-            ->and($contents)->toContain(ZshShellIntegration::BEGIN_MARKER)
-            ->and($contents)->toContain(ZshShellIntegration::snippetRelativePath());
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(is_link($zshrc))
+            ->toBeTrue()
+            ->and(readlink($zshrc))
+            ->toBe($target)
+            ->and(substr(sprintf('%o', fileperms($target)), -4))
+            ->toBe('0640')
+            ->and($contents)
+            ->toContain('export CUSTOM=1')
+            ->and($contents)
+            ->toContain(ZshShellIntegration::BEGIN_MARKER)
+            ->and($contents)
+            ->toContain(ZshShellIntegration::snippetRelativePath());
     });
 
     it('replaces a hostile snippet symlink without truncating its target', function (): void {
@@ -172,22 +207,30 @@ describe('ZshShellIntegration shell boundary', function (): void {
         file_put_contents($hostileTarget, "do-not-truncate\n");
         symlink($hostileTarget, $snippetPath);
 
-        $result = (new ZshShellIntegration)->ensure(home: $this->home, shell: '/bin/zsh');
+        $result = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_INSTALLED)
-            ->and(is_link($snippetPath))->toBeFalse()
-            ->and(is_file($snippetPath))->toBeTrue()
-            ->and(file_get_contents($snippetPath))->toContain("alias orbit='noglob orbit'")
-            ->and(file_get_contents($hostileTarget))->toBe("do-not-truncate\n");
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(is_link($snippetPath))
+            ->toBeFalse()
+            ->and(is_file($snippetPath))
+            ->toBeTrue()
+            ->and(file_get_contents($snippetPath))
+            ->toContain("alias orbit='noglob orbit'")
+            ->and(file_get_contents($hostileTarget))
+            ->toBe("do-not-truncate\n");
     });
 
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {
         // Explicit empty home is distinguishable from null (process HOME fallback).
-        $result = (new ZshShellIntegration)->ensure(home: '', shell: '/bin/zsh');
+        $result = new ZshShellIntegration()->ensure(home: '', shell: '/bin/zsh');
 
-        expect($result['status'])->toBe(ZshShellIntegration::STATUS_FAILED)
-            ->and((new ZshShellIntegration)->succeeded($result))->toBeFalse()
-            ->and($result['message'])->toContain('HOME');
+        expect($result['status'])
+            ->toBe(ZshShellIntegration::STATUS_FAILED)
+            ->and(new ZshShellIntegration()->succeeded($result))
+            ->toBeFalse()
+            ->and($result['message'])
+            ->toContain('HOME');
 
         // Also prove process-env isolation when HOME is temporarily unset.
         $previousHome = getenv('HOME');
@@ -197,10 +240,12 @@ describe('ZshShellIntegration shell boundary', function (): void {
             putenv('HOME');
             unset($_SERVER['HOME']);
 
-            $envResult = (new ZshShellIntegration)->ensure(home: null, shell: '/bin/zsh');
+            $envResult = new ZshShellIntegration()->ensure(home: null, shell: '/bin/zsh');
 
-            expect($envResult['status'])->toBe(ZshShellIntegration::STATUS_FAILED)
-                ->and($envResult['message'])->toContain('HOME');
+            expect($envResult['status'])
+                ->toBe(ZshShellIntegration::STATUS_FAILED)
+                ->and($envResult['message'])
+                ->toContain('HOME');
         } finally {
             if ($previousHome === false) {
                 putenv('HOME');
@@ -220,14 +265,14 @@ describe('ZshShellIntegration shell boundary', function (): void {
 function zsh_capture_function_only(): string
 {
     return <<<'ZSH'
-orbit() {
-  print -r -- "ARGC=$#"
-  for a; do
-    print -r -- "ARG:$a"
-  done
-}
+        orbit() {
+          print -r -- "ARGC=$#"
+          for a; do
+            print -r -- "ARG:$a"
+          done
+        }
 
-ZSH;
+        ZSH;
 }
 
 function zsh_interactive_orbit_invocation(string $zdotdir, string $home): Process

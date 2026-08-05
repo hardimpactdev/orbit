@@ -224,7 +224,7 @@ describe('update', function (): void {
                 ['name' => 'check', 'status' => 'skipped'],
             ])
             ->and($this->updater->calls)
-            ->toBe([]);
+            ->toBe(['ensure_shell_integrations']);
     });
 
     it('renders the already-installed skip footer in human mode', function (): void {
@@ -263,7 +263,7 @@ describe('update', function (): void {
             ->not
             ->toContain('Skipped: 0.1.156 is already installed')
             ->and($this->updater->calls)
-            ->toBe([]);
+            ->toBe(['ensure_shell_integrations']);
     });
 
     it('returns a JSON skip envelope when the gateway is still behind', function (): void {
@@ -482,7 +482,7 @@ describe('update', function (): void {
             ->and($secondOutput)
             ->not->toContain('Downloading binary')->and($secondOutput)
             ->not->toContain('Replacing binary')->and($secondOutput)
-            ->not->toContain('Running doctor')->and($this->updater->calls)->toBeEmpty();
+            ->not->toContain('Running doctor')->and($this->updater->calls)->toBe(['ensure_shell_integrations']);
     });
 
     it('surfaces the doctor issue count without failing the update in JSON mode', function (): void {
