@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T21:27:50+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-zsh-wildcard-permissions/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-232750-codex-zsh-wildcard-permissions",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/zsh-wildcard-permissions-runtime-90bce21b4.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T211655Z-efc15960179a.json"
+    ],
+    "entry_digests": {
+        "evidence/zsh-wildcard-permissions-runtime-90bce21b4.md": "1319ce7401d8e88d3624388cc7f90c2ee2df0ae01c3382ae32aac146a67fb0b5",
+        "loop.md": "2a2d6616395e509d3cf764174f8c7ad70063e551e0754cb6d6e987308b2f3ca6",
+        "quality-gates/quality-check-2026-08-05T211655Z-efc15960179a.json": "9059c70d9b1662cd29005d6a046d3d7ca0817ffc5b6c6577284f659dc9929a66"
+    },
+    "slug": "codex-zsh-wildcard-permissions",
+    "requested_slug": "codex-zsh-wildcard-permissions",
+    "compatible_slugs": [
+        "codex-zsh-wildcard-permissions"
+    ],
+    "branch": "codex/zsh-wildcard-permissions",
+    "candidate_commit": "90bce21b4b3daf5e3ed6c0e05c135fe0af553208",
+    "accepted_feature_tip": "90bce21b4b3daf5e3ed6c0e05c135fe0af553208",
+    "accepted_main_tip": "fe91055eff6d55e8f3cc65210ef309d0495f675c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
