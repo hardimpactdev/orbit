@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `target` | `[target]` or interactive cwd | Non-interactive always; interactive when cwd is ambiguous or absent. | Never. | Unambiguous interactive cwd workspace. | Public workspace slug or strict URL/hostname for a workspace proxy route. No numeric IDs. |
-| `instance` | `--instance` | When the workspace name is ambiguous. | Never. | Parent instance after unique resolution. | Dotted `app.instance`. API always requires this field. |
+| `instance` | `--instance` | When the visible exact workspace slug is ambiguous across parents. | Never. | Derived from `GET /api/workspaces` when the slug matches exactly one visible row; explicit `--instance` remains direct. | Dotted `app.instance`. API always requires this field. |
 | `node` | `--node` | Optional. | Never. | Serving node. | Must equal the workspace serving node (placement constraint only). |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
 | `follow` | `--follow` | Optional. | When `json=true`. | `false`. | Boolean flag. Keeps the human log stream open when true. |
@@ -62,7 +62,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Target required | Non-interactive or `--json` invocation omits `[target]` and cwd cannot supply one. | Failure (`error.code=validation_failed`; `error.meta.field=target`). |
 | Invalid target | Selector is not a workspace slug or strict workspace URL/hostname, or a host resolves to an instance instead of a workspace. | Failure (`error.code=validation_failed`; `error.meta.field=target`). |
-| Instance required | Workspace name is ambiguous and `--instance` is omitted. | Failure (`error.code=validation_failed`; `error.meta.field=instance`). |
+| Instance required | Visible exact workspace slug is ambiguous (multiple parents) and `--instance` is omitted. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=workspace_slug_ambiguous`). |
 | Invalid lines | `--lines` is not a strict positive integer. | Failure (`error.code=validation_failed`; `error.meta.field=lines`). |
 | JSON with follow | `--json` is combined with `--follow`. | Failure (`error.code=validation_failed`; `error.meta.field=json`). |
 | Node mismatch | `--node` does not equal the workspace serving node. | Failure (`error.code=validation_failed`). |
@@ -89,7 +89,7 @@ workspace application log reads.
 | Type | `api:GET /workspaces/{workspace}/log` for bounded reads; `api:POST /workspaces/{workspace}/log-stream` for follow operation creation |
 | Effect | `read` |
 | Subject | Resolved `Workspace` when identity is known; `none` for validation or authorization failures before the owner can be logged. |
-| Properties | Target identity, selector, node constraint, mode, lines, outcome—never log contents or absolute host paths. |
+| Properties | Target identity, route workspace/`selector`, optional CLI `requested_target` from header `X-Orbit-Application-Log-Requested-Target` (safe host/selector only; falls back to route workspace slug), node constraint, mode, lines, outcome—never log contents or absolute host paths. |
 | Description | derived |
 
 ## Test Mapping

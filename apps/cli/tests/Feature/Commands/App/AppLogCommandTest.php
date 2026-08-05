@@ -280,16 +280,9 @@ describe('app:log validation', function (): void {
 });
 
 describe('app:log cwd inference', function (): void {
-    it('infers an instance target from the owned .orbit marker when interactive', function (): void {
-        $root = sys_get_temp_dir().'/orbit-app-log-cwd-'.uniqid('', true);
-        mkdir($root.'/.orbit', 0777, true);
-        $configPath = $root.'/.orbit/config';
-        $orbitDir = $root.'/.orbit';
-        file_put_contents($configPath, json_encode([
-            'instance' => 'docs.development',
-        ], JSON_THROW_ON_ERROR));
+    it('falls back from missing workspace path to unique instance path inventory when interactive', function (): void {
         $previousCwd = getenv('ORBIT_HOST_CWD');
-        putenv('ORBIT_HOST_CWD='.$root);
+        putenv('ORBIT_HOST_CWD=/srv/apps/docs/app-work');
 
         try {
             Http::fake(function (Request $request) {
@@ -303,6 +296,14 @@ describe('app:log cwd inference', function (): void {
                             'meta' => (object) [],
                         ],
                     ], 404);
+                }
+
+                if (str_contains($url, '/api/instances') && ! str_contains($url, '/log')) {
+                    return Http::response(fakeSuccessEnvelope([
+                        'instances' => [
+                            ['app' => 'docs', 'name' => 'development', 'path' => '/srv/apps/docs'],
+                        ],
+                    ]));
                 }
 
                 if (str_contains($url, '/api/instances/docs.development/log')) {
@@ -321,27 +322,17 @@ describe('app:log cwd inference', function (): void {
             ]);
 
             expect($exitCode)->toBe(0)->and($output)->toContain('inferred');
-            Http::assertSent(fn (Request $request): bool => str_contains(
-                urldecode($request->url()),
-                '/api/instances/docs.development/log',
-            ));
+            Http::assertSent(
+                fn (Request $request): bool => (
+                    str_contains(urldecode($request->url()), '/api/instances/docs.development/log')
+                    && $request->hasHeader('X-Orbit-Application-Log-Requested-Target', 'docs.development')
+                ),
+            );
         } finally {
             if (is_string($previousCwd) && $previousCwd !== '') {
                 putenv('ORBIT_HOST_CWD='.$previousCwd);
             } else {
                 putenv('ORBIT_HOST_CWD');
-            }
-
-            if (is_file($configPath)) {
-                unlink($configPath);
-            }
-
-            if (is_dir($orbitDir)) {
-                rmdir($orbitDir);
-            }
-
-            if (is_dir($root)) {
-                rmdir($root);
             }
         }
     });

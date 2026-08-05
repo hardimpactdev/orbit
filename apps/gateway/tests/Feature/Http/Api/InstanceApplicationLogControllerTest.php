@@ -252,6 +252,7 @@ describe('Instance application log API', function (): void {
             ['lines' => 50, 'node' => 'app-dev-1'],
             server: [
                 'REMOTE_ADDR' => INSTANCE_APP_LOG_CALLER_WG_IP,
+                'HTTP_X_ORBIT_APPLICATION_LOG_REQUESTED_TARGET' => 'docs.test',
             ],
         )->assertOk();
 
@@ -265,7 +266,11 @@ describe('Instance application log API', function (): void {
                 'bounded',
             )->and($entry->properties->get('lines'))->toBe(50)->and($entry->properties->get('selector'))->toBe(
                 'docs.development',
-            )->and($entry->properties->get('node'))->toBe('app-dev-1')->and($entry->properties->get('outcome'))->toBe(
+            )->and($entry->properties->get('requested_target'))->toBe('docs.test')->and($entry->properties->get(
+                'node',
+            ))->toBe(
+                'app-dev-1',
+            )->and($entry->properties->get('outcome'))->toBe(
                 'success',
             );
     });

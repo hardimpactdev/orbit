@@ -52,11 +52,12 @@ trait ReadsApplicationLogs
 
     /**
      * @param  array<string, mixed>  $query
+     * @param  array<string, string>  $headers
      */
-    protected function followApplicationLog(string $streamPath, array $query): int
+    protected function followApplicationLog(string $streamPath, array $query, array $headers = []): int
     {
         try {
-            $response = $this->gatewayPost($streamPath, $query);
+            $response = $this->gatewayPost($streamPath, $query, $headers);
             app(ApplicationLogFollowClient::class)->consumeStartedStream(
                 $response,
                 function (string $data): void {

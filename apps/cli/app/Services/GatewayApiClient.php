@@ -49,23 +49,25 @@ final readonly class GatewayApiClient
 
     /**
      * @param  array<string, mixed>  $query
+     * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    public function get(string $path, array $query = []): array
+    public function get(string $path, array $query = [], array $headers = []): array
     {
         return $this->decode(
-            $this->request(fn () => $this->pendingRequest()->get($this->path($path), $query)),
+            $this->request(fn () => $this->pendingRequest($headers)->get($this->path($path), $query)),
         );
     }
 
     /**
      * @param  array<string, mixed>  $payload
+     * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    public function post(string $path, array $payload = []): array
+    public function post(string $path, array $payload = [], array $headers = []): array
     {
         return $this->decode(
-            $this->request(fn () => $this->pendingRequest()->post($this->path($path), $payload)),
+            $this->request(fn () => $this->pendingRequest($headers)->post($this->path($path), $payload)),
         );
     }
 
@@ -136,7 +138,10 @@ final readonly class GatewayApiClient
         throw new GatewayApiException('Gateway streaming requests are not implemented yet.');
     }
 
-    private function pendingRequest(): PendingRequest
+    /**
+     * @param  array<string, string>  $headers
+     */
+    private function pendingRequest(array $headers = []): PendingRequest
     {
         $baseUrl = $this->normalizedBaseUrl();
 
@@ -144,6 +149,10 @@ final readonly class GatewayApiClient
             ->acceptJson()
             ->asJson()
             ->timeout($this->timeout);
+
+        if ($headers !== []) {
+            $request = $request->withHeaders($headers);
+        }
 
         if ($this->shouldVerifyAgainstGatewayCa()) {
             $request = $request->withOptions(['verify' => $this->caPemPath]);

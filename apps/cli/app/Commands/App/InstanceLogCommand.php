@@ -8,9 +8,13 @@ use App\Commands\Concerns\ReadsApplicationLogs;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Services\ApplicationLogs\ApplicationLogCwdInference;
 use App\Services\ApplicationLogs\ApplicationLogFlags;
 use App\Services\ApplicationLogs\ApplicationLogGatewayClient;
 use App\Services\ApplicationLogs\ApplicationLogInstanceSelector;
+use App\Services\ApplicationLogs\ApplicationLogInstanceTargetResolver;
+use App\Services\ApplicationLogs\ApplicationLogInteractiveCwd;
+use App\Services\ApplicationLogs\ApplicationLogRequestedTarget;
 
 final class InstanceLogCommand extends GatewayCommand
 {
@@ -31,6 +35,9 @@ final class InstanceLogCommand extends GatewayCommand
     public function handle(
         ApplicationLogInstanceSelector $selectors,
         ApplicationLogGatewayClient $gatewayClient,
+        ApplicationLogCwdInference $cwdInference,
+        ApplicationLogInteractiveCwd $interactiveCwd,
+        ApplicationLogInstanceTargetResolver $targets,
     ): int {
         $flags = $this->parseApplicationLogFlags();
 
@@ -41,29 +48,32 @@ final class InstanceLogCommand extends GatewayCommand
         $target = $this->stringArgument('target');
 
         if ($target === null) {
-            return $this->inferFromCwd($flags, $selectors);
+            return $this->inferFromCwd($flags, $cwdInference, $interactiveCwd);
         }
 
-        $selector = $this->normalizeInstanceTarget($target, $selectors, $gatewayClient);
+        $canonical = $selectors->parse($target);
 
-        if (is_int($selector)) {
-            return $selector;
+        if ($canonical['ok'] === true) {
+            return $this->readOrFollow($canonical['selector'], $flags, $canonical['selector']);
         }
 
-        return $this->readOrFollow($selector, $flags);
+        return $this->fromHostTarget($target, $flags, $gatewayClient, $targets);
     }
 
-    private function inferFromCwd(ApplicationLogFlags $flags, ApplicationLogInstanceSelector $selectors): int
-    {
+    private function inferFromCwd(
+        ApplicationLogFlags $flags,
+        ApplicationLogCwdInference $cwdInference,
+        ApplicationLogInteractiveCwd $interactiveCwd,
+    ): int {
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
             return $this->renderFailure('validation_failed', 'An instance target is required.', [
                 'field' => 'target',
             ]);
         }
 
-        $marker = $this->instanceFromOrbitMarker();
+        $cwd = $this->hostCwd();
 
-        if ($marker === null) {
+        if ($cwd === null) {
             return $this->renderFailure(
                 'validation_failed',
                 'No unambiguous instance target could be inferred from the current directory.',
@@ -71,91 +81,65 @@ final class InstanceLogCommand extends GatewayCommand
             );
         }
 
-        $parsed = $selectors->parse($marker);
+        try {
+            $response = $this->gatewayGet('/api/instances');
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
 
-        if ($parsed['ok'] === false) {
-            return $this->renderFailure('validation_failed', $parsed['message'], [
-                'field' => $parsed['field'],
-                'value' => $marker,
+        $normalized = $interactiveCwd->normalizeInstanceLog($cwdInference->forInstanceLog(
+            $this->applicationLogSuccessData($response),
+            $cwd,
+        ));
+
+        if ($normalized['ok'] === false) {
+            return $this->renderFailure('validation_failed', $normalized['message'], [
+                'field' => 'target',
+                'reason' => $normalized['reason'],
             ]);
         }
 
-        return $this->readOrFollow($parsed['selector'], $flags);
+        return $this->readOrFollow($normalized['selector'], $flags, $normalized['selector']);
     }
 
-    private function normalizeInstanceTarget(
+    private function fromHostTarget(
         string $target,
-        ApplicationLogInstanceSelector $selectors,
+        ApplicationLogFlags $flags,
         ApplicationLogGatewayClient $gatewayClient,
-    ): string|int {
-        // 1) Canonical lowercase one-dot app.instance is always a selector.
-        $canonical = $selectors->parse($target);
-
-        if ($canonical['ok'] === true) {
-            return $canonical['selector'];
-        }
-
-        // 2) Otherwise treat as URL/hostname (mixed case and multi-label allowed; normalized lower).
-        $host = $this->parseApplicationLogHost($target);
-
-        if (is_int($host)) {
-            // Not a valid host shape either: keep the host-parse error (credentials, path, etc.).
-            return $host;
-        }
-
-        // 3) Valid host shapes always report proxy-route resolution outcomes (including
-        // unregistered multi-label hosts). Never fall back to the canonical-selector error.
-        return $this->resolveRegisteredInstanceHost($host['host'], $gatewayClient);
-    }
-
-    /**
-     * @return string|int string selector on success, int exit code on failure
-     */
-    private function resolveRegisteredInstanceHost(
-        string $host,
-        ApplicationLogGatewayClient $gatewayClient,
-    ): string|int {
+        ApplicationLogInstanceTargetResolver $targets,
+    ): int {
         try {
             $response = $this->gatewayGet('/api/proxy-routes');
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
 
-        $matched = $gatewayClient->matchProxyHost(
-            $host,
+        $resolved = $targets->resolve(
+            $target,
             $gatewayClient->routeList($this->applicationLogSuccessData($response)),
         );
 
-        if ($matched['ok'] === false) {
+        if ($resolved['ok'] === false) {
             return $this->renderFailure(
                 'validation_failed',
-                $matched['message'],
-                array_merge(
-                    ['field' => $matched['field']],
-                    $matched['meta'],
-                ),
+                $resolved['message'],
+                array_merge(['field' => $resolved['field']], $resolved['meta']),
             );
         }
 
-        if ($matched['type'] === 'workspace') {
-            return $this->renderFailure(
-                'validation_failed',
-                'The host resolves to a workspace. Use workspace:log or app:log.',
-                ['field' => 'target', 'host' => $host, 'reason' => 'wrong_target_type'],
-            );
-        }
-
-        return $matched['selector'];
+        return $this->readOrFollow($resolved['selector'], $flags, $resolved['requested_target']);
     }
 
-    private function readOrFollow(string $selector, ApplicationLogFlags $flags): int
+    private function readOrFollow(string $selector, ApplicationLogFlags $flags, string $requestedTarget): int
     {
         $query = $flags->query();
+        $headers = ApplicationLogRequestedTarget::headers($requestedTarget);
 
         if ($flags->follow) {
             return $this->followApplicationLog(
                 '/api/instances/'.rawurlencode($selector).'/log-stream',
                 $query,
+                $headers,
             );
         }
 
@@ -163,6 +147,7 @@ final class InstanceLogCommand extends GatewayCommand
             $response = $this->gatewayGet(
                 '/api/instances/'.rawurlencode($selector).'/log',
                 $query,
+                $headers,
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);

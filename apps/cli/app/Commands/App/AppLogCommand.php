@@ -12,7 +12,9 @@ use App\Exceptions\GatewayApiException;
 use App\Services\ApplicationLogs\ApplicationLogCwdInference;
 use App\Services\ApplicationLogs\ApplicationLogFlags;
 use App\Services\ApplicationLogs\ApplicationLogGatewayClient;
+use App\Services\ApplicationLogs\ApplicationLogInteractiveCwd;
 use App\Services\ApplicationLogs\ApplicationLogProxyTarget;
+use App\Services\ApplicationLogs\ApplicationLogRequestedTarget;
 use App\Services\ApplicationLogs\ApplicationLogTargetEndpoints;
 
 final class AppLogCommand extends GatewayCommand
@@ -35,6 +37,7 @@ final class AppLogCommand extends GatewayCommand
     public function handle(
         ApplicationLogGatewayClient $gatewayClient,
         ApplicationLogCwdInference $cwdInference,
+        ApplicationLogInteractiveCwd $interactiveCwd,
         ApplicationLogProxyTarget $proxyTarget,
         ApplicationLogTargetEndpoints $endpoints,
     ): int {
@@ -47,13 +50,20 @@ final class AppLogCommand extends GatewayCommand
         $target = $this->stringArgument('target');
 
         if ($target === null) {
-            return $this->inferFromCwd($flags, $cwdInference, $endpoints);
+            return $this->inferFromCwd($flags, $cwdInference, $interactiveCwd, $endpoints);
         }
 
-        $isUrl = str_contains($target, '://');
+        return $this->fromHostTarget($target, $flags, $gatewayClient, $proxyTarget, $endpoints);
+    }
 
-        // Bare token that exactly matches a registered app.instance is never a host selector.
-        if (! $isUrl && $this->bareSelectorIsRegisteredInstance($target, $gatewayClient)) {
+    private function fromHostTarget(
+        string $target,
+        ApplicationLogFlags $flags,
+        ApplicationLogGatewayClient $gatewayClient,
+        ApplicationLogProxyTarget $proxyTarget,
+        ApplicationLogTargetEndpoints $endpoints,
+    ): int {
+        if (! str_contains($target, '://') && $this->bareSelectorIsRegisteredInstance($target, $gatewayClient)) {
             return $this->renderFailure(
                 'validation_failed',
                 'app:log accepts only a URL or hostname. Use instance:log for app.instance selectors.',
@@ -73,12 +83,13 @@ final class AppLogCommand extends GatewayCommand
             return $resolved;
         }
 
-        return $this->readOrFollow($resolved, $flags, $endpoints);
+        return $this->readOrFollow($resolved, $flags, $endpoints, $host['host']);
     }
 
     private function inferFromCwd(
         ApplicationLogFlags $flags,
         ApplicationLogCwdInference $cwdInference,
+        ApplicationLogInteractiveCwd $interactiveCwd,
         ApplicationLogTargetEndpoints $endpoints,
     ): int {
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
@@ -87,18 +98,36 @@ final class AppLogCommand extends GatewayCommand
             ]);
         }
 
-        $workspaceData = $this->workspaceDataForCwd();
-        $inferred = $cwdInference->forAppLog($workspaceData, $this->instanceFromOrbitMarker());
+        $cwd = $this->hostCwd();
 
-        if (isset($inferred['error'])) {
-            return $this->renderFailure('validation_failed', $inferred['error'], [
+        if ($cwd === null) {
+            return $this->renderFailure(
+                'validation_failed',
+                'No unambiguous application-log target could be inferred from the current directory.',
+                ['field' => 'target', 'reason' => 'cwd_target_missing'],
+            );
+        }
+
+        try {
+            $instancesResponse = $this->gatewayGet('/api/instances');
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        $normalized = $interactiveCwd->normalizeAppLog($cwdInference->forAppLog(
+            $this->workspaceDataForCwd(),
+            $this->applicationLogSuccessData($instancesResponse),
+            $cwd,
+        ));
+
+        if ($normalized['ok'] === false) {
+            return $this->renderFailure('validation_failed', $normalized['message'], [
                 'field' => 'target',
-                'reason' => $inferred['reason'],
+                'reason' => $normalized['reason'],
             ]);
         }
 
-        /** @var array{type: 'instance', selector: string}|array{type: 'workspace', workspace: string, instance: string} $inferred */
-        return $this->readOrFollow($inferred, $flags, $endpoints);
+        return $this->readOrFollow($normalized['target'], $flags, $endpoints, $normalized['requested']);
     }
 
     /**
@@ -108,15 +137,17 @@ final class AppLogCommand extends GatewayCommand
         array $resolved,
         ApplicationLogFlags $flags,
         ApplicationLogTargetEndpoints $endpoints,
+        string $requestedTarget,
     ): int {
         $target = $endpoints->forResolved($resolved, $flags);
+        $headers = ApplicationLogRequestedTarget::headers($requestedTarget);
 
         if ($flags->follow) {
-            return $this->followApplicationLog($target['stream'], $target['query']);
+            return $this->followApplicationLog($target['stream'], $target['query'], $headers);
         }
 
         try {
-            $response = $this->gatewayGet($target['path'], $target['query']);
+            $response = $this->gatewayGet($target['path'], $target['query'], $headers);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

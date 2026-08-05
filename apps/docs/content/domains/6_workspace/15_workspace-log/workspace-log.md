@@ -23,8 +23,11 @@ orbit workspace:log feature-docs --instance=docs.development --node=app-dev-1
 ## Behavior Summary
 
 - **Target**: Public workspace name (slug) or URL/hostname that resolves to a
-  workspace proxy route. Optional `--instance=<app.instance>` disambiguates
-  duplicate workspace names.
+  workspace proxy route. Exact slug resolution uses visible
+  `GET /api/workspaces` rows and derives the parent `app.instance` when exactly
+  one match exists. Optional `--instance=<app.instance>` is required only when
+  that slug is ambiguous across parents; URL/host resolution supplies the
+  parent from the proxy route.
 - **Fixed path**: Always `storage/logs/laravel.log` under the authorized
   workspace root. No arbitrary `--path`.
 - **Flags**: `--lines=100`, `--follow`, `--json`, `--node` (serving-node

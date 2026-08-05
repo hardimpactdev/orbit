@@ -5,35 +5,49 @@ declare(strict_types=1);
 namespace App\Services\ApplicationLogs;
 
 /**
- * Canonical app.instance selectors from a gateway instance inventory payload.
+ * Canonical app.instance selectors and owned paths from GET /api/instances.
  */
 final readonly class ApplicationLogInstanceInventory
 {
+    public function __construct(
+        private ApplicationLogInstanceInventoryRows $rows = new ApplicationLogInstanceInventoryRows,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $data  success.data from GET /api/instances
      * @return list<string>
      */
     public function selectors(array $data): array
     {
-        $instances = is_array($data['instances'] ?? null) ? $data['instances'] : [];
         $selectors = [];
 
-        foreach ($instances as $instance) {
-            if (! is_array($instance)) {
-                continue;
-            }
-
-            $app = $instance['app'] ?? null;
-            $name = $instance['name'] ?? null;
-
-            if (! is_string($app) || trim($app) === '' || ! is_string($name) || trim($name) === '') {
-                continue;
-            }
-
-            $selectors[] = trim($app).'.'.trim($name);
+        foreach ($this->rows->all($data) as $row) {
+            $selectors[] = $row['selector'];
         }
 
         return array_values(array_unique($selectors));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  success.data from GET /api/instances
+     * @return list<array{selector: string, path: string}>
+     */
+    public function pathEntries(array $data): array
+    {
+        $entries = [];
+
+        foreach ($this->rows->all($data) as $row) {
+            if ($row['path'] === null) {
+                continue;
+            }
+
+            $entries[] = [
+                'selector' => $row['selector'],
+                'path' => $row['path'],
+            ];
+        }
+
+        return $entries;
     }
 
     /**

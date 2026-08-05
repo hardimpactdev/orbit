@@ -12,6 +12,7 @@ final readonly class ApplicationLogGatewayClient
 {
     public function __construct(
         private ApplicationLogInstanceInventory $inventory = new ApplicationLogInstanceInventory,
+        private ApplicationLogWorkspaceInventory $workspaces = new ApplicationLogWorkspaceInventory,
         private ApplicationLogProxyRouteMatcher $routes = new ApplicationLogProxyRouteMatcher,
     ) {}
 
@@ -21,6 +22,24 @@ final readonly class ApplicationLogGatewayClient
     public function isRegisteredInstanceSelector(string $selector, array $instancesData): bool
     {
         return $this->inventory->contains($selector, $this->inventory->selectors($instancesData));
+    }
+
+    /**
+     * @param  array<string, mixed>  $instancesData
+     * @return list<array{selector: string, path: string}>
+     */
+    public function instancePathEntries(array $instancesData): array
+    {
+        return $this->inventory->pathEntries($instancesData);
+    }
+
+    /**
+     * @param  array<string, mixed>  $workspacesData  success.data from GET /api/workspaces
+     * @return array{ok: true, workspace: string, instance: string}|array{ok: false, reason: string, count: int}
+     */
+    public function resolveWorkspaceSlug(string $slug, array $workspacesData): array
+    {
+        return $this->workspaces->resolveExactSlug($slug, $workspacesData);
     }
 
     /**

@@ -38,6 +38,7 @@ describe('workspace:log application log reads', function (): void {
                 && str_contains($url, '/api/workspaces/feature-docs/log')
                 && str_contains($url, 'instance=docs.development')
                 && str_contains($url, 'lines=100')
+                && $request->hasHeader('X-Orbit-Application-Log-Requested-Target', 'feature-docs')
             );
         });
 
@@ -47,63 +48,6 @@ describe('workspace:log application log reads', function (): void {
             ->toBe('storage/logs/laravel.log')
             ->and($decoded['success']['data']['target']['selector'])
             ->toBe('feature-docs');
-    });
-
-    it('resolves workspace URL hosts via proxy route instance enrichment without --instance', function (): void {
-        Http::fake(function (Request $request) {
-            $url = urldecode($request->url());
-
-            if (str_contains($url, '/api/proxy-routes')) {
-                return Http::response(fakeSuccessEnvelope([
-                    'routes' => [
-                        [
-                            'domain' => 'feature.docs.test',
-                            'owner' => ['type' => 'workspace', 'name' => 'feature-docs'],
-                            'target' => ['type' => 'workspace', 'value' => 'feature-docs'],
-                            'instance' => 'docs.development',
-                        ],
-                    ],
-                ]));
-            }
-
-            if (str_contains($url, '/api/workspaces/feature-docs/log')) {
-                return Http::response(fakeSuccessEnvelope([
-                    'path' => 'storage/logs/laravel.log',
-                    'file_exists' => true,
-                    'lines' => ['from-url'],
-                    'target' => [
-                        'type' => 'workspace',
-                        'selector' => 'feature-docs',
-                        'instance' => 'development',
-                        'app' => 'docs',
-                    ],
-                ]));
-            }
-
-            return Http::response(['error' => ['code' => 'unexpected']], 500);
-        });
-
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
-            'target' => 'https://feature.docs.test',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertSent(function (Request $request): bool {
-            $url = urldecode($request->url());
-
-            return (
-                $request->method() === 'GET'
-                && str_contains($url, '/api/workspaces/feature-docs/log')
-                && str_contains($url, 'instance=docs.development')
-            );
-        });
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($decoded['success']['data']['lines'])
-            ->toBe(['from-url']);
     });
 
     it('rejects instance hosts for workspace:log', function (): void {

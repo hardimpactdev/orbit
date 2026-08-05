@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `target` | `[target]` or interactive cwd | Non-interactive always; interactive when cwd is ambiguous or absent. | Never. | Unambiguous interactive cwd instance. | Dotted `app.instance` or strict instance URL/hostname. No numeric IDs. |
+| `target` | `[target]` or interactive cwd | Non-interactive always; interactive when cwd is ambiguous or absent. | Never. | Exactly one visible instance path that is an ancestor of the interactive cwd (from `GET /api/instances` owned paths). | Dotted `app.instance` or strict instance URL/hostname. No numeric IDs. |
 | `node` | `--node` | Optional. | Never. | Serving node. | Must equal the instance serving node (placement constraint only). |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
 | `follow` | `--follow` | Optional. | When `json=true`. | `false`. | Boolean flag. Keeps the human log stream open when true. |
@@ -31,7 +31,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-1. Resolve the instance and serving node from `[target]` or interactive cwd context.
+1. Resolve the instance from `[target]` or interactive cwd. Interactive cwd uses
+   `GET /api/instances` path inventory: a candidate matches when cwd equals the
+   owned path or is a descendant (`cwd === path` or starts with `path/`).
+   Exactly one match is required; zero or multiple matches fail closed without
+   `.orbit` marker fallback.
 2. Authorize `instance:read` on the resolved instance serving node.
 3. Apply `--node` as a placement constraint only; reject mismatches.
 4. Resolve the application root consistent with
@@ -85,7 +89,7 @@ instance application log reads.
 | Type | `api:GET /instances/{instance}/log` for bounded reads; `api:POST /instances/{instance}/log-stream` for follow operation creation |
 | Effect | `read` |
 | Subject | Resolved `Instance` when identity is known; `none` for validation or authorization failures before the owner can be logged. |
-| Properties | Target identity, selector, node constraint, mode, lines, outcome—never log contents or absolute host paths. |
+| Properties | Target identity, route `selector`, optional CLI `requested_target` from header `X-Orbit-Application-Log-Requested-Target` (safe host/selector only; falls back to route selector), node constraint, mode, lines, outcome—never log contents or absolute host paths. |
 | Description | derived |
 
 ## Test Mapping

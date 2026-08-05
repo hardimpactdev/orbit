@@ -305,49 +305,112 @@ describe('instance:log validation', function (): void {
 });
 
 describe('instance:log cwd inference', function (): void {
-    it('infers the instance selector from the owned .orbit marker when interactive', function (): void {
-        $root = sys_get_temp_dir().'/orbit-instance-log-cwd-'.uniqid('', true);
-        mkdir($root.'/.orbit', 0777, true);
-        $configPath = $root.'/.orbit/config';
-        $orbitDir = $root.'/.orbit';
-        file_put_contents($configPath, json_encode([
-            'instance' => 'docs.development',
-        ], JSON_THROW_ON_ERROR));
+    it('infers the instance selector from unique visible owned path inventory when interactive', function (): void {
+        $root = '/srv/apps/docs/current-work';
         $previousCwd = getenv('ORBIT_HOST_CWD');
         putenv('ORBIT_HOST_CWD='.$root);
 
         try {
-            fakeGateway(fakeSuccessEnvelope([
-                'path' => 'storage/logs/laravel.log',
-                'file_exists' => true,
-                'lines' => ['instance-inferred'],
-            ]));
+            Http::fake(function (Request $request) {
+                $url = urldecode($request->url());
+
+                if (str_contains($url, '/api/instances') && ! str_contains($url, '/log')) {
+                    return Http::response(fakeSuccessEnvelope([
+                        'instances' => [
+                            [
+                                'app' => 'docs',
+                                'name' => 'development',
+                                'path' => '/srv/apps/docs',
+                            ],
+                            [
+                                'app' => 'other',
+                                'name' => 'development',
+                                'path' => '/srv/apps/other',
+                            ],
+                        ],
+                    ]));
+                }
+
+                if (str_contains($url, '/api/instances/docs.development/log')) {
+                    return Http::response(fakeSuccessEnvelope([
+                        'path' => 'storage/logs/laravel.log',
+                        'file_exists' => true,
+                        'lines' => ['instance-inferred'],
+                    ]));
+                }
+
+                return Http::response(['error' => ['code' => 'unexpected']], 500);
+            });
 
             [$exitCode, $output] = run_application_log_command_interactive('instance:log');
 
             expect($exitCode)->toBe(0)->and($output)->toContain('instance-inferred');
-            Http::assertSent(fn (Request $request): bool => str_contains(
-                urldecode($request->url()),
-                '/api/instances/docs.development/log',
-            ));
+            Http::assertSent(
+                fn (Request $request): bool => (
+                    str_contains(urldecode($request->url()), '/api/instances/docs.development/log')
+                    && $request->hasHeader('X-Orbit-Application-Log-Requested-Target', 'docs.development')
+                ),
+            );
         } finally {
             if (is_string($previousCwd) && $previousCwd !== '') {
                 putenv('ORBIT_HOST_CWD='.$previousCwd);
             } else {
                 putenv('ORBIT_HOST_CWD');
             }
+        }
+    });
 
-            if (is_file($configPath)) {
-                unlink($configPath);
-            }
+    it('fails interactive cwd inference when multiple instance paths match', function (): void {
+        $previousCwd = getenv('ORBIT_HOST_CWD');
+        putenv('ORBIT_HOST_CWD=/srv/apps/docs/workspaces/feature');
 
-            if (is_dir($orbitDir)) {
-                rmdir($orbitDir);
-            }
+        try {
+            Http::fake(function (Request $request) {
+                $url = urldecode($request->url());
 
-            if (is_dir($root)) {
-                rmdir($root);
+                if (str_contains($url, '/api/instances') && ! str_contains($url, '/log')) {
+                    return Http::response(fakeSuccessEnvelope([
+                        'instances' => [
+                            ['app' => 'docs', 'name' => 'development', 'path' => '/srv/apps/docs'],
+                            ['app' => 'docs', 'name' => 'staging', 'path' => '/srv/apps/docs/workspaces'],
+                        ],
+                    ]));
+                }
+
+                return Http::response(['error' => ['code' => 'unexpected']], 500);
+            });
+
+            [$exitCode, $output] = run_application_log_command_interactive('instance:log');
+
+            expect($exitCode)->toBe(1)->and($output)->toContain('Multiple visible instances');
+            Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/log'));
+        } finally {
+            if (is_string($previousCwd) && $previousCwd !== '') {
+                putenv('ORBIT_HOST_CWD='.$previousCwd);
+            } else {
+                putenv('ORBIT_HOST_CWD');
             }
         }
+    });
+
+    it('sends the CLI selector as the requested-target activity header', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'path' => 'storage/logs/laravel.log',
+            'file_exists' => false,
+            'lines' => [],
+        ]));
+
+        [$exitCode] = runCommand($this, 'instance:log', [
+            'target' => 'docs.development',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                str_contains(urldecode($request->url()), '/api/instances/docs.development/log')
+                && $request->hasHeader('X-Orbit-Application-Log-Requested-Target', 'docs.development')
+            ),
+        );
     });
 });

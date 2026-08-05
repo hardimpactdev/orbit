@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+use Orbit\Sdk\Laravel\GatewayConnector;
+use Orbit\Sdk\Laravel\Requests\Instances\StartInstanceApplicationLogStreamRequest;
+use Orbit\Sdk\Laravel\Responses\ApplicationLogs\ApplicationLogStreamResponse;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
+
+it('targets the instance application log stream-start endpoint with body fields', function (): void {
+    $request = new StartInstanceApplicationLogStreamRequest(
+        instance: 'docs.development',
+        lines: 50,
+        node: 'app-dev-1',
+    );
+
+    expect($request->resolveEndpoint())
+        ->toBe('/api/instances/docs.development/log-stream')
+        ->and($request->body()->all())
+        ->toMatchArray([
+            'lines' => 50,
+            'node' => 'app-dev-1',
+        ]);
+});
+
+it('returns an ApplicationLogStreamResponse DTO', function (): void {
+    $mockClient = new MockClient([
+        StartInstanceApplicationLogStreamRequest::class => MockResponse::make([
+            'success' => [
+                'data' => [
+                    'operation' => [
+                        'uuid' => 'op-instance-log',
+                        'stream_descriptor_url' => '/api/operations/op-instance-log/stream',
+                        'events_url' => '/api/operations/op-instance-log/events',
+                    ],
+                ],
+                'meta' => [],
+            ],
+        ]),
+    ]);
+
+    $connector = new GatewayConnector(baseUrl: 'https://gateway.test');
+    $connector->withMockClient($mockClient);
+
+    $dto = $connector->send(new StartInstanceApplicationLogStreamRequest(
+        instance: 'docs.development',
+        lines: 25,
+    ))->dto();
+
+    expect($dto)
+        ->toBeInstanceOf(ApplicationLogStreamResponse::class)
+        ->and($dto->data['operation']['uuid'] ?? null)
+        ->toBe('op-instance-log');
+});

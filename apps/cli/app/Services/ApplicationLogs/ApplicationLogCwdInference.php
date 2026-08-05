@@ -5,21 +5,24 @@ declare(strict_types=1);
 namespace App\Services\ApplicationLogs;
 
 /**
- * Interprets gateway path-resolution payloads for interactive cwd inference.
+ * Interactive cwd inference for application-log commands from visible owned paths.
  */
 final readonly class ApplicationLogCwdInference
 {
     public function __construct(
         private ApplicationLogWorkspacePathTarget $workspacePathTarget = new ApplicationLogWorkspacePathTarget,
+        private ApplicationLogInstanceInventory $instances = new ApplicationLogInstanceInventory,
+        private ApplicationLogPathAncestorMatcher $paths = new ApplicationLogPathAncestorMatcher,
     ) {}
 
     /**
-     * Prefer workspace when resolve-by-path yields one; otherwise instance marker.
+     * Prefer a resolve-by-path workspace, then a unique instance path ancestor.
      *
      * @param  array<string, mixed>|null  $workspaceData  success.data from resolve-by-path
+     * @param  array<string, mixed>  $instancesData  success.data from GET /api/instances
      * @return array{type: 'workspace', workspace: string, instance: string}|array{type: 'instance', selector: string}|array{error: string, reason: string}
      */
-    public function forAppLog(?array $workspaceData, ?string $instanceMarker): array
+    public function forAppLog(?array $workspaceData, array $instancesData, string $cwd): array
     {
         $workspace = $this->workspacePathTarget->fromResolveByPathData($workspaceData);
 
@@ -27,16 +30,31 @@ final readonly class ApplicationLogCwdInference
             return $workspace;
         }
 
-        if (is_string($instanceMarker) && $instanceMarker !== '') {
+        return $this->forInstanceLog($instancesData, $cwd);
+    }
+
+    /**
+     * Exactly one visible instance path that is an ancestor of cwd.
+     *
+     * @param  array<string, mixed>  $instancesData  success.data from GET /api/instances
+     * @return array{type: 'instance', selector: string}|array{error: string, reason: string}
+     */
+    public function forInstanceLog(array $instancesData, string $cwd): array
+    {
+        $match = $this->paths->uniqueAncestorMatch($cwd, $this->instances->pathEntries($instancesData));
+
+        if ($match['ok'] === true) {
             return [
                 'type' => 'instance',
-                'selector' => $instanceMarker,
+                'selector' => $match['selector'],
             ];
         }
 
         return [
-            'error' => 'No unambiguous application-log target could be inferred from the current directory.',
-            'reason' => 'cwd_target_missing',
+            'error' => $match['reason'] === 'cwd_target_ambiguous'
+                ? 'Multiple visible instances match the current directory path.'
+                : 'No unambiguous instance target could be inferred from the current directory.',
+            'reason' => $match['reason'],
         ];
     }
 

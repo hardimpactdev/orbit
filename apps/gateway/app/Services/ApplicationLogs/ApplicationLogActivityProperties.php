@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 
 final readonly class ApplicationLogActivityProperties
 {
+    public const string RequestedTargetHeader = ApplicationLogRequestedTargetHeader::Name;
+
     /**
      * @param  array{
      *     request: Request,
@@ -21,10 +23,14 @@ final readonly class ApplicationLogActivityProperties
      */
     public static function forInstance(array $context): array
     {
+        $request = $context['request'];
+        $routeSelector = $context['selector'];
+
         return self::filter([
             'target' => $context['target'] ?? null,
-            'selector' => $context['selector'],
-            'node' => self::optionalString($context['request'], 'node'),
+            'selector' => $routeSelector,
+            'requested_target' => ApplicationLogRequestedTargetHeader::from($request) ?? $routeSelector,
+            'node' => self::optionalString($request, 'node'),
             'mode' => $context['mode'],
             'lines' => $context['lines'],
             'outcome' => $context['outcome'] ?? null,
@@ -45,12 +51,14 @@ final readonly class ApplicationLogActivityProperties
     public static function forWorkspace(array $context): array
     {
         $request = $context['request'];
+        $workspace = $context['workspace'];
 
         return self::filter([
             'target' => $context['target'] ?? null,
-            'workspace' => $context['workspace'],
+            'workspace' => $workspace,
             'instance' => self::optionalString($request, 'instance'),
-            'selector' => $context['workspace'],
+            'selector' => $workspace,
+            'requested_target' => ApplicationLogRequestedTargetHeader::from($request) ?? $workspace,
             'node' => self::optionalString($request, 'node'),
             'mode' => $context['mode'],
             'lines' => $context['lines'],
