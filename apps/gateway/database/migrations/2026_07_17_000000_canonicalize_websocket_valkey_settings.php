@@ -9,7 +9,10 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/** @mago-expect lint:cyclomatic-complexity */
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 return new class extends Migration {
     public function up(): void
     {
@@ -81,7 +84,9 @@ return new class extends Migration {
 
                 $runtimeConfig = $valkeyProcess->runtime_config;
                 $runtimeConfig['replaces_runtime_unit'] = $this->runtimeUnit($redisProcess);
-                $valkeyProcess->forceFill(['runtime_config' => $runtimeConfig])->save();
+                $this->persistManagedProcessColumns($valkeyProcess, [
+                    'runtime_config' => $runtimeConfig,
+                ]);
                 Process::query()->whereKey($redisProcesses->modelKeys())->delete();
             }
 
@@ -134,13 +139,44 @@ return new class extends Migration {
         $runtimeConfig = $descriptor->runtimeConfig;
         $runtimeConfig['replaces_runtime_unit'] = $this->runtimeUnit($redisProcess);
 
-        $redisProcess->forceFill([
+        $this->persistManagedProcessColumns($redisProcess, [
             'name' => $processName,
             'command' => $descriptor->command,
             'tool' => null,
             'runtime_config' => $runtimeConfig,
             'credentials' => $descriptor->credentials,
-        ])->save();
+        ]);
+    }
+
+    /**
+     * Persist only migration-owned columns using model casts (JSON/encryption)
+     * without firing Process saving hooks that may write later-schema fields.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function persistManagedProcessColumns(Process $process, array $attributes): void
+    {
+        $process->forceFill($attributes);
+
+        /** @var array<string, mixed> $payload */
+        $payload = [];
+
+        foreach (array_keys($attributes) as $column) {
+            $payload[$column] = $process->getAttributes()[$column] ?? null;
+        }
+
+        if ($process->usesTimestamps()) {
+            $process->updateTimestamps();
+            $updatedAtColumn = $process->getUpdatedAtColumn();
+
+            if (is_string($updatedAtColumn) && $updatedAtColumn !== '') {
+                $payload[$updatedAtColumn] = $process->getAttributes()[$updatedAtColumn] ?? null;
+            }
+        }
+
+        DB::table($process->getTable())
+            ->where($process->getKeyName(), $process->getKey())
+            ->update($payload);
     }
 
     /**

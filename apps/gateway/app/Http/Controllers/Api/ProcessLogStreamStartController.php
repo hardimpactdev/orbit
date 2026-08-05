@@ -101,13 +101,20 @@ final class ProcessLogStreamStartController implements Loggable
 
         $operationRunId = $this->operationRunId($target);
 
-        return response()->json(JsonEnvelope::success([
+        // Finalize the body and advertise Content-Length so clients can complete the
+        // 202 POST before the terminating follow callback ends. Chunked framing would
+        // withhold message completion until the long-running tail finishes.
+        $response = response()->json(JsonEnvelope::success([
             'operation' => [
                 'uuid' => $operationRunId,
                 'stream_descriptor_url' => "/api/operations/{$operationRunId}/stream",
                 'events_url' => "/api/operations/{$operationRunId}/events",
             ],
-        ]), 202);
+        ]), status: 202);
+        $content = (string) $response->getContent();
+        $response->headers->set('Content-Length', (string) strlen($content));
+
+        return $response;
     }
 
     private function lines(Request $request): int
