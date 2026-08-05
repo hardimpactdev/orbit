@@ -6,8 +6,8 @@ guidance lives at the root; product behavior contracts live in
 `apps/docs/content/`.
 
 Route new work with [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md); load
-`HARNESS.md` sections when the chosen lane reaches them. `HARNESS.md` is the
-canonical repo-development contract. The generated monorepo unit map at
+`HARNESS.md` sections when the chosen lane reaches them. The generated
+monorepo unit map at
 [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json)
 is a routing aid, not product authority. For repository searches, follow the
 fast path's Search Route: default `rg` from the root or scoped to an owned
@@ -17,8 +17,8 @@ path — never `find .`, `rg -uu`, or broad hidden-file scans.
 
 - The repository root is orchestration only: root Composer scripts, `bin/`
   helper launchers, Docker/E2E assets, AI/project configuration, and
-  cross-project documentation artifacts. There is no root Laravel app, root
-  `artisan`, root `phpunit.xml`, or root Rector/Mago config.
+  cross-project documentation artifacts. There is no root Laravel app,
+  `artisan`, `phpunit.xml`, or Rector/Mago config.
 - `apps/gateway/` is the Laravel 13 gateway/control-plane application (gateway
   HTTP/API surface, SQLite database at
   `apps/gateway/database/database.sqlite`, provisioning, E2E harness support,
@@ -59,17 +59,17 @@ product docs.
   code.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
   implementation worktrees. It takes priority over generic worktree skills and
-  ad hoc `git worktree add`; do not recreate its setup flow manually. If the
-  script cannot be used, stop and report the blocker instead of silently
-  falling back.
+  ad hoc `git worktree add`; do not recreate its setup flow manually. If it
+  cannot be used, stop and report the blocker instead of silently falling
+  back.
 - When a feature is implemented and verified, follow `HARNESS.md` for review,
   diff-derived proof, acceptance identity, merge, archive, and cleanup. Agents
   run all deterministic checks; never hand the user a mechanical command
   checklist. Leave `~/orbit` on updated `main`, preserve unrelated dirty
   files, and never discard user changes to make a merge easier.
 - Always make sure `apps/docs/content/` describes the correct behavior; flag
-  gaps or contradictions before proceeding. `HARNESS.md` BUILD owns the
-  docs-tests-code alignment sequence.
+  gaps or contradictions before proceeding. `HARNESS.md` BUILD owns
+  docs-tests-code alignment.
 - When an issue is reported against live nodes, verify the fix on those nodes.
 - Prefer small, working vertical slices; keep the command surface
   contract-first via `.agents/skills/command-designer`.
@@ -88,8 +88,9 @@ Read `apps/docs/content/testing/README.md` before adding, changing, or
 debugging tests; it is the authoritative lane map. Run the narrowest useful
 check while developing (for example `bin/orbit-gateway-pest --compact`), and
 `composer quality-check` (docs linting, Pest, Mago, Rector, and Cargo checks
-across every app/package) before handing off a broadly safe change. Behavior touching the integrated topology requires retained topology
-proof recorded in `.orbit/loop.md` or `.orbit/evidence/`. The
+across every app/package) before handing off a broadly safe change. Behavior
+touching the integrated topology requires retained topology proof recorded in
+`.orbit/loop.md` or `.orbit/evidence/`. The
 `composer test:e2e*` lanes are human-only; agents never trigger them — the
 canonical rule, including the explicit user-invocation boundary, is in
 `HARNESS.md`.
@@ -108,8 +109,7 @@ or local conventions.
   and start Boost through `php apps/gateway/artisan boost:mcp` from the root.
 - Keep Boost maintenance on `boost:update` via `bin/orbit-boost-update`;
   never automate `boost:install --silent`.
-- Gateway Boost tools are gateway-scoped; use package/root skills for
-  `apps/cli/`, `packages/core/`, `packages/sdk/`, and docs/Librarian work.
+- Gateway Boost tools are gateway-scoped; use package/root skills elsewhere.
 
 ===
 

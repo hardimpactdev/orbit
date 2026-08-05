@@ -1,9 +1,7 @@
 # Orbit Development Harness
 
-This is the repository-development route after `AGENTS.md` and
-`AGENT_FAST_PATH.md`. Product behavior remains authoritative under
-`apps/docs/content/`; this file owns how a feature moves safely through the
-repository.
+Product behavior remains authoritative under `apps/docs/content/`; this file
+owns how a feature moves safely through the repository.
 
 ## The Feature Loop
 
@@ -13,8 +11,7 @@ Every feature uses one state machine:
 
 The current feature owner owns FRAME through LAND and may implement directly.
 Workers are optional and bounded: use them only when an independent slice can
-finish materially faster or improve a concrete decision. No extra dispatch
-paperwork is required.
+finish materially faster or improve a concrete decision.
 
 The local anchor is the compact `.orbit/loop.md` seeded by
 `bin/orbit-prepare-worktree`. It records only Goal, Scope, Proof, Status, and a
@@ -25,33 +22,31 @@ taxonomies do not belong in the anchor.
 
 1. Resolve the verifiable outcome, owned paths, constraints, and exclusions.
 2. Reconcile the request with `PRODUCT_DECISIONS.md` and the relevant product
-   docs. Stop only for unresolved product intent or missing external authority.
+   docs; stop only for unresolved intent or missing external authority.
 3. Create the isolated worktree with `bin/orbit-prepare-worktree`; it seeds
    `.orbit/loop.md` when missing. Fill Goal, Scope, branch, worktree, and
    scratchpad/source reference before editing. For stateful, lifecycle, or
    concrete UX features, append one optional compact clause on the existing
    Scope `Owned` row:
    `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
-   Omit the clause for ordinary/local changes. When the markers are present,
-   deterministic lint checks only field presence, known transition keys,
-   duplicates, and template placeholders; it does not decide whether a feature
-   is stateful or grade prose quality. Do not add a permanent new Scope row,
-   spec artifact, lane, or semantic grader for this framing.
+   Omit the clause for ordinary/local changes. Deterministic lint checks only
+   marker syntax, not statefulness or prose; `bin/orbit-loop-contract.php`
+   teaching errors are authoritative. Do not add a new Scope row, lane, or
+   semantic grader for this framing.
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
-   changed surface has a stable scope. It searches the primary session archive
-   corpus by default and returns matched records with their linked promotions
-   and waivers.
+   changed surface has a stable scope; it searches the primary session archive
+   corpus with linked promotions and waivers.
 
 ### BUILD
 
 Keep docs, executable coverage, and implementation aligned. Start with failing
 coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
-for Rust, JavaScript, shell, or other stacks. Prefer a small working vertical
-slice and existing project abstractions.
+for other stacks. Prefer a small working vertical slice and existing project
+abstractions.
 
 If a bounded worker is useful, give it an exact checkout, owned paths, done
-condition, and verification. The feature owner remains responsible for the
-integrated result and stops or redirects workers that leave scope.
+condition, and verification; the owner remains responsible for the integrated
+result and stops workers that leave scope.
 
 ### PROVE
 
@@ -60,8 +55,8 @@ Run the smallest relevant checks first, then the diff-routed broader gate:
 - docs-only: focused docs checks and `composer docs-lint`;
 - non-docs repository changes: focused owning tests and `composer quality-check`;
 - integrated runtime behavior: the real proof venue below;
-- rendering, progress, streaming, TTY, cadence, repaint, or liveness risk:
-  capture PTY evidence; ordinary commands do not pay a PTY tax.
+- rendering/progress/streaming/TTY/cadence/repaint/liveness risk: capture PTY
+  evidence; ordinary commands pay no PTY tax.
 
 When the Goal claims runtime reachability or convergence, proof must directly
 exercise the claimed final outcome. Configuration validation, artifact
@@ -82,22 +77,21 @@ with `Acceptance: pending` and accepted tips `none`, preserve a still-valid
 Review and Reviewed feature tip, and return through BUILD -> PROVE before
 ACCEPT. A same-candidate proof retry is not a reviewer FIX: the retry keeps
 Review and the reviewed tip; only a reviewer FIX resets them. A repair that
-moves HEAD still needs a refreshed review via the existing identity check. Do not invent a post-LAND closure proof. Historical archive reading stays
-compatible; the strict receipt applies when new acceptance or finalization is
-attempted.
+moves HEAD still needs a refreshed review via the existing identity check. Do
+not invent a post-LAND closure proof. Historical archives stay readable; the
+strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those
-artifacts and decisions bind the exact committed HEAD, not a dirty approximation.
+artifacts and decisions bind the exact committed HEAD.
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,
-quality-check, or E2E lanes. Timing analysis may be skipped when no comparable
+quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
 After checks pass, use one independent general reviewer from
-`.agents/review-personas/general.md`. The reviewer returns `PASS`, `FIX`, or
-`ESCALATE`, `BLAST_RADIUS: not-required|complete|gaps`, and
-`HUMAN_JUDGMENT: required|not-required`.
+`.agents/review-personas/general.md`; that persona defines the verdict,
+blast-radius, and human-judgment output contract.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
 lane. Use `not-required - <reason>` for a local change. A product decision,
@@ -110,21 +104,20 @@ result=<summary>`. `gaps` cannot PASS or enter acceptance.
   radius: pending`, return to
   BUILD, add or adjust executable coverage, fix, commit the clean delta, repeat
   affected proof, and re-review the delta.
-- `ESCALATE`: name one specialist and one concrete high-risk question. A
-  specialist answers that question only back to the same general reviewer.
-  That reviewer then issues the terminal `PASS` or `FIX`, even when the answer
-  requires no code delta. There are no standing specialist lanes.
+- `ESCALATE`: name one specialist and one concrete high-risk question; the
+  specialist answers only back to the same general reviewer, which then issues
+  the terminal `PASS` or `FIX` even without a code delta. There are no
+  standing specialist lanes.
 
-On terminal PASS, record `Reviewed feature tip` as the exact reviewed HEAD and
-include `human-judgment=required|not-required` in Review. Record the reviewer's
-Blast radius classification and closure evidence on the loop row. Acceptance
-refuses a PASS recorded against any other commit, without that decision, or
-with unresolved blast-radius gaps.
+On terminal PASS, record `Reviewed feature tip` as the exact reviewed HEAD,
+`human-judgment=required|not-required`, and the reviewer's blast-radius
+classification with closure evidence. Acceptance refuses a PASS against any
+other commit, without that decision, or with unresolved blast-radius gaps.
 
 ## Acceptance Venues
 
 Immediately after FRAME and before expensive PROVE work, run the read-only
-diff-derived route (no loop packet, no cleanliness/review gates):
+diff-derived route (no loop packet or cleanliness/review gates):
 
 ```bash
 bin/orbit-feature-acceptance route
@@ -161,10 +154,9 @@ and never downgrades `retained-incus`, `browser`, or `host-macos` proof to
 Agents run every deterministic check and inspect its output before acceptance.
 Never ask the user to execute a check the agent can execute. The user receives
 only a prepared surface that requires human judgment about intent, UX, or
-real-world behavior. Executable files or a conservatively derived venue do not
-by themselves create a human acceptance task; when no judgment surface remains,
-the general reviewer records `HUMAN_JUDGMENT: not-required` and the automated
-actor accepts at the already proven venue.
+real-world behavior; when no judgment surface remains, the general reviewer
+records `HUMAN_JUDGMENT: not-required` and the automated actor accepts at the
+already proven venue.
 
 ### Retained Incus Acceptance
 
@@ -174,19 +166,18 @@ build as the default acceptance path:
 1. Run `bin/orbit-secret-scan` and reject every nonignored untracked file.
 2. Start or reuse the smallest role set from the implementation worktree.
 3. Sync only the required checkout roles to `/home/orbit/orbit-run`.
-4. Open one ready Solo terminal inside the relevant VM at
-   `/home/orbit/orbit-run` and verify launcher identity.
+4. Open one ready Solo terminal in the VM at `/home/orbit/orbit-run` and
+   verify launcher identity.
 5. Exercise changed human output, JSON, failures, side effects, idempotency,
    performance, and PTY behavior yourself where applicable.
 6. Only when judgment still remains, send one concise `ACCEPTANCE READY`
-   handoff pointing at the already prepared experience and the decision the
-   user must make. Do not hand off a command or check that an agent can run.
+   handoff naming the prepared experience and the decision the user must
+   make. Do not hand off a command or check an agent can run.
 
 CLI retained topology proof must run in a Solo terminal. Keep that terminal open
 for a user only when `HUMAN_JUDGMENT: required`; otherwise it is agent-owned
 proof and may close after completion. On feedback, keep the topology, invalidate
-acceptance, fix, resync, restart only affected services, and repeat the affected
-proof.
+acceptance, fix, resync only what changed, and repeat the affected proof.
 
 The `composer test:e2e*` commands are human-only: they run only when the
 user explicitly invokes the Composer command from a shell, and skills, hooks,
@@ -199,10 +190,9 @@ one-sentence pointers.
 
 ### Browser And macOS Acceptance
 
-For `browser`, open the exact candidate URL in the in-app browser before the
-handoff and give only the actions that matter. For `host-macos`, open or run the
-exact candidate app/command on the implementing Mac. Incus is not a substitute
-for native macOS proof.
+For `browser`, open the exact candidate URL before the handoff and give only
+the actions that matter. For `host-macos`, open or run the exact candidate on
+the implementing Mac; Incus is not a substitute for native macOS proof.
 
 ### Acceptance Identity
 
@@ -246,11 +236,11 @@ any actionable record lacks a linked promotion or user-sourced waiver; a later
 5. concise instruction;
 6. extra ceremony only when unavoidable.
 
-Every promoted protection names one rejected example and one accepted example.
-Applicable deterministic protections run through the normal diff-routed proof;
-there is no second receipt gate. Semantic similarity is never a hard gate. Do
-not create a semantic grader without one named promoted expectation and both
-examples; if one is eventually justified, `UNKNOWN` never passes.
+Every promoted protection names one rejected example and one accepted example
+and runs through the normal diff-routed proof; there is no second receipt
+gate. Semantic similarity is never a hard gate. Do not create a semantic
+grader without one named promoted expectation and both examples; if one is
+eventually justified, `UNKNOWN` never passes.
 
 The monotonic quality-check progress protection (rejected `Running -> Queued`
 frame vs accepted monotonic frame, documented with the command UX contracts) is
@@ -283,15 +273,14 @@ Manual LAND remains validate-then-execute for each destructive mutation:
    `bin/orbit-feature-finalization-check <exact git command>`.
    After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
-   `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
-   compact archive from main. Archives are compact by default: `loop.md`,
-   optional `feedback.jsonl`, regular files cited by the loop as one exact
-   inline-code path below `.orbit/evidence/`, `.orbit/quality-gates/`, or
-   `.orbit/release-evidence/`, and a versioned receipt bound to the landed
-   feature branch and every archived byte. Cite files, never proof
-   directories; missing, malformed, or unsafe citations block archival.
-   Runtime acceptance receipts still require evidence under
-   `.orbit/evidence/` or `.orbit/quality-gates/` only.
+   `bin/orbit-session-archive` with the feature worktree as cwd, never from
+   main. Archives are compact by default: `loop.md`, optional
+   `feedback.jsonl`, loop-cited proof files as exact inline-code paths under
+   the evidence, quality-gates, or release-evidence trees, and a versioned
+   receipt binding the landed branch and every archived byte. Cite files,
+   never proof directories; the archive tool rejects invalid citations.
+   Runtime acceptance receipts still require `.orbit/evidence/` or
+   `.orbit/quality-gates/` only.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
 7. Update the session index and commit the archive/index. Cleanup requires
@@ -330,12 +319,11 @@ ordinary delivery slows materially. Do not create generic evaluator tooling for
 a one-off calculation.
 
 The prevention metric counts escaped same-surface defects after terminal PASS,
-not internal commit count or autonomous pre-land rework. The latter is recovery
-that remained inside the loop.
+not internal commit count or autonomous pre-land rework.
 
 Hard security, correctness, acceptance, and evidence-integrity protections are
-never experiments. Historical session and signal tools remain available for an
-explicit human-requested diagnostic; they are not ordinary delivery gates.
+never experiments. Historical session and signal tools serve explicit
+human-requested diagnostics only, not ordinary delivery gates.
 
 ## Stop Conditions
 

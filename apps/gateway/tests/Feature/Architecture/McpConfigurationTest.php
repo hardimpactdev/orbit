@@ -692,11 +692,15 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
     $skill = file_get_contents($skillPath) ?: '';
     $agents = file_get_contents(repo_path('AGENTS.md')) ?: '';
     $orbitAuthoredAgents = explode('<laravel-boost-guidelines>', $agents)[0];
+    $harnessBytes = strlen(file_get_contents(repo_path('HARNESS.md')) ?: '');
+    $fastPathBytes = strlen(file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '');
 
     expect(strlen($skill))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
+        ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
+        ->toBeLessThanOrEqual(33160)
         ->and($skill)
         ->toContain('## FRAME')
         ->toContain('## BUILD')
