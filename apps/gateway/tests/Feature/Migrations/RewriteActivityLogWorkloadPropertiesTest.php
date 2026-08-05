@@ -125,6 +125,169 @@ it('rewrites stored activity_log project and app_instance property keys to app a
     });
 });
 
+it('rewrites large activity_log sets with bounded chunkById selects rather than one unbounded get()', function (): void {
+    with_activity_log_vocabulary_schema(function (): void {
+        $now = '2026-08-05 12:00:00';
+        $rowCount = 1250;
+        $rows = [];
+
+        for ($id = 1; $id <= $rowCount; $id++) {
+            $rows[] = [
+                'id' => $id,
+                'log_name' => 'api',
+                'description' => "row-{$id}",
+                'event' => 'app.shown',
+                'properties' => json_encode([
+                    'type' => 'read',
+                    'project' => "app-{$id}",
+                    'project_name' => "name-{$id}",
+                    'app_instance' => ($id % 2) === 0 ? 'development' : 'production',
+                    'payload' => str_repeat('x', times: 64),
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk($rows, 250) as $chunk) {
+            DB::table('activity_log')->insert($chunk);
+        }
+
+        /** @var list<string> $activitySelects */
+        $activitySelects = [];
+
+        DB::listen(static function (object $query) use (&$activitySelects): void {
+            $sql = (string) $query->sql;
+
+            if (
+                preg_match('/\bfrom\s+["`]?activity_log["`]?/i', $sql) === 1
+                && preg_match('/^\s*select\b/i', $sql) === 1
+            ) {
+                $activitySelects[] = $sql;
+            }
+        });
+
+        run_activity_log_vocabulary_cutover_migration();
+
+        expect($activitySelects)->not->toBeEmpty();
+
+        $boundedSelects = array_values(array_filter(
+            $activitySelects,
+            static fn (string $sql): bool => preg_match('/\blimit\b/i', $sql) === 1,
+        ));
+
+        expect($boundedSelects)
+            ->not
+            ->toBeEmpty('activity_log rewriting must issue LIMIT-bounded selects')
+            ->and(count($boundedSelects))
+            ->toBeGreaterThan(1, 'large activity_log rewrites must use more than one bounded page');
+
+        foreach ($activitySelects as $sql) {
+            // No unbounded full-table materialization of activity_log properties.
+            if (preg_match('/\bproperties\b/i', $sql) !== 1) {
+                continue;
+            }
+
+            expect($sql)->toMatch('/\blimit\b/i');
+        }
+
+        $rewritten = DB::table('activity_log')->orderBy('id')->get(['id', 'properties']);
+
+        expect($rewritten)->toHaveCount($rowCount);
+
+        foreach ($rewritten as $row) {
+            $properties = json_decode((string) $row->properties, true, flags: JSON_THROW_ON_ERROR);
+
+            expect($properties)
+                ->toMatchArray([
+                    'type' => 'read',
+                    'app' => "app-{$row->id}",
+                    'app_name' => "name-{$row->id}",
+                    'instance' => ((int) $row->id % 2) === 0 ? 'development' : 'production',
+                ])
+                ->not->toHaveKey('project')
+                ->not->toHaveKey('project_name')
+                ->not->toHaveKey('app_instance');
+        }
+    });
+});
+
+it('is safe to re-run activity_log workload rewriting over mixed pre-cutover and already-canonical rows', function (): void {
+    with_activity_log_vocabulary_schema(function (): void {
+        $now = '2026-08-05 12:00:00';
+
+        DB::table('activity_log')->insert([
+            [
+                'id' => 1,
+                'log_name' => 'api',
+                'description' => 'legacy',
+                'event' => 'app.shown',
+                'properties' => json_encode([
+                    'project' => 'docs',
+                    'project_name' => 'Docs',
+                    'app_instance' => 'development',
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 2,
+                'log_name' => 'api',
+                'description' => 'already rewritten',
+                'event' => 'app.listed',
+                'properties' => json_encode([
+                    'app' => 'billing',
+                    'app_name' => 'Billing',
+                    'instance' => 'production',
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 3,
+                'log_name' => 'api',
+                'description' => 'partial dual keys',
+                'event' => 'app.shown',
+                'properties' => json_encode([
+                    'project' => 'stale',
+                    'app' => 'canonical',
+                    'app_instance' => 'stale-instance',
+                    'instance' => 'canonical-instance',
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        run_activity_log_vocabulary_cutover_migration();
+        run_activity_log_vocabulary_cutover_migration();
+
+        $byId = DB::table('activity_log')->orderBy('id')->pluck('properties', 'id');
+
+        expect(json_decode((string) $byId[1], true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray([
+                'app' => 'docs',
+                'app_name' => 'Docs',
+                'instance' => 'development',
+            ])
+            ->not->toHaveKey('project')
+            ->not->toHaveKey('app_instance')->and(json_decode(
+                (string) $byId[2],
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            ))->toMatchArray([
+                'app' => 'billing',
+                'app_name' => 'Billing',
+                'instance' => 'production',
+            ])->and(json_decode((string) $byId[3], true, flags: JSON_THROW_ON_ERROR))->toMatchArray([
+                'app' => 'canonical',
+                'instance' => 'canonical-instance',
+            ])
+            ->not->toHaveKey('project')
+            ->not->toHaveKey('app_instance');
+    });
+});
+
 it('aborts the atomic cutover when activity_log properties are malformed, without partial commit', function (): void {
     with_activity_log_vocabulary_schema(function (): void {
         $now = '2026-08-05 12:00:00';

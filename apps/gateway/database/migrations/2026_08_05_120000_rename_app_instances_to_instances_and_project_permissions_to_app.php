@@ -35,6 +35,12 @@ return new class extends Migration {
         'project:update' => 'app:update',
     ];
 
+    /**
+     * Bound activity_log materialization. Live fleets can exceed 400k rows; an
+     * unbounded get() of id/properties exhausted the 128 MiB PHP CLI default.
+     */
+    private const int ActivityLogRewriteChunkSize = 500;
+
     public function up(): void
     {
         DB::transaction(function (): void {
@@ -155,39 +161,44 @@ return new class extends Migration {
             return;
         }
 
-        foreach (DB::table('activity_log')->select(['id', 'properties'])->orderBy('id')->get() as $row) {
-            if ($row->properties === null) {
-                continue;
-            }
+        DB::table('activity_log')
+            ->select(['id', 'properties'])
+            ->orderBy('id')
+            ->chunkById(self::ActivityLogRewriteChunkSize, function ($rows): void {
+                foreach ($rows as $row) {
+                    if ($row->properties === null) {
+                        continue;
+                    }
 
-            if (! is_string($row->properties) || $row->properties === '') {
-                throw new \UnexpectedValueException(
-                    "activity_log.properties for id {$row->id} must be a non-empty JSON object string.",
-                );
-            }
+                    if (! is_string($row->properties) || $row->properties === '') {
+                        throw new \UnexpectedValueException(
+                            "activity_log.properties for id {$row->id} must be a non-empty JSON object string.",
+                        );
+                    }
 
-            $decoded = json_decode($row->properties, associative: true, flags: JSON_THROW_ON_ERROR);
+                    $decoded = json_decode($row->properties, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            if (! is_array($decoded)) {
-                throw new \UnexpectedValueException(
-                    "activity_log.properties for id {$row->id} must decode to a JSON object.",
-                );
-            }
+                    if (! is_array($decoded)) {
+                        throw new \UnexpectedValueException(
+                            "activity_log.properties for id {$row->id} must decode to a JSON object.",
+                        );
+                    }
 
-            /** @var array<string, mixed> $properties */
-            $properties = $decoded;
-            $rewritten = $this->rewriteWorkloadPropertyKeys($properties);
+                    /** @var array<string, mixed> $properties */
+                    $properties = $decoded;
+                    $rewritten = $this->rewriteWorkloadPropertyKeys($properties);
 
-            if ($rewritten === $decoded) {
-                continue;
-            }
+                    if ($rewritten === $decoded) {
+                        continue;
+                    }
 
-            DB::table('activity_log')
-                ->where('id', $row->id)
-                ->update([
-                    'properties' => json_encode($rewritten, JSON_THROW_ON_ERROR),
-                ]);
-        }
+                    DB::table('activity_log')
+                        ->where('id', $row->id)
+                        ->update([
+                            'properties' => json_encode($rewritten, JSON_THROW_ON_ERROR),
+                        ]);
+                }
+            });
     }
 
     /**

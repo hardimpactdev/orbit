@@ -21,6 +21,13 @@ final readonly class GatewaySwarmManager
 
     public const string LegacyNetworkMessage = 'Existing Docker network [orbit-network] is not an attachable Swarm overlay. Run the explicit Orbit network migration before enabling gateway Swarm services.';
 
+    /**
+     * Explicit PHP memory ceiling for one-shot fleet gateway migrations.
+     * Defense in depth against large registry rewrites (activity_log cutovers).
+     * Candidate images inherit the CLI default (128M) unless this is passed.
+     */
+    public const string GatewayMigrationMemoryLimit = '512M';
+
     public function __construct(
         private ?string $configRoot = null,
     ) {}
@@ -222,6 +229,8 @@ final readonly class GatewaySwarmManager
                 '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
                 escapeshellarg($image->canonical()),
                 escapeshellarg('php'),
+                escapeshellarg('-d'),
+                escapeshellarg('memory_limit='.self::GatewayMigrationMemoryLimit),
                 escapeshellarg('artisan'),
                 escapeshellarg('migrate'),
                 escapeshellarg('--force'),

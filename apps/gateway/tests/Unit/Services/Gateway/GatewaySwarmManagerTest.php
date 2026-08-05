@@ -292,3 +292,46 @@ it('updates Swarm service images without waiting for Docker stability verificati
         "docker service update --detach=true --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
     ]);
 });
+
+it('runs gateway migrations with an explicit PHP memory ceiling on the candidate image CLI', function (): void {
+    $image = GatewayImageReference::fromString(
+        'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    $root = sys_get_temp_dir().'/orbit-swarm-migrate-'.bin2hex(random_bytes(6));
+    mkdir($root, recursive: true);
+
+    try {
+        new GatewaySwarmManager(configRoot: $root)->runGatewayMigrations($image);
+    } finally {
+        new SymfonyProcess(['rm', '-rf', $root])->run();
+    }
+
+    expect($commands)->toHaveCount(1);
+
+    $command = $commands[0];
+
+    expect($command)
+        ->toContain('docker run')
+        ->toContain('--rm')
+        ->toContain(escapeshellarg($image->canonical()))
+        ->toContain(escapeshellarg('php'))
+        ->toContain(escapeshellarg('-d'))
+        ->toContain(escapeshellarg('memory_limit='.GatewaySwarmManager::GatewayMigrationMemoryLimit))
+        ->toContain(escapeshellarg('artisan'))
+        ->toContain(escapeshellarg('migrate'))
+        ->toContain(escapeshellarg('--force'))
+        ->toContain(escapeshellarg('--no-interaction'))
+        ->and(GatewaySwarmManager::GatewayMigrationMemoryLimit)
+        ->not
+        ->toBe('')
+        ->and(preg_match('/^\d+[KMG]$/', GatewaySwarmManager::GatewayMigrationMemoryLimit))
+        ->toBe(1);
+});
