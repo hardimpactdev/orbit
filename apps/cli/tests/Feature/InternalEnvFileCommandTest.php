@@ -225,133 +225,13 @@ describe('internal env-file command', function (): void {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
-            $tmpLeftovers = glob($directory.'/.env.tmp.*');
-            foreach ($tmpLeftovers === false ? [] : $tmpLeftovers as $leftover) {
-                unlink($leftover);
-            }
+            env_file_unlink_glob($directory.'/.env.tmp.*');
             if (is_file($directory.'/outside.env')) {
                 unlink($directory.'/outside.env');
             }
             if (is_dir($directory)) {
                 rmdir($directory);
             }
-        }
-    });
-
-    it('rejects publish when an existing .env target is a directory rather than a regular file', function (): void {
-        $directory = sys_get_temp_dir().'/orbit-env-posix-dir-'.bin2hex(random_bytes(4));
-        mkdir($directory, permissions: 0o755);
-        $path = $directory.'/.env';
-        mkdir($path, permissions: 0o755);
-        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(4));
-
-        try {
-            $script = \App\Services\EnvFiles\RuntimeUserEnvFileWriter::publishScript(
-                temporary: $temporary,
-                path: $path,
-                mode: 0o600,
-            );
-
-            expect($script)->toContain('[ ! -f ');
-
-            $process = proc_open(
-                ['sh', '-c', $script],
-                [
-                    0 => ['pipe', 'r'],
-                    1 => ['pipe', 'w'],
-                    2 => ['pipe', 'w'],
-                ],
-                $pipes,
-            );
-
-            expect($process)->not->toBeFalse();
-
-            fwrite($pipes[0], "SHOULD_NOT_PUBLISH=1\n");
-            fclose($pipes[0]);
-            stream_get_contents($pipes[1]);
-            stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            $exitCode = proc_close($process);
-
-            $dirChildren = glob($path.'/*');
-            $movedInside = $dirChildren === false ? [] : $dirChildren;
-
-            expect($exitCode)
-                ->not
-                ->toBe(0)
-                ->and(is_dir($path))
-                ->toBeTrue()
-                ->and($movedInside)
-                ->toBe([])
-                ->and(is_file($temporary))
-                ->toBeFalse()
-                ->and(file_exists($path.'/SHOULD_NOT_PUBLISH'))
-                ->toBeFalse();
-        } finally {
-            if (is_dir($path)) {
-                $cleanupChildren = glob($path.'/*');
-                foreach ($cleanupChildren === false ? [] : $cleanupChildren as $child) {
-                    if (is_file($child) || is_link($child)) {
-                        unlink($child);
-                    }
-                }
-                rmdir($path);
-            }
-            if (is_file($temporary)) {
-                unlink($temporary);
-            }
-            $tmpLeftovers = glob($directory.'/.env.tmp.*');
-            foreach ($tmpLeftovers === false ? [] : $tmpLeftovers as $leftover) {
-                unlink($leftover);
-            }
-            if (is_dir($directory)) {
-                rmdir($directory);
-            }
-        }
-    });
-
-    it('rejects a direct write when an existing managed .env target is a directory', function (): void {
-        $workspace = make_env_file_development_worktree_workspace();
-        $envPath = "{$workspace}/.env";
-        mkdir($envPath, permissions: 0o755);
-
-        try {
-            [$exitCode, $output] = runInternalEnvFileCommand(
-                [
-                    '--operation-token' => envFileSignedOperationToken(),
-                    '--json' => true,
-                ],
-                json_encode([
-                    'action' => 'write',
-                    'path' => $envPath,
-                    'contents' => "APP_KEY=should-fail\n",
-                ], JSON_THROW_ON_ERROR),
-            );
-
-            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-            $envChildren = glob($envPath.'/*');
-            $movedInside = $envChildren === false ? [] : $envChildren;
-
-            expect($exitCode)
-                ->toBe(1)
-                ->and($payload['error']['code'] ?? null)
-                ->toBe('validation_failed')
-                ->and(is_dir($envPath))
-                ->toBeTrue()
-                ->and($movedInside)
-                ->toBe([]);
-        } finally {
-            if (is_dir($envPath)) {
-                $cleanupChildren = glob($envPath.'/*');
-                foreach ($cleanupChildren === false ? [] : $cleanupChildren as $child) {
-                    if (is_file($child) || is_link($child)) {
-                        unlink($child);
-                    }
-                }
-                rmdir($envPath);
-            }
-            delete_env_file_development_worktree_workspace($workspace);
         }
     });
 
@@ -782,6 +662,145 @@ describe('internal env-file command', function (): void {
         }
     });
 });
+
+describe('internal env-file non-regular target publication', function (): void {
+    beforeEach(function (): void {
+        configureEnvFileOperationTokenGuard();
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+    });
+
+    it('rejects publish when an existing .env target is a directory rather than a regular file', function (): void {
+        $directory = sys_get_temp_dir().'/orbit-env-posix-dir-'.bin2hex(random_bytes(4));
+        mkdir($directory, permissions: 0o755);
+        $path = $directory.'/.env';
+        mkdir($path, permissions: 0o755);
+        $temporary = $directory.'/.env.tmp.'.bin2hex(random_bytes(4));
+
+        try {
+            $script = \App\Services\EnvFiles\RuntimeUserEnvFileWriter::publishScript(
+                temporary: $temporary,
+                path: $path,
+                mode: 0o600,
+            );
+
+            expect($script)->toContain('[ ! -f ');
+
+            $exitCode = env_file_run_posix_publish_script($script, "SHOULD_NOT_PUBLISH=1\n");
+            $movedInside = env_file_glob_entries($path.'/*');
+
+            expect($exitCode)
+                ->not
+                ->toBe(0)
+                ->and(is_dir($path))
+                ->toBeTrue()
+                ->and($movedInside)
+                ->toBe([])
+                ->and(is_file($temporary))
+                ->toBeFalse()
+                ->and(file_exists($path.'/SHOULD_NOT_PUBLISH'))
+                ->toBeFalse();
+        } finally {
+            env_file_remove_directory_if_present($path);
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+            env_file_unlink_glob($directory.'/.env.tmp.*');
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+        }
+    });
+
+    it('rejects a direct write when an existing managed .env target is a directory', function (): void {
+        $workspace = make_env_file_development_worktree_workspace();
+        $envPath = "{$workspace}/.env";
+        mkdir($envPath, permissions: 0o755);
+
+        try {
+            [$exitCode, $output] = runInternalEnvFileCommand(
+                [
+                    '--operation-token' => envFileSignedOperationToken(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'action' => 'write',
+                    'path' => $envPath,
+                    'contents' => "APP_KEY=should-fail\n",
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+            $movedInside = env_file_glob_entries($envPath.'/*');
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($payload['error']['code'] ?? null)
+                ->toBe('validation_failed')
+                ->and(is_dir($envPath))
+                ->toBeTrue()
+                ->and($movedInside)
+                ->toBe([]);
+        } finally {
+            env_file_remove_directory_if_present($envPath);
+            delete_env_file_development_worktree_workspace($workspace);
+        }
+    });
+});
+
+/**
+ * @return list<string>
+ */
+function env_file_glob_entries(string $pattern): array
+{
+    $entries = glob($pattern);
+
+    return $entries === false ? [] : $entries;
+}
+
+function env_file_unlink_glob(string $pattern): void
+{
+    foreach (env_file_glob_entries($pattern) as $path) {
+        if (is_file($path) || is_link($path)) {
+            unlink($path);
+        }
+    }
+}
+
+function env_file_remove_directory_if_present(string $path): void
+{
+    if (! is_dir($path)) {
+        return;
+    }
+
+    env_file_unlink_glob($path.'/*');
+    rmdir($path);
+}
+
+function env_file_run_posix_publish_script(string $script, string $stdin): int
+{
+    $process = proc_open(
+        ['sh', '-c', $script],
+        [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+    );
+
+    expect($process)->not->toBeFalse();
+
+    fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    stream_get_contents($pipes[1]);
+    stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return proc_close($process);
+}
 
 function env_file_codex_home_root(): string
 {
