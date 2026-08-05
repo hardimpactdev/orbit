@@ -177,6 +177,72 @@ describe('internal process logs command', function (): void {
         });
     });
 
+    it('checks for an active subscriber before starting the follow backend', function (): void {
+        $bin = install_process_logs_follow_bin_recording_start();
+
+        app()->instance(
+            App\Services\GatewayOperationStreamPublisher::class,
+            new App\Services\GatewayOperationStreamPublisher(baseUrl: null, timeout: 30),
+        );
+
+        $preStartProbeSawBackend = null;
+
+        Http::fake([
+            'https://gateway.test/api/internal-executor/token/verify' => Http::response(fakeSuccessEnvelope([
+                'allowed' => true,
+            ])),
+            'https://gateway.test/api/operations/run-1/stream/publish' => Http::response(fakeSuccessEnvelope([
+                'broadcast' => ['delivered' => true],
+            ])),
+            'https://gateway.test/api/operations/run-1/stream/stop-decision' => function () use (
+                &$preStartProbeSawBackend,
+                $bin,
+            ) {
+                if ($preStartProbeSawBackend === null) {
+                    $preStartProbeSawBackend = is_file("{$bin}/started.flag");
+                }
+
+                return Http::response(fakeSuccessEnvelope([
+                    'should_stop_tail' => false,
+                    'active_subscribers' => 1,
+                ]));
+            },
+        ]);
+
+        [$exitCode, $output] = run_internal_process_logs_command(
+            [
+                '--operation-token' => process_logs_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'backend' => 'docker',
+                'runtime_unit' => 'orbit_docs_main_queue',
+                'lines' => 100,
+                'follow' => true,
+                'operation_stream' => [
+                    'operation_uuid' => 'run-1',
+                    'channel' => 'private-operations.run-1',
+                    'gateway_url' => 'https://gateway.test',
+                    'ca_pem_path' => null,
+                    'publish_endpoint' => '/api/operations/run-1/stream/publish',
+                    'stop_decision_endpoint' => '/api/operations/run-1/stream/stop-decision',
+                    'publisher_token' => process_logs_publisher_token(),
+                ],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($preStartProbeSawBackend)
+            ->toBeFalse()
+            ->and(is_file("{$bin}/started.flag"))
+            ->toBeTrue()
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('logs --tail 100 --follow orbit_docs_main_queue')
+            ->and($output)
+            ->toBe("historical-prelude\n");
+    });
+
     it('accepts launchd backend and tails explicit stdout/stderr paths with single tail argv for follow', function (): void {
         $home = sys_get_temp_dir().'/orbit-launchd-home-'.bin2hex(random_bytes(4));
         $logDir = "{$home}/Library/Logs/Orbit/processes";
@@ -392,10 +458,32 @@ function install_process_logs_fake_bin(): string
     return $dir;
 }
 
+function install_process_logs_follow_bin_recording_start(): string
+{
+    $dir = sys_get_temp_dir().'/orbit-process-logs-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir);
+
+    file_put_contents("{$dir}/docker", <<<'PHP'
+        #!/usr/bin/env php
+        <?php
+        file_put_contents(__DIR__.'/calls.log', implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+        file_put_contents(__DIR__.'/started.flag', '1');
+        echo "historical-prelude\n";
+        exit(0);
+        PHP);
+    chmod(filename: "{$dir}/docker", permissions: 0o755);
+
+    $path = getenv('PATH');
+    putenv("PATH={$dir}:".($path === false ? '' : $path));
+
+    return $dir;
+}
+
 function delete_process_logs_fake_bin(string $path): void
 {
     delete_process_logs_file("{$path}/docker");
     delete_process_logs_file("{$path}/calls.log");
+    delete_process_logs_file("{$path}/started.flag");
 
     if (is_dir($path)) {
         rmdir($path);
