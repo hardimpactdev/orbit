@@ -1200,7 +1200,6 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     $qualityGateTriageSkill = (string) file_get_contents(repo_path('.agents/skills/quality-gate-triage/SKILL.md'));
     $e2ePrompt = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/agents/openai.yaml'));
     $defaultGateScripts = [
-        'bin/orbit-codex-pre-tool-use-hook',
         'bin/orbit-feature-finalization-check',
         'bin/orbit-prepare-worktree',
         'bin/quality-check.sh',
@@ -1229,6 +1228,22 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     foreach ($defaultGateScripts as $scriptPath) {
         expect((string) file_get_contents(repo_path($scriptPath)))->not->toContain('composer test:e2e');
     }
+
+    // The pre-tool-use hook is the one default gate script allowed to name
+    // `composer test:e2e` — solely to deny it. It must carry the dedicated
+    // guard and stay free of every executable E2E vector, and it must remain
+    // wired as the PreToolUse hook in both agent configurations.
+    $preToolUseHook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+
+    expect($preToolUseHook)
+        ->toContain('Orbit E2E guard blocked')
+        ->toContain('human-only')
+        ->not->toContain('orbit-e2e-artisan')
+        ->not->toContain('e2e:test')
+        ->not->toContain('bin/quality-gate-run')
+        ->not->toContain('.env.e2e')->and((string) file_get_contents(repo_path('.claude/settings.json')))->toContain(
+            'orbit-codex-pre-tool-use-hook',
+        )->and((string) file_get_contents(repo_path('.codex/hooks.json')))->toContain('orbit-codex-pre-tool-use-hook');
 });
 
 it('keeps retained cli proof agent-owned unless human judgment remains', function (): void {

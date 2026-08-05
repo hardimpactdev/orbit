@@ -89,6 +89,14 @@ if (
     exit(unclassifiable_exit('patch payload is not an executable command'));
 }
 
+$e2eInvocation = e2e_manual_only_invocation($trimmedCommand);
+
+if ($e2eInvocation !== null) {
+    fwrite(STDERR, e2e_block_message($e2eInvocation, $trimmedCommand));
+
+    exit(BLOCK_EXIT_CODE);
+}
+
 $action = classify_command($command);
 
 if ($action === null) {
@@ -319,6 +327,130 @@ function classify_command(string $command): ?array
     }
 
     return null;
+}
+
+/**
+ * The `composer test:e2e*` lanes are human-only; deny every executable agent
+ * form: direct, suffix variant, env-prefixed, path or phar, run/run-script,
+ * chained segment, and shell -c wrapper. Quoted prose stays one token in
+ * shell_words(), so mentions inside messages or searches never classify as
+ * execution. Returns the matched invocation, or null when none exists.
+ */
+function e2e_manual_only_invocation(string $command): ?string
+{
+    foreach (preg_split('/\s*(?:&&|\|\||;|\n)\s*/', $command) ?: [] as $segment) {
+        $words = shell_words($segment);
+
+        foreach ($words as $index => $word) {
+            $binary = basename($word);
+
+            if (in_array($binary, ['composer', 'composer.phar'], true)) {
+                $script = composer_script_operand(array_slice($words, $index + 1));
+
+                if ($script !== null && str_starts_with($script, 'test:e2e')) {
+                    return "{$binary} {$script}";
+                }
+
+                continue;
+            }
+
+            if (in_array($binary, ['bash', 'sh', 'zsh', 'dash', 'ksh'], true)) {
+                $payload = shell_command_string_operand(array_slice($words, $index + 1));
+
+                if ($payload !== null) {
+                    $nested = e2e_manual_only_invocation($payload);
+
+                    if ($nested !== null) {
+                        return $nested;
+                    }
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Resolve the composer script operand: skip global options (with separate
+ * values for -d/--working-dir) and the run/run-script subcommand words.
+ *
+ * @param  list<string>  $words
+ */
+function composer_script_operand(array $words): ?string
+{
+    $expectValue = false;
+
+    foreach ($words as $word) {
+        if ($expectValue) {
+            $expectValue = false;
+
+            continue;
+        }
+
+        if (str_starts_with($word, '-')) {
+            if (in_array($word, ['-d', '--working-dir'], true)) {
+                $expectValue = true;
+            }
+
+            continue;
+        }
+
+        if (in_array($word, ['run', 'run-script'], true)) {
+            continue;
+        }
+
+        return $word;
+    }
+
+    return null;
+}
+
+/**
+ * Return the command-string operand of a shell wrapper (`bash -lc '...'`)
+ * when a -c style short option precedes it; plain script paths return null.
+ *
+ * @param  list<string>  $words
+ */
+function shell_command_string_operand(array $words): ?string
+{
+    $sawCommandOption = false;
+
+    foreach ($words as $word) {
+        if (str_starts_with($word, '--')) {
+            continue;
+        }
+
+        if (str_starts_with($word, '-') && strlen($word) > 1) {
+            if (str_contains($word, 'c')) {
+                $sawCommandOption = true;
+            }
+
+            continue;
+        }
+
+        return $sawCommandOption ? $word : null;
+    }
+
+    return null;
+}
+
+function e2e_block_message(string $invocation, string $command): string
+{
+    return <<<TEXT
+        Orbit E2E guard blocked `{$invocation}`.
+
+        The `composer test:e2e*` lanes are human-only: they run only when the
+        user personally decides to type the Composer command in a shell they
+        operate directly. Agents never run, delegate, background, schedule,
+        hook, script, or trigger these lanes, and never hand them off as a
+        feature-completion step. For integrated runtime behavior, use retained
+        topology proof per `HARNESS.md` Acceptance Venues; existing E2E
+        artifacts may be read and triaged without execution.
+
+        Blocked command: {$command}
+
+        TEXT;
 }
 
 function unsafe_merge_option_problem(array $arguments): ?string

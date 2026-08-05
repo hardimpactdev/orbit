@@ -59,6 +59,30 @@ expect_block() {
         || fail "block message missing for [$command]"
 }
 
+expect_e2e_block() {
+    local repo="$1"
+    local command="$2"
+    local status=0
+
+    run_hook "$repo" "$command" || status=$?
+
+    if [ "$status" -eq 0 ]; then
+        fail "expected e2e block for [$command]"
+    fi
+
+    [ "$status" -eq 2 ] || fail "expected e2e block exit code 2 for [$command], got $status"
+
+    grep -q 'Orbit E2E guard blocked' /tmp/orbit-hook-test.err \
+        || fail "dedicated e2e block message missing for [$command]"
+
+    grep -q 'human-only' /tmp/orbit-hook-test.err \
+        || fail "human-only teaching missing for [$command]"
+
+    if grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err; then
+        fail "e2e block for [$command] must use the dedicated e2e message, not the finalization gate message"
+    fi
+}
+
 expect_check_block() {
     local repo="$1"
     shift
@@ -233,6 +257,35 @@ git branch missing-loop
 git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
 expect_pass "$REPO" 'composer quality-check'
+
+# The composer test:e2e* lanes are human-only; the hook denies every agent
+# tool form deterministically (exit 2, dedicated teaching message).
+expect_e2e_block "$REPO" 'composer test:e2e'
+expect_e2e_block "$REPO" 'composer test:e2e:docker'
+expect_e2e_block "$REPO" 'composer test:e2e:binary:linux'
+expect_e2e_block "$REPO" 'composer run test:e2e:incus'
+expect_e2e_block "$REPO" 'composer run-script test:e2e'
+expect_e2e_block "$REPO" 'ORBIT_E2E_LANES=docker composer test:e2e:docker'
+expect_e2e_block "$REPO" '/usr/local/bin/composer test:e2e'
+expect_e2e_block "$REPO" 'composer --working-dir apps/e2e test:e2e'
+expect_e2e_block "$REPO" 'composer quality-check && composer test:e2e'
+expect_e2e_block "$REPO" 'cd apps/e2e; composer test:e2e:docker:canary'
+expect_e2e_block "$REPO" 'git merge --ff-only finalized && composer test:e2e'
+expect_e2e_block "$REPO" "bash -lc 'composer test:e2e:incus'"
+expect_e2e_block "$REPO" '/usr/bin/env bash -lc \"composer test:e2e\"'
+expect_e2e_block "$REPO" 'php composer.phar test:e2e'
+e2e_heredoc_command='bash <<EOF\ncomposer test:e2e\nEOF'
+expect_e2e_block "$REPO" "$e2e_heredoc_command"
+
+# Non-e2e composer scripts and quoted prose mentions must not false-positive.
+expect_pass "$REPO" 'composer test'
+expect_pass "$REPO" "echo 'composer test:e2e'"
+expect_pass "$REPO" "git commit -m 'composer test:e2e stays a human-only shell lane'"
+expect_pass "$REPO" "rg -n 'composer test:e2e' HARNESS.md"
+
+e2e_patch_payload='*** Begin Patch\n*** Update File: docs/example.md\n@@\n composer test:e2e\n*** End Patch'
+expect_pass "$REPO" "$e2e_patch_payload"
+
 boundary_command='git'
 boundary_command+=' merge --ff-only templated'
 patch_payload="*** Begin Patch\\n*** Update File: docs/example.md\\n@@\\n $boundary_command\\n*** End Patch"
