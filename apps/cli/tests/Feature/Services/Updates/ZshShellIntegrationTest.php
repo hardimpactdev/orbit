@@ -300,6 +300,50 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->toBe(1);
     });
 
+    it('preserves root directory paths for HOME and ZDOTDIR without collapsing to empty', function (): void {
+        $integration = new ZshShellIntegration;
+
+        // Root HOME: path normalization must keep `/` so snippet/rc targets are
+        // `/.config/...` and `/.zshrc`, not empty-string paths. Do not require a
+        // successful write to the real root filesystem.
+        $rootHome = $integration->ensure(home: '/', shell: '/bin/zsh', zdotdir: '');
+
+        expect($rootHome['snippet_path'])
+            ->toBe('/.config/orbit/shell/zsh-noglob.zsh')
+            ->and($rootHome['zshrc_path'])
+            ->toBe('/.zshrc')
+            ->and($rootHome['status'])
+            ->not->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH);
+
+        // Root ZDOTDIR with sandboxed HOME: rc path is `/.zshrc`; snippet stays under HOME.
+        $rootZdot = $integration->ensure(
+            home: $this->home,
+            shell: '/bin/zsh',
+            zdotdir: '/',
+        );
+
+        expect($rootZdot['snippet_path'])
+            ->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
+            ->and($rootZdot['zshrc_path'])
+            ->toBe('/.zshrc')
+            ->and($rootZdot['status'])
+            ->not->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH);
+
+        // Trailing slashes on non-root paths still normalize without losing the root case.
+        $slashed = $integration->ensure(
+            home: $this->home.'/',
+            shell: '/bin/zsh',
+            zdotdir: $this->root.'/zdotdir/',
+        );
+
+        expect($slashed['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and($slashed['snippet_path'])
+            ->toBe($this->home.'/.config/orbit/shell/zsh-noglob.zsh')
+            ->and($slashed['zshrc_path'])
+            ->toBe($this->root.'/zdotdir/.zshrc');
+    });
+
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {
         // Explicit empty home is distinguishable from null (process HOME fallback).
         $result = new ZshShellIntegration()->ensure(home: '', shell: '/bin/zsh');

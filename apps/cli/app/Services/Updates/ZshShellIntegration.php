@@ -19,6 +19,7 @@ namespace App\Services\Updates;
  * for the managed source block so symlink targets and existing modes stay intact.
  *
  * @mago-expect lint:cyclomatic-complexity -- Ensure branches for zsh skip, HOME failure, and FS write paths.
+ * @mago-expect lint:kan-defect -- Ensure + path-normalization helpers for HOME/ZDOTDIR/root safety.
  * @mago-expect lint:too-many-methods -- Small pure helpers keep the ensure path readable.
  * @mago-expect lint:no-error-control-operator -- Soft user-home FS ops (mkdir/chmod/rename/unlink/append).
  */
@@ -85,7 +86,7 @@ final class ZshShellIntegration
             ];
         }
 
-        $snippetPath = $resolvedHome.'/'.self::snippetRelativePath();
+        $snippetPath = $this->joinUnderHome($resolvedHome, self::snippetRelativePath());
         $zshrcPath = $this->resolveZshrcPath($resolvedHome, $zdotdir);
 
         if (! $this->writeSnippet($snippetPath)) {
@@ -170,20 +171,19 @@ final class ZshShellIntegration
      *
      * `null` means "use process HOME". An explicit empty string is treated as
      * missing HOME so callers can force the failure path without depending on
-     * the process environment.
+     * the process environment. The root path `/` is preserved (never collapsed
+     * to empty by trailing-slash stripping).
      */
     private function resolveHome(?string $home): ?string
     {
         if ($home !== null) {
-            $trimmed = rtrim($home, '/');
-
-            return $trimmed === '' ? null : $trimmed;
+            return $this->normalizeDirectoryPath($home);
         }
 
         $envHome = getenv('HOME');
 
         if (is_string($envHome) && $envHome !== '') {
-            return rtrim($envHome, '/');
+            return $this->normalizeDirectoryPath($envHome);
         }
 
         return null;
@@ -200,27 +200,51 @@ final class ZshShellIntegration
         $resolved = $this->resolveZdotdir($zdotdir);
 
         if ($resolved !== null) {
-            return $resolved.'/.zshrc';
+            return $resolved === '/' ? '/.zshrc' : $resolved.'/.zshrc';
         }
 
-        return $home.'/.zshrc';
+        return $home === '/' ? '/.zshrc' : $home.'/.zshrc';
     }
 
     private function resolveZdotdir(?string $zdotdir): ?string
     {
         if ($zdotdir !== null) {
-            $trimmed = rtrim($zdotdir, '/');
-
-            return $trimmed === '' ? null : $trimmed;
+            return $this->normalizeDirectoryPath($zdotdir);
         }
 
         $envZdotdir = getenv('ZDOTDIR');
 
         if (is_string($envZdotdir) && $envZdotdir !== '') {
-            return rtrim($envZdotdir, '/');
+            return $this->normalizeDirectoryPath($envZdotdir);
         }
 
         return null;
+    }
+
+    /**
+     * Strip trailing slashes without turning `/` into an empty path.
+     * Matches `bin/install-orbit` `${ZDOTDIR%/}` root-safe behavior for `/`.
+     */
+    private function normalizeDirectoryPath(string $path): ?string
+    {
+        if ($path === '') {
+            return null;
+        }
+
+        if ($path === '/') {
+            return '/';
+        }
+
+        $trimmed = rtrim($path, '/');
+
+        return $trimmed === '' ? '/' : $trimmed;
+    }
+
+    private function joinUnderHome(string $home, string $relative): string
+    {
+        $relative = ltrim($relative, '/');
+
+        return $home === '/' ? '/'.$relative : $home.'/'.$relative;
     }
 
     private function writeSnippet(string $snippetPath): bool

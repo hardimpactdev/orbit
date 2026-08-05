@@ -4,7 +4,8 @@
 
 **Owner:** `operation`.
 
-**Effects:** `read`, `local-only`.
+**Effects:** `read`, `local-only`. With `--local` on a zsh login shell only:
+`write` of the supported Orbit zsh shell integration (idempotent ensure).
 
 **Prerequisites:**
 - The CLI can read its own configured `app.version`.
@@ -32,7 +33,7 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
-| `local` | `--local` | Optional. | Never. | `false`. | Skips public release metadata lookups and returns only local installed metadata. |
+| `local` | `--local` | Optional. | Never. | `false`. | Skips public release metadata lookups and returns only local installed metadata. When the active login shell is zsh, also ensures the supported zsh shell integration (see Behavior Contract). |
 
 Root `--version` and `-V` invocations are normalized to the first-party
 `version` command so Orbit can render release and install metadata. When a real
@@ -94,12 +95,30 @@ Install metadata uses this JSON shape:
 The installer and local updater write the metadata only after the target binary
 responds to `--version`.
 
+### Zsh Shell Integration Bridge (`--local` only)
+
+- Pre-feature local updaters replace the host launcher and verify it with
+  `orbit --version --local --json` only. That is the sole fail-closed
+  candidate-side invocation on the first upgrade path; post-replace
+  `doctor --self` is non-fatal and must not carry this write.
+- Therefore, when `--local` is set and the active login shell basename is
+  exactly `zsh`, `version` ensures the supported Orbit zsh integration:
+  rewrite `~/.config/orbit/shell/zsh-noglob.zsh` and append an append-only
+  managed source block to `$ZDOTDIR/.zshrc` when `ZDOTDIR` is non-empty,
+  otherwise `$HOME/.zshrc`. Bash-only hosts skip without mutation.
+- Ensure is idempotent. Failure of a required zsh ensure fails the command
+  (`shell_integration_failed` in JSON).
+- The managed alias takes effect only in a newly started or sourced zsh
+  session; this command cannot mutate the parent shell.
+
 ### Scope Boundaries
 
 `version` must not:
 - Contact the gateway API.
 - Start an operation.
-- Mutate local configuration, fleet configuration, or node state.
+- Mutate fleet configuration or node state.
+- Mutate local configuration except the documented `--local` zsh shell
+  integration ensure above.
 - Fail merely because public release metadata is temporarily unavailable.
 
 ## Renderer Contracts
@@ -113,6 +132,7 @@ responds to `--version`.
 | --- | --- | --- |
 | Release metadata unavailable | GitHub Release assets and API metadata cannot be reached, return an error, or return an unexpected body. | Success with `latest_version=null`, `update_available=false`, and unknown release metadata. |
 | Install metadata unavailable | No matching install metadata, invoked launcher mtime, or known launcher mtime exists. | Success with unknown install metadata. |
+| Zsh shell integration failed | `--local` is set, the login shell is zsh, and the managed snippet or rc block cannot be ensured. | Failure with `error.code=shell_integration_failed`. |
 
 ## Activity Logging
 
@@ -132,7 +152,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php` | Human output, update annotation, JSON metadata, local-only metadata, and release lookup failure behavior. |
+| `apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php` | Human output, update annotation, JSON metadata, local-only metadata, release lookup failure behavior, and first-upgrade `orbit --version --local --json` zsh integration bridge. |
 | `apps/cli/tests/Feature/CompatibilityBridgeTest.php` | Root `--version` and `-V` normalization to the first-party command. |
 | `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local update writes install metadata after relinking and verifying the host launcher. |
 | `apps/gateway/tests/Feature/InstallOrbitLauncherTest.php` | Installer writes install metadata after the binary verifies. |

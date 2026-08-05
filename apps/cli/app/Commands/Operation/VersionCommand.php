@@ -17,38 +17,21 @@ use DateTimeZone;
 final class VersionCommand extends LocalOnlyCommand
 {
     #[\Override]
-    protected $signature = 'version {--local : Read only local installed metadata without checking release sources} {--json : Output JSON}';
+    protected $signature = 'version {--local : Skip release-source lookups; also ensure supported zsh shell integration when the login shell is zsh} {--json : Output JSON}';
 
     #[\Override]
     protected $description = 'Show Orbit version and release metadata';
 
     public function handle(VersionInfoResolver $versions, ZshShellIntegration $zshShellIntegration): int
     {
-        // First-upgrade bridge: pre-feature updaters already invoke the replaced
-        // binary as `orbit --version --local --json` (and may not call ensure on
-        // their own). Running ensure here installs zsh noglob integration during
-        // that first candidate-side verify without waiting for a second update.
-        if ($this->option('local')) {
-            $shell = $zshShellIntegration->ensure();
-
-            if (! $zshShellIntegration->succeeded($shell)) {
-                if ($this->wantsJson()) {
-                    return $this->renderFailure(
-                        'shell_integration_failed',
-                        $shell['message'] !== ''
-                            ? $shell['message']
-                            : 'Failed to ensure zsh shell integration.',
-                    );
-                }
-
-                $this->error(
-                    $shell['message'] !== ''
-                        ? $shell['message']
-                        : 'Failed to ensure zsh shell integration.',
-                );
-
-                return self::FAILURE;
-            }
+        // First-upgrade bridge (documented write-side effect of --local only):
+        // pre-feature updaters already invoke the replaced binary as
+        // `orbit --version --local --json` and have no other fail-closed
+        // candidate-side hook. Ensure zsh noglob integration here so the first
+        // upgrade installs it without waiting for a second update. Bash-only
+        // hosts skip without mutation.
+        if ($this->option('local') && ! $this->ensureZshShellIntegration($zshShellIntegration)) {
+            return self::FAILURE;
         }
 
         $info = $this->option('local')
@@ -64,6 +47,29 @@ final class VersionCommand extends LocalOnlyCommand
         $this->line($this->row('Installed at', $this->formatTimestamp($info->installedAt)));
 
         return self::SUCCESS;
+    }
+
+    private function ensureZshShellIntegration(ZshShellIntegration $zshShellIntegration): bool
+    {
+        $shell = $zshShellIntegration->ensure();
+
+        if ($zshShellIntegration->succeeded($shell)) {
+            return true;
+        }
+
+        $message = $shell['message'] !== ''
+            ? $shell['message']
+            : 'Failed to ensure zsh shell integration.';
+
+        if ($this->wantsJson()) {
+            $this->renderFailure('shell_integration_failed', $message);
+
+            return false;
+        }
+
+        $this->error($message);
+
+        return false;
     }
 
     private function versionLabel(VersionInfo $info): string

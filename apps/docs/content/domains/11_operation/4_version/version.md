@@ -5,8 +5,12 @@
 Show the installed Orbit CLI version, release timestamp, install timestamp,
 and whether a newer Orbit release is available.
 
-This command is local-only and read-only. It does not contact the gateway or
-mutate fleet configuration.
+This command is local-only. It does not contact the gateway or mutate fleet
+configuration. Without `--local` it is read-only. With `--local`, when the
+active login shell is zsh, it also ensures the supported Orbit zsh shell
+integration (command-scoped `noglob` for unquoted namespace wildcards) as the
+first-upgrade bridge that pre-feature local updaters already invoke via
+`orbit --version --local --json` after replacing the binary.
 
 ## Usage
 
@@ -32,6 +36,8 @@ orbit --version --local --json
 - `--json`: Output JSON.
 - `--local`: Skip public release lookups and return only local installed
   metadata. This is mainly for internal fleet probes and verification paths.
+  When the login shell is zsh, this flag also ensures the supported zsh shell
+  integration (idempotent; bash-only hosts skip without mutation).
 
 ## What Happens
 
@@ -44,7 +50,12 @@ fallback when public manifest metadata is missing.
 
 With `--local`, the command does not contact public release sources. It reports
 the installed version and install timestamp, with release metadata fields set to
-unknown or `null`.
+unknown or `null`. On zsh login shells it also ensures the managed
+`noglob` orbit alias integration (snippet under `~/.config/orbit/shell/`, source
+block under `$ZDOTDIR/.zshrc` or `$HOME/.zshrc`). That write is the only
+candidate-side hook pre-feature updaters already perform fail-closed after a
+binary replace (`orbit --version --local --json`); doctor verify is non-fatal
+and is not used for this bridge.
 
 ### Local Metadata
 
