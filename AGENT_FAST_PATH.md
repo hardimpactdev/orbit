@@ -12,7 +12,7 @@ navigation aid, not product authority.
 | Product docs or Librarian/docs-lint work | `.agents/skills/librarian/SKILL.md` and `apps/docs/content/` authority docs | `composer docs-lint` and focused docs Pest/Mago when PHP rules changed |
 | Eval design, execution, or review | `.agents/skills/orbit-evals/SKILL.md`, then construct, execute, and evaluate in order | Structured eval-suite/case/run/trial/review artifacts |
 | Quality-gate failure or timing warning | `.agents/skills/quality-gate-triage/SKILL.md` | Narrow failing lane first; do not rerun E2E |
-| Release, git, or branch cleanup | `HARNESS.md` merge boundary and `.agents/skills/spatie-version-control/SKILL.md` | `bin/orbit-feature-finalization-check` before merge or cleanup |
+| Release, git, or branch cleanup / LAND | `HARNESS.md` LAND and `.agents/skills/implementing-features/SKILL.md`; prefer `bin/orbit-feature-land` | `bin/orbit-feature-finalization-check` before each destructive merge/cleanup/Solo mutation |
 
 ## Implementation Route
 
@@ -23,7 +23,9 @@ navigation aid, not product authority.
    not edit the primary checkout directly.
 3. Fill Goal and Scope in the seeded `.orbit/loop.md`, then move through
    `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
-4. In LAND, lint the completed packet with
+4. In LAND, prefer `bin/orbit-feature-land` from primary `main` with exact
+   branch, worktree, and session-owned Solo project id (`--status` /
+   `--one-step` for inspect/resume). Lint the completed packet with
    `bin/orbit-feature-finalization-check --lint .orbit/loop.md`; FRAME and BUILD
    packets intentionally remain pending and are not finalization-lintable.
 5. Read the authority docs first, then align docs, tests, and code in that
@@ -32,11 +34,12 @@ navigation aid, not product authority.
 7. Use one general reviewer and always complete the diff-derived proof venue.
    Involve the user only when `HUMAN_JUDGMENT: required`; otherwise use the
    automated actor. Record the exact accepted feature and current main tips.
-8. Before merge, run the finalization helper with the actual git command.
+8. Before each destructive merge/cleanup/Solo mutation, run the finalization
+   helper with the actual command; execute only after `FINALIZATION: PASS`.
 9. After merge, stay in the accepted feature worktree and run its now-landed
    `bin/orbit-session-archive`; never run the compact archive with cwd main.
-   Then run the finalization helper before cleanup. Archive names are
-   tool-generated; never hand-write timestamps or directories.
+   Commit archive/index before cleanup. Archive names are tool-generated; never
+   hand-write timestamps or directories.
 10. Use `bin/orbit-session-archive --full` only for failure, escalation,
     security/release scope, or explicit request.
 

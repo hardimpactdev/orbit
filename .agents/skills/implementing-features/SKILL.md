@@ -255,6 +255,23 @@ message rather than accepting a bare `source=user` claim.
 
 ## LAND
 
+Prefer the resumable primary-main coordinator:
+
+```bash
+bin/orbit-feature-land \
+  --branch=<feature> \
+  --worktree=<exact-feature-worktree> \
+  --solo-project-id=<session-owned-numeric-id>
+```
+
+`--status`/`--plan` report the observed phase and next safe action; `--one-step`
+executes only that boundary. Resume is idempotent from Git/archive/Solo state.
+Every destructive mutation still goes through
+`bin/orbit-feature-finalization-check` and is executed only after
+`FINALIZATION: PASS`.
+
+Manual equivalent:
+
 1. Fill final Proof and Status in `.orbit/loop.md`.
 2. Lint it with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`.
 3. Confirm exact successful gates, reviewer PASS, acceptance, feature HEAD,
@@ -270,10 +287,10 @@ message rather than accepting a bare `source=user` claim.
    directories, prose, or padded spans. Runtime acceptance receipts remain
    limited to `.orbit/evidence/` and `.orbit/quality-gates/`. Use `--full`
    only for failure, escalation, security/release scope, or explicit request.
-6. Commit the archive/index.
+6. Commit the archive/index (cleanup requires those bytes tracked/committed).
 7. After the archive/index commit:
    - Validate each cleanup mutation with
-     `bin/orbit-feature-finalization-check <exact git command>`.
+     `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.
    Leave the primary checkout on updated `main` without altering unrelated
    files.
