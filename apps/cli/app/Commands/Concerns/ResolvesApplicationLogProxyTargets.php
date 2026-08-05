@@ -37,25 +37,6 @@ trait ResolvesApplicationLogProxyTargets
         return $this->stringKeyedPayload($this->applicationLogSuccessData($response));
     }
 
-    protected function bareSelectorIsRegisteredInstance(
-        string $selector,
-        ApplicationLogGatewayClient $gatewayClient,
-    ): bool {
-        try {
-            $response = $this->gatewayGet('/api/instances');
-        } catch (GatewayApiException) {
-            return false;
-        }
-
-        $data = $this->stringKeyedPayload($this->applicationLogSuccessData($response));
-
-        if ($data === null) {
-            return false;
-        }
-
-        return $gatewayClient->isRegisteredInstanceSelector($selector, $data);
-    }
-
     /**
      * @return array{type: 'instance', selector: string}|array{type: 'workspace', workspace: string, instance: string}|int
      */

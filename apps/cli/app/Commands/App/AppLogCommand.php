@@ -63,14 +63,6 @@ final class AppLogCommand extends GatewayCommand
         ApplicationLogProxyTarget $proxyTarget,
         ApplicationLogTargetEndpoints $endpoints,
     ): int {
-        if (! str_contains($target, '://') && $this->bareSelectorIsRegisteredInstance($target, $gatewayClient)) {
-            return $this->renderFailure(
-                'validation_failed',
-                'app:log accepts only a URL or hostname. Use instance:log for app.instance selectors.',
-                ['field' => 'target', 'value' => $target],
-            );
-        }
-
         $host = $this->parseApplicationLogHost($target);
 
         if (is_int($host)) {

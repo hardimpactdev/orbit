@@ -15,21 +15,6 @@ final readonly class ApplicationLogInstanceInventory
 
     /**
      * @param  array<string, mixed>  $data  success.data from GET /api/instances
-     * @return list<string>
-     */
-    public function selectors(array $data): array
-    {
-        $selectors = [];
-
-        foreach ($this->rows->all($data) as $row) {
-            $selectors[] = $row['selector'];
-        }
-
-        return array_values(array_unique($selectors));
-    }
-
-    /**
-     * @param  array<string, mixed>  $data  success.data from GET /api/instances
      * @return list<array{selector: string, path: string}>
      */
     public function pathEntries(array $data): array
@@ -48,13 +33,5 @@ final readonly class ApplicationLogInstanceInventory
         }
 
         return $entries;
-    }
-
-    /**
-     * @param  list<string>  $selectors
-     */
-    public function contains(string $selector, array $selectors): bool
-    {
-        return in_array($selector, $selectors, true);
     }
 }
