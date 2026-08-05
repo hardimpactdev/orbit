@@ -364,11 +364,232 @@ it('strictly classifies Solo destructive commands', function (string $commandSuf
     'unknown flag' => ['projects delete 73 --force --json', '/unknown option|blocked/'],
     'chained commands' => ['projects delete 73 --json && projects delete 74 --json', '/unchained|exactly one|blocked/'],
     'confirm-stop-running' => ['projects delete 73 --confirm-stop-running --json', '/confirm-stop-running/'],
+    // Exact failure mode: --app-data-dir= + escapeshellarg(path) leaves quotes in one token.
+    'equals plus escapeshellarg quotes' => [
+        'projects delete 73 --json --app-data-dir='.escapeshellarg('/tmp/solo-app-data'),
+        '/quoted|shell-fragment|app-data-dir|invalid|blocked/',
+    ],
 ]);
+
+it('blocks Solo cleanup when --app-data-dir ownership differs from the default dataset', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: true);
+
+    try {
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+
+        // Default dataset would pass ownership (path == worktree).
+        land_fake_solo_state($solo, [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
+            ],
+            'processes' => [],
+        ]);
+
+        // Custom app-data-dir dataset has the same id with a foreign path.
+        $customDir = "{$solo['dir']}/custom-app-data";
+        mkdir($customDir, recursive: true);
+        file_put_contents(
+            "{$customDir}/state.json",
+            json_encode([
+                'projects' => [
+                    73 => ['id' => 73, 'path' => '/tmp/foreign-feature-worktree', 'name' => 'foreign'],
+                ],
+                'processes' => [],
+            ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
+                .PHP_EOL,
+        );
+
+        $command =
+            escapeshellarg($solo['cli']).' --app-data-dir '.escapeshellarg($customDir).' projects delete 73 --json';
+        $process = land_run_finalization($repo, $command);
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toMatch('/path|worktree|canonical|ownership|linked/');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
+
+it('stops the owned process then fails closed mid-execute when project path drifts to another linked worktree', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(
+        accepted: true,
+        merged: true,
+        processes: [
+            501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+        ],
+    );
+    $otherWorktree = land_add_unrelated_worktree($repo);
+
+    try {
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+
+        // After process stop succeeds, fake rebinds project 73 onto another linked
+        // worktree. Finalization alone would still treat that path as ownership-safe;
+        // only per-phase revalidation against the exact requested worktree blocks delete.
+        land_fake_solo_state($solo, [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
+            ],
+            'processes' => [
+                501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+            ],
+            'drift_path_after_stop' => $otherWorktree,
+            'drift_project_id_after_stop' => 73,
+        ]);
+
+        $full = land_run_land($repo, land_args($worktree, $solo));
+        $state = json_decode((string) file_get_contents($solo['state']), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($full->getExitCode())
+            ->toBe(1, $full->getErrorOutput().$full->getOutput())
+            ->and(strtolower($full->getErrorOutput().$full->getOutput()))
+            ->toMatch('/does not equal|path|identity/')
+            ->and($state['processes'][501]['status'] ?? null)
+            ->toBe('stopped')
+            ->and($state['projects'])
+            ->toHaveKey(73)
+            ->and($state['projects'][73]['path'] ?? null)
+            ->toBe($otherWorktree)
+            ->and(is_dir($worktree))
+            ->toBeTrue()
+            ->and(is_dir($otherWorktree))
+            ->toBeTrue();
+    } finally {
+        land_remove_fixture($repo, $worktree);
+        if (is_dir($otherWorktree)) {
+            new Process(['rm', '-rf', $otherWorktree])->run();
+        }
+    }
+});
+
+it('paginates Solo process lists and fails closed on malformed pages', function (
+    string $mode,
+    int $expectedExit,
+    string $needle,
+): void {
+    [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: true);
+
+    try {
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+
+        $processes = [];
+        for ($i = 1; $i <= 55; $i++) {
+            $processes[$i] = ['id' => $i, 'projectId' => 73, 'status' => $i === 55 ? 'running' : 'stopped'];
+        }
+
+        $payload = [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
+            ],
+            'processes' => $processes,
+        ];
+
+        if ($mode === 'missing_has_more') {
+            $payload['list_mode'] = 'missing_has_more';
+        }
+
+        if ($mode === 'cross_project') {
+            $payload['list_mode'] = 'cross_project';
+            $payload['processes'] = [
+                1 => ['id' => 1, 'projectId' => 73, 'status' => 'running'],
+            ];
+        }
+
+        land_fake_solo_state($solo, $payload);
+
+        $command = escapeshellarg($solo['cli']).' projects delete 73 --json';
+        $process = land_run_finalization($repo, $command);
+
+        expect($process->getExitCode())
+            ->toBe($expectedExit, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch($needle);
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+})->with([
+    'beyond first page running process blocks delete' => [
+        'paginate',
+        2,
+        '/non-terminal|running|process/',
+    ],
+    'missing hasMore fails closed' => [
+        'missing_has_more',
+        2,
+        '/hasmore|failed|blocked/',
+    ],
+    'cross-project page row fails closed' => [
+        'cross_project',
+        2,
+        '/owned by project|requesting project|failed|blocked/',
+    ],
+]);
+
+it('blocks cleanup when a compact receipt is tracked but a required loop entry is untracked', function (): void {
+    [$repo, $worktree] = land_create_fixture();
+
+    try {
+        land_commit_feature_change($worktree);
+        land_write_accepted_loop($repo, $worktree);
+        land_merge_feature($repo);
+        $archive = land_write_compact_archive($repo, $worktree);
+        land_write_session_index($repo, basename($archive));
+
+        $relative = ltrim(str_replace($repo, '', $archive), '/');
+        land_run($repo, ['git', 'add', '--', "{$relative}/orbit-session-archive.json", '.orbit/sessions/index.json']);
+        land_run($repo, ['git', 'commit', '-m', 'Track receipt only']);
+
+        $process = land_run_finalization($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->toMatch('/uncommitted|untracked|loop\.md|required archive entry/i');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
+
+it('allows legacy full archive cleanup when loop and agent manifests are tracked and clean', function (): void {
+    [$repo, $worktree] = land_create_fixture();
+
+    try {
+        land_commit_feature_change($worktree);
+        land_write_accepted_loop($repo, $worktree);
+        land_merge_feature($repo);
+
+        $archive = "{$repo}/.orbit/sessions/2026-08-05-120000-feature";
+        mkdir("{$archive}/agent-sessions", recursive: true);
+        copy("{$worktree}/.orbit/loop.md", "{$archive}/loop.md");
+        file_put_contents(
+            "{$archive}/agent-sessions/manifest.json",
+            json_encode(['schema_version' => 1, 'sessions' => []], JSON_THROW_ON_ERROR).PHP_EOL,
+        );
+        land_write_session_index($repo, basename($archive));
+        land_commit_sessions($repo, $archive);
+
+        $process = land_run_finalization($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
 
 /**
  * @param  array<int, array<string, mixed>>  $processes
- * @return array{0: string, 1: string, 2: array{cli: string, state: string}}
+ * @return array{0: string, 1: string, 2: array{cli: string, state: string, dir: string}}
  */
 function land_prepare(bool $accepted, bool $merged, array $processes = []): array
 {
@@ -591,7 +812,7 @@ function land_write_session_index(string $repo, string $archiveBasename): void
 }
 
 /**
- * @return array{cli: string, state: string}
+ * @return array{cli: string, state: string, dir: string}
  */
 function land_write_fake_solo_cli(string $repo): array
 {
@@ -601,24 +822,41 @@ function land_write_fake_solo_cli(string $repo): array
     $state = "{$dir}/state.json";
     $cli = "{$dir}/solo-cli";
     file_put_contents($state, json_encode(['projects' => [], 'processes' => []], JSON_THROW_ON_ERROR));
-    $stateExport = var_export($state, true);
+    $defaultStateExport = var_export($state, true);
     file_put_contents($cli, <<<PHP
         #!/usr/bin/env php
         <?php
         declare(strict_types=1);
-        \$statePath = {$stateExport};
-        if (! is_file(\$statePath)) {
-            fwrite(STDERR, "fake solo: missing state\\n");
-            exit(1);
-        }
-        \$state = json_decode((string) file_get_contents(\$statePath), true, flags: JSON_THROW_ON_ERROR);
-        \$args = [];
-        foreach (array_slice(\$argv, 1) as \$arg) {
+        \$defaultStatePath = {$defaultStateExport};
+        \$args = array_slice(\$argv, 1);
+        \$appDataDir = null;
+        \$positional = [];
+        for (\$i = 0; \$i < count(\$args); \$i++) {
+            \$arg = \$args[\$i];
             if (\$arg === '--json') {
                 continue;
             }
-            \$args[] = \$arg;
+            if (\$arg === '--app-data-dir') {
+                \$appDataDir = (string) (\$args[\$i + 1] ?? '');
+                \$i++;
+                continue;
+            }
+            if (str_starts_with(\$arg, '--app-data-dir=')) {
+                \$appDataDir = substr(\$arg, strlen('--app-data-dir='));
+                continue;
+            }
+            \$positional[] = \$arg;
         }
+        \$statePath = \$defaultStatePath;
+        if (is_string(\$appDataDir) && \$appDataDir !== '') {
+            \$statePath = rtrim(\$appDataDir, '/').'/state.json';
+        }
+        if (! is_file(\$statePath)) {
+            // Mirror live Solo CLI when the app/data dir is not available.
+            fwrite(STDOUT, json_encode(['ok' => false, 'error' => ['code' => 'app_not_running', 'message' => 'solo app data unavailable']], JSON_THROW_ON_ERROR).PHP_EOL);
+            exit(1);
+        }
+        \$state = json_decode((string) file_get_contents(\$statePath), true, flags: JSON_THROW_ON_ERROR);
         \$emit = static function (array \$payload) use (\$statePath, &\$state): void {
             file_put_contents(\$statePath, json_encode(\$state, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT).PHP_EOL);
             fwrite(STDOUT, json_encode(['ok' => true, 'data' => \$payload], JSON_THROW_ON_ERROR).PHP_EOL);
@@ -627,66 +865,128 @@ function land_write_fake_solo_cli(string $repo): array
             fwrite(STDOUT, json_encode(['ok' => false, 'error' => ['code' => \$code, 'message' => \$message]], JSON_THROW_ON_ERROR).PHP_EOL);
             exit(1);
         };
-        if ((\$args[0] ?? null) === 'projects' && (\$args[1] ?? null) === 'get') {
-            \$id = (int) (\$args[2] ?? 0);
-            if (! isset(\$state['projects'][\$id]) && ! isset(\$state['projects'][(string) \$id])) {
+        \$project = static function (array \$state, int \$id): ?array {
+            return \$state['projects'][\$id] ?? \$state['projects'][(string) \$id] ?? null;
+        };
+        \$process = static function (array \$state, int \$id): ?array {
+            return \$state['processes'][\$id] ?? \$state['processes'][(string) \$id] ?? null;
+        };
+        if ((\$positional[0] ?? null) === 'projects' && (\$positional[1] ?? null) === 'get') {
+            \$id = (int) (\$positional[2] ?? 0);
+            \$row = \$project(\$state, \$id);
+            if (\$row === null) {
                 \$fail('not_found', "project {\$id} not found");
             }
-            \$emit(\$state['projects'][\$id] ?? \$state['projects'][(string) \$id]);
+            \$emit(\$row);
             exit(0);
         }
-        if ((\$args[0] ?? null) === 'projects' && (\$args[1] ?? null) === 'delete') {
-            \$id = (int) (\$args[2] ?? 0);
-            if (in_array('--confirm-stop-running', \$argv, true)) {
+        if ((\$positional[0] ?? null) === 'projects' && (\$positional[1] ?? null) === 'delete') {
+            \$id = (int) (\$positional[2] ?? 0);
+            if (in_array('--confirm-stop-running', \$args, true)) {
                 \$fail('confirm_stop_running', 'confirm-stop-running accepted by fake');
             }
-            if (! isset(\$state['projects'][\$id]) && ! isset(\$state['projects'][(string) \$id])) {
+            if (\$project(\$state, \$id) === null) {
                 \$fail('not_found', "project {\$id} not found");
             }
             unset(\$state['projects'][\$id], \$state['projects'][(string) \$id]);
             \$emit(['deleted' => \$id]);
             exit(0);
         }
-        if ((\$args[0] ?? null) === 'processes' && (\$args[1] ?? null) === 'get') {
-            \$id = (int) (\$args[2] ?? 0);
-            if (! isset(\$state['processes'][\$id]) && ! isset(\$state['processes'][(string) \$id])) {
+        if ((\$positional[0] ?? null) === 'processes' && (\$positional[1] ?? null) === 'get') {
+            \$id = (int) (\$positional[2] ?? 0);
+            \$row = \$process(\$state, \$id);
+            if (\$row === null) {
                 \$fail('not_found', "process {\$id} not found");
             }
-            \$emit(\$state['processes'][\$id] ?? \$state['processes'][(string) \$id]);
+            \$emit(\$row);
             exit(0);
         }
-        if ((\$args[0] ?? null) === 'processes' && (\$args[1] ?? null) === 'list') {
+        if ((\$positional[0] ?? null) === 'processes' && (\$positional[1] ?? null) === 'list') {
             \$projectId = null;
-            foreach (\$args as \$i => \$arg) {
+            \$offset = 0;
+            \$limit = 50;
+            for (\$i = 0; \$i < count(\$positional); \$i++) {
+                \$arg = \$positional[\$i];
                 if (\$arg === '--project-id') {
-                    \$projectId = (int) (\$args[\$i + 1] ?? 0);
-                }
-                if (str_starts_with(\$arg, '--project-id=')) {
+                    \$projectId = (int) (\$positional[\$i + 1] ?? 0);
+                    \$i++;
+                } elseif (str_starts_with(\$arg, '--project-id=')) {
                     \$projectId = (int) substr(\$arg, strlen('--project-id='));
+                } elseif (\$arg === '--offset') {
+                    \$offset = (int) (\$positional[\$i + 1] ?? 0);
+                    \$i++;
+                } elseif (str_starts_with(\$arg, '--offset=')) {
+                    \$offset = (int) substr(\$arg, strlen('--offset='));
+                } elseif (\$arg === '--limit') {
+                    \$limit = (int) (\$positional[\$i + 1] ?? 50);
+                    \$i++;
+                } elseif (str_starts_with(\$arg, '--limit=')) {
+                    \$limit = (int) substr(\$arg, strlen('--limit='));
                 }
             }
-            \$processes = array_values(array_filter(
-                \$state['processes'],
+            \$all = array_values(array_filter(
+                \$state['processes'] ?? [],
                 static fn (array \$p): bool => \$projectId === null || (int) \$p['projectId'] === \$projectId,
             ));
-            \$emit(['processes' => \$processes]);
+            if (isset(\$state['list_mode'])) {
+                if (\$state['list_mode'] === 'missing_has_more') {
+                    \$emit(['processes' => array_slice(\$all, \$offset, \$limit), 'offset' => \$offset, 'limit' => \$limit]);
+                    exit(0);
+                }
+                if (\$state['list_mode'] === 'cross_project' && \$all !== []) {
+                    \$row = \$all[0];
+                    \$row['projectId'] = (int) \$row['projectId'] + 1;
+                    \$emit([
+                        'processes' => [\$row],
+                        'offset' => \$offset,
+                        'limit' => \$limit,
+                        'hasMore' => false,
+                        'nextOffset' => null,
+                        'totalCount' => 1,
+                    ]);
+                    exit(0);
+                }
+            }
+            \$page = array_slice(\$all, \$offset, \$limit);
+            \$next = \$offset + count(\$page);
+            \$hasMore = \$next < count(\$all);
+            \$emit([
+                'processes' => \$page,
+                'offset' => \$offset,
+                'limit' => \$limit,
+                'hasMore' => \$hasMore,
+                'nextOffset' => \$hasMore ? \$next : null,
+                'totalCount' => count(\$all),
+            ]);
             exit(0);
         }
-        if ((\$args[0] ?? null) === 'processes' && (\$args[1] ?? null) === 'stop') {
-            \$id = (int) (\$args[2] ?? 0);
-            if (! isset(\$state['processes'][\$id]) && ! isset(\$state['processes'][(string) \$id])) {
+        if ((\$positional[0] ?? null) === 'processes' && (\$positional[1] ?? null) === 'stop') {
+            \$id = (int) (\$positional[2] ?? 0);
+            \$row = \$process(\$state, \$id);
+            if (\$row === null) {
                 \$fail('not_found', "process {\$id} not found");
             }
             \$key = isset(\$state['processes'][\$id]) ? \$id : (string) \$id;
             \$state['processes'][\$key]['status'] = 'stopped';
+            // Mid-run ownership drift: rebind the owned project path after stop so a
+            // single full LAND execute must revalidate before projects delete.
+            if (isset(\$state['drift_path_after_stop'], \$state['drift_project_id_after_stop'])) {
+                \$driftId = (int) \$state['drift_project_id_after_stop'];
+                \$driftPath = (string) \$state['drift_path_after_stop'];
+                if (isset(\$state['projects'][\$driftId])) {
+                    \$state['projects'][\$driftId]['path'] = \$driftPath;
+                } elseif (isset(\$state['projects'][(string) \$driftId])) {
+                    \$state['projects'][(string) \$driftId]['path'] = \$driftPath;
+                }
+            }
             \$emit(\$state['processes'][\$key]);
             exit(0);
         }
-        \$fail('unsupported', 'unsupported fake solo command: '.implode(' ', \$args));
+        \$fail('unsupported', 'unsupported fake solo command: '.implode(' ', \$positional));
         PHP);
     chmod($cli, 0o755);
 
-    return ['cli' => $cli, 'state' => $state];
+    return ['cli' => $cli, 'state' => $state, 'dir' => $dir];
 }
 
 /**

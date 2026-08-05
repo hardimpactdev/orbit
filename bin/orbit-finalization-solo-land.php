@@ -21,7 +21,7 @@ declare(strict_types=1);
  * @param  list<string>  $args
  * @return array{status: 'ok', data: array<string, mixed>}|array{status: 'not_found', reason: string}|array{status: 'error', reason: string}
  */
-function solo_cli_lookup(string $soloCli, array $args, string $cwd): array
+function solo_cli_lookup(string $soloCli, array $args, string $cwd, ?string $appDataDir = null): array
 {
     if ($soloCli === '') {
         return ['status' => 'error', 'reason' => 'solo CLI path is empty'];
@@ -31,7 +31,14 @@ function solo_cli_lookup(string $soloCli, array $args, string $cwd): array
         return ['status' => 'error', 'reason' => "solo CLI binary unavailable at {$soloCli}"];
     }
 
-    $result = solo_run_process(array_merge([$soloCli], $args), $cwd);
+    $command = [$soloCli];
+
+    if ($appDataDir !== null && $appDataDir !== '') {
+        $command[] = '--app-data-dir';
+        $command[] = $appDataDir;
+    }
+
+    $result = solo_run_process(array_merge($command, $args), $cwd);
     $stdout = trim($result['stdout']);
     $stderr = trim($result['stderr']);
     $decoded = null;
@@ -77,69 +84,122 @@ function solo_cli_lookup(string $soloCli, array $args, string $cwd): array
 }
 
 /**
+ * Live Solo process lists are paginated (offset/limit/hasMore/nextOffset).
+ * Always page deterministically under the same app-data-dir context until
+ * hasMore is false, or fail closed on invalid pagination shape.
+ *
  * @return array{status: 'ok', processes: list<array{id: int, projectId: int, status: string}>}|array{status: 'error', reason: string}
  */
-function solo_list_processes(string $soloCli, int $projectId, string $cwd): array
+function solo_list_processes(string $soloCli, int $projectId, string $cwd, ?string $appDataDir = null): array
 {
-    $lookup = solo_cli_lookup(
-        $soloCli,
-        ['processes', 'list', '--project-id', (string) $projectId, '--json'],
-        $cwd,
-    );
-
-    if ($lookup['status'] === 'not_found') {
-        return ['status' => 'ok', 'processes' => []];
-    }
-
-    if ($lookup['status'] === 'error') {
-        return ['status' => 'error', 'reason' => $lookup['reason']];
-    }
-
-    $raw = $lookup['data']['processes'] ?? null;
-
-    if (! is_array($raw)) {
-        return ['status' => 'error', 'reason' => 'solo processes list missing data.processes array'];
-    }
-
     $processes = [];
+    $offset = 0;
+    $limit = 50;
+    $pages = 0;
+    $maxPages = 100;
 
-    foreach ($raw as $item) {
-        if (! is_array($item)) {
-            return ['status' => 'error', 'reason' => 'solo processes list contains a non-object entry'];
+    while ($pages < $maxPages) {
+        $lookup = solo_cli_lookup(
+            $soloCli,
+            [
+                'processes',
+                'list',
+                '--project-id',
+                (string) $projectId,
+                '--offset',
+                (string) $offset,
+                '--limit',
+                (string) $limit,
+                '--json',
+            ],
+            $cwd,
+            $appDataDir,
+        );
+
+        if ($lookup['status'] === 'not_found') {
+            return ['status' => 'ok', 'processes' => []];
         }
 
-        $id = $item['id'] ?? null;
-        $owner = $item['projectId'] ?? null;
-        $status = $item['status'] ?? null;
-
-        if (! is_int($id) && ! (is_string($id) && preg_match('/^\d+$/', $id) === 1)) {
-            return ['status' => 'error', 'reason' => 'solo process entry missing numeric id'];
+        if ($lookup['status'] === 'error') {
+            return ['status' => 'error', 'reason' => $lookup['reason']];
         }
 
-        if (! is_int($owner) && ! (is_string($owner) && preg_match('/^\d+$/', $owner) === 1)) {
-            return ['status' => 'error', 'reason' => 'solo process entry missing numeric projectId'];
+        $data = $lookup['data'];
+        $raw = $data['processes'] ?? null;
+
+        if (! is_array($raw)) {
+            return ['status' => 'error', 'reason' => 'solo processes list missing data.processes array'];
         }
 
-        if (! is_string($status) || $status === '') {
-            return ['status' => 'error', 'reason' => 'solo process entry missing status'];
+        if (! array_key_exists('hasMore', $data) || ! is_bool($data['hasMore'])) {
+            return ['status' => 'error', 'reason' => 'solo processes list missing boolean hasMore on page'];
         }
 
-        $processes[] = [
-            'id' => (int) $id,
-            'projectId' => (int) $owner,
-            'status' => strtolower($status),
-        ];
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                return ['status' => 'error', 'reason' => 'solo processes list contains a non-object entry'];
+            }
+
+            $id = $item['id'] ?? null;
+            $owner = $item['projectId'] ?? null;
+            $status = $item['status'] ?? null;
+
+            if (! is_int($id) && ! (is_string($id) && preg_match('/^\d+$/', $id) === 1)) {
+                return ['status' => 'error', 'reason' => 'solo process entry missing numeric id'];
+            }
+
+            if (! is_int($owner) && ! (is_string($owner) && preg_match('/^\d+$/', $owner) === 1)) {
+                return ['status' => 'error', 'reason' => 'solo process entry missing numeric projectId'];
+            }
+
+            if ((int) $owner !== $projectId) {
+                return [
+                    'status' => 'error',
+                    'reason' => 'solo processes list returned process '.(int) $id.' owned by project '.(int) $owner
+                        .' while requesting project '.$projectId,
+                ];
+            }
+
+            if (! is_string($status) || $status === '') {
+                return ['status' => 'error', 'reason' => 'solo process entry missing status'];
+            }
+
+            $processes[] = [
+                'id' => (int) $id,
+                'projectId' => (int) $owner,
+                'status' => strtolower($status),
+            ];
+        }
+
+        if ($data['hasMore'] === false) {
+            return ['status' => 'ok', 'processes' => $processes];
+        }
+
+        $nextOffset = $data['nextOffset'] ?? null;
+
+        if (! is_int($nextOffset) && ! (is_string($nextOffset) && preg_match('/^\d+$/', $nextOffset) === 1)) {
+            return ['status' => 'error', 'reason' => 'solo processes list hasMore without numeric nextOffset'];
+        }
+
+        $nextOffset = (int) $nextOffset;
+
+        if ($nextOffset <= $offset) {
+            return ['status' => 'error', 'reason' => 'solo processes list nextOffset is not monotonic'];
+        }
+
+        $offset = $nextOffset;
+        $pages++;
     }
 
-    return ['status' => 'ok', 'processes' => $processes];
+    return ['status' => 'error', 'reason' => 'solo processes list exceeded page budget while hasMore remained true'];
 }
 
 /**
  * @return array{status: 'ok', stoppable: list<int>, stopping: list<int>}|array{status: 'error', reason: string}
  */
-function solo_process_phase_ids(string $soloCli, int $projectId, string $cwd): array
+function solo_process_phase_ids(string $soloCli, int $projectId, string $cwd, ?string $appDataDir = null): array
 {
-    $list = solo_list_processes($soloCli, $projectId, $cwd);
+    $list = solo_list_processes($soloCli, $projectId, $cwd, $appDataDir);
 
     if ($list['status'] === 'error') {
         return $list;
@@ -219,7 +279,7 @@ function solo_error_message(array $decoded): string
 }
 
 /**
- * @return list<array{type: 'solo-process-stop', process_id: int, solo_cli: string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}>
+ * @return list<array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}>
  */
 function solo_boundary_actions(string $command): array
 {
@@ -256,7 +316,7 @@ function solo_command_mentions_cli(string $command): bool
 }
 
 /**
- * @return array{type: 'solo-process-stop', process_id: int, solo_cli: string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_solo_land_command(string $command): ?array
 {
@@ -268,6 +328,7 @@ function classify_solo_land_command(string $command): ?array
 
     $soloCli = $words[0];
     $confirmStopRunning = false;
+    $appDataDir = null;
     $positional = [];
 
     for ($i = 1; $i < count($words); $i++) {
@@ -286,19 +347,40 @@ function classify_solo_land_command(string $command): ?array
                 ];
             }
 
+            $appDataDir = $words[$i + 1];
             $i++;
 
             continue;
         }
 
         if (str_starts_with($word, '--app-data-dir=')) {
-            if (substr($word, strlen('--app-data-dir=')) === '') {
+            $value = substr($word, strlen('--app-data-dir='));
+
+            if ($value === '') {
                 return [
                     'type' => 'invalid',
                     'subject' => 'solo LAND command',
                     'reason' => 'solo --app-data-dir requires a directory argument',
                 ];
             }
+
+            // Reject equals+quoted / shell-fragment forms such as --app-data-dir='/path'
+            // produced by concatenating --app-data-dir= with escapeshellarg(). Prefer
+            // separate arguments: --app-data-dir <path>.
+            if (
+                str_contains($value, "'")
+                || str_contains($value, '"')
+                || str_contains($value, '\\')
+                || str_contains($value, ' ')
+            ) {
+                return [
+                    'type' => 'invalid',
+                    'subject' => 'solo LAND command',
+                    'reason' => 'solo --app-data-dir= rejects quoted or shell-fragment values; use separate --app-data-dir <path>',
+                ];
+            }
+
+            $appDataDir = $value;
 
             continue;
         }
@@ -338,6 +420,7 @@ function classify_solo_land_command(string $command): ?array
             'type' => 'solo-process-stop',
             'process_id' => (int) $positional[2],
             'solo_cli' => $soloCli,
+            'app_data_dir' => $appDataDir,
         ];
     }
 
@@ -352,6 +435,7 @@ function classify_solo_land_command(string $command): ?array
             'project_id' => (int) $positional[2],
             'solo_cli' => $soloCli,
             'confirm_stop_running' => $confirmStopRunning,
+            'app_data_dir' => $appDataDir,
         ];
     }
 
@@ -374,20 +458,26 @@ function is_solo_cli_binary(string $word): bool
 }
 
 /**
- * @param  array{type: 'solo-process-stop', process_id: int, solo_cli: string}  $action
+ * @param  array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir?: ?string}  $action
  * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_solo_process_stop(string $root, array $action): array
 {
     $processId = $action['process_id'];
     $subject = "solo processes stop {$processId}";
+    $appDataDir = $action['app_data_dir'] ?? null;
     $callerProcess = getenv('SOLO_PROCESS_ID');
 
     if (is_string($callerProcess) && preg_match('/^\d+$/', $callerProcess) === 1 && (int) $callerProcess === $processId) {
         return block_result($subject, "refuses self-stop of caller SOLO_PROCESS_ID={$processId}");
     }
 
-    $processLookup = solo_cli_lookup($action['solo_cli'], ['processes', 'get', (string) $processId, '--json'], $root);
+    $processLookup = solo_cli_lookup(
+        $action['solo_cli'],
+        ['processes', 'get', (string) $processId, '--json'],
+        $root,
+        $appDataDir,
+    );
 
     if ($processLookup['status'] === 'not_found') {
         return ok();
@@ -413,7 +503,12 @@ function check_solo_process_stop(string $root, array $action): array
         );
     }
 
-    $projectLookup = solo_cli_lookup($action['solo_cli'], ['projects', 'get', (string) $projectId, '--json'], $root);
+    $projectLookup = solo_cli_lookup(
+        $action['solo_cli'],
+        ['projects', 'get', (string) $projectId, '--json'],
+        $root,
+        $appDataDir,
+    );
 
     if ($projectLookup['status'] === 'not_found') {
         return block_result($subject, "solo process {$processId} references missing project {$projectId}");
@@ -435,13 +530,14 @@ function check_solo_process_stop(string $root, array $action): array
 }
 
 /**
- * @param  array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool}  $action
+ * @param  array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir?: ?string}  $action
  * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_solo_project_delete(string $root, array $action): array
 {
     $projectId = $action['project_id'];
     $subject = "solo projects delete {$projectId}";
+    $appDataDir = $action['app_data_dir'] ?? null;
 
     if ($action['confirm_stop_running']) {
         return block_result(
@@ -459,7 +555,12 @@ function check_solo_project_delete(string $root, array $action): array
         );
     }
 
-    $projectLookup = solo_cli_lookup($action['solo_cli'], ['projects', 'get', (string) $projectId, '--json'], $root);
+    $projectLookup = solo_cli_lookup(
+        $action['solo_cli'],
+        ['projects', 'get', (string) $projectId, '--json'],
+        $root,
+        $appDataDir,
+    );
 
     if ($projectLookup['status'] === 'not_found') {
         return ok();
@@ -481,7 +582,7 @@ function check_solo_project_delete(string $root, array $action): array
         return block_result($subject, $cleanupGate);
     }
 
-    $phase = solo_process_phase_ids($action['solo_cli'], $projectId, $root);
+    $phase = solo_process_phase_ids($action['solo_cli'], $projectId, $root, $appDataDir);
 
     if ($phase['status'] === 'error') {
         return block_result($subject, 'solo process list failed: '.$phase['reason']);

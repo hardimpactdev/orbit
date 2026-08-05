@@ -48,6 +48,13 @@ try {
     }
 
     do {
+        // Re-bind ownership before every mutation so path/project drift mid-run
+        // cannot clean another linked feature.
+        landRefuseSelfCwd($worktree);
+        landRefuseSelfProject($projectId);
+        landRequireMain($primary);
+        landRequireIdentity($primary, $branch, $worktree, $projectId, $soloCli);
+
         $state = landObserve($primary, $branch, $worktree, $projectId, $soloCli);
 
         if ($state['phase'] === 'done') {

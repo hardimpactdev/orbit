@@ -143,7 +143,7 @@ function unclassifiable_exit(string $message): int
 }
 
 /**
- * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, argv: list<string>}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, argv: list<string>, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}  $action
+ * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}  $action
  */
 function action_summary(array $action): string
 {
@@ -225,7 +225,7 @@ function find_command_value(array $value): ?string
 }
 
 /**
- * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, argv: list<string>}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, argv: list<string>, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_command(string $command): ?array
 {
@@ -983,11 +983,21 @@ function session_archive_tracked_problem(string $root, string $branch): ?string
         return "session archive `{$relativeArchive}` exists on disk but is not tracked/committed; commit the exact archive directory plus .orbit/sessions/index.json before cleanup";
     }
 
-    foreach ($trackedFiles as $trackedFile) {
-        $dirty = path_has_uncommitted_changes($root, $trackedFile);
+    // Inspect the whole archive tree, not only the tracked subset, so untracked
+    // required loop/evidence entries cannot slip past a tracked receipt.
+    $archiveDirt = path_has_uncommitted_changes($root, $relativeArchive);
 
-        if ($dirty !== null) {
-            return $dirty;
+    if ($archiveDirt !== null) {
+        return $archiveDirt;
+    }
+
+    $requiredEntries = session_archive_required_relative_entries($archiveDir, $relativeArchive);
+
+    foreach ($requiredEntries as $requiredEntry) {
+        $entryTracked = run_git($root, ['ls-files', '--error-unmatch', $requiredEntry]);
+
+        if ($entryTracked['exit_code'] !== 0) {
+            return "required archive entry `{$requiredEntry}` is present on disk but not tracked/committed; commit the exact archive directory before cleanup";
         }
     }
 
@@ -1053,6 +1063,48 @@ function tracked_files_under(string $root, string $relativeDirectory): array
     sort($files);
 
     return $files;
+}
+
+/**
+ * Required archive paths that must be tracked for cleanup.
+ * Compact receipts: receipt path (when present) plus copied_entries.
+ * Legacy/full (no receipt): loop.md and agent-session manifests only.
+ *
+ * @return list<string>
+ */
+function session_archive_required_relative_entries(string $archiveDir, string $relativeArchive): array
+{
+    $receiptPath = $archiveDir.'/orbit-session-archive.json';
+    $entries = [];
+
+    if (is_file($receiptPath) && ! is_link($receiptPath)) {
+        $entries[] = $relativeArchive.'/orbit-session-archive.json';
+        $receipt = json_decode((string) file_get_contents($receiptPath), true);
+        $copied = is_array($receipt) ? ($receipt['copied_entries'] ?? null) : null;
+
+        if (is_array($copied)) {
+            foreach ($copied as $entry) {
+                if (is_string($entry) && $entry !== '') {
+                    $entries[] = $relativeArchive.'/'.$entry;
+                }
+            }
+        }
+    }
+
+    if (is_file($archiveDir.'/loop.md') && ! is_link($archiveDir.'/loop.md')) {
+        $entries[] = $relativeArchive.'/loop.md';
+    }
+
+    foreach (agent_session_manifest_paths($archiveDir.'/agent-sessions') as $manifestPath) {
+        if (str_starts_with($manifestPath, $archiveDir.'/')) {
+            $entries[] = $relativeArchive.'/'.substr($manifestPath, strlen($archiveDir) + 1);
+        }
+    }
+
+    $entries = array_values(array_unique($entries));
+    sort($entries);
+
+    return $entries;
 }
 
 function path_has_uncommitted_changes(string $root, string $relativePath): ?string
