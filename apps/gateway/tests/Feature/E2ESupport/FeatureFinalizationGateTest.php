@@ -79,6 +79,179 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
+it('documents optional compact Scope transition framing without a new row or ceremony', function (): void {
+    $template = (string) file_get_contents(repo_path('LOOP.md.example'));
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
+    $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+
+    foreach ([$template, $harness, $skill] as $doc) {
+        expect($doc)
+            ->toContain('primitive=')
+            ->toContain('transitions=')
+            ->toContain('success:')
+            ->toContain('failure:')
+            ->toContain('retry:')
+            ->toContain('stop-restart:')
+            ->toContain('stale:')
+            ->toContain('Omit the clause');
+    }
+
+    expect($template)
+        ->toMatch('/^- Owned:\s*$/m')
+        ->not->toContain('## Transition Framing')
+        ->not->toContain('- Framing:');
+});
+
+it('validates optional Scope framing only when the compact markers are present', function (
+    string $owned,
+    ?string $errorNeedle,
+): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $markdown = compact_feature_loop_packet(owned: $owned);
+    $problem = orbitLoopScopeFramingProblem($markdown);
+
+    if ($errorNeedle === null) {
+        expect($problem)->toBeNull();
+    } else {
+        expect($problem)
+            ->toBeString()
+            ->toContain($errorNeedle);
+    }
+})->with([
+    'ordinary owned without framing' => [
+        'loop tooling',
+        null,
+    ],
+    'valid framing with n/a transitions' => [
+        'apps/cli progress UX; primitive=progress-tree; transitions=success:exit 0 green tree|failure:nonzero tree|retry:re-run command|stop-restart:n/a|stale:refresh snapshot',
+        null,
+    ],
+    'valid framing reordered transition keys' => [
+        'lifecycle feature; primitive=process-start-stop; transitions=stale:refresh|stop-restart:restart unit|retry:retry once|failure:failed state|success:running',
+        null,
+    ],
+    'missing transitions marker' => [
+        'apps/cli; primitive=progress-tree',
+        'missing transitions=',
+    ],
+    'missing primitive marker' => [
+        'apps/cli; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'missing primitive=',
+    ],
+    'empty primitive value' => [
+        'apps/cli; primitive=; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'primitive=',
+    ],
+    'missing required transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a',
+        'missing required key: stale',
+    ],
+    'unknown transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|boom:x',
+        'unknown key: boom',
+    ],
+    'duplicate transition key' => [
+        'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a|success:again',
+        'duplicate key: success',
+    ],
+    'duplicate primitive marker' => [
+        'apps/cli; primitive=progress-tree; primitive=other; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'duplicate primitive=',
+    ],
+    'template placeholder in primitive' => [
+        'apps/cli; primitive=<exact primitive>; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'template placeholder in transitions' => [
+        'apps/cli; primitive=progress-tree; transitions=success:<ok>|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'template placeholder',
+    ],
+    'empty transition value' => [
+        'apps/cli; primitive=progress-tree; transitions=success:|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+        'value for success is empty',
+    ],
+]);
+
+it('parses optional Scope framing only from the Owned row', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $ordinaryWithMarkerProse = compact_feature_loop_packet(owned: 'loop tooling');
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: docs may mention primitive= and transitions= as format tokens only',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Out of scope: .+$/m',
+            '- Out of scope: do not invent a permanent Framing row; leave primitive= off ordinary Owned values',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+
+    expect(orbitLoopScopeFramingProblem($ordinaryWithMarkerProse))->toBeNull();
+
+    $splitAcrossRows = compact_feature_loop_packet(owned: 'apps/cli; primitive=progress-tree');
+    $splitAcrossRows =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+            $splitAcrossRows,
+        ) ?? $splitAcrossRows;
+
+    expect(orbitLoopScopeFramingProblem($splitAcrossRows))
+        ->toBeString()
+        ->toContain('missing transitions=');
+
+    $completeOnOwnedWithProseElsewhere = compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    );
+    $completeOnOwnedWithProseElsewhere =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: other Scope rows may still mention primitive= without becoming the clause source',
+            $completeOnOwnedWithProseElsewhere,
+        ) ?? $completeOnOwnedWithProseElsewhere;
+
+    expect(orbitLoopScopeFramingProblem($completeOnOwnedWithProseElsewhere))->toBeNull();
+});
+
+it('blocks compact finalization lint when optional Scope framing is malformed', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->toContain('Scope framing')
+            ->toContain('missing required key');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('lints compact finalization when optional Scope framing is complete', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    ));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('blocks compact finalization while blast-radius closure is unresolved', function (string $blastRadius): void {
     $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(blastRadius: $blastRadius));
 
@@ -2521,6 +2694,103 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
     }
 });
 
+it('allows cleanup for historical schema-v2 compact receipts that cite release-evidence without retaining it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    $proofSource = latest_finalization_artifact_path($worktree, 'docs-lint');
+    $proofEntry = 'quality-gates/'.basename($proofSource);
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            <<<MARKDOWN
+                - Broader proof: `.orbit/{$proofEntry}`
+                - Release evidence: `.orbit/release-evidence/2026-08-04-live-candidate/proof.txt`
+
+                ## Status
+                MARKDOWN,
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    mkdir("{$archive}/quality-gates", recursive: true);
+    copy($proofSource, "{$archive}/{$proofEntry}");
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 2;
+    $receipt['copied_entries'] = ['loop.md', $proofEntry];
+    sort($receipt['copied_entries']);
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+        $proofEntry => hash_file('sha256', "{$archive}/{$proofEntry}"),
+    ];
+    ksort($receipt['entry_digests']);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    expect($receipt['copied_entries'])
+        ->not->toContain('release-evidence/2026-08-04-live-candidate/proof.txt')->and("{$archive}/release-evidence")
+        ->not->toBeDirectory();
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects schema-v3 compact receipts that cite release-evidence without binding it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n\n## Status",
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 3;
+    $receipt['copied_entries'] = ['loop.md'];
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+    ];
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('rejects a compact receipt that binds only a truncated proof citation', function (string $citation): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -3549,6 +3819,7 @@ function compact_feature_loop_packet(
     ?string $reviewedTip = null,
     string $runtime = 'not applicable - no runtime proof venue',
     string $blastRadius = 'not-required - local change',
+    string $owned = 'loop tooling',
 ): string {
     $reviewedTip ??= $featureTip;
 
@@ -3565,7 +3836,7 @@ function compact_feature_loop_packet(
 
         ## Scope
 
-        - Owned: loop tooling
+        - Owned: {$owned}
         - Constraints: no manual E2E
         - Out of scope: product behavior
 

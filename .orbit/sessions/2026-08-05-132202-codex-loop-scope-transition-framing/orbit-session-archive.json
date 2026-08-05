@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T11:22:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-scope-transition-framing/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-132202-codex-loop-scope-transition-framing",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T110701Z-ac530c3f5acd.json",
+        "release-evidence/2026-08-05-loop-scope-transition-framing/fable-review.txt"
+    ],
+    "entry_digests": {
+        "loop.md": "69dfbe2c65f05d6be47f9ea1197ff0019a5305f4a967d1a62ac35ec4e253efa7",
+        "quality-gates/quality-check-2026-08-05T110701Z-ac530c3f5acd.json": "a5a7a182d8c70306fe00b2c00834fd58308aa61e1cd3212cba4d523c98a2edcb",
+        "release-evidence/2026-08-05-loop-scope-transition-framing/fable-review.txt": "1921ff84445f532ec514c8bdfcebbf1ecd56f6c3e7853e84a1c7fc01bf9121c9"
+    },
+    "slug": "codex-loop-scope-transition-framing",
+    "requested_slug": "codex-loop-scope-transition-framing",
+    "compatible_slugs": [
+        "codex-loop-scope-transition-framing"
+    ],
+    "branch": "codex/loop-scope-transition-framing",
+    "candidate_commit": "bf1cad7284ad0b46211199adb4e50f6dbc3485cc",
+    "accepted_feature_tip": "bf1cad7284ad0b46211199adb4e50f6dbc3485cc",
+    "accepted_main_tip": "b6b587ff412bdf1512f84a242c10afcb388feef1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

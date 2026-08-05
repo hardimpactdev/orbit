@@ -48,7 +48,15 @@ review PASS must record `human-judgment=required|not-required` and the exact
 committed HEAD in `Reviewed feature tip`. Blast radius must be `not-required -
 <reason>` or `complete - evidence=<repository-wide search, inventory, or
 lintable check>; result=<summary>` before acceptance; `gaps` returns to BUILD.
-After FRAME, run `bin/orbit-feature-acceptance route` for the read-only
+For stateful, lifecycle, or concrete UX work, optionally append one compact
+clause on the existing Scope `Owned` row (do not add a permanent new row):
+`primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+Omit the clause for ordinary/local changes. When `primitive=` or `transitions=`
+is present, deterministic lint requires both fields, the five known transition
+keys without duplicates or empty values, and rejects template placeholders; it
+does not grade prose or decide whether the feature is stateful. Explicit `n/a`
+values are fine when a transition does not apply. After FRAME, run
+`bin/orbit-feature-acceptance route` for the read-only
 diff-derived venue before expensive PROVE work. For non-`automated` venues,
 `Verification.runtime: passed` must use one candidate-bound structured receipt
 on that same single line. Required fields are candidate=, venue=, environment=,

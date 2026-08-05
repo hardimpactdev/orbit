@@ -932,10 +932,11 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     }
 
     $receipt = json_decode((string) file_get_contents($receiptPath), true);
+    $schemaVersion = is_array($receipt) ? ($receipt['schema_version'] ?? null) : null;
 
     if (
         ! is_array($receipt)
-        || ($receipt['schema_version'] ?? null) !== 2
+        || ! in_array($schemaVersion, [2, 3], true)
         || ($receipt['archive_mode'] ?? null) !== 'compact'
         || ($receipt['branch'] ?? null) !== $branch
     ) {
@@ -1009,32 +1010,28 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     }
 
     try {
-        $loopProofEntries = array_map(
-            static fn (string $reference): string => substr($reference, strlen('.orbit/')),
-            orbitLoopProofReferences($loop),
-        );
+        $loopProofEntries = compact_archive_loop_proof_entries_for_schema($loop, $schemaVersion);
     } catch (RuntimeException) {
         return false;
     }
 
     $receiptProofEntries = array_values(array_filter(
         $copiedEntries,
-        static fn (string $entry): bool => str_starts_with($entry, 'evidence/')
-            || str_starts_with($entry, 'quality-gates/'),
+        static fn (string $entry): bool => compact_archive_entry_is_proof_root($entry, $schemaVersion),
     ));
 
     if ($receiptProofEntries !== $loopProofEntries) {
         return false;
     }
 
-    $actualEntries = compact_archive_actual_entries($archiveDir);
+    $actualEntries = compact_archive_actual_entries($archiveDir, $schemaVersion);
 
     if ($actualEntries === null || $actualEntries !== $copiedEntries) {
         return false;
     }
 
     foreach ($copiedEntries as $entry) {
-        if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry)) {
+        if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry, $schemaVersion)) {
             return false;
         }
 
@@ -1059,6 +1056,48 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     return true;
 }
 
+/**
+ * @return list<string>
+ */
+function compact_archive_loop_proof_entries_for_schema(string $loop, int $schemaVersion): array
+{
+    $entries = array_map(
+        static fn (string $reference): string => substr($reference, strlen('.orbit/')),
+        orbitLoopProofReferences($loop),
+    );
+
+    $entries = array_values(array_filter(
+        $entries,
+        static fn (string $entry): bool => compact_archive_entry_is_proof_root($entry, $schemaVersion),
+    ));
+    sort($entries, SORT_STRING);
+
+    return $entries;
+}
+
+function compact_archive_entry_is_proof_root(string $entry, int $schemaVersion): bool
+{
+    foreach (compact_archive_proof_root_prefixes($schemaVersion) as $prefix) {
+        if (str_starts_with($entry, $prefix.'/')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @return list<string>
+ */
+function compact_archive_proof_root_prefixes(int $schemaVersion): array
+{
+    return match ($schemaVersion) {
+        2 => ['evidence', 'quality-gates'],
+        3 => ['evidence', 'quality-gates', 'release-evidence'],
+        default => [],
+    };
+}
+
 function compact_archive_entry_digest(string $path): ?string
 {
     if (is_link($path) || ! is_file($path)) {
@@ -1068,14 +1107,23 @@ function compact_archive_entry_digest(string $path): ?string
     return hash_file('sha256', $path) ?: null;
 }
 
-function compact_archive_entry_path_is_allowed(string $entry): bool
+function compact_archive_entry_path_is_allowed(string $entry, int $schemaVersion): bool
 {
     if (in_array($entry, ['feedback.jsonl', 'loop.md'], true)) {
         return true;
     }
 
+    $roots = implode('|', array_map(
+        static fn (string $root): string => preg_quote($root, '~'),
+        compact_archive_proof_root_prefixes($schemaVersion),
+    ));
+
+    if ($roots === '') {
+        return false;
+    }
+
     return preg_match(
-        '~^(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
+        '~^(?:'.$roots.')/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
         $entry,
     ) === 1
         && ! in_array('.', explode('/', $entry), true)
@@ -1083,13 +1131,21 @@ function compact_archive_entry_path_is_allowed(string $entry): bool
 }
 
 /** @return list<string>|null */
-function compact_archive_actual_entries(string $archiveDir): ?array
+function compact_archive_actual_entries(string $archiveDir, int $schemaVersion): ?array
 {
     $entries = [];
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($archiveDir, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST,
     );
+    $roots = implode('|', array_map(
+        static fn (string $root): string => preg_quote($root, '~'),
+        compact_archive_proof_root_prefixes($schemaVersion),
+    ));
+
+    if ($roots === '') {
+        return null;
+    }
 
     foreach ($iterator as $entry) {
         $relative = ltrim(substr($entry->getPathname(), strlen(rtrim($archiveDir, '/'))), '/');
@@ -1104,7 +1160,7 @@ function compact_archive_actual_entries(string $archiveDir): ?array
 
         if ($entry->isDir()) {
             if (
-                preg_match('~^(?:evidence|quality-gates)(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
+                preg_match('~^(?:'.$roots.')(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
                 || in_array('.', explode('/', $relative), true)
                 || in_array('..', explode('/', $relative), true)
             ) {
@@ -1114,7 +1170,7 @@ function compact_archive_actual_entries(string $archiveDir): ?array
             continue;
         }
 
-        if (! $entry->isFile() || ! compact_archive_entry_path_is_allowed($relative)) {
+        if (! $entry->isFile() || ! compact_archive_entry_path_is_allowed($relative, $schemaVersion)) {
             return null;
         }
 
@@ -1229,7 +1285,7 @@ function matching_session_archive_dirs(string $root, string $branch): array
             continue;
         }
 
-        // Compact schema-v2 receipts may list compatible slugs / branch so a
+        // Versioned compact receipts may list compatible slugs / branch so a
         // content-identical archive created under a short feature slug still
         // satisfies branch-derived cleanup without a pre-success rename.
         if (session_archive_receipt_matches_branch_slug($entry->getPathname(), $branch, $slug)) {
@@ -1256,7 +1312,9 @@ function session_archive_receipt_matches_branch_slug(string $archiveDir, string 
         return false;
     }
 
-    if (($receipt['schema_version'] ?? null) !== 2 || ($receipt['archive_mode'] ?? null) !== 'compact') {
+    $schemaVersion = $receipt['schema_version'] ?? null;
+
+    if (! in_array($schemaVersion, [2, 3], true) || ($receipt['archive_mode'] ?? null) !== 'compact') {
         return false;
     }
 
@@ -1667,6 +1725,12 @@ function compact_loop_problems(string $contents): array
         if (orbitLoopSection($contents, $section) === null) {
             $problems[] = "is missing `{$section}`";
         }
+    }
+
+    $scopeFramingProblem = orbitLoopScopeFramingProblem($contents);
+
+    if ($scopeFramingProblem !== null) {
+        $problems[] = $scopeFramingProblem;
     }
 
     if (preg_match('/<[^>\n]+>/', $contents, $placeholder) === 1) {
@@ -2854,7 +2918,7 @@ function block_message(string $subject, string $reason): string
         and acceptance.
 
         Before cleanup, run `bin/orbit-session-archive`. A compact archive requires
-        `loop.md` plus its schema-v2 receipt; historical/full archives retain their
+        `loop.md` plus its schema-v2 or schema-v3 receipt; historical/full archives retain their
         manifest compatibility.
 
         Dry-run the packet shape first with:

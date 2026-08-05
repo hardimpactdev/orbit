@@ -37,7 +37,15 @@ result.
 3. Resolve the outcome, owned paths, constraints, and out-of-scope work. Check
    `PRODUCT_DECISIONS.md` and the relevant `apps/docs/content/` authority.
 4. Fill or update the seeded `.orbit/loop.md` Goal and Scope. Keep the anchor
-   compact; raw feedback belongs in `.orbit/feedback.jsonl`.
+   compact; raw feedback belongs in `.orbit/feedback.jsonl`. For stateful,
+   lifecycle, or concrete UX features, append one optional compact clause on the
+   existing Scope `Owned` row:
+   `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+   Omit the clause for ordinary/local changes. When the markers are present,
+   deterministic lint checks only syntax and field presence (both markers, the
+   five known transition keys, no duplicates/empties/placeholders); it does not
+   decide statefulness or grade prose. Do not invent a new Scope row, lane, or
+   semantic grader for this framing.
 5. Retrieve relevant prior feedback by exact or parent surface when a stable
    scope exists. The command searches the primary archive corpus by default and
    returns matched records plus linked promotions and waivers:
@@ -256,10 +264,12 @@ message rather than accepting a bare `source=user` claim.
    After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd, never cwd main.
-   Cite each retained evidence or quality-gate file in `.orbit/loop.md` as one
-   exact inline-code path; do not cite directories, prose, or padded spans.
-   Use `--full` only for failure, escalation, security/release scope, or explicit
-   request.
+   Cite each retained evidence, quality-gate, or release-evidence file in
+   `.orbit/loop.md` as one exact inline-code path under `.orbit/evidence/`,
+   `.orbit/quality-gates/`, or `.orbit/release-evidence/`; do not cite
+   directories, prose, or padded spans. Runtime acceptance receipts remain
+   limited to `.orbit/evidence/` and `.orbit/quality-gates/`. Use `--full`
+   only for failure, escalation, security/release scope, or explicit request.
 6. Commit the archive/index.
 7. After the archive/index commit:
    - Validate each cleanup mutation with
