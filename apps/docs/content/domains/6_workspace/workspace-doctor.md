@@ -138,7 +138,7 @@ or changes node reachability.
 
 Workspace doctor is a development surface. An explicit `app-prod` node may
 not select the workspace family or an explicit workspace scope. The gateway
-rejects either request with `doctor.family_not_in_node_scope` before probing,
+rejects either request with `family_not_in_node_scope` before probing,
 dispatching Agent work, planning a restore, or adopting state. Normal workspace
 commands reject production targets with `workspace.unsupported_for_production`
 before side effects.

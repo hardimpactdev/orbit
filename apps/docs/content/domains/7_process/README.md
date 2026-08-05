@@ -66,13 +66,13 @@ These rules describe how runtime units are derived from process definitions.
   runtime backend, runtime configuration, and crash notification policy. The
   rendering context supplies per-instance fields such as node/project/instance/workspace
   identity, path, URL, environment, ports, and volumes.
-- Runtime unit names use an Orbit-owned identity that is safe for backends and has five parts:
+- Runtime unit names for instance and workspace units use the five-part form
   `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
-  `orbit_docs_development_main_vite` and `orbit_docs_development_feature-docs_vite`).
-  Node-owned units substitute a node-scoped segment for the instance/workspace
-  pair. Including both project and instance slugs prevents two instances of one
-  project from colliding. When process identity is renamed, Orbit replaces
-  derived runtime units and removes names from the previous identity instead of leaving
+  `orbit_docs_development_main_vite`). Node-owned units use the bare process
+  slug as the unit name. Including both project and instance slugs prevents two
+  instances of one project from colliding. When process identity is renamed,
+  Orbit replaces derived runtime units and removes names from the previous
+  identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.

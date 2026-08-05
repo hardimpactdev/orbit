@@ -124,8 +124,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
-- `--self-grant-permissions`: custom permission set for the self-grant when
-  `--self-grant` is supplied. Optional; requires `--self-grant`.
+- `--self-grant-permissions`: custom permission set for the self-grant. Optional;
+  requires `--self-grant=custom` specifically (not merely any `--self-grant`).
 - `--agent-tool`: repeatable. Names an agent tool slug to install during
   provisioning when `--roles` includes `agent`. Forbidden when the node has no
   `agent` role. Zero, one, or many may be supplied; no default agent tool is

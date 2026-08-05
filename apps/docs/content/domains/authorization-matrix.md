@@ -86,7 +86,7 @@ classes](../architecture.md#authorization-classes).
 | `firewall:remove` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `gateway:add` | n/a - pre-grants bootstrap | n/a | Deployment-context command | n/a | n/a |
 | `gateway:list` | n/a - local-only | n/a | Lists local gateway entries only; no gateway API call | n/a | n/a |
-| `gateway:status` | authenticated WireGuard peer (no grant) | configured gateway endpoint | Reachability probe; no grant check | n/a when peer known | Transport/gateway-unavailable envelopes; not missing-permission |
+| `gateway:status` | none (outside WireGuard identity middleware) | configured gateway endpoint | Public reachability probe; no peer identity and no grant check | n/a | Transport/gateway-unavailable envelopes; not missing-permission |
 | `gateway:trust` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `gateway:use` | n/a - local-only | n/a | Selects the active local gateway entry; no gateway API call | n/a | n/a |
 | `manifest:update` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |

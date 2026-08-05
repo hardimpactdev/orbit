@@ -169,9 +169,11 @@ The node probe reads gateway node records and checks these layers:
    family.
 
    `database` and `gateway` assignments have no role settings in v1.
-15. **Node-related defaults:** local `node:default` preferences point at
-   active, authorized nodes when `--self` inspects the CLI's local
-   configuration.
+15. **Node-related defaults:** the issue catalog includes
+   `node.local_default_invalid` for a missing or unauthorized local default.
+   A dedicated default-preference probe that actively validates
+   `node:default` under `--self` is not implemented as current doctor
+   behavior; treat that probe as pending, not present tense.
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
@@ -271,7 +273,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_last_run_failed` | A supported update driver found recent unattended-upgrades evidence reporting a failed run. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_reboot_required` | A supported update driver found `/var/run/reboot-required`. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
-| `node.local_default_invalid` | During `doctor --self`, the local `node:default` preference points at a missing or unauthorized node. |
+| `node.local_default_invalid` | Catalogued issue for a missing or unauthorized local `node:default` preference. A dedicated default-preference probe under `--self` is pending, not current doctor behavior. |
 
 `node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent. Use `node:permissions` for permission-set repair and `doctor --family=node --adopt` when peer attachment is the intended recovery.
 

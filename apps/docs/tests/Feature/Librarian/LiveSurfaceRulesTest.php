@@ -209,7 +209,24 @@ it('passes public command pages that mention a live stream json option', functio
     expect(liveSurfaceFindings($payload, rule: 'command_docs.public_stream_json_option_contract'))->toBeEmpty();
 });
 
-it('maps analytics update internal version option onto the public signature', function (): void {
+it('requires analytics update signatures to use the live --requested-version option', function (): void {
+    config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
+    bindLiveSurfaceFake([
+        new CliCommand(name: 'analytics:update', options: ['requested-version', 'node', 'json']),
+    ]);
+    writeLiveSurfaceCommandDirectory(
+        $this->fixtureRoot,
+        'domains/20_analytics/1_analytics-update',
+        'analytics-update',
+        'orbit analytics:update [--node=<node>] [--requested-version=<version>] [--json]',
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
+});
+
+it('rejects analytics update signatures that invent a command-level --version option', function (): void {
     config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
     bindLiveSurfaceFake([
         new CliCommand(name: 'analytics:update', options: ['requested-version', 'node', 'json']),
@@ -222,8 +239,17 @@ it('maps analytics update internal version option onto the public signature', fu
     );
 
     $payload = runLiveSurfaceLint();
+    $findings = liveSurfaceFindings($payload, 'command_docs.signature_live_surface');
 
-    expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->not
+        ->toBeEmpty()
+        ->and($findings[0]['message'])
+        ->toContain('--requested-version')
+        ->and($findings[0]['message'])
+        ->toContain('--version');
 });
 
 it('maps process add internal service version option onto the public signature', function (): void {

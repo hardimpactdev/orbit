@@ -193,8 +193,8 @@ issue codes and do not point at `doctor` as the recovery command. Warning codes
 that a command owns still use the singular product prefix for the command's domain.
 
 Family issue-code condition names should use the product relationship term for
-that family, such as `instance.owner_node_invalid`,
-`workspace.parent_instance_invalid`, or `process.owner_instance_invalid`. Do not
+that family, such as `app.owner_node_invalid`,
+`workspace.parent_instance_invalid`, or `process.owner_app_invalid`. Do not
 normalize these into a generic parent/owner vocabulary when the domain model
 uses a more specific relationship name.
 

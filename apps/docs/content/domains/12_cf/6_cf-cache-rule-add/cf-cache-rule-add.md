@@ -1,6 +1,6 @@
 # `orbit cf-cache-rule:add`
 
-Create the Cloudflare cache rule that Orbit manages for an instance-owned domain.
+Create the Cloudflare cache rule that Orbit manages for a project's Cloudflare-backed domain.
 
 ## Usage
 
@@ -17,30 +17,29 @@ orbit cf-cache-rule:add docs --json
 
 ## Arguments and options
 
-- `project`: Resolves a concrete production instance whose instance-owned domain
-  maps to a Cloudflare zone. Accept a dotted `project.instance` selector; bare
-  project shorthand is valid only when exactly one instance is visible.
+- `project`: Bare project name. Current gateway resolution uses
+  `Project.domain` to find the Cloudflare zone. Dotted `project.instance`
+  selectors are not implemented.
 - `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens
 
 Run `orbit cf-cache-rule:add <project>` to create or converge the standard
-Cloudflare cache rule for the resolved instance's zone.
+Cloudflare cache rule for the project's Cloudflare zone.
 
 `cf-cache-rule:add` asks the gateway to create or converge the standard
-Cloudflare cache rule for the zone that owns the instance public domain. The rule
+Cloudflare cache rule for the zone resolved from the project's domain. The rule
 lets Cloudflare cache public responses while respecting origin `Cache-Control`
 headers.
 
 The command does not change instance deployment policy, process state, or proxy
-routes. Projects store no domain; the public domain is instance placement state.
+routes. Direction (pending): zone resolution from instance-owned domains.
 
 ## Output
 
-You will see a confirmation of the cache rule outcome for the resolved
-instance.
+You will see a confirmation of the cache rule outcome for the resolved project.
 
-Human output confirms the instance cache rule outcome. Use `--json` for
+Human output confirms the project cache rule outcome. Use `--json` for
 machine-readable output.
 
 ## Requirements
@@ -48,8 +47,7 @@ machine-readable output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The resolved concrete instance exists and has an instance-owned domain in a
-  Cloudflare zone.
+- The named project exists and has a Cloudflare-backed `Project.domain`.
 
 ## Related Commands
 

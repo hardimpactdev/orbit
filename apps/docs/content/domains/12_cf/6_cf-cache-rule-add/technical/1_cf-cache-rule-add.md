@@ -10,8 +10,7 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- A concrete production instance is resolvable and has an instance-owned domain
-  that resolves to a Cloudflare zone.
+- The named project exists and has a Cloudflare-backed `Project.domain`.
 
 ## Signature
 
@@ -25,22 +24,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Concrete production instance selector: dotted `project.instance`, or bare project shorthand only when exactly one instance is visible. The resolved instance must own a Cloudflare-backed public domain. |
+| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Bare project name. Current resolver uses `Project.domain` for the Cloudflare zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
-### Instance Zone Resolution Rules
+### Project Zone Resolution Rules
 
-- Resolves a concrete production instance from the argument (exact dotted
-  selector first; bare project shorthand only when exactly one instance is
-  visible).
-- Uses that instance's instance-owned public domain to resolve a Cloudflare
-  zone. Projects store no server, path, URL, or domain.
-- Fails before provider mutation when the resolved instance has no Cloudflare-
-  backed domain.
-- Product contract resolves zones from instance-owned domains only. Projects
-  store no domain.
+- Resolves a bare project name and reads `Project.domain` through
+  `CloudflareZoneResolver` (current implementation).
+- Fails before provider mutation when the project is missing or has no
+  Cloudflare-backed domain.
+- Direction (pending implementation): instance-owned domain resolution via
+  dotted `project.instance` selectors.
 
 ### Cache Rule Rules
 

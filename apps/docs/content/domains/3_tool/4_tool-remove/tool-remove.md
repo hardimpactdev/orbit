@@ -26,7 +26,7 @@ orbit tool:remove composer --node=app-1 --json --force
 
 - `tool`: Tool name from Orbit's tool catalog, or a documented removal-only
   residual slug accepted by this command (`openclaw`, `opencode-cli`,
-  `polyscope-server`).
+  `opencode`, `opencode-server`, `polyscope-server`).
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--instance`: Resolve the target node from a concrete instance. Bare logical
   shorthand is valid only when exactly one instance is visible.

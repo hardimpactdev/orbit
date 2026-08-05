@@ -39,11 +39,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   either side crosses that boundary.
 - Project, instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
-- Every instance-owned primary route targets one concrete instance. The route
-  keeps `owner.type=project` and the project slug in `owner.name`, while
-  `target.type=instance`, `target.value=<project.instance>`, and `node` identify
-  the concrete instance and its serving node. A project is never a valid
-  primary-route target.
+- Every instance-primary route targets one concrete instance. The route uses
+  `owner.type=instance` and `owner.name=<project.instance>`, with
+  `target.type=instance`, `target.value=<project.instance>`, and `node` naming
+  the serving node. A bare project is never a valid primary-route target.
 - Instance WebSocket routes are visible through proxy commands but edited through
   instance WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role

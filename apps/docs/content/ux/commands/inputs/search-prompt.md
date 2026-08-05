@@ -60,8 +60,8 @@ $repository = search(
 
 These commands use `search` and are good models to follow.
 
-- `orbit cf-cache:flush` — `cf_cache_flush_zone` searches Cloudflare zones when
-  the zone is omitted.
+- Use a real `Laravel\Prompts\search` caller for new work. `cf-cache:flush`
+  currently uses plain `ask` for the zone, so it is not a search reference.
 
 ## Cross References
 

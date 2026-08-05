@@ -23,22 +23,20 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, or instance selector whose domain maps to a Cloudflare zone. |
+| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, or bare project name with a Cloudflare-backed `Project.domain`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `zone` from `--zone`, or from prompt `cf_cache_flush_zone` in
    interactive input mode.
-2. If the value resolves to a concrete Orbit instance with an instance-owned
-   domain mapped to a Cloudflare zone, use that instance's zone. Bare project
-   shorthand is valid only when exactly one instance is visible. Projects store
-   no domain.
+2. Current gateway behavior: if the value matches a project name, resolve the
+   zone from that project's `Project.domain` field (`CloudflareZoneResolver`).
 3. Otherwise resolve the value as a Cloudflare zone ID or exact zone domain
    name.
 4. Fail before provider mutation when the zone cannot be resolved.
-5. Product contract resolves zones from instance-owned domains only. Projects
-   store no domain.
+5. Direction (pending implementation): instance-owned domain resolution via
+   dotted `project.instance` selectors is intended, but not current behavior.
 
 ## Input Mode Contracts
 

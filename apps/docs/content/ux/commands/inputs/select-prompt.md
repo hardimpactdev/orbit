@@ -66,11 +66,9 @@ $template = select(
 
 These commands use `select` and are good models to follow.
 
-- `orbit node:new` — `node_new.template` (and related path selects such as
-  `node_new.ingress_node` / Valkey / Postgres / ClickHouse node picks) use
-  `select`. Canonical stored roles accepted through `--roles` are
-  `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`,
-  `metrics`, and `analytics`; `gateway` is not a public `--roles` value.
+- Prefer commands that call `Laravel\Prompts\select` for single-choice picks
+  (for example project/node selection helpers that use select prompts). Do not
+  cite `node:new` here; its interactive path uses text prompts, not `select`.
 
 ## Cross References
 

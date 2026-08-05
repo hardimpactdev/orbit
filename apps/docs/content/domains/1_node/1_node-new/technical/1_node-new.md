@@ -48,7 +48,7 @@ This command follows the shared
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
 | `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint verified by the initiating CLI during bootstrap. |
 | `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
-| `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant`. |
+| `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant=custom` specifically. |
 | `grant_to` | `--grant-to` | Optional. | Never. | None. | Grant this node access to another node. Multiple values allowed. |
 | `grant_to_preset` | `--grant-to-preset` | Optional. | Never. | None. | Preset for the `--grant-to` permission set. |
 | `grant_to_permissions` | `--grant-to-permissions` | Optional. | Never. | None. | Custom permission set for the `--grant-to` grant. |

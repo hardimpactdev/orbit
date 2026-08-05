@@ -32,16 +32,20 @@ These rules define the analytics command domain and its role boundary.
   instance-owned placement facts; the project never owns them.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
-  `--plausible-version` option; the CLI flag is `--version` (Laravel
-  Zero reserves the global `--version`).
+  `--plausible-version` option; the command option is `--requested-version`
+  (`orbit analytics:update --help`). The native launcher may rewrite a
+  convenience `--version=` flag to that option; global `-V/--version` is
+  framework version display.
 - PostgreSQL and ClickHouse are service processes on active `database` role
   nodes. The analytics role stores the selected PostgreSQL process identity as
   well as the backing node identities and does not install or own either
-  database. Runtime resolution requires that stored process identity; there is
-  no ongoing single-candidate fallback. A one-time migration may backfill an
-  unambiguous stored assignment, and multiple candidates without a stored
-  identity fail clearly instead of choosing one. Both services use generated
-  credentials encrypted in gateway storage and publish only on WireGuard.
+  database. Assignment-time creation requires that stored identity. A one-time
+  migration may backfill an unambiguous assignment. Multiple candidates without
+  a stored identity fail clearly. A residual runtime single-candidate fallback
+  still exists when stored identity is absent and exactly one PostgreSQL
+  candidate is visible; that fallback remains until removed. Both services use
+  generated credentials encrypted in gateway storage and publish only on
+  WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:
   `postgres:16-alpine` and
   `clickhouse/clickhouse-server:24.12-alpine`. Plausible reads the selected
@@ -94,7 +98,7 @@ This concept page defines the vocabulary used by analytics command contracts.
 
 The analytics family provides the following command.
 
-1. [`orbit analytics:update --version=<version>`](1_analytics-update/analytics-update.md)
+1. [`orbit analytics:update --requested-version=<version>`](1_analytics-update/analytics-update.md)
 
 ## Non-Goals
 

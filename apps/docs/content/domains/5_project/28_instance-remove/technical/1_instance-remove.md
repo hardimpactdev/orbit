@@ -54,8 +54,7 @@ relationships. The parent `Project` and sibling instances remain.
 1. Resolve and authorize the exact dotted instance before effects.
 2. Require destructive consent: interactive confirmation via
    `instance_remove.confirm`, or `--force`; non-interactive mode without
-   `--force` fails `validation_failed` `meta.field=force`
-   `meta.reason=destructive_consent_required`.
+   `--force` fails `validation_failed` with `meta.field=force` only.
 3. Delete only the named instance and its instance-owned dependents.
 4. Never delete the project or sibling instances.
 5. Use gateway-only authority for external-driver instances.

@@ -71,13 +71,10 @@ $selected = datatable(
 
 These commands use `datatable` and are good models to follow.
 
-- `orbit s3:publish`, `orbit s3:unpublish`, and `orbit s3:credentials` —
-  select a visible active s3 node when `--node` is omitted and more than one
-  candidate exists. See
-  `domains/18_s3/1_s3-publish/technical/5.1_s3-publish_input-mode_interactive.md`.
-- `orbit project:list`, `orbit project:remove`, `orbit node:show`,
-  `orbit workspace:show`, `orbit process:update`, and `orbit schedule:run` —
-  select existing registry rows before acting on them.
+- `orbit project:list` — project selection datatable (`Select a project`).
+- Other registry list commands that call `Laravel\Prompts\datatable` through
+  shared helpers. Do not cite `s3:credentials` (no prompt), or unbacked
+  `project:remove` / `process:update` rows as datatable references.
 
 ## Cross References
 

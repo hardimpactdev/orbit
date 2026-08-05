@@ -34,7 +34,7 @@ This command follows the shared
    - If no gateway endpoint can be resolved, fail before network or
      trust-store side effects.
    - If local gateway settings cannot be read, fail with
-     `node.local_config_read_failed` before network or trust-store side effects.
+     `config_unreadable` before network or trust-store side effects.
 3. Validate the configured gateway endpoint.
 4. Start the local trust repair sequence.
 
@@ -134,16 +134,17 @@ not usable:
 - `reason=missing`: no gateway endpoint is configured.
 - `reason=invalid`: the configured gateway endpoint cannot be normalized.
 
-`node.local_config_read_failed` is emitted only when the initial local gateway
-settings read from `~/.config/orbit/config.json` fails. Its `error.meta.reason`
-values are:
+Local config load failures come from `OrbitConfigStore` and surface as the
+store's own `error.code` values (not a synthetic `config_unreadable`
+wrapper). The codes that apply when reading `~/.config/orbit/config.json` before
+network or trust-store work include:
 
-- `local_config_unreadable`: the config file path cannot be opened or read
-  (missing permissions, unreadable file, or home/config path resolution failure).
-- `local_config_invalid`: the config file exists but is not valid Orbit config
-  (invalid JSON, non-object root, missing/unsupported `schema_version`).
-- `local_config_insecure_permissions`: the config file is owned by another user,
-  or its mode is outside the owner-only ACL that Orbit accepts.
+- `config_unreadable`: the config path cannot be opened or read.
+- `config_invalid_json`: the file body is not valid JSON (related schema codes
+  such as `config_invalid_root` and `config_invalid_schema_version` may also
+  fire for non-object roots or bad `schema_version`).
+- `config_insecure_permissions`: ownership or mode is outside the owner-only ACL
+  Orbit accepts.
 
 Post-installation metadata write failures keep using
 `node.local_config_write_failed` with `reason=metadata_write_failed` when the

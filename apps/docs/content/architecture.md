@@ -275,10 +275,12 @@ proxy only Plausible script and event-ingest paths to the analytics backend.
 The role depends on one explicitly identified PostgreSQL process and a
 ClickHouse Docker service process selected from active `database` role nodes.
 The PostgreSQL process identity is stored in the analytics role settings.
-Runtime resolution requires that stored process identity; there is no ongoing
-legacy single-candidate fallback. A one-time migration may backfill the stored
-identity from a previously unambiguous fleet assignment, but multiple candidates
-without a stored identity fail as ambiguous. Those services publish
+Assignment-time creation requires a stored PostgreSQL process identity. A
+one-time migration may backfill that identity from an unambiguous fleet row.
+Multiple candidates without a stored identity fail as ambiguous. A residual
+runtime single-candidate fallback still exists when stored identity is absent
+and exactly one PostgreSQL candidate is visible; that fallback remains until
+removed and is not the assignment-time contract. Those services publish
 only on their database nodes' WireGuard addresses and keep generated
 credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that
@@ -746,7 +748,7 @@ A slug must match:
 Length limits:
 
 - project slug: up to 40 characters
-- instance slug: up to 63 characters
+- instance slug: up to 40 characters
 - node slug: up to 63 characters
 - workspace slug: up to 63 characters (independent of the parent instance slug)
 - process slug: up to 64 characters

@@ -50,8 +50,10 @@ $capabilities = multiselect(
 
 These commands use `multiselect` and are good models to follow.
 
-- `orbit node:permissions` — multiselect for the normalized permission set when
-  updating or creating a grant edge.
+- Prefer commands that call `Laravel\Prompts\multiselect` for multi-value
+  selection (for example gateway-registry entity multi-picks via
+  `PromptsForGatewayRegistryEntities`). Do not cite `node:permissions` here;
+  that command has no multiselect prompts.
 
 ## Cross References
 

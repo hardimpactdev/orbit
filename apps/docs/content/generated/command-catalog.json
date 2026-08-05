@@ -14513,8 +14513,6 @@
             "node": {
                 "required": {
                     "name": "string",
-                    "role": "string|null",
-                    "environment": "string|null",
                     "platform": "string",
                     "status": "string"
                 },

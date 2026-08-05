@@ -1,6 +1,6 @@
 # `orbit cf-cache-rule:remove`
 
-Remove the Cloudflare cache rule that Orbit manages for an instance-owned domain.
+Remove the Cloudflare cache rule that Orbit manages for a project's Cloudflare-backed domain.
 
 ## Usage
 
@@ -17,21 +17,21 @@ orbit cf-cache-rule:remove docs --force --json
 
 ## Arguments and options
 
-- `project`: Resolves a concrete production instance whose instance-owned domain
-  maps to a Cloudflare zone. Accept a dotted `project.instance` selector; bare
-  project shorthand is valid only when exactly one instance is visible.
+- `project`: Bare project name. Current gateway resolution uses
+  `Project.domain` to find the Cloudflare zone. Dotted `project.instance`
+  selectors are not implemented.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the JSON output.
 
 ## What Happens
 
 Run `orbit cf-cache-rule:remove <project>` to remove the Cloudflare cache rule
-that Orbit manages for the resolved instance's zone.
+that Orbit manages for the project's Cloudflare zone.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
-cache rule for the zone that owns the instance public domain. It does not remove
-instance domains, DNS records, proxy routes, or instance deployment policy.
-Projects store no domain; the public domain is instance placement state.
+cache rule for the zone resolved from the project's domain. It does not remove
+project domains, DNS records, proxy routes, or deployment policy. Direction
+(pending): zone resolution from instance-owned domains.
 
 Removal is destructive. Interactive use asks for confirmation unless `--force`
 is supplied. Non-interactive use, including `--json`, requires `--force`.
@@ -48,8 +48,7 @@ output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The resolved concrete instance exists and has an instance-owned domain in a
-  Cloudflare zone.
+- The named project exists and has a Cloudflare-backed `Project.domain`.
 - A Cloudflare cache rule managed by Orbit exists for that zone.
 
 ## Related Commands
