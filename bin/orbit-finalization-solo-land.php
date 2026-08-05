@@ -41,15 +41,9 @@ function solo_cli_lookup(string $soloCli, array $args, string $cwd, ?string $app
     $result = solo_run_process(array_merge($command, $args), $cwd);
     $stdout = trim($result['stdout']);
     $stderr = trim($result['stderr']);
-    $decoded = null;
-
-    if ($stdout !== '') {
-        $decoded = json_decode($stdout, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $decoded = null;
-        }
-    }
+    // Live Solo CLI emits error envelopes on stderr; the test fake uses stdout.
+    // Prefer stdout JSON, then fall back to stderr so not_found stays idempotent.
+    $decoded = solo_decode_json_object($stdout) ?? solo_decode_json_object($stderr);
 
     if ($result['exit_code'] !== 0) {
         if (is_array($decoded) && solo_is_not_found($decoded)) {
@@ -250,6 +244,24 @@ function solo_run_process(array $command, string $cwd): array
         'stdout' => $stdout === false ? '' : $stdout,
         'stderr' => $stderr === false ? '' : $stderr,
     ];
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function solo_decode_json_object(string $payload): ?array
+{
+    if ($payload === '') {
+        return null;
+    }
+
+    $decoded = json_decode($payload, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
+        return null;
+    }
+
+    return $decoded;
 }
 
 /**

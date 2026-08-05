@@ -319,6 +319,7 @@ it('fail-closes Solo lookup errors and only treats explicit not_found as idempot
             'malformed' => land_write_broken_solo_cli($repo, 'malformed'),
             'error' => land_write_broken_solo_cli($repo, 'error'),
             'not_found' => $solo['cli'],
+            'not_found_stderr' => land_write_broken_solo_cli($repo, 'not_found_stderr'),
             default => throw new RuntimeException($mode),
         };
 
@@ -341,6 +342,8 @@ it('fail-closes Solo lookup errors and only treats explicit not_found as idempot
     'malformed json' => ['malformed', 2, '/malformed|failed|blocked/'],
     'non-not-found error' => ['error', 2, '/failed|blocked|permission/'],
     'explicit not_found' => ['not_found', 0, '/finalization: pass/'],
+    // Live Solo CLI emits not_found envelopes on stderr with empty stdout.
+    'explicit not_found on stderr' => ['not_found_stderr', 0, '/finalization: pass/'],
 ]);
 
 it('strictly classifies Solo destructive commands', function (string $commandSuffix, string $needle): void {
@@ -1268,6 +1271,9 @@ function land_write_broken_solo_cli(string $repo, string $mode): string
         'malformed' => "#!/bin/sh\necho 'not-json'\nexit 0\n",
         'error'
             => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"permission_denied\",\"message\":\"permission denied\"}}'\nexit 1\n",
+        // Mirror live Solo CLI: error JSON on stderr, empty stdout, non-zero exit.
+        'not_found_stderr'
+            => "#!/bin/sh\necho '{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"Project 73 not found\",\"command\":\"projects get\"}}' >&2\nexit 65\n",
         default => throw new RuntimeException($mode),
     };
     file_put_contents($path, $body);
