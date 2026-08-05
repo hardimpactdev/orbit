@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T10:41:31+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-release-evidence-archive/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-124129-codex-loop-release-evidence-archive",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T103248Z-3735218588d0.json",
+        "release-evidence/2026-08-05-loop-release-evidence-archive/fable-review.txt"
+    ],
+    "entry_digests": {
+        "loop.md": "7d28d359c235963f2fc2265a0b2882f546cd4c2349d4212cfe6497070044549b",
+        "quality-gates/quality-check-2026-08-05T103248Z-3735218588d0.json": "fa7e001d3d4c111b26ef8bacf0db16d6a215faa6fd753b01b4877429a94d9836",
+        "release-evidence/2026-08-05-loop-release-evidence-archive/fable-review.txt": "6fab9cce0eafdbd51b6a2b8edb87cf271c3de478fadbe7c03ec5e08f0b5018b3"
+    },
+    "slug": "codex-loop-release-evidence-archive",
+    "requested_slug": "codex-loop-release-evidence-archive",
+    "compatible_slugs": [
+        "codex-loop-release-evidence-archive"
+    ],
+    "branch": "codex/loop-release-evidence-archive",
+    "candidate_commit": "19a81e8acbe9bf6f2d446c90d220d583fab0e7a7",
+    "accepted_feature_tip": "19a81e8acbe9bf6f2d446c90d220d583fab0e7a7",
+    "accepted_main_tip": "4b2b7105952fa1ef1641339cc26a86c91db5a08f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
