@@ -17,7 +17,11 @@ final readonly class LocalProcessLogsAction
 {
     private const int OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS = 1_000_000;
 
-    private const int INITIAL_SUBSCRIBER_GRACE_MICROSECONDS = 1_000_000;
+    /**
+     * Operator WS connect + channel auth + HTTP lease can exceed one second on
+     * a real topology; keep the target tail open until that lands.
+     */
+    private const int INITIAL_SUBSCRIBER_GRACE_MICROSECONDS = 10_000_000;
 
     private const int OPERATION_STREAM_POLL_SLEEP_MICROSECONDS = 100_000;
 
