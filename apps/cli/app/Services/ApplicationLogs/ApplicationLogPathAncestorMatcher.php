@@ -63,9 +63,19 @@ final readonly class ApplicationLogPathAncestorMatcher
         $count = count($matches);
 
         if ($count === 1) {
+            $selector = array_first($matches);
+
+            if (! is_string($selector) || $selector === '') {
+                return [
+                    'ok' => false,
+                    'reason' => 'cwd_target_missing',
+                    'count' => 0,
+                ];
+            }
+
             return [
                 'ok' => true,
-                'selector' => array_first($matches),
+                'selector' => $selector,
             ];
         }
 
