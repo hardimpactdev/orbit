@@ -80,7 +80,7 @@ These rules govern all workspace family commands.
   instance. Adding, listing, removing, and ordering those definitions are explicit
   workspace commands, not doctor repair actions.
 - Workspace setup and teardown step runs are durable workspace history.
-  `workspace:history` and `workspace:log` read that history; doctor verifies
+  `workspace:history` and `workspace:run:log` read that history; doctor verifies
   current workspace reality.
 - Workspace env values are non-secret gateway configuration scoped to one
   workspace. Rendering merges Orbit-derived workspace URL/Vite values,
@@ -122,7 +122,7 @@ application live in
 [tech-stack.md#gateway-to-node](../../tech-stack.md#gateway-to-node).
 
 Workspace registry-only reads — `workspace:show`, `workspace:history`,
-`workspace:list`, and `workspace:log` for stored history — do not require a
+`workspace:list`, and `workspace:run:log` for stored history — do not require a
 live process manager. `workspace:new`, `workspace:setup`, and
 `workspace:remove` require a live process manager on the owning node
 when they create, update, remove, or verify inherited runtime units. Systemd is
@@ -245,7 +245,7 @@ These commands create, inspect, and tear down workspaces themselves.
 4. [`orbit workspace:show [name]`](4_workspace-show/workspace-show.md)
 5. [`orbit workspace:remove [name]`](5_workspace-remove/workspace-remove.md)
 6. [`orbit workspace:history [name]`](6_workspace-history/workspace-history.md)
-7. [`orbit workspace:log [run]`](7_workspace-log/workspace-log.md)
+7. [`orbit workspace:run:log [run]`](7_workspace-run-log/workspace-run-log.md)
 
 ### Step management commands
 

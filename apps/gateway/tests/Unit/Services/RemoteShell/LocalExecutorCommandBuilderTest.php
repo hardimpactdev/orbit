@@ -484,6 +484,12 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             'internal:deploy:run-step' => ['app-prod'],
             'internal:process-docker-container' => ['app-dev', 'app-prod', 'database', 's3', 'analytics'],
             'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics', 'analytics'],
+            'internal:application-log' => [
+                'gateway',
+                'app-dev',
+                'app-prod',
+                'agent',
+            ],
             'internal:process-logs' => [
                 'gateway',
                 'vpn',

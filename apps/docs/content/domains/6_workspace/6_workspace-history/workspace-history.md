@@ -63,7 +63,7 @@ A machine-readable result containing a `runs` array.
 
 ## Related
 
-- [`orbit workspace:log [run]`](../7_workspace-log/workspace-log.md): Inspect logs for a specific run.
+- [`orbit workspace:run:log [run]`](../7_workspace-run-log/workspace-run-log.md): Inspect logs for a specific run.
 - [`orbit workspace:show [name]`](../4_workspace-show/workspace-show.md): View current workspace registry details.
 - [`doctor --family=workspace`](../workspace-doctor.md): Verify current workspace reality.
 

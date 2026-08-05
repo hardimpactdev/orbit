@@ -15,7 +15,7 @@ final class ProcessLogsCommand extends GatewayCommand
     use ResolvesHostContext;
 
     #[\Override]
-    protected $signature = 'process:logs
+    protected $signature = 'process:log
         {name? : Process name}
         {--node= : Owning node name}
         {--instance= : Instance selector}

@@ -40,7 +40,7 @@ Use this command to stop one process or all processes for a resolved node, insta
 
 - [`process:start`](../5_process-start/process-start.md)
 - [`process:restart`](../7_process-restart/process-restart.md)
-- [`process:logs`](../8_process-logs/process-logs.md)
+- [`process:log`](../8_process-log/process-log.md)
 
 ***
 

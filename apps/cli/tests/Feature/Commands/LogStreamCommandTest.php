@@ -35,7 +35,7 @@ describe('LogStream commands', function (): void {
             ]), 202),
         ]);
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--workspace' => 'feature-docs',
@@ -66,7 +66,7 @@ describe('LogStream commands', function (): void {
     it('rejects JSON process follow output before opening a stream', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--follow' => true,

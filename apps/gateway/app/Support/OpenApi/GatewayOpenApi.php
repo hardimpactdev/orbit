@@ -9,6 +9,7 @@ use App\Enums\ProcessEventType;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\Parameter;
+use Dedoc\Scramble\Support\Generator\Path;
 use Dedoc\Scramble\Support\Generator\RequestBodyObject;
 use Dedoc\Scramble\Support\Generator\Response;
 use Dedoc\Scramble\Support\Generator\Schema;
@@ -36,6 +37,10 @@ final class GatewayOpenApi
         'post tools/{tool}/reload' => 'toolReload',
         'get tools/{tool}/logs' => 'toolLogs',
         'get processes/stream' => 'processesStream',
+        'get instances/{instance}/log' => 'instanceApplicationLog',
+        'post instances/{instance}/log-stream' => 'instanceApplicationLogStreamStart',
+        'get workspaces/{workspace}/log' => 'workspaceApplicationLog',
+        'post workspaces/{workspace}/log-stream' => 'workspaceApplicationLogStreamStart',
     ];
 
     public static function register(): void
@@ -49,6 +54,7 @@ final class GatewayOpenApi
             self::addSecuritySchemes($openApi);
             self::addEnvelopeSchemas($openApi);
             self::documentProcessContracts($openApi);
+            self::documentApplicationLogContracts($openApi);
             self::stabilizeOperationIds($openApi);
         });
     }
@@ -479,6 +485,184 @@ final class GatewayOpenApi
         return $response;
     }
 
+    private static function documentApplicationLogContracts(OpenApi $openApi): void
+    {
+        foreach ($openApi->paths as $path) {
+            if ($path->path === 'instances/{instance}/log') {
+                self::documentInstanceApplicationLogGet($path);
+            }
+
+            if ($path->path === 'instances/{instance}/log-stream') {
+                self::documentInstanceApplicationLogStream($path);
+            }
+
+            if ($path->path === 'workspaces/{workspace}/log') {
+                self::documentWorkspaceApplicationLogGet($path);
+            }
+
+            if ($path->path === 'workspaces/{workspace}/log-stream') {
+                self::documentWorkspaceApplicationLogStream($path);
+            }
+        }
+    }
+
+    private static function documentInstanceApplicationLogGet(Path $path): void
+    {
+        foreach ($path->operations as $method => $operation) {
+            if ($method === 'options') {
+                unset($path->operations[$method]);
+
+                continue;
+            }
+
+            if ($method !== 'get') {
+                continue;
+            }
+
+            $operation->addParameters([
+                self::integerQueryParameter(
+                    'lines',
+                    'Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).',
+                ),
+                self::stringQueryParameter(
+                    'node',
+                    'Optional serving-node placement constraint. When set, must equal the resolved instance serving node.',
+                ),
+            ]);
+            $operation->description(
+                'Read the fixed Laravel application log for one Instance (storage/logs/laravel.log under the authorized application root).',
+            );
+        }
+    }
+
+    private static function documentInstanceApplicationLogStream(Path $path): void
+    {
+        foreach ($path->operations as $method => $operation) {
+            if ($method === 'options') {
+                unset($path->operations[$method]);
+
+                continue;
+            }
+
+            if ($method !== 'post') {
+                continue;
+            }
+
+            $requestBody = new RequestBodyObject;
+            $requestBody->description(
+                'Bounded history size and optional serving-node constraint for the follow stream.',
+            );
+            $requestBody->setContent(
+                'application/json',
+                self::schemaFrom(self::instanceApplicationLogStreamRequestBody()),
+            );
+            $operation->addRequestBodyObject($requestBody);
+            $operation->description(
+                'Start an operation stream that follows the fixed Laravel application log for one Instance.',
+            );
+        }
+    }
+
+    private static function documentWorkspaceApplicationLogGet(Path $path): void
+    {
+        foreach ($path->operations as $method => $operation) {
+            if ($method === 'options') {
+                unset($path->operations[$method]);
+
+                continue;
+            }
+
+            if ($method !== 'get') {
+                continue;
+            }
+
+            $operation->addParameters([
+                self::stringQueryParameter(
+                    'instance',
+                    'Required owning instance selector (app.instance) for the workspace log target.',
+                    required: true,
+                ),
+                self::integerQueryParameter(
+                    'lines',
+                    'Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).',
+                ),
+                self::stringQueryParameter(
+                    'node',
+                    'Optional serving-node placement constraint. When set, must equal the resolved workspace serving node.',
+                ),
+            ]);
+            $operation->description(
+                'Read the fixed Laravel application log for one Workspace (storage/logs/laravel.log under the workspace path).',
+            );
+        }
+    }
+
+    private static function documentWorkspaceApplicationLogStream(Path $path): void
+    {
+        foreach ($path->operations as $method => $operation) {
+            if ($method === 'options') {
+                unset($path->operations[$method]);
+
+                continue;
+            }
+
+            if ($method !== 'post') {
+                continue;
+            }
+
+            $requestBody = new RequestBodyObject;
+            $requestBody->description(
+                'Required owning instance selector, optional bounded history size, and optional serving-node constraint for the follow stream.',
+            );
+            $requestBody->setContent(
+                'application/json',
+                self::schemaFrom(self::workspaceApplicationLogStreamRequestBody()),
+            );
+            $operation->addRequestBodyObject($requestBody);
+            $operation->description(
+                'Start an operation stream that follows the fixed Laravel application log for one Workspace.',
+            );
+        }
+    }
+
+    private static function instanceApplicationLogStreamRequestBody(): ObjectType
+    {
+        $body = new ObjectType;
+        $lines = new IntegerType;
+        $lines->setDescription(
+            'Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX).',
+        );
+        $node = new StringType;
+        $node->setDescription(
+            'Optional serving-node placement constraint. When set, must equal the resolved instance serving node.',
+        );
+        $body->addProperty('lines', $lines);
+        $body->addProperty('node', $node);
+
+        return $body;
+    }
+
+    private static function workspaceApplicationLogStreamRequestBody(): ObjectType
+    {
+        $body = new ObjectType;
+        $instance = new StringType;
+        $instance->setDescription('Required owning instance selector (app.instance) for the workspace log target.');
+        $lines = new IntegerType;
+        $lines->setDescription(
+            'Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX).',
+        );
+        $node = new StringType;
+        $node->setDescription(
+            'Optional serving-node placement constraint. When set, must equal the resolved workspace serving node.',
+        );
+        $body->addProperty('instance', $instance);
+        $body->addProperty('lines', $lines);
+        $body->addProperty('node', $node);
+        $body->setRequired(['instance']);
+
+        return $body;
+    }
+
     private static function stringQueryParameter(
         string $name,
         string $description,
@@ -488,6 +672,21 @@ final class GatewayOpenApi
         $parameter = Parameter::make($name, 'query');
 
         $parameter->setSchema(self::schemaFrom(new StringType));
+        $parameter->description($description);
+        $parameter->required($required);
+
+        return $parameter;
+    }
+
+    private static function integerQueryParameter(
+        string $name,
+        string $description,
+        bool $required = false,
+    ): Parameter {
+        /** @var Parameter $parameter */
+        $parameter = Parameter::make($name, 'query');
+
+        $parameter->setSchema(self::schemaFrom(new IntegerType));
         $parameter->description($description);
         $parameter->required($required);
 

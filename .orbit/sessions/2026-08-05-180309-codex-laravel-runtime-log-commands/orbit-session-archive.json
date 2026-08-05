@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T16:03:09+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-laravel-runtime-log-commands/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-180309-codex-laravel-runtime-log-commands",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/laravel-runtime-log-commands-dev-36c3ac/RECEIPT.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T155459Z-7c6041b66b4f.json"
+    ],
+    "entry_digests": {
+        "evidence/laravel-runtime-log-commands-dev-36c3ac/RECEIPT.json": "2628ca0d601c701179c239492f5ac3efcc1aba765fff5cb6739393376118188e",
+        "loop.md": "a5a8730b1553771eae461078ad22eaad8475d36655302ece809481df3010badd",
+        "quality-gates/quality-check-2026-08-05T155459Z-7c6041b66b4f.json": "9a72a5693500f0e9d915bc71e59257d6ea118ea4a134faabd5bd52d1c6359bb1"
+    },
+    "slug": "codex-laravel-runtime-log-commands",
+    "requested_slug": "codex-laravel-runtime-log-commands",
+    "compatible_slugs": [
+        "codex-laravel-runtime-log-commands"
+    ],
+    "branch": "codex/laravel-runtime-log-commands",
+    "candidate_commit": "a130a843b989e8746e90a7c2e52ec411c80de6b6",
+    "accepted_feature_tip": "a130a843b989e8746e90a7c2e52ec411c80de6b6",
+    "accepted_main_tip": "117d4735108f16fe541930d41f2ffc11b2d82ae7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

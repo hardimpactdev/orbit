@@ -175,7 +175,7 @@ as `127.0.0.1` from another container.
 Orbit does not accept arbitrary IP addresses, interface names, the node SSH
 host, node name, or Docker network aliases as publish selectors.
 
-`process:list` and bounded `process:logs` expose safe connection metadata for
+`process:list` and bounded `process:log` expose safe connection metadata for
 managed services: service identifier, version family, concrete version, service
 runtime unit name, normalized binds, primary endpoint, every selected endpoint
 bind, and credential field names. They do not expose credential values.
@@ -227,7 +227,7 @@ branch on the node-role column locally.
 
 - `process:list` requires `process:read` on a grant to the resolved node or app
   instance serving node.
-- `process:logs` requires `process:logs`, which is covered by `process:read`.
+- `process:log` requires `process:log`, which is covered by `process:read`.
 - Runtime-lifecycle commands (`process:start`, `process:stop`,
   `process:restart`) require their matching `process:start`, `process:stop`,
   or `process:restart` permission on a grant to that node. Self-targeting
@@ -311,7 +311,7 @@ Each command links to its public documentation and technical contract.
 5. [`orbit process:start [name]`](5_process-start/process-start.md)
 6. [`orbit process:stop [name]`](6_process-stop/process-stop.md)
 7. [`orbit process:restart [name]`](7_process-restart/process-restart.md)
-8. [`orbit process:logs [name]`](8_process-logs/process-logs.md)
+8. [`orbit process:log [name]`](8_process-log/process-log.md)
 
 ## Doctor
 

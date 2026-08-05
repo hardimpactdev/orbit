@@ -40,7 +40,7 @@ Use this command to start one process or all processes for a resolved node, inst
 
 - [`process:stop`](../6_process-stop/process-stop.md)
 - [`process:restart`](../7_process-restart/process-restart.md)
-- [`process:logs`](../8_process-logs/process-logs.md)
+- [`process:log`](../8_process-log/process-log.md)
 
 ***
 

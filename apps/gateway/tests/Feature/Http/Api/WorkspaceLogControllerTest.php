@@ -38,7 +38,7 @@ function grantWorkspaceLogAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['workspace:log'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode(['workspace:run:log'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
@@ -194,7 +194,7 @@ describe('WorkspaceLogController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
-            ->assertJsonPath('error.meta.missing_permission', 'workspace:log');
+            ->assertJsonPath('error.meta.missing_permission', 'workspace:run:log');
     });
 });
 

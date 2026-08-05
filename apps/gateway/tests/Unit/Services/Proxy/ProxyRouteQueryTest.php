@@ -340,6 +340,65 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('enriches workspace route entities with canonical parent app.instance from the FK workspace only', function (): void {
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $development = Instance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/srv/apps/docs',
+            ),
+        ]);
+        $staging = Instance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'staging',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/srv/apps/docs-staging',
+            ),
+        ]);
+        $workspaceDevelopment = Workspace::factory()->create([
+            'name' => 'feature-dev',
+            'app_id' => $app->id,
+            'instance_id' => $development->id,
+        ]);
+        $workspaceStaging = Workspace::factory()->create([
+            'name' => 'feature-staging',
+            'app_id' => $app->id,
+            'instance_id' => $staging->id,
+        ]);
+
+        $routeDevelopment = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspaceDevelopment->id,
+            'domain' => 'feature.docs.development.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $routeStaging = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspaceStaging->id,
+            'domain' => 'feature.docs.staging.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $query = app(ProxyRouteQuery::class);
+
+        expect($query->toRouteEntity($routeDevelopment->fresh())['instance'])
+            ->toBe('docs.development')
+            ->and($query->toRouteEntity($routeStaging->fresh())['instance'])
+            ->toBe('docs.staging')
+            ->and($query->toRouteEntity($routeDevelopment->fresh())['owner'])
+            ->toMatchArray(['type' => 'workspace', 'name' => 'feature-dev']);
+    });
+
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

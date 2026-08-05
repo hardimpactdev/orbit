@@ -1286,7 +1286,7 @@ final readonly class E2EGatewayApi
 
                 function run_workspace_log(string $run): array
                 {
-                    return run_orbit_command('orbit workspace:log '.escapeshellarg($run).' --json');
+                    return run_orbit_command('orbit workspace:run:log '.escapeshellarg($run).' --json');
                 }
 
                 function run_workspace_new(array $input): array

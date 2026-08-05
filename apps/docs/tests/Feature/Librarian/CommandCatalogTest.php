@@ -260,7 +260,7 @@ it('maps rawurlencode gateway endpoint expressions to truthful P4 metadata', fun
         ],
     ]);
 
-    expect($catalog['commands']['process:logs']['p4_mapping'])->toMatchArray([
+    expect($catalog['commands']['process:log']['p4_mapping'])->toMatchArray([
         'sdk_request' => [
             'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Processes\\ShowProcessLogsRequest',
             'path' => 'packages/sdk/src/Requests/Processes/ShowProcessLogsRequest.php',
@@ -274,7 +274,7 @@ it('maps rawurlencode gateway endpoint expressions to truthful P4 metadata', fun
             'path' => 'apps/gateway/app/Http/Controllers/Api/ProcessLogController.php',
             'action' => '__invoke',
         ],
-        'authorization_permission' => ['process:logs'],
+        'authorization_permission' => ['process:log'],
         'response_dto' => [
             'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Processes\\ProcessLogsResponse',
             'path' => 'packages/sdk/src/Responses/Processes/ProcessLogsResponse.php',
@@ -695,7 +695,7 @@ describe('verification hints', function (): void {
 
     it('derives command-safe pest wrappers for gateway linked tests', function (): void {
         $catalog = app(CommandCatalogBuilder::class)->build();
-        $hints = $catalog['commands']['process:logs']['verification_hints'];
+        $hints = $catalog['commands']['process:log']['verification_hints'];
 
         $gatewayHint = collect($hints)->firstWhere(
             'repo_test_path',

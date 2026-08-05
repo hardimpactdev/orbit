@@ -276,22 +276,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/codex/apps/{project}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["codexApp.add"];
-        delete: operations["codexApp.remove"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/dashboard/runtime-inventory": {
         parameters: {
             query?: never;
@@ -607,6 +591,40 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["instance.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the fixed Laravel application log for one Instance (storage/logs/laravel.log under the authorized application root). */
+        get: operations["instanceApplicationLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Start an operation stream that follows the fixed Laravel application log for one Instance. */
+        post: operations["instanceApplicationLogStreamStart"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1077,22 +1095,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/solo/projects": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["soloProxy.projects"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/tools/{tool}/credentials": {
         parameters: {
             query?: never;
@@ -1375,6 +1377,40 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["vpnWebUiChangePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the fixed Laravel application log for one Workspace (storage/logs/laravel.log under the workspace path). */
+        get: operations["workspaceApplicationLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace}/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Start an operation stream that follows the fixed Laravel application log for one Workspace. */
+        post: operations["workspaceApplicationLogStreamStart"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2926,48 +2962,6 @@ export interface operations {
             };
         };
     };
-    "codexApp.add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    "codexApp.remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
     dashboardRuntimeInventory: {
         parameters: {
             query?: never;
@@ -3994,6 +3988,63 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    instanceApplicationLog: {
+        parameters: {
+            query?: {
+                /** @description Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                lines?: number;
+                /** @description Optional serving-node placement constraint. When set, must equal the resolved instance serving node. */
+                node?: string;
+            };
+            header?: never;
+            path: {
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    instanceApplicationLogStreamStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance: string;
+            };
+            cookie?: never;
+        };
+        /** @description Bounded history size and optional serving-node constraint for the follow stream. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                    lines?: number;
+                    /** @description Optional serving-node placement constraint. When set, must equal the resolved instance serving node. */
+                    node?: string;
+                };
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -5298,7 +5349,7 @@ export interface operations {
                                 /** @enum {string} */
                                 reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
                                 /** @enum {string|null} */
-                                missing_permission: "process:logs" | null;
+                                missing_permission: "process:log" | null;
                                 serving_node: string;
                             };
                         };
@@ -5635,6 +5686,7 @@ export interface operations {
                                     };
                                     /** @constant */
                                     status: "removed";
+                                    instance: string | null;
                                     /** @constant */
                                     placement: "ingress";
                                     router: {
@@ -6200,25 +6252,6 @@ export interface operations {
                             data: string;
                         };
                     };
-                };
-            };
-        };
-    };
-    "soloProxy.projects": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -7042,6 +7075,67 @@ export interface operations {
             };
         };
     };
+    workspaceApplicationLog: {
+        parameters: {
+            query: {
+                /** @description Required owning instance selector (app.instance) for the workspace log target. */
+                instance: string;
+                /** @description Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                lines?: number;
+                /** @description Optional serving-node placement constraint. When set, must equal the resolved workspace serving node. */
+                node?: string;
+            };
+            header?: never;
+            path: {
+                workspace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    workspaceApplicationLogStreamStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: string;
+            };
+            cookie?: never;
+        };
+        /** @description Required owning instance selector, optional bounded history size, and optional serving-node constraint for the follow stream. */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Required owning instance selector (app.instance) for the workspace log target. */
+                    instance: string;
+                    /** @description Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX). */
+                    lines?: number;
+                    /** @description Optional serving-node placement constraint. When set, must equal the resolved workspace serving node. */
+                    node?: string;
+                };
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     "workspaceHistory.fromPath": {
         parameters: {
             query?: never;
@@ -7408,6 +7502,12 @@ export interface operations {
                                 name: string;
                                 instances: string[];
                             };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
                         };
                     };
                 };
@@ -7847,6 +7947,12 @@ export interface operations {
                                 field: "path";
                             };
                         };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
+                        };
                     };
                 };
             };
@@ -7961,6 +8067,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             code: string;
                             message: string;
@@ -8251,6 +8365,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             code: string;
                             message: string;

@@ -41,6 +41,7 @@ enum InternalCommand: string
     case ProcessDockerContainer = 'internal:process-docker-container';
     case ProcessDockerSwarmService = 'internal:process-docker-swarm-service';
     case ProcessLaunchdService = 'internal:process-launchd-service';
+    case ApplicationLog = 'internal:application-log';
     case ProcessLogs = 'internal:process-logs';
     case ProcessSystemdService = 'internal:process-systemd-service';
     case RuntimeBackendProbe = 'internal:runtime-backend:probe';

@@ -20,20 +20,22 @@ abstract class GatewayCommand extends Command
 
     /**
      * @param  array<string, mixed>  $query
+     * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    protected function gatewayGet(string $path, array $query = []): array
+    protected function gatewayGet(string $path, array $query = [], array $headers = []): array
     {
-        return $this->gateway()->get($path, $query);
+        return $this->gateway()->get($path, $query, $headers);
     }
 
     /**
      * @param  array<string, mixed>  $payload
+     * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    protected function gatewayPost(string $path, array $payload = []): array
+    protected function gatewayPost(string $path, array $payload = [], array $headers = []): array
     {
-        return $this->gateway()->post($path, $payload);
+        return $this->gateway()->post($path, $payload, $headers);
     }
 
     /**

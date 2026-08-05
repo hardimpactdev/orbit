@@ -24,7 +24,7 @@ use Throwable;
  * @mago-expect lint:too-many-methods
  * @mago-expect lint:cyclomatic-complexity
  */
-#[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('process:log', servingNode: ServingNode::AppOwning)]
 final class ProcessLogStreamStartController implements Loggable
 {
     private ?Model $activitySubject = null;
@@ -58,12 +58,12 @@ final class ProcessLogStreamStartController implements Loggable
             );
         }
 
-        $authorization = $this->authorizer->authorize($caller, $context->node, 'process:logs');
+        $authorization = $this->authorizer->authorize($caller, $context->node, 'process:log');
 
         if (! $authorization->allowed) {
             return $this->error(
                 'authorization_failed',
-                "This node is not authorized for 'process:logs' on '{$context->node->name}'.",
+                "This node is not authorized for 'process:log' on '{$context->node->name}'.",
                 [
                     'reason' => $authorization->reason,
                     'missing_permission' => $authorization->missingPermission,

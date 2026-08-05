@@ -341,7 +341,7 @@ Long-running `start()` and `startInternal()` dispatch is unsupported for
 `RemoteLocalExecutor` until async audit semantics are designed. Local-executor
 work must use `runInternal()` for completion-based dispatch and result
 recording, or `streamInternal()` for an approved raw stream such as
-`process:logs --follow`. Other asynchronous workflows should route through a
+`process:log --follow`. Other asynchronous workflows should route through a
 lane with its own audit contract.
 
 The `RemoteLocalExecutor::run()` compatibility adapter is reserved for

@@ -33,7 +33,7 @@ function workspaceLogSeed(E2ETopologyHarness $topology): array
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
-            'permissions' => json_encode(['workspace:log'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['workspace:run:log'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
@@ -138,7 +138,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
         $completedResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:log %d --json',
+                'cd %s && orbit workspace:run:log %d --json',
                 escapeshellarg($topology->checkout('operator')),
                 $runIds['completed'],
             ),
@@ -147,7 +147,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
         $failedResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:log %d --json',
+                'cd %s && orbit workspace:run:log %d --json',
                 escapeshellarg($topology->checkout('operator')),
                 $runIds['failed'],
             ),

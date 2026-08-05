@@ -3422,64 +3422,6 @@
         }
       }
     },
-    "/codex/apps/{project}": {
-      "post": {
-        "operationId": "codexApp.add",
-        "tags": [
-          "CodexApp"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "codexApp.remove",
-        "tags": [
-          "CodexApp"
-        ],
-        "parameters": [
-          {
-            "name": "project",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/dashboard/runtime-inventory": {
       "get": {
         "operationId": "dashboardRuntimeInventory",
@@ -5895,6 +5837,104 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/instances/{instance}/log": {
+      "get": {
+        "operationId": "instanceApplicationLog",
+        "description": "Read the fixed Laravel application log for one Instance (storage/logs/laravel.log under the authorized application root).",
+        "tags": [
+          "InstanceApplicationLog"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "description": "Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "description": "Optional serving-node placement constraint. When set, must equal the resolved instance serving node.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/instances/{instance}/log-stream": {
+      "post": {
+        "operationId": "instanceApplicationLogStreamStart",
+        "description": "Start an operation stream that follows the fixed Laravel application log for one Instance.",
+        "tags": [
+          "InstanceApplicationLogStreamStart"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Bounded history size and optional serving-node constraint for the follow stream.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "integer",
+                    "description": "Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX)."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Optional serving-node placement constraint. When set, must equal the resolved instance serving node."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -9521,7 +9561,7 @@
                                     "null"
                                   ],
                                   "enum": [
-                                    "process:logs",
+                                    "process:log",
                                     null
                                   ]
                                 },
@@ -10464,6 +10504,12 @@
                                       "type": "string",
                                       "const": "removed"
                                     },
+                                    "instance": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
                                     "placement": {
                                       "type": "string",
                                       "const": "ingress"
@@ -10521,6 +10567,7 @@
                                     "redirect_code",
                                     "tls",
                                     "status",
+                                    "instance",
                                     "placement",
                                     "router"
                                   ]
@@ -11798,13 +11845,9 @@
                                           "type": "string"
                                         },
                                         "node": {
-                                          "anyOf": [
-                                            {
-                                              "type": "string"
-                                            },
-                                            {
-                                              "type": "null"
-                                            }
+                                          "type": [
+                                            "string",
+                                            "null"
                                           ]
                                         }
                                       },
@@ -12252,26 +12295,6 @@
                   "required": [
                     "error"
                   ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/solo/projects": {
-      "get": {
-        "operationId": "soloProxy.projects",
-        "tags": [
-          "SoloProxy"
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
                 }
               }
             }
@@ -14311,6 +14334,120 @@
         }
       }
     },
+    "/workspaces/{workspace}/log": {
+      "get": {
+        "operationId": "workspaceApplicationLog",
+        "description": "Read the fixed Laravel application log for one Workspace (storage/logs/laravel.log under the workspace path).",
+        "tags": [
+          "WorkspaceApplicationLog"
+        ],
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instance",
+            "in": "query",
+            "required": true,
+            "description": "Required owning instance selector (app.instance) for the workspace log target.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lines",
+            "in": "query",
+            "description": "Maximum trailing log lines to return. Defaults to 100. Positive integer only (up to PHP_INT_MAX).",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "description": "Optional serving-node placement constraint. When set, must equal the resolved workspace serving node.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspace}/log-stream": {
+      "post": {
+        "operationId": "workspaceApplicationLogStreamStart",
+        "description": "Start an operation stream that follows the fixed Laravel application log for one Workspace.",
+        "tags": [
+          "WorkspaceApplicationLogStreamStart"
+        ],
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Required owning instance selector, optional bounded history size, and optional serving-node constraint for the follow stream.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance": {
+                    "type": "string",
+                    "description": "Required owning instance selector (app.instance) for the workspace log target."
+                  },
+                  "lines": {
+                    "type": "integer",
+                    "description": "Maximum trailing history lines emitted before follow. Defaults to 100. Positive integer only (up to PHP_INT_MAX)."
+                  },
+                  "node": {
+                    "type": "string",
+                    "description": "Optional serving-node placement constraint. When set, must equal the resolved workspace serving node."
+                  }
+                },
+                "required": [
+                  "instance"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/history/resolve-by-path": {
       "get": {
         "operationId": "workspaceHistory.fromPath",
@@ -15876,46 +16013,78 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "workspace.ambiguous_name"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
+                        "error": {
                           "type": "object",
                           "properties": {
-                            "name": {
+                            "code": {
+                              "type": "string",
+                              "const": "workspace.ambiguous_name"
+                            },
+                            "message": {
                               "type": "string"
                             },
-                            "instances": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
+                            "meta": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "instances": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "instances"
+                              ]
                             }
                           },
                           "required": [
-                            "name",
-                            "instances"
+                            "code",
+                            "message",
+                            "meta"
                           ]
                         }
                       },
                       "required": [
-                        "code",
-                        "message",
-                        "meta"
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "meta": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
                       ]
                     }
-                  },
-                  "required": [
-                    "error"
                   ]
                 }
               }
@@ -16693,41 +16862,73 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "validation_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "Workspace path is required."
-                        },
-                        "meta": {
+                        "error": {
                           "type": "object",
                           "properties": {
-                            "field": {
+                            "code": {
                               "type": "string",
-                              "const": "path"
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string",
+                              "const": "Workspace path is required."
+                            },
+                            "meta": {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "type": "string",
+                                  "const": "path"
+                                }
+                              },
+                              "required": [
+                                "field"
+                              ]
                             }
                           },
                           "required": [
-                            "field"
+                            "code",
+                            "message",
+                            "meta"
                           ]
                         }
                       },
                       "required": [
-                        "code",
-                        "message",
-                        "meta"
+                        "error"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "meta": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
                       ]
                     }
-                  },
-                  "required": [
-                    "error"
                   ]
                 }
               }
@@ -17088,6 +17289,36 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string",
+                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
+                            },
+                            "meta": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
                     {
                       "type": "object",
                       "properties": {
@@ -17990,6 +18221,36 @@
               "application/json": {
                 "schema": {
                   "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "const": "validation_failed"
+                            },
+                            "message": {
+                              "type": "string",
+                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
+                            },
+                            "meta": {
+                              "type": "array",
+                              "items": {}
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message",
+                            "meta"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    },
                     {
                       "type": "object",
                       "properties": {
@@ -18992,6 +19253,6 @@
   "x-orbit-sdk-surface": {
     "source": "apps/gateway/openapi-sdk-surface.json",
     "public_schema_only_operations": 23,
-    "removed_internal_or_deferred_operations": 48
+    "removed_internal_or_deferred_operations": 51
   }
 }

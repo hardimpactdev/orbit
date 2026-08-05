@@ -1,0 +1,80 @@
+{
+  "schema": "orbit-retained-topology-receipt/v1",
+  "candidate": "a130a843b989e8746e90a7c2e52ec411c80de6b6",
+  "main_tip": "117d4735108f16fe541930d41f2ffc11b2d82ae7",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-36c3ac",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast",
+    "retained": false,
+    "stopped": true,
+    "release_command": "composer e2e:incus -- --stop --id=dev-36c3ac",
+    "released_at": "2026-08-05T16:01:20Z",
+    "release_result": "success"
+  },
+  "quality": {
+    "artifact": ".orbit/quality-gates/quality-check-2026-08-05T155459Z-7c6041b66b4f.json",
+    "exit_code": 0,
+    "subgates": 45
+  },
+  "sync": {
+    "command": "composer e2e:incus -- --sync --id=dev-36c3ac",
+    "result": "passed",
+    "tip": "a130a843b989e8746e90a7c2e52ec411c80de6b6"
+  },
+  "proofs": {
+    "instance_json": {
+      "result": "passed",
+      "evidence": "merge-tip-bounded.txt"
+    },
+    "workspace_unique_slug_json": {
+      "result": "passed",
+      "evidence": "merge-tip-bounded.txt"
+    },
+    "app_hostname_json": {
+      "result": "passed",
+      "evidence": "merge-tip-bounded.txt"
+    },
+    "wrong_node": {
+      "result": "passed",
+      "evidence": "merge-tip-bounded.txt"
+    },
+    "instance_follow_history_before_marker": {
+      "result": "passed",
+      "marker": "INST-FOLLOW-20260805T155607Z-a130a843",
+      "history_index": 0,
+      "unique_index": 267,
+      "command": "orbit instance:log logdemo.development --follow",
+      "evidence": "merge-instance-follow.txt"
+    },
+    "workspace_follow_history_before_marker": {
+      "result": "passed",
+      "marker": "WS-FOLLOW-20260805T155607Z-a130a843",
+      "history_index": 0,
+      "unique_index": 117,
+      "command": "orbit workspace:log feature-logproof --instance=logdemo.development --follow",
+      "evidence": "merge-workspace-follow.txt"
+    },
+    "workspace_follow_history_before_live": {
+      "result": "passed",
+      "marker": "WS-FOLLOW-20260805T155607Z-a130a843",
+      "history_index": 0,
+      "unique_index": 117,
+      "command": "orbit workspace:log feature-logproof --instance=logdemo.development --follow",
+      "evidence": "merge-workspace-follow.txt"
+    },
+    "follow_history_before_live": {
+      "result": "passed",
+      "marker": "INST-FOLLOW-20260805T155607Z-a130a843",
+      "history_index": 0,
+      "unique_index": 267,
+      "command": "orbit instance:log logdemo.development --follow",
+      "evidence": "merge-instance-follow.txt"
+    }
+  },
+  "observed_at": "2026-08-05T15:56:30Z",
+  "result": "passed"
+}
