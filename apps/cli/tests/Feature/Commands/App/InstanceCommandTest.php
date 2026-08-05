@@ -237,40 +237,17 @@ describe('instance commands', function (): void {
             ->and($output)
             ->toContain('APP')
             ->and($output)
-            ->not->toContain('PROJECT')
-            ->and($output)
-            ->toContain('NAME')
-            ->and($output)
-            ->toContain('DRIVER')
-            ->and($output)
-            ->toContain('MODE')
-            ->and($output)
-            ->toContain('PHP')
-            ->and($output)
-            ->toContain('EXTENSIONS')
-            ->and($output)
-            ->toContain('DEPLOYMENT')
-            ->and($output)
-            ->toContain('production')
-            ->and($output)
-            ->toContain('orbit')
-            ->and($output)
-            ->toContain('worker')
-            ->and($output)
-            ->toContain('8.5')
-            ->and($output)
-            ->toContain('intl, redis')
-            ->and($output)
-            ->toContain('succeeded')
-            ->and($output)
-            ->toContain('cloud')
-            ->and($output)
-            ->toContain('laravel-cloud')
-            ->and($output)
-            ->toContain('classic')
-            ->and($output)
-            ->toContain('—')
-            ->and($output)
+            ->not->toContain('PROJECT')->and($output)->toContain('NAME')->and($output)->toContain('DRIVER')->and(
+                $output,
+            )->toContain('MODE')->and($output)->toContain('PHP')->and($output)->toContain('EXTENSIONS')->and(
+                $output,
+            )->toContain('DEPLOYMENT')->and($output)->toContain('production')->and($output)->toContain('orbit')->and(
+                $output,
+            )->toContain('worker')->and($output)->toContain('8.5')->and($output)->toContain('intl, redis')->and(
+                $output,
+            )->toContain('succeeded')->and($output)->toContain('cloud')->and($output)->toContain('laravel-cloud')->and(
+                $output,
+            )->toContain('classic')->and($output)->toContain('—')->and($output)
             ->not->toContain('instances: [')->and($output)
             ->not->toContain('"runtime"');
     });

@@ -471,7 +471,7 @@ count = 2
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleProject`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleApp`. Saw type `mixed`.'
 count = 2
 
 [[issues]]

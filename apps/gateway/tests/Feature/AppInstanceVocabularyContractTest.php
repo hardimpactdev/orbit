@@ -81,7 +81,8 @@ it('keeps agent-facing Orbit skill references on app and instance vocabulary', f
         ->and(
             str_contains($content, 'App → Instance → Workspace')
             || str_contains($content, 'App -> Instance -> Workspace'),
-        )->toBeTrue()
+        )
+        ->toBeTrue()
         ->and($content)
         ->not->toMatch('/\bproject:(?:new|list|show|remove|read|write)\b/')
         ->not->toContain('/api/projects')
