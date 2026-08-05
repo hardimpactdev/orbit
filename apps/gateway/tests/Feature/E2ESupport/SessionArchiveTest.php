@@ -32,7 +32,7 @@ it('session archive stores a compact receipt by default', function (): void {
         $archive = (string) $summary['archive_dir'];
 
         expect($summary)
-            ->toHaveKey('schema_version', 2)
+            ->toHaveKey('schema_version', 3)
             ->toHaveKey('archive_mode', 'compact')
             ->toHaveKey('copied_entries', ['feedback.jsonl', 'loop.md'])
             ->toHaveKey('entry_digests')
@@ -173,7 +173,9 @@ it('retains only exact cited nested release-evidence regular files in compact ar
         $archive = (string) $summary['archive_dir'];
         $relative = 'release-evidence/2026-08-05-slice/proof.txt';
 
-        expect($summary['copied_entries'])
+        expect($summary)
+            ->toHaveKey('schema_version', 3)
+            ->and($summary['copied_entries'])
             ->toBe([
                 'loop.md',
                 $relative,
@@ -673,8 +675,36 @@ it('session archive never downgrades a refreshed full archive to compact', funct
             ->and($summary)
             ->toHaveKey('mode', 'refreshed')
             ->toHaveKey('archive_mode', 'full')
+            ->toHaveKey('schema_version', 2)
             ->and("{$archive}/agent-sessions/manifest.json")
             ->toBeFile();
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive writes full receipts at schema version 2', function (): void {
+    $workspace = session_archive_workspace('full-schema-version-2');
+
+    try {
+        $paths = session_archive_paths($workspace);
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180015',
+            '--slug=full-schema-version-2',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: true);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+
+        expect($summary)
+            ->toHaveKey('archive_mode', 'full')
+            ->toHaveKey('schema_version', 2);
     } finally {
         remove_session_archive_workspace($workspace);
     }

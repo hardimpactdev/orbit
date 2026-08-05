@@ -2521,6 +2521,103 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
     }
 });
 
+it('allows cleanup for historical schema-v2 compact receipts that cite release-evidence without retaining it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    $proofSource = latest_finalization_artifact_path($worktree, 'docs-lint');
+    $proofEntry = 'quality-gates/'.basename($proofSource);
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            <<<MARKDOWN
+                - Broader proof: `.orbit/{$proofEntry}`
+                - Release evidence: `.orbit/release-evidence/2026-08-04-live-candidate/proof.txt`
+
+                ## Status
+                MARKDOWN,
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    mkdir("{$archive}/quality-gates", recursive: true);
+    copy($proofSource, "{$archive}/{$proofEntry}");
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 2;
+    $receipt['copied_entries'] = ['loop.md', $proofEntry];
+    sort($receipt['copied_entries']);
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+        $proofEntry => hash_file('sha256', "{$archive}/{$proofEntry}"),
+    ];
+    ksort($receipt['entry_digests']);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    expect($receipt['copied_entries'])
+        ->not->toContain('release-evidence/2026-08-04-live-candidate/proof.txt')->and("{$archive}/release-evidence")
+        ->not->toBeDirectory();
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects schema-v3 compact receipts that cite release-evidence without binding it', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n\n## Status",
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['schema_version'] = 3;
+    $receipt['copied_entries'] = ['loop.md'];
+    $receipt['entry_digests'] = [
+        'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+    ];
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('rejects a compact receipt that binds only a truncated proof citation', function (string $citation): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 

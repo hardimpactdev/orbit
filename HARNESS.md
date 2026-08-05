@@ -274,8 +274,11 @@ passes.
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.
 
-Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 compact
-receipt. Historical/full archives remain valid through their legacy manifests.
+Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 or schema-v3
+compact receipt. Schema-v3 newly written receipts may bind exact cited files
+under `.orbit/release-evidence/`; schema-v2 receipts keep pre-v3
+evidence/quality-gates proof roots only so historical archives remain valid.
+Historical/full archives remain valid through their legacy manifests.
 
 ## Trigger-Only Loop Improvement
 

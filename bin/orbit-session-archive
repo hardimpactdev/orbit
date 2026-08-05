@@ -74,7 +74,7 @@ if (array_key_exists('help', $options)) {
           --max-start-distance, --only-ok.
 
         The active <source-orbit-dir>/loop.md is required. When an existing compact
-        schema-v2 archive already has matching content identity (byte-identical
+        schema-v2/v3 archive already has matching content identity (byte-identical
         loop.md and/or matching receipt entry_digests for loop.md), that archive is
         refreshed in place instead of minting a near-duplicate directory — including
         when the caller's slug differs from the archive basename. The existing valid
@@ -82,8 +82,10 @@ if (array_key_exists('help', $options)) {
         fully validated and swapped. Cleanup discoverability for branch-derived
         slugs is preserved via receipt branch/compatible_slugs metadata, not by
         pre-success rename. Compact loop.md files stay byte-stable; the versioned
-        receipt records the archive. Historical loop packets retain their Evidence
-        Links write-back behavior.
+        receipt records the archive. Newly written compact receipts use schema_version
+        3 (release-evidence roots included). Historical schema-v2 receipts remain
+        valid with evidence/quality-gates proof roots only. Historical loop packets
+        retain their Evidence Links write-back behavior.
 
         In --full mode, if no explicit provider process context is supplied, this command scans
         <source-orbit-dir>/loop.md for Solo process ids and passes them as a
@@ -258,7 +260,7 @@ try {
     $compatibleSlugs = archiveCompatibleSlugs($options, $cwd, $archiveDir, $mode);
 
     $summary = [
-        'schema_version' => 2,
+        'schema_version' => $archiveMode === 'compact' ? 3 : 2,
         'generated_at' => gmdate('c'),
         'mode' => $mode,
         'archive_mode' => $archiveMode,
@@ -681,7 +683,7 @@ function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbi
         return ["{$visibleArchiveRoot}/".basename($existingArchiveDir), $archiveRoot, 'refreshed'];
     }
 
-    // Cross-slug reuse: only compact schema-v2 archives, refreshed in place.
+    // Cross-slug reuse: only versioned compact archives, refreshed in place.
     // Never rename here — a failed later validation must leave the original intact.
     $contentMatchDir = newestCompactArchiveMatchingContent($archiveRoot, $activeLoopPath);
 
@@ -800,7 +802,7 @@ function newestArchiveForSlug(string $archiveRoot, string $slug): ?string
 }
 
 /**
- * Newest compact schema-v2 archive under any slug whose content identity matches
+ * Newest versioned compact archive under any slug whose content identity matches
  * the active loop. Compatible slug variants reuse one archive in place; full and
  * legacy archives are never selected for cross-slug reuse.
  */
@@ -825,7 +827,7 @@ function newestCompactArchiveMatchingContent(string $archiveRoot, string $active
 
         $path = $entry->getPathname();
 
-        if (! isCompactSchemaV2Archive($path)) {
+        if (! isVersionedCompactArchive($path)) {
             continue;
         }
 
@@ -877,7 +879,7 @@ function readArchiveReceipt(string $archiveDir): ?array
     return is_array($receipt) ? $receipt : null;
 }
 
-function isCompactSchemaV2Archive(string $archiveDir): bool
+function isVersionedCompactArchive(string $archiveDir): bool
 {
     $receipt = readArchiveReceipt($archiveDir);
 
@@ -885,7 +887,9 @@ function isCompactSchemaV2Archive(string $archiveDir): bool
         return false;
     }
 
-    return ($receipt['schema_version'] ?? null) === 2
+    $schemaVersion = $receipt['schema_version'] ?? null;
+
+    return in_array($schemaVersion, [2, 3], true)
         && ($receipt['archive_mode'] ?? null) === 'compact';
 }
 
