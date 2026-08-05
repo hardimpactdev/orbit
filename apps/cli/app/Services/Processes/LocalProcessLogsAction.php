@@ -10,11 +10,16 @@ use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  * @mago-expect lint:too-many-methods
  */
 final readonly class LocalProcessLogsAction
 {
     private const int OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS = 1_000_000;
+
+    private const int INITIAL_SUBSCRIBER_GRACE_MICROSECONDS = 1_000_000;
+
+    private const int OPERATION_STREAM_POLL_SLEEP_MICROSECONDS = 100_000;
 
     private const int SYSTEMD_FOLLOW_FLAG_OFFSET = 6;
 
@@ -83,12 +88,14 @@ final readonly class LocalProcessLogsAction
      */
     private function streamOperationFrames(LocalProcessLogsPayload $input, callable $onOutput): int
     {
+        $this->awaitInitialSubscriber($input);
+
         $process = new Process($this->command($input));
         $process->setTimeout(null);
         $process->start();
 
         $sequence = 0;
-        $nextStopPollAt = microtime(true) + 1.0;
+        $nextStopPollAt = microtime(true) + (self::OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS / 1_000_000);
 
         while ($process->isRunning()) {
             $this->publishIncrementalOutput($process, $input, $onOutput, $sequence);
@@ -103,12 +110,25 @@ final readonly class LocalProcessLogsAction
                 }
             }
 
-            usleep(100_000);
+            usleep(self::OPERATION_STREAM_POLL_SLEEP_MICROSECONDS);
         }
 
         $this->publishIncrementalOutput($process, $input, $onOutput, $sequence);
 
         return $process->getExitCode() ?? 1;
+    }
+
+    private function awaitInitialSubscriber(LocalProcessLogsPayload $input): void
+    {
+        $deadline = microtime(true) + (self::INITIAL_SUBSCRIBER_GRACE_MICROSECONDS / 1_000_000);
+
+        while (microtime(true) < $deadline) {
+            if (! $this->shouldStop($input)) {
+                return;
+            }
+
+            usleep(self::OPERATION_STREAM_POLL_SLEEP_MICROSECONDS);
+        }
     }
 
     /**

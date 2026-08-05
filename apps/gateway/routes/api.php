@@ -147,11 +147,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             ->name('api.operations.stream.auth');
         Route::post('/operations/{operationRun}/stream/leave', [OperationStreamControlPlaneController::class, 'leave'])
             ->name('api.operations.stream.leave');
-        Route::get('/operations/{operationRun}/stream/stop-decision', [
-            OperationStreamControlPlaneController::class,
-            'stopDecision',
-        ])
-            ->name('api.operations.stream.stopDecision');
     });
 
     Route::middleware(WireGuardIdentity::class)->group(function (): void {
@@ -169,6 +164,12 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             'publish',
         ])
             ->name('api.operations.stream.publish');
+        // Target-agent only: same peer as publish/publisher-credentials. Not grant-gated.
+        Route::get('/operations/{operationRun}/stream/stop-decision', [
+            OperationStreamControlPlaneController::class,
+            'stopDecision',
+        ])
+            ->name('api.operations.stream.stopDecision');
     });
 
     Route::middleware([
