@@ -115,20 +115,33 @@ with unresolved blast-radius gaps.
 
 ## Acceptance Venues
 
-`bin/orbit-feature-acceptance ready` conservatively derives one venue from the
-changed files:
+Immediately after FRAME and before expensive PROVE work, run the read-only
+diff-derived route (no loop packet, no cleanliness/review gates):
+
+```bash
+bin/orbit-feature-acceptance route
+```
+
+It prints stable JSON for the exact candidate HEAD, base tip, merge base,
+changed files, and derived venue. The same derivation feeds `ready` and
+`accept`. Default base is `main`. Fail closed when the route cannot be derived.
+
+`bin/orbit-feature-acceptance ready` uses that same venue from the changed
+files:
 
 | Venue | Use |
 | --- | --- |
-| `automated` | Proof venue for docs, tests, declarative workflow files, and repository tooling under `bin/` |
-| `retained-incus` | CLI commands and server or node runtime behavior |
+| `automated` | Docs, tests, declarative workflow files, repository tooling under `bin/`, and repository-only SDK package surfaces under `packages/sdk/**` and `packages/sdk-typescript/**` |
+| `retained-incus` | Shared core (`packages/core/src/**`), CLI commands, and server or node runtime behavior |
 | `browser` | Gateway or docs web UI |
 | `host-macos` | Native macOS Agent behavior |
 
 Run `ready` only after recording the venue proof. It refuses every
 non-`automated` venue unless `Verification.runtime` is `passed`.
-Repository tooling still requires diff-routed `composer quality-check`; it has
-no retained topology target.
+Repository tooling and SDK package automation still require diff-routed
+`composer quality-check`; they have no retained topology target. Receipts that
+claim a live/production surface must use exact `environment=live`; ordinary
+retained topology proof may keep `environment=dev-fixture`.
 
 Work that still requires human judgment needs explicit user acceptance before
 merge. Other work is accepted by the automated actor after reviewer PASS and
