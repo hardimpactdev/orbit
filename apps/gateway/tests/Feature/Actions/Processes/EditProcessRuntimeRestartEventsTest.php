@@ -5,14 +5,14 @@ declare(strict_types=1);
 use App\Actions\Processes\EditProcess;
 use App\Actions\Processes\EditProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -25,16 +25,16 @@ uses(RefreshDatabase::class);
 function editProcessRestartFixture(string $processName = 'vite'): array
 {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
     $process = Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => $processName,
         ]);
 
@@ -44,7 +44,7 @@ function editProcessRestartFixture(string $processName = 'vite'): array
             app: $app,
             workspace: null,
             owner: $app,
-            appInstance: $instance,
+            instance: $instance,
         ),
         'process' => $process,
     ];
@@ -212,28 +212,28 @@ it('records ordered restart events when EditProcessRuntimeUnits::restart is invo
     );
 
     expect($warnings)
-        ->toBe([])
+        ->toBeEmpty()
         ->and(editRestartEventTypes())
         ->toBe(['restarting', 'started']);
 });
 
 it('scopes multi-context process:update --restart events per runtime unit workspace', function (): void {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
     ]);
     $process = Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
         ]);
     $context = new ProcessOwnerContext(
@@ -241,7 +241,7 @@ it('scopes multi-context process:update --restart events per runtime unit worksp
         app: $app,
         workspace: null,
         owner: $app,
-        appInstance: $instance,
+        instance: $instance,
     );
 
     bindEditProcessRestartShell([
@@ -266,7 +266,7 @@ it('scopes multi-context process:update --restart events per runtime unit worksp
         ->get(['event', 'unit_name', 'workspace_id', 'process_name']);
 
     expect($warnings)
-        ->toBe([])
+        ->toBeEmpty()
         ->and(
             $events
                 ->pluck('event')
@@ -282,14 +282,14 @@ it('scopes multi-context process:update --restart events per runtime unit worksp
         ->toBe(['vite']);
 
     $mainScopeIds = ProcessEvent::query()
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->where('node_id', $node->id)
         ->whereNull('workspace_id')
         ->orderBy('id')
         ->pluck('unit_name')
         ->all();
     $workspaceScopeIds = ProcessEvent::query()
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->where('node_id', $node->id)
         ->where('workspace_id', $workspace->id)
         ->orderBy('id')
@@ -304,13 +304,13 @@ it('scopes multi-context process:update --restart events per runtime unit worksp
     // List status for main (workspace null) must not derive from workspace unit terminals.
     $mainLast = ProcessEvent::query()
         ->where('process_id', $process->id)
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->whereNull('workspace_id')
         ->latest('id')
         ->first();
     $workspaceLast = ProcessEvent::query()
         ->where('process_id', $process->id)
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->where('workspace_id', $workspace->id)
         ->latest('id')
         ->first();

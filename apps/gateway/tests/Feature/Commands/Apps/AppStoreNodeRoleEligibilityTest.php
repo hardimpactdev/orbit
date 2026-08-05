@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -47,7 +47,7 @@ function assignRole(Node $node, string $role, string $status = 'active', array $
 /**
  * @param  list<string>  $permissions
  */
-function grantAppStoreRoleAccess(Node $caller, Node $target, array $permissions = ['project:new']): void
+function grantAppStoreRoleAccess(Node $caller, Node $target, array $permissions = ['app:new']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -73,7 +73,7 @@ describe('AppStore node role eligibility', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => $target->name,
@@ -91,9 +91,9 @@ describe('AppStore node role eligibility', function (): void {
             ->assertJsonPath('success.data.instance.node', $target->name)
             ->assertJsonMissingPath('success.data.app.node');
 
-        expect(Project::query()->where('name', 'docs')->exists())
+        expect(App::query()->where('name', 'docs')->exists())
             ->toBeTrue()
-            ->and(Project::query()->where('name', 'docs')->value('environment'))
+            ->and(App::query()->where('name', 'docs')->value('environment'))
             ->toBe('development');
     });
 
@@ -118,7 +118,7 @@ describe('AppStore node role eligibility', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => $target->name,
@@ -137,7 +137,7 @@ describe('AppStore node role eligibility', function (): void {
             ->assertJsonPath('success.data.instance.url', 'https://docs.example.com')
             ->assertJsonMissingPath('success.data.app.url');
 
-        expect(Project::query()->where('name', 'docs')->value('environment'))->toBe('production');
+        expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
     });
 
     it('rejects a node with only active database role', function (): void {
@@ -148,7 +148,7 @@ describe('AppStore node role eligibility', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => $target->name,
@@ -160,9 +160,9 @@ describe('AppStore node role eligibility', function (): void {
         );
 
         $response->assertStatus(400)
-            ->assertJsonPath('error.code', 'project.ineligible_node');
+            ->assertJsonPath('error.code', 'app.ineligible_node');
 
-        expect(Project::query()->count())->toBe(0);
+        expect(App::query()->count())->toBe(0);
     });
 
     it('rejects nodes where the relevant app host role is not active', function (string $status): void {
@@ -173,7 +173,7 @@ describe('AppStore node role eligibility', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => $target->name,
@@ -185,9 +185,9 @@ describe('AppStore node role eligibility', function (): void {
         );
 
         $response->assertStatus(400)
-            ->assertJsonPath('error.code', 'project.ineligible_node');
+            ->assertJsonPath('error.code', 'app.ineligible_node');
 
-        expect(Project::query()->count())->toBe(0);
+        expect(App::query()->count())->toBe(0);
     })->with(['pending', 'error', 'removing']);
 });
 

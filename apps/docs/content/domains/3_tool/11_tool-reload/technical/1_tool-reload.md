@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reload <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:reload <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `tool-reload` documentation.](../tool-reload.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:reload <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]
+orbit tool:reload <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-reload` must not create projects, instances, workspaces, processes, schedules, proxy
+`tool-reload` must not create apps, instances, workspaces, processes, schedules, proxy
 routes, firewall rules, node identities, or node grants. It does not rewrite
 tool configuration; use `tool:reconfigure` for that contract.
 

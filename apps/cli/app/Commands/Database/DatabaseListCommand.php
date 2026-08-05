@@ -16,7 +16,7 @@ final class DatabaseListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'database:list
-        {--instance= : Filter by instance selector (project.instance)}
+        {--instance= : Filter by instance selector (app.instance)}
         {--workspace= : Filter by workspace selector}
         {--node= : Filter by node selector}
         {--json}';
@@ -97,9 +97,11 @@ final class DatabaseListCommand extends GatewayCommand
                 continue;
             }
 
-            $label = is_string($target['name'] ?? null) && $target['name'] !== ''
-                ? $target['name']
-                : $this->appInstanceLabel($target);
+            /** @var array<string, mixed> $targetRow */
+            $targetRow = $target;
+            $label = is_string($targetRow['name'] ?? null) && $targetRow['name'] !== ''
+                ? $targetRow['name']
+                : $this->instanceLabel($targetRow);
 
             if ($label !== null) {
                 $labels[] = $label;
@@ -112,16 +114,16 @@ final class DatabaseListCommand extends GatewayCommand
     /**
      * @param  array<string, mixed>  $target
      */
-    private function appInstanceLabel(array $target): ?string
+    private function instanceLabel(array $target): ?string
     {
-        $project = is_string($target['project'] ?? null) && $target['project'] !== '' ? $target['project'] : null;
+        $app = is_string($target['app'] ?? null) && $target['app'] !== '' ? $target['app'] : null;
         $instance = is_string($target['instance'] ?? null) && $target['instance'] !== '' ? $target['instance'] : null;
 
-        if ($project === null) {
+        if ($app === null) {
             return null;
         }
 
-        return $instance === null ? $project : "{$project} ({$instance})";
+        return $instance === null ? $app : "{$app} ({$instance})";
     }
 
     /**

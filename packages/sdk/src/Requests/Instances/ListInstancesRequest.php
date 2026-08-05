@@ -15,7 +15,7 @@ final class ListInstancesRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly ?string $project = null,
+        public readonly ?string $app = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -29,7 +29,7 @@ final class ListInstancesRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return array_filter(
-            ['project' => $this->project],
+            ['app' => $this->app],
             static fn (mixed $value): bool => $value !== null,
         );
     }

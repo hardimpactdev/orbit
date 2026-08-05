@@ -491,7 +491,7 @@ final class DoctorCommand extends GatewayCommand
                 'node' => null,
                 'role' => 'fleet',
                 'self' => false,
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
                 'key' => $this->option('key'),

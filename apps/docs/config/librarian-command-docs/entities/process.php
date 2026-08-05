@@ -13,7 +13,7 @@ return [
         'key' => 'string',
         'label' => 'string|null',
         'last_event' => 'object|null',
-        'project' => 'string|null',
+        'app' => 'string|null',
         'restart_policy' => 'string',
         'runtime' => 'string',
         'runtime_unit' => 'string',

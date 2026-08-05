@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class DatabaseConnectionTargetResolver
 {
     public function __construct(
@@ -28,7 +29,7 @@ final readonly class DatabaseConnectionTargetResolver
             ->first();
     }
 
-    public function resolveApp(?string $selector): ?Project
+    public function resolveApp(?string $selector): ?App
     {
         if ($selector === null || trim($selector) === '') {
             return null;
@@ -36,7 +37,7 @@ final readonly class DatabaseConnectionTargetResolver
 
         $selector = trim($selector);
 
-        return Project::query()
+        return App::query()
             ->where('name', $selector)
             ->orWhere('domain', $selector)
             ->first();
@@ -82,32 +83,34 @@ final readonly class DatabaseConnectionTargetResolver
         }
     }
 
-    public function resolveAppInstance(Project $app, ?string $selector): ?AppInstance
+    public function resolveInstance(App $app, ?string $selector): ?Instance
     {
         if ($selector === null || trim($selector) === '') {
             return null;
         }
 
-        return $app
+        $instance = $app
             ->instances()
             ->where('name', trim($selector))
             ->first();
+
+        return $instance instanceof Instance ? $instance : null;
     }
 
-    public function resolveAppInstanceSelector(?string $selector): ?AppInstance
+    public function resolveInstanceSelector(?string $selector): ?Instance
     {
         if ($selector === null || ! str_contains(trim($selector), '.')) {
             return null;
         }
 
         [$appName, $instanceName] = explode(separator: '.', string: trim($selector), limit: 2);
-        $app = Project::query()->where('name', $appName)->first();
+        $app = App::query()->where('name', $appName)->first();
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
-        return $this->resolveAppInstance($app, $instanceName);
+        return $this->resolveInstance($app, $instanceName);
     }
 
     public function validEnvPrefix(?string $value): bool

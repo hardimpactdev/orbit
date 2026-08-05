@@ -14,7 +14,7 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -82,7 +82,7 @@ final class WorkspaceStoreController implements Loggable
         $app = $selection->app;
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new LogicException('Resolved workspace selection is missing its required instance.');
         }
 
@@ -109,7 +109,7 @@ final class WorkspaceStoreController implements Loggable
                 "Workspace '{$name}' already exists for instance '{$appName}'.",
                 [
                     'name' => $name,
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
                 422,
@@ -185,7 +185,7 @@ final class WorkspaceStoreController implements Loggable
         $app = $selection->app;
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new LogicException('Resolved workspace selection is missing its required instance.');
         }
 
@@ -212,7 +212,7 @@ final class WorkspaceStoreController implements Loggable
                 "Workspace '{$name}' already exists for instance '{$appName}'.",
                 [
                     'name' => $name,
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
                 422,

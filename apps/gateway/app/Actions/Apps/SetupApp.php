@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppSetupStepRunner;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
@@ -23,7 +23,7 @@ final readonly class SetupApp
 
     /**
      * @return array{
-     *     project: string,
+     *     app: string,
      *     instance: string,
      *     node: string,
      *     path: string,
@@ -32,14 +32,14 @@ final readonly class SetupApp
      *     setup_steps: array{status: string, count: int, message: string},
      * }
      */
-    public function handle(Project $app, AppInstance $instance, Node $node): array
+    public function handle(App $app, Instance $instance, Node $node): array
     {
         $runtimeApp = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
 
         $setupResult = $this->runSetupSteps($runtimeApp, $instance, $node);
 
         return [
-            'project' => $app->name,
+            'app' => $app->name,
             'instance' => $instance->name,
             'node' => $node->name,
             'path' => $runtimeApp->path,
@@ -54,13 +54,13 @@ final readonly class SetupApp
      * @return array{status: string, message: string, count: int}
      */
     public function runSetupSteps(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         Node $node,
         ?callable $onStepProgress = null,
     ): array {
         $steps = AppSetupStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->orderBy('sort_order')
             ->get();
 
@@ -75,7 +75,7 @@ final readonly class SetupApp
         $stepSetHash = $this->computeStepSetHash($steps->all());
 
         $latestSuccessfulRun = AppSetupRun::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->where('status', 'completed')
             ->latest('id')
             ->first();
@@ -89,7 +89,7 @@ final readonly class SetupApp
         }
 
         $run = AppSetupRun::query()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'status' => 'pending',
             'step_set_hash' => $stepSetHash,
             'started_at' => now(),
@@ -150,7 +150,7 @@ final readonly class SetupApp
     /**
      * @return array<string, string>
      */
-    private function appEnv(Project $app, AppInstance $instance, Node $node): array
+    private function appEnv(App $app, Instance $instance, Node $node): array
     {
         return (
             [

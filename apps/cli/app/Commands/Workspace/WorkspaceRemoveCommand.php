@@ -18,7 +18,7 @@ final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:remove
         {name? : Workspace name}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--keep-files : Preserve workspace files on the instance node}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';

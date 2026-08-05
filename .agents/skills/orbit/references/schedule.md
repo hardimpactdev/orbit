@@ -4,7 +4,7 @@ Recurring tasks evaluated by the Orbit Scheduler daemon. Minute-resolution. Spec
 
 Schedule scopes:
 
-- **Instance-scoped** (`--instance=<project.instance>`): runs on the instance's serving node.
+- **Instance-scoped** (`--instance=<app.instance>`): runs on the instance's serving node.
 - **Node-scoped** (`--node=<name>`): runs on the named node, no app context.
 - **Orbit-scoped** (no `--instance` / `--node`): runs on the gateway for Orbit-owned maintenance.
 

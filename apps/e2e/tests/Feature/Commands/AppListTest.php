@@ -21,7 +21,7 @@ function appListSeed(E2ETopologyHarness $topology): void
             }
         }
 
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             [
@@ -38,14 +38,14 @@ function appListSeed(E2ETopologyHarness $topology): void
             ],
         ]);
 
-        \App\Models\Project::query()->create([
+        \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
             'document_root' => 'public',
         ]);
 
-        \App\Models\Project::query()->create([
+        \App\Models\App::query()->create([
             'name' => 'site',
             'node_id' => $nodes->get('app-prod-1'),
             'domain' => 'site.example.com',
@@ -63,7 +63,7 @@ function appListSeed(E2ETopologyHarness $topology): void
     );
 }
 
-it('lists registered projects from an operator caller through the gateway api', function (): void {
+it('lists registered apps from an operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
 
@@ -84,16 +84,16 @@ it('lists registered projects from an operator caller through the gateway api', 
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit project:list --json',
+                'cd %s && orbit app:list --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $projects = $payload['success']['data']['projects'] ?? null;
+        $apps = $payload['success']['data']['apps'] ?? null;
 
-        expect($projects)->toBeArray()->and(array_column($projects, 'name'))->toBe(['docs', 'site']);
+        expect($apps)->toBeArray()->and(array_column($apps, 'name'))->toBe(['docs', 'site']);
     } finally {
         $topology->cleanup();
     }

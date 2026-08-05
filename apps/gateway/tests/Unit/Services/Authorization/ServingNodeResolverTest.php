@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Authorization\ServingNodeResolver;
@@ -87,10 +87,10 @@ describe('ServingNodeResolver', function (): void {
 
     it('resolves project-owning nodes from project parameters', function (): void {
         $node = Node::factory()->create(['name' => 'app-node']);
-        Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $resolved = new ServingNodeResolver()->resolve(
-            servingNodeRequest(['project' => 'docs']),
+            servingNodeRequest(['app' => 'docs']),
             ServingNode::AppOwning,
         );
 
@@ -99,15 +99,15 @@ describe('ServingNodeResolver', function (): void {
 
     it('uses the gateway grant boundary for an external instance', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'billing',
             'environment' => 'production',
         ]);
-        AppInstance::factory()->create([
+        Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'cloud',
             'driver' => 'laravel-cloud',
-            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+            'driver_config' => new LaravelCloudInstanceDriverConfigData(
                 application_id: 'app_123',
                 environment_id: 'env_123',
             ),
@@ -115,7 +115,7 @@ describe('ServingNodeResolver', function (): void {
 
         $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['instance' => 'billing.cloud']),
-            ServingNode::AppInstanceOwning,
+            ServingNode::InstanceOwning,
         );
 
         expect($resolved?->is($gateway))->toBeTrue();
@@ -124,10 +124,10 @@ describe('ServingNodeResolver', function (): void {
     it('resolves instance-owning nodes from separate project and instance route parameters', function (): void {
         $logicalNode = Node::factory()->create(['name' => 'logical-app-node']);
         $instanceNode = Node::factory()->create(['name' => 'instance-node']);
-        $app = Project::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
-        AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $instanceNode->id,
                 path: '/srv/billing-development',
                 document_root: 'public',
@@ -137,10 +137,10 @@ describe('ServingNodeResolver', function (): void {
 
         $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest([
-                'project' => 'billing',
+                'app' => 'billing',
                 'instance' => 'development',
             ]),
-            ServingNode::AppInstanceOwning,
+            ServingNode::InstanceOwning,
         );
 
         expect($resolved?->is($instanceNode))->toBeTrue();
@@ -148,7 +148,7 @@ describe('ServingNodeResolver', function (): void {
 
     it('resolves project-owning nodes from process identity', function (): void {
         $node = Node::factory()->create(['name' => 'process-node']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         OrbitProcess::factory()->forOwner($app)->create(['name' => 'queue']);
 
         $resolved = new ServingNodeResolver()->resolve(
@@ -162,21 +162,21 @@ describe('ServingNodeResolver', function (): void {
     it('resolves workspace-owning nodes from workspace and instance parameters', function (): void {
         $node = Node::factory()->create(['name' => 'docs-node']);
         $otherNode = Node::factory()->create(['name' => 'other-node']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
 
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: '/srv/docs-development',
                 document_root: 'public',
                 domain: 'docs.test',
             ),
         ]);
-        $otherInstance = AppInstance::factory()->for($otherApp)->create([
+        $otherInstance = Instance::factory()->for($otherApp)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $otherNode->id,
                 path: '/srv/other-development',
                 document_root: 'public',
@@ -186,12 +186,12 @@ describe('ServingNodeResolver', function (): void {
 
         Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
         ]);
         Workspace::factory()->create([
             'app_id' => $otherApp->id,
-            'app_instance_id' => $otherInstance->id,
+            'instance_id' => $otherInstance->id,
             'name' => 'feature',
         ]);
 
@@ -203,12 +203,12 @@ describe('ServingNodeResolver', function (): void {
         expect($resolved?->is($node))->toBeTrue();
     });
 
-    it('does not resolve the removed app request alias', function (): void {
+    it('does not resolve the removed project request alias', function (): void {
         $node = Node::factory()->create(['name' => 'app-node']);
-        Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $resolved = new ServingNodeResolver()->resolve(
-            servingNodeRequest(['app' => 'docs']),
+            servingNodeRequest(['project' => 'docs']),
             ServingNode::AppOwning,
         );
 
@@ -218,12 +218,12 @@ describe('ServingNodeResolver', function (): void {
     it('resolves app-owning nodes from a registered app hostname selector before process name', function (): void {
         $targetNode = Node::factory()->create(['name' => 'target-node']);
         $otherNode = Node::factory()->create(['name' => 'other-node']);
-        $targetApp = Project::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
-        $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
-        AppInstance::factory()->create([
+        $targetApp = App::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
+        $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+        Instance::factory()->create([
             'app_id' => $targetApp->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
         OrbitProcess::factory()->forOwner($otherApp)->create(['name' => 'vite']);
         OrbitProcess::factory()->forOwner($targetApp)->create(['name' => 'vite']);
@@ -234,7 +234,7 @@ describe('ServingNodeResolver', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'name' => 'development',
                     'selector' => 'docs.development',
                 ],
@@ -254,16 +254,16 @@ describe('ServingNodeResolver', function (): void {
 
     it('resolves app-owning nodes from a registered workspace hostname selector', function (): void {
         $targetNode = Node::factory()->create(['name' => 'workspace-node']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $targetNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $targetNode->id,

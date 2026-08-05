@@ -89,7 +89,7 @@ it('creates MySQL and Valkey node managed services through process commands on a
                 ->toMatchArray([
                     'name' => $name,
                     'node' => 'app-dev-1',
-                    'project' => null,
+                    'app' => null,
                     'instance' => null,
                     'workspace' => null,
                     'runtime' => 'docker-swarm',
@@ -130,7 +130,7 @@ it('creates MySQL and Valkey node managed services through process commands on a
                 ->and($listed)
                 ->toMatchArray([
                     'node' => 'app-dev-1',
-                    'project' => null,
+                    'app' => null,
                     'instance' => null,
                     'workspace' => null,
                     'name' => $name,
@@ -392,7 +392,7 @@ function process_managed_service_command_seed_database_target_app(
             $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
             $node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
-            \App\Models\Project::query()->updateOrCreate(
+            \App\Models\App::query()->updateOrCreate(
                 ['name' => '__APP__'],
                 [
                     'node_id' => $node->id,
@@ -455,7 +455,7 @@ function process_managed_service_command_seed_database_connection(
         ],
         <<<'PHP'
             $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            $app = \App\Models\Project::query()->where('name', '__APP__')->firstOrFail();
+            $app = \App\Models\App::query()->where('name', '__APP__')->firstOrFail();
             $connection = \App\Models\DatabaseConnection::query()->updateOrCreate(
                 ['slug' => '__SLUG__'],
                 [
@@ -548,7 +548,7 @@ function process_managed_service_command_cleanup_database_target(
         ],
         <<<'PHP'
             \App\Models\DatabaseConnection::query()->where('slug', '__SLUG__')->delete();
-            \App\Models\Project::query()->where('name', '__APP__')->delete();
+            \App\Models\App::query()->where('name', '__APP__')->delete();
             echo 'cleaned';
             PHP,
     );

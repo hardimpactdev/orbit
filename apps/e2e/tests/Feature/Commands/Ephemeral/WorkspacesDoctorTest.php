@@ -61,9 +61,9 @@ function workspacesDoctorSeedGatewayIntent(
         \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
         \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
         \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-        \\App\\Models\\Project::query()->delete();
+        \\App\\Models\\App::query()->delete();
 
-        \$app = \\App\\Models\\Project::query()->create([
+        \$app = \\App\\Models\\App::query()->create([
             'name' => 'docs',
             'node_id' => \$node->id,
             'path' => '/home/orbit/apps/docs',

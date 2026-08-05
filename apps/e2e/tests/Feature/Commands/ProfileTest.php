@@ -21,7 +21,7 @@ function profileSeed(E2ETopologyHarness $topology, string $gatewayApiIp): void
             }
         }
 
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -30,7 +30,7 @@ function profileSeed(E2ETopologyHarness $topology, string $gatewayApiIp): void
             'updated_at' => now(),
         ]);
 
-        \App\Models\Project::query()->create([
+        \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'domain' => '__GATEWAY_API_IP__',
@@ -82,7 +82,7 @@ it('profiles an observable registered app target from a operator caller', functi
 
         expect($data)
             ->toBeArray()
-            ->and($data['target']['project'])
+            ->and($data['target']['app'])
             ->toBe('docs')
             ->and($data['target']['node'])
             ->toBe('app-dev-1')

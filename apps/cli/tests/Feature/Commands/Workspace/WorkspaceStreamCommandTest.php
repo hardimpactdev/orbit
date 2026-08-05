@@ -92,7 +92,7 @@ describe('WorkspaceStream commands', function (): void {
                 'footer' => "Workspace 'feature-docs' created",
                 'result' => [
                     'result' => ['action' => 'created'],
-                    'workspace' => ['name' => 'feature-docs', 'project' => 'docs', 'instance' => 'development'],
+                    'workspace' => ['name' => 'feature-docs', 'app' => 'docs', 'instance' => 'development'],
                     'meta' => ['node' => 'app-1', 'base' => 'main'],
                 ],
             ],

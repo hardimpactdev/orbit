@@ -129,14 +129,14 @@ describe('subscribeProcessStream', () => {
                 app: 'test.app.example',
                 context: {
                     node: 'app-1',
-                    project: 'docs',
+                    app: 'docs',
                     instance: 'development',
                     workspace: null,
                 },
                 processes: [
                     {
                         node: 'app-1',
-                        project: 'docs',
+                        app: 'docs',
                         instance: 'development',
                         workspace: null,
                         key: 'vite',
@@ -167,7 +167,7 @@ describe('subscribeProcessStream', () => {
                 name: 'vite',
                 label: 'Vite Dev Server',
                 node: 'app-1',
-                project: 'docs',
+                app: 'docs',
                 instance: 'development',
                 workspace: null,
                 unit_name: 'orbit_docs_development_main_vite',
@@ -246,7 +246,7 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [],
                     cursor: { high_water_mark: 1.5 },
                 },
@@ -255,7 +255,7 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [],
                     cursor: { high_water_mark: -1 },
                 },
@@ -264,7 +264,7 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [],
                     cursor: { high_water_mark: Number.NaN },
                 },
@@ -273,7 +273,7 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [],
                     cursor: { high_water_mark: Number.POSITIVE_INFINITY },
                 },
@@ -282,7 +282,7 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [],
                     cursor: { high_water_mark: Number.MAX_SAFE_INTEGER + 1 },
                 },
@@ -291,11 +291,11 @@ describe('subscribeProcessStream', () => {
                 type: 'snapshot',
                 payload: {
                     app: 'test.app.example',
-                    context: { node: 'app-1', project: null, instance: null, workspace: null },
+                    context: { node: 'app-1', app: null, instance: null, workspace: null },
                     processes: [
                         {
                             node: 'app-1',
-                            project: null,
+                            app: null,
                             instance: null,
                             workspace: null,
                             name: 'vite',
@@ -321,7 +321,7 @@ describe('subscribeProcessStream', () => {
                     status: 'running',
                     name: 'vite',
                     node: null,
-                    project: null,
+                    app: null,
                     instance: null,
                     workspace: null,
                     unit_name: null,
@@ -338,7 +338,7 @@ describe('subscribeProcessStream', () => {
                     status: 'running',
                     name: 'vite',
                     node: null,
-                    project: null,
+                    app: null,
                     instance: null,
                     workspace: null,
                     unit_name: null,
@@ -355,7 +355,7 @@ describe('subscribeProcessStream', () => {
                     status: 'running',
                     name: 'vite',
                     node: null,
-                    project: null,
+                    app: null,
                     instance: null,
                     workspace: null,
                     unit_name: null,

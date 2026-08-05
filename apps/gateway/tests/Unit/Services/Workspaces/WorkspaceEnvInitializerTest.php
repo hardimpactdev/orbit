@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceEnvInitializer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,14 +57,14 @@ function workspace_env_initializer_workspace(string $path): Workspace
         ]);
     $appPath = storage_path('framework/testing/workspace-env-parent');
     File::ensureDirectoryExists($appPath);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => $appPath,
         'domain' => 'billing.test',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $appPath,
             domain: 'billing.test',
@@ -73,7 +73,7 @@ function workspace_env_initializer_workspace(string $path): Workspace
 
     return Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-mail',
             'path' => $path,

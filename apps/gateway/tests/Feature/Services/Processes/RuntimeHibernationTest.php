@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Processes\ProcessLifecycle;
@@ -140,10 +140,10 @@ it('keeps production process groups outside development hibernation markers', fu
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',
     ], role: 'app-prod');
-    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -193,7 +193,7 @@ it('marks a development app instance awake after a successful bulk process start
 it('brackets a development workspace bulk restart with its asleep and awake markers', function (): void {
     [$node, $app, $instance] = create_runtime_hibernation_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
     ]);
     Process::factory()->forOwner($workspace, $node)->create(['name' => 'vite']);
@@ -206,7 +206,7 @@ it('brackets a development workspace bulk restart with its asleep and awake mark
             app: $app,
             workspace: $workspace,
             owner: $workspace,
-            appInstance: $instance,
+            instance: $instance,
         ),
         null,
     );
@@ -589,7 +589,7 @@ it('returns the soft progress page for a workspace and wakes inherited processes
     );
     [$node, $app, $instance] = create_runtime_hibernation_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
     ]);
     Process::factory()
@@ -873,9 +873,9 @@ it('coordinates cold markers across shared sources and warms only the activated 
         'wireguard_address' => '10.6.0.1',
     ]);
     [$node, $app, $instance] = create_runtime_hibernation_instance();
-    $sibling = AppInstance::factory()->for($app)->create([
+    $sibling = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -969,7 +969,7 @@ it('keeps dependencies when process lifecycle activity is newer than the seven d
     ProcessEvent::factory()->create([
         'process_id' => $process->id,
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'workspace_id' => null,
         'node_id' => $node->id,
         'recorded_at' => CarbonImmutable::parse('2026-01-08T12:00:00Z'),
@@ -1187,7 +1187,7 @@ it('keeps the scope asleep and stops the group when readiness does not observe e
 });
 
 /**
- * @return array{Node, Project, AppInstance}
+ * @return array{Node, App, Instance}
  */
 function create_runtime_hibernation_instance(): array
 {
@@ -1195,13 +1195,13 @@ function create_runtime_hibernation_instance(): array
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.21',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -1213,14 +1213,14 @@ function create_runtime_hibernation_instance(): array
     return [$node, $app, $instance];
 }
 
-function runtime_hibernation_context(Node $node, Project $app, AppInstance $instance): ProcessOwnerContext
+function runtime_hibernation_context(Node $node, App $app, Instance $instance): ProcessOwnerContext
 {
     return new ProcessOwnerContext(
         node: $node,
         app: $app,
         workspace: null,
         owner: $app,
-        appInstance: $instance,
+        instance: $instance,
     );
 }
 

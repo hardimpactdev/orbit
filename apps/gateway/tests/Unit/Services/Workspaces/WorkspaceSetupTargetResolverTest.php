@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Workspaces;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,12 +54,12 @@ describe('explicit path adoption', function (): void {
         ]);
 
         $localNode = createTestAppHostNode(role: 'app-dev');
-        $instance = AppInstance::factory()
+        $instance = Instance::factory()
             ->for($app)
             ->create([
                 'name' => 'nmbp',
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver' => InstanceDriver::Orbit,
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $localNode->id,
                     node: 'NMBP',
                     path: '/Users/nckrtl/apps/happie',
@@ -80,7 +80,7 @@ describe('explicit path adoption', function (): void {
             ->toBe('happie')
             ->and($workspace->path)
             ->toBe('/Users/nckrtl/.codex/worktrees/fa33/happie')
-            ->and($workspace->app_instance_id)
+            ->and($workspace->instance_id)
             ->toBe($instance->id)
             ->and($workspace->url())
             ->toBe('https://happie.happie.nmbp')
@@ -108,12 +108,12 @@ describe('explicit path adoption', function (): void {
 
     it('rejects production placement before workspace registration', function (): void {
         $node = createTestAppHostNode(role: 'app-prod');
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'site',
             'environment' => 'production',
         ]);
-        AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,
@@ -142,18 +142,18 @@ describe('explicit path adoption', function (): void {
     });
 });
 
-function workspaceSetupResolverApp(array $overrides = []): Project
+function workspaceSetupResolverApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(role: 'app-dev');
 
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
 
-    AppInstance::factory()
+    Instance::factory()
         ->for($app)
         ->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,

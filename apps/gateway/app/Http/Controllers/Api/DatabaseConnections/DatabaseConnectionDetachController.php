@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\DatabaseConnections;
 
 use App\Enums\ActivityLogType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
 use Illuminate\Http\JsonResponse;
@@ -41,10 +41,10 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
             return $authorization;
         }
 
-        if ($owner instanceof AppInstance) {
+        if ($owner instanceof Instance) {
             $targetType = 'instance';
             $targetName = $owner->app->name.'.'.$owner->name;
-            $result = $this->registry->detachFromAppInstance($connection, $owner, $envPrefix);
+            $result = $this->registry->detachFromInstance($connection, $owner, $envPrefix);
         } elseif ($owner instanceof Workspace) {
             $targetType = 'workspace';
             $targetName = $owner->name;

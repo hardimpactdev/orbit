@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit workspace:history [name] [--instance=<project.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]
+orbit workspace:history [name] [--instance=<app.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]
 ```
 
 ## Input Contract
@@ -28,13 +28,13 @@ through the current working directory when omitted.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Never; resolvable through CWD or fails. | Never. | Current workspace if the CWD is inside a known workspace path. | Must match an existing workspace record visible to the caller. |
-| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent project of the uniquely resolved workspace. | Must match an existing app record or instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only. |
+| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent app of the uniquely resolved workspace. | Must match an existing app record or instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 | `limit` | `--limit` | Optional. | Never. | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `since` | `--since` | Optional. | Never. | None. | ISO 8601 datetime. Returns runs with `started_at >= since`. |
 | `until` | `--until` | Optional. | Never. | None. | ISO 8601 datetime. Returns runs with `started_at < until`. Used as the exclusive range cursor for pagination beyond the cap. |
 
-Workspace slugs are unique within a project but not globally unique. Two projects may
+Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--instance` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
 When `--instance` includes an instance selector, the resolved workspace must
@@ -46,7 +46,7 @@ are not part of the initial contract.
 ## Input Resolution
 
 1. **Resolve `name`** from `[name]` or current working directory.
-2. **Handle ambiguity.** If `name` matches multiple workspaces across projects and
+2. **Handle ambiguity.** If `name` matches multiple workspaces across apps and
    `--instance` is missing, fail with `error.code=workspace.ambiguous_name`.
 3. **Authorize.** Verify the caller is authorized to read history for the
    resolved workspace. If not authorized, fail before side effects.
@@ -116,7 +116,7 @@ are not part of the initial contract.
 - There is no automatic time-based pruning and no global retention setting.
 - History rows are removed atomically with the workspace via
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
-  [`project:remove`](../../../5_project/6_project-remove/project-remove.md) or
+  [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
   instance-level command removes a workspace.
 
 ## Renderer Contracts

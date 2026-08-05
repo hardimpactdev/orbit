@@ -11,7 +11,7 @@ inspect current node reality.
 ## Usage
 
 ```bash
-orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--instance=<app.instance>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples

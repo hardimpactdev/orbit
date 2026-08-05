@@ -9,7 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\Project;
+use App\Models\App;
 use App\Services\Apps\AppRootUpdater;
 use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
 #[RequiresPermission('instance:root', servingNode: ServingNode::AppOwning)]
 final class AppRootController implements Loggable
 {
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     public function __invoke(string $instance, Request $request): JsonResponse
     {
@@ -50,7 +50,7 @@ final class AppRootController implements Loggable
             '--json' => true,
         ]);
 
-        $this->activitySubject = Project::query()->where('name', $targetApp->name)->first();
+        $this->activitySubject = App::query()->where('name', $targetApp->name)->first();
 
         return response()->json($result->payload, $result->successful() ? 200 : 422);
     }

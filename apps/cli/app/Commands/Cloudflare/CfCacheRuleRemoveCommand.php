@@ -14,12 +14,12 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
 
     #[\Override]
     protected $signature = 'cf-cache-rule:remove
-        {project? : Orbit project name}
+        {app? : Orbit app name}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a Cloudflare cache rule for a project through the gateway.';
+    protected $description = 'Remove a Cloudflare cache rule for an app through the gateway.';
 
     public function handle(): int
     {
@@ -27,10 +27,10 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
             return $failure;
         }
 
-        $project = $this->requiredArgument('project', 'project', 'A project name is required.');
+        $app = $this->requiredArgument('app', 'app', 'A app name is required.');
 
-        if (is_int($project)) {
-            return $project;
+        if (is_int($app)) {
+            return $app;
         }
 
         $consent = $this->confirmDestructive(
@@ -43,7 +43,7 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
 
         if ($this->wantsJson()) {
             try {
-                $response = $this->removeRule($project);
+                $response = $this->removeRule($app);
             } catch (GatewayApiException $exception) {
                 return $this->renderGatewayFailure($exception);
             }
@@ -51,10 +51,10 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderRemoveTree($project);
+        return $this->renderRemoveTree($app);
     }
 
-    private function renderRemoveTree(string $project): int
+    private function renderRemoveTree(string $app): int
     {
         $response = [];
 
@@ -65,14 +65,14 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
                 ['label' => 'Resolve Cloudflare zone'],
                 ['label' => 'Delete cache rule'],
             ],
-            work: function () use ($project, &$response): array {
-                return $response = $this->removeRuleForHuman($project);
+            work: function () use ($app, &$response): array {
+                return $response = $this->removeRuleForHuman($app);
             },
-            doneFooter: function () use ($project, &$response): string {
-                $resolvedProject = $this->successData($response)['project'] ?? null;
+            doneFooter: function () use ($app, &$response): string {
+                $resolvedProject = $this->successData($response)['app'] ?? null;
                 $displayProject = is_string($resolvedProject) && $resolvedProject !== ''
                     ? $resolvedProject
-                    : $project;
+                    : $app;
 
                 return "Cloudflare cache rule removed for {$displayProject}";
             },
@@ -84,9 +84,9 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
     /**
      * @return array<string, mixed>
      */
-    private function removeRule(string $project): array
+    private function removeRule(string $app): array
     {
-        return $this->gatewayDelete('/api/cloudflare/cache-rules/'.rawurlencode($project), [
+        return $this->gatewayDelete('/api/cloudflare/cache-rules/'.rawurlencode($app), [
             'destructive_consent' => true,
         ]);
     }
@@ -94,10 +94,10 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
     /**
      * @return array<string, mixed>
      */
-    private function removeRuleForHuman(string $project): array
+    private function removeRuleForHuman(string $app): array
     {
         try {
-            return $this->removeRule($project);
+            return $this->removeRule($app);
         } catch (GatewayApiException $exception) {
             throw new RuntimeException(
                 $exception->gatewayErrorMessage() ?? $exception->getMessage(),

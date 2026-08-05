@@ -12,7 +12,7 @@ final class AppSetupStepListCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'instance-setup-step:list
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {--json : Output JSON}';
 
     #[\Override]

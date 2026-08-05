@@ -15,20 +15,20 @@ final class AppRemoveCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'project:remove
-        {project? : Project name or hostname}
+    protected $signature = 'app:remove
+        {app? : App name or hostname}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a project and its owned artifacts.';
+    protected $description = 'Remove an app and its owned artifacts.';
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('project');
+        $selector = $this->stringArgument('app');
 
         if ($selector === null) {
-            return $this->failValidation('project', 'Project name is required.');
+            return $this->failValidation('app', 'App name is required.');
         }
 
         if ($this->option('force') !== true) {
@@ -61,16 +61,16 @@ final class AppRemoveCommand extends AppGatewayCommand
         $response = [];
 
         $outcome = $this->runStepOperation(
-            'Removing Project',
+            'Removing App',
             [
                 ['label' => 'Validate removal', 'doneLabel' => 'Validated removal'],
-                ['label' => 'Apply and verify project removal', 'doneLabel' => 'Applied and verified project removal'],
-                ['label' => 'Remove project-owned proxy routes', 'doneLabel' => 'Removed project-owned proxy routes'],
-                ['label' => 'Remove project-owned schedules', 'doneLabel' => 'Removed project-owned schedules'],
-                ['label' => 'Remove project-owned workspaces', 'doneLabel' => 'Removed project-owned workspaces'],
+                ['label' => 'Apply and verify app removal', 'doneLabel' => 'Applied and verified app removal'],
+                ['label' => 'Remove app-owned proxy routes', 'doneLabel' => 'Removed app-owned proxy routes'],
+                ['label' => 'Remove app-owned schedules', 'doneLabel' => 'Removed app-owned schedules'],
+                ['label' => 'Remove app-owned workspaces', 'doneLabel' => 'Removed app-owned workspaces'],
                 [
-                    'label' => 'Stop and remove project processes',
-                    'doneLabel' => 'Stopped and removed project processes',
+                    'label' => 'Stop and remove app processes',
+                    'doneLabel' => 'Stopped and removed app processes',
                 ],
                 ['label' => 'Clean node-side runtime artifacts', 'doneLabel' => 'Cleaned node-side runtime artifacts'],
             ],
@@ -79,8 +79,8 @@ final class AppRemoveCommand extends AppGatewayCommand
             },
             doneFooter: function () use ($selector, &$response): string {
                 return $this->driftIsPresent($response)
-                    ? "Project '{$selector}' removed with drift"
-                    : "Project '{$selector}' removed";
+                    ? "App '{$selector}' removed with drift"
+                    : "App '{$selector}' removed";
             },
         );
 
@@ -115,11 +115,11 @@ final class AppRemoveCommand extends AppGatewayCommand
     private function confirmRemoval(string $selector): bool|int
     {
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
-            return $this->failValidation('force', 'Use --force to remove this project.');
+            return $this->failValidation('force', 'Use --force to remove this app.');
         }
 
         return confirm(
-            label: "Remove project '{$selector}' and all owned artifacts? This cannot be undone.",
+            label: "Remove app '{$selector}' and all owned artifacts? This cannot be undone.",
             default: false,
         );
     }

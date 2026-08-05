@@ -8,7 +8,7 @@ an env prefix.
 ## Usage
 
 ```bash
-orbit database:attach {connection} (--instance=<project.instance>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:attach {connection} (--instance=<app.instance>|--workspace=<workspace>) [--env-prefix=DB] [--json]
 ```
 
 ## Technical Contract

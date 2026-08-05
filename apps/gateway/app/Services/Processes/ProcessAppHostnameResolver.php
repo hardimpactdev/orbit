@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\AppProxyRouteTargetResolver;
@@ -34,7 +34,7 @@ final readonly class ProcessAppHostnameResolver
         $domain = $this->assertStrictHostname($hostname);
 
         $route = ProxyRoute::query()
-            ->with(['app.instances', 'app.node', 'workspace.appInstance', 'workspace.app', 'node'])
+            ->with(['app.instances', 'app.node', 'workspace.instance', 'workspace.app', 'node'])
             ->where('domain', $domain)
             ->first();
 
@@ -189,9 +189,9 @@ final readonly class ProcessAppHostnameResolver
     private function contextForAppRoute(ProxyRoute $route, string $domain): ProcessOwnerContext
     {
         $app = $route->app;
-        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $instance = $this->appRouteTargets->instanceForRoute($route);
 
-        if (! $app instanceof Project || ! $instance instanceof AppInstance) {
+        if (! $app instanceof App || ! $instance instanceof Instance) {
             throw new GatewayApiException(
                 "App hostname '{$domain}' does not resolve to a concrete app instance.",
                 'validation_failed',
@@ -221,7 +221,7 @@ final readonly class ProcessAppHostnameResolver
             app: $app,
             workspace: null,
             owner: $app,
-            appInstance: $instance,
+            instance: $instance,
         );
     }
 
@@ -240,13 +240,13 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        $workspace->loadMissing(['app', 'appInstance']);
+        $workspace->loadMissing(['app', 'instance']);
         $app = $workspace->app;
-        $appInstance = $workspace->appInstance;
+        $instance = $workspace->instance;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             throw new GatewayApiException(
-                "App hostname '{$domain}' workspace is not attached to a project.",
+                "App hostname '{$domain}' workspace is not attached to an app.",
                 'validation_failed',
                 [
                     'field' => 'app',
@@ -255,7 +255,7 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        if (! $appInstance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new GatewayApiException(
                 "App hostname '{$domain}' workspace is not attached to an instance.",
                 'validation_failed',
@@ -285,7 +285,7 @@ final readonly class ProcessAppHostnameResolver
             app: $app,
             workspace: $workspace,
             owner: $workspace,
-            appInstance: $appInstance,
+            instance: $instance,
         );
     }
 }

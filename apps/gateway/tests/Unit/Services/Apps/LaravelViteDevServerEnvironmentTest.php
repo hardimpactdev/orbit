@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,7 +18,7 @@ it('uses macOS home paths for host Vite certificate variables', function (): voi
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'happie-nmbp',
         'domain' => 'happie.nmbp',
     ]);

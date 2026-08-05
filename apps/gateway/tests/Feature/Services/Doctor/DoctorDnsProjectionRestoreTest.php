@@ -396,7 +396,7 @@ it('does not probe node DNS projection on non-DNS-consumer nodes', function (): 
     expect($report['issues'])->toBeEmpty()->and($report['healthy'])->toBeTrue();
 });
 
-it('skips node DNS content probes on the DNS consumer when the projection directory is not mounted', function (): void {
+it('skips node DNS content probes on the DNS consumer when the appion directory is not mounted', function (): void {
     $gateway = Node::factory()
         ->gateway()
         ->create([

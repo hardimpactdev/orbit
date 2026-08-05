@@ -186,7 +186,7 @@ describe('deploy:history', function (): void {
     });
 
     it('passes through production-project-required failures from the gateway', function (): void {
-        fakeGateway(fakeErrorEnvelope('deploy.production_project_required', 'A production project is required.', [
+        fakeGateway(fakeErrorEnvelope('deploy.production_app_required', 'A production project is required.', [
             'instance' => 'docs',
         ]), 400);
 
@@ -197,7 +197,7 @@ describe('deploy:history', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('deploy.production_project_required');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('deploy.production_app_required');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

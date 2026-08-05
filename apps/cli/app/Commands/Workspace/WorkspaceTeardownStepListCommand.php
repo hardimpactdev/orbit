@@ -16,7 +16,7 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'workspace-teardown-step:list
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--json}';
 
     #[\Override]
@@ -86,12 +86,12 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
 
         if (
             is_array($first)
-            && is_scalar($first['project'] ?? null)
-            && (string) $first['project'] !== ''
+            && is_scalar($first['app'] ?? null)
+            && (string) $first['app'] !== ''
             && is_scalar($first['instance'] ?? null)
             && (string) $first['instance'] !== ''
         ) {
-            return (string) $first['project'].'.'.(string) $first['instance'];
+            return (string) $first['app'].'.'.(string) $first['instance'];
         }
 
         return $this->stringOption('instance') ?? $this->instanceFromOrbitMarker() ?? '—';

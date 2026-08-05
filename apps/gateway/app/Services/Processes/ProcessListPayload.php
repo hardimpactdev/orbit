@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntimeStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
@@ -20,7 +20,7 @@ class ProcessListPayload
     ) {}
 
     /**
-     * @return array{context: array{node: string, project: string|null, instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
+     * @return array{context: array{node: string, app: string|null, instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
      */
     public function forContext(
         ?string $nodeName,
@@ -47,13 +47,13 @@ class ProcessListPayload
                 $processes->map(function (Process $process) use ($context, $app): array {
                     $workspace = $context->runtimeWorkspaceFor($process);
                     $driver = $this->runtimeDrivers->forProcess($process);
-                    $lastEvent = $this->lastEventModel($process, $workspace, $context->appInstance);
+                    $lastEvent = $this->lastEventModel($process, $workspace, $context->instance);
                     $status = ProcessRuntimeStatus::fromEventType($lastEvent?->event);
 
                     return [
                         'node' => $context->node->name,
-                        'project' => $context->app?->name,
-                        'instance' => $context->appInstance?->name,
+                        'app' => $context->app?->name,
+                        'instance' => $context->instance?->name,
                         'workspace' => $workspace?->name,
                         'key' => $process->name,
                         'label' => $process->label,
@@ -83,11 +83,11 @@ class ProcessListPayload
     private function lastEventModel(
         Process $process,
         ?Workspace $workspace,
-        ?AppInstance $appInstance,
+        ?Instance $instance,
     ): ?ProcessEvent {
         $query = ProcessEvent::query()
             ->where('process_id', $process->id)
-            ->where('app_instance_id', $appInstance?->id);
+            ->where('instance_id', $instance?->id);
 
         if ($workspace instanceof Workspace) {
             $query->where('workspace_id', $workspace->id);

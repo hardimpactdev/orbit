@@ -19,7 +19,7 @@ final class WorkspaceShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:show
         {name? : Workspace name}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--json}';
 
     #[\Override]
@@ -148,7 +148,7 @@ final class WorkspaceShowCommand extends GatewayCommand
         $title = sprintf(
             'Workspace: %s.%s',
             (string) ($workspace['name'] ?? ''),
-            (string) ($workspace['project'] ?? ''),
+            (string) ($workspace['app'] ?? ''),
         );
 
         $this->renderShowDetails($title, [

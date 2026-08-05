@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -18,7 +18,7 @@ final readonly class SystemdUnitRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function unitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -48,7 +48,7 @@ final readonly class SystemdUnitRenderer
         return '/etc/systemd/system/'.$this->serviceName($runtimeUnit);
     }
 
-    public function render(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $user = $node->user ?: 'orbit';
@@ -74,7 +74,7 @@ final readonly class SystemdUnitRenderer
         ])).PHP_EOL;
     }
 
-    public function installScript(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function installScript(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $serviceName = $this->serviceName($runtimeUnit);
@@ -95,7 +95,7 @@ final readonly class SystemdUnitRenderer
 
     private function workingDirectory(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $home,
@@ -118,7 +118,7 @@ final readonly class SystemdUnitRenderer
      */
     private function environmentLines(
         Process $process,
-        Project $app,
+        App $app,
         Node $node,
         ?Workspace $workspace,
         string $home,

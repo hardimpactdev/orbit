@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:add --command=<command> [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command=<command> [--instance=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--instance` | `text` | Unless the shared workspace selector chain resolves to a concrete instance. | Resolved through the shared workspace selector chain when omitted. | Dotted instance selectors such as `happie.nmbp` are the explicit safe write path. Bare project slugs are rejected with `error.meta.reason=instance_required`. |
+| `--instance` | `text` | Unless the shared workspace selector chain resolves to a concrete instance. | Resolved through the shared workspace selector chain when omitted. | Dotted instance selectors such as `happie.nmbp` are the explicit safe write path. Bare app slugs are rejected with `error.meta.reason=instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -40,14 +40,14 @@ instance in `workspace_steps`, keyed by `(instance_id, phase, sort_order)`.
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Instance**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--instance=<project.instance>`, which must be a dotted instance
-     selector such as `happie.nmbp` for gateway writes. Bare project
+   - Explicit `--instance=<app.instance>`, which must be a dotted instance
+     selector such as `happie.nmbp` for gateway writes. Bare app
      slugs are rejected with `error.meta.reason=instance_required`.
-   - `.orbit/config` marker on the caller filesystem (installed by `project:new` /
+   - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `instance:register` and any workspace-installed marker) that names the owning
-     project slug.
+     app slug.
    - Gateway path-ownership lookup keyed on `(caller node identity, absolute
-     cwd)` that returns the project slug whose registered app path or any
+     cwd)` that returns the app slug whose registered app path or any
      registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.
@@ -95,7 +95,7 @@ this command; it is applied by `workspace:new` and `workspace:setup` at
      `order = max(existing_order_for_instance_and_phase) + 1` (or `1` if no steps
      exist yet).
 4. **Step-Record Shape**: The persisted record exposes
-   `{ id, project, instance, phase, order, command, timeout_seconds }`. Steps have no
+   `{ id, app, instance, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`
@@ -123,7 +123,7 @@ this command; it is applied by `workspace:new` and `workspace:setup` at
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Instance Required**: Bare project slug or path-only resolution without a
+- **Instance Required**: Bare app slug or path-only resolution without a
   concrete instance (`error.code=validation_failed`,
   `error.meta.field=instance`, `error.meta.reason=instance_required`).
 - **Instance Not Found**: Resolved instance selector does not exist in gateway configuration

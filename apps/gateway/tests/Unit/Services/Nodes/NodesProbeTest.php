@@ -1864,7 +1864,7 @@ describe('access permission validity', function (): void {
         expect($permission)->toHaveCount(0);
     });
 
-    it('ignores retained app permission tokens on migrated grants', function (): void {
+    it('accepts canonical app and instance permission tokens on grants', function (): void {
         $consumer = nodes_probe_node([
             'name' => 'consumer',
             'host' => '10.0.0.1',
@@ -1886,7 +1886,7 @@ describe('access permission validity', function (): void {
         NodeAccess::create([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $serving->id,
-            'permissions' => ['app:read', 'project:read', 'instance:read'],
+            'permissions' => ['app:read', 'instance:read'],
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));

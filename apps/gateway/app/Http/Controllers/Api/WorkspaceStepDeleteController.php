@@ -13,7 +13,7 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
@@ -99,7 +99,7 @@ final class WorkspaceStepDeleteController implements Loggable
 
         if (! $servingNode instanceof Node) {
             return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
-                'project' => $app->name,
+                'app' => $app->name,
             ]);
         }
 
@@ -111,8 +111,8 @@ final class WorkspaceStepDeleteController implements Loggable
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
-            return $this->appInstanceRequired();
+        if (! $instance instanceof Instance) {
+            return $this->instanceRequired();
         }
 
         $model = $this->stepPolicy->findInstanceStep($app, $phaseEnum, $step, $instance);
@@ -164,7 +164,7 @@ final class WorkspaceStepDeleteController implements Loggable
         return $selection->app->node;
     }
 
-    private function appInstanceRequired(): JsonResponse
+    private function instanceRequired(): JsonResponse
     {
         return $this->validationFailed(
             'instance',
@@ -194,7 +194,7 @@ final class WorkspaceStepDeleteController implements Loggable
                 'message' => "{$label} step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'step_id' => $id,
-                    'project' => $app,
+                    'app' => $app,
                     'phase' => $phase->value,
                 ],
             ],

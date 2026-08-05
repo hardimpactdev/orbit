@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\ConvergesAppRuntimeContainers;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeployStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Deploy\DeployManager;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -146,7 +146,7 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
     }
 }
 
-function createDeployManagerTestApp(array $overrides = []): Project
+function createDeployManagerTestApp(array $overrides = []): App
 {
     $node = Node::factory()
         ->appProd()
@@ -165,11 +165,11 @@ function createDeployManagerTestApp(array $overrides = []): Project
     $warmupPaths = $attributes['deploy_warmup_paths'] ?? null;
     unset($attributes['deploy_warmup_paths']);
 
-    $app = Project::factory()->create($attributes);
-    AppInstance::factory()->create([
+    $app = App::factory()->create($attributes);
+    Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -182,12 +182,12 @@ function createDeployManagerTestApp(array $overrides = []): Project
     return $app;
 }
 
-function createDeployManagerTestStep(Project $app, string $command, string $title = 'Test step'): DeployStep
+function createDeployManagerTestStep(App $app, string $command, string $title = 'Test step'): DeployStep
 {
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
 
     return DeployStep::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'title' => $title,
         'command' => $command,
         'sort_order' => 1,
@@ -197,7 +197,7 @@ function createDeployManagerTestStep(Project $app, string $command, string $titl
 
 it('requires a concrete deployment instance when a logical app has multiple instances', function (): void {
     $app = createDeployManagerTestApp();
-    AppInstance::factory()->create([
+    Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'canary',
     ]);
@@ -208,13 +208,13 @@ it('requires a concrete deployment instance when a logical app has multiple inst
 
 it('scopes deployment policy to the selected instance', function (): void {
     $app = createDeployManagerTestApp();
-    $production = AppInstance::query()->where('app_id', $app->id)->sole();
-    $canary = AppInstance::factory()->create([
+    $production = Instance::query()->where('app_id', $app->id)->sole();
+    $canary = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'canary',
     ]);
     DeployStep::query()->create([
-        'app_instance_id' => $canary->id,
+        'instance_id' => $canary->id,
         'title' => 'Canary only',
         'command' => 'true',
         'sort_order' => 1,
@@ -232,22 +232,22 @@ it('scopes deployment policy to the selected instance', function (): void {
 
     expect($result['step'])
         ->toMatchArray([
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'production',
             'title' => 'Production only',
         ])
-        ->and(DeployStep::query()->where('app_instance_id', $production->id)->count())
+        ->and(DeployStep::query()->where('instance_id', $production->id)->count())
         ->toBe(1)
-        ->and(DeployStep::query()->where('app_instance_id', $canary->id)->count())
+        ->and(DeployStep::query()->where('instance_id', $canary->id)->count())
         ->toBe(1);
 });
 
 it('executes and records a deployment against the concrete instance target', function (): void {
     $app = createDeployManagerTestApp();
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
     $instanceNode = Node::factory()->appProd()->create(['name' => 'instance-prod']);
     $instance->forceFill([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $instanceNode->id,
             node: $instanceNode->name,
             path: '/home/billing/releases',
@@ -269,7 +269,7 @@ it('executes and records a deployment against the concrete instance target', fun
         ->toBe('production')
         ->and($instance->refresh()->latest_deployment_status)
         ->toBe('completed')
-        ->and(DeploymentRun::query()->sole()->app_instance_id)
+        ->and(DeploymentRun::query()->sole()->instance_id)
         ->toBe($instance->id);
 });
 
@@ -421,7 +421,7 @@ it('runs all commands on the host for static apps', function (): void {
 
 it('does not transform host paths to container paths when routing through host', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'cd "{{ project_path }}" && php artisan migrate');
+    createDeployManagerTestStep($app, 'cd "{{ app_path }}" && php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
 
@@ -450,13 +450,13 @@ it('preserves documented app context aliases for existing deployment steps', fun
     expect($context)
         ->toMatchArray([
             'app_name' => 'docs',
-            'app_instance' => 'production',
+            'instance' => 'production',
             'app_path' => '/srv/docs',
             'app_user' => 'orbit',
-            'project_name' => 'docs',
+            'app_name' => 'docs',
             'instance' => 'production',
-            'project_path' => '/srv/docs',
-            'project_user' => 'orbit',
+            'app_path' => '/srv/docs',
+            'app_user' => 'orbit',
             'app' => [
                 'name' => 'docs',
                 'instance' => 'production',
@@ -481,9 +481,9 @@ it('passes deploy environment variables to the host command', function (): void 
 
     $script = $shell->runs[0]['script'];
     expect($script)
-        ->toContain('ORBIT_DEPLOY_PROJECT_NAME=')
+        ->toContain('ORBIT_DEPLOY_APP_NAME=')
         ->toContain('docs')
-        ->not->toContain("'ORBIT_DEPLOY_PROJECT_NAME=docs'");
+        ->not->toContain("'ORBIT_DEPLOY_APP_NAME=docs'");
 });
 
 it('sets the working directory to the app source path for host commands', function (): void {
@@ -563,10 +563,10 @@ it('activates a safe live release runtime before warming the application', funct
 
     app(DeployManager::class)->run('docs');
 
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
     $config = $instance->driver_config;
     assert(
-        $config instanceof OrbitAppInstanceDriverConfigData,
+        $config instanceof OrbitInstanceDriverConfigData,
         description: 'Instance must retain Orbit driver config.',
     );
     $warmupRuns = array_values(array_filter(
@@ -668,10 +668,10 @@ it('fails closed when an active release escapes the app source boundary', functi
         expect($exception->errorCode())->toBe('deploy.active_release_unsafe');
     }
 
-    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
     $config = $instance->driver_config;
     assert(
-        $config instanceof OrbitAppInstanceDriverConfigData,
+        $config instanceof OrbitInstanceDriverConfigData,
         description: 'Instance must retain Orbit driver config.',
     );
 

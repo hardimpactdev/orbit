@@ -13,9 +13,9 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -75,7 +75,7 @@ final class WorkspaceStepStoreController implements Loggable
         if ($this->envInheritanceGuard->consumesParentEnv($command)) {
             return $this->validationFailed(
                 'command',
-                'Workspace lifecycle steps cannot read or copy the parent project .env file.',
+                'Workspace lifecycle steps cannot read or copy the parent app .env file.',
                 ['reason' => 'parent_env_inheritance_forbidden'],
             );
         }
@@ -136,7 +136,7 @@ final class WorkspaceStepStoreController implements Loggable
 
         if (! $servingNode instanceof Node) {
             return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
-                'project' => $app->name,
+                'app' => $app->name,
             ]);
         }
 
@@ -146,8 +146,8 @@ final class WorkspaceStepStoreController implements Loggable
             return $this->forbidden($servingNode, $authorization, 'workspace:write');
         }
 
-        if (! $instance instanceof AppInstance) {
-            return $this->appInstanceRequired();
+        if (! $instance instanceof Instance) {
+            return $this->instanceRequired();
         }
 
         $anchor = $this->anchorStep($app, $phaseEnum, $before ?? $after, $instance);
@@ -163,7 +163,7 @@ final class WorkspaceStepStoreController implements Loggable
             timeoutSeconds: $timeout,
             beforeStepId: is_int($before) ? $before : null,
             afterStepId: is_int($after) ? $after : null,
-            appInstanceId: $instance->id,
+            instanceId: $instance->id,
         );
         $this->activitySubject = $step;
 
@@ -189,10 +189,10 @@ final class WorkspaceStepStoreController implements Loggable
     }
 
     private function anchorStep(
-        Project $app,
+        App $app,
         WorkspaceLifecyclePhase $phase,
         ?int $stepId,
-        AppInstance $instance,
+        Instance $instance,
     ): ?WorkspaceStep {
         if ($stepId === null) {
             return null;
@@ -201,7 +201,7 @@ final class WorkspaceStepStoreController implements Loggable
         return $this->stepPolicy->findInstanceStep($app, $phase, $stepId, $instance);
     }
 
-    private function appInstanceRequired(): JsonResponse
+    private function instanceRequired(): JsonResponse
     {
         return $this->validationFailed(
             'instance',
@@ -311,7 +311,7 @@ final class WorkspaceStepStoreController implements Loggable
                 'message' => "Referenced insertion step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'id' => $id,
-                    'project' => $app,
+                    'app' => $app,
                     'phase' => $phase->value,
                 ],
             ],

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessStreamRuntimeConfig;
@@ -46,8 +46,8 @@ function grantProcessStreamAccess(Node $caller, Node $appNode): void
  * @return array{
  *     caller: Node,
  *     appNode: Node,
- *     app: Project,
- *     instance: AppInstance,
+ *     app: App,
+ *     instance: Instance,
  *     process: Process,
  *     hostname: string
  * }
@@ -57,11 +57,11 @@ function processStreamAppFixture(): array
     $caller = createProcessStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1']);
     grantProcessStreamAccess($caller, $appNode);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
     ProxyRoute::factory()->create([
         'node_id' => $appNode->id,
@@ -70,7 +70,7 @@ function processStreamAppFixture(): array
         'owner_type' => 'app',
         'kind' => 'app',
         'config' => [
-            'app_instance' => [
+            'instance' => [
                 'name' => 'development',
                 'selector' => 'docs.development',
             ],
@@ -79,7 +79,7 @@ function processStreamAppFixture(): array
     $process = Process::factory()
         ->forOwner($app, $appNode)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
         ]);
 
@@ -137,7 +137,7 @@ describe('ProcessStreamController', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_STREAM_CALLER_WG_IP],
             )
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'app');
     });
@@ -157,7 +157,7 @@ describe('ProcessStreamController', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_STREAM_CALLER_WG_IP],
             )
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.meta.field', 'last_event_id')
             ->assertJsonPath('error.meta.reason', 'stream_app_only');
     });
@@ -177,7 +177,7 @@ describe('ProcessStreamController', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_STREAM_CALLER_WG_IP],
             )
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.meta.reason', 'stream_app_only');
     });
 
@@ -200,7 +200,7 @@ describe('ProcessStreamController', function (): void {
     it('requires process:read grant and keeps CORS after Origin admission', function (): void {
         createProcessStreamCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -269,7 +269,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $fixture['process']->id,
             'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
-            'app_instance_id' => $fixture['instance']->id,
+            'instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
             'node_id' => $fixture['appNode']->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -292,7 +292,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $fixture['process']->id,
             'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
-            'app_instance_id' => $fixture['instance']->id,
+            'instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
             'node_id' => $fixture['appNode']->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -303,7 +303,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $fixture['process']->id,
             'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
-            'app_instance_id' => $fixture['instance']->id,
+            'instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
             'node_id' => $fixture['appNode']->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -331,7 +331,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $fixture['process']->id,
             'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
-            'app_instance_id' => $fixture['instance']->id,
+            'instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
             'node_id' => $fixture['appNode']->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -340,7 +340,7 @@ describe('ProcessStreamController', function (): void {
         $createdIds = [];
         app()->instance(ProcessStreamSleeper::class, new class($fixture, $createdIds) implements ProcessStreamSleeper {
             /**
-             * @param  array{process: Process, app: Project, instance: AppInstance, appNode: Node}  $fixture
+             * @param  array{process: Process, app: App, instance: Instance, appNode: Node}  $fixture
              * @param  list<int>  $createdIds
              */
             public function __construct(
@@ -360,7 +360,7 @@ describe('ProcessStreamController', function (): void {
                         'process_id' => $this->fixture['process']->id,
                         'process_name' => 'vite',
                         'app_id' => $this->fixture['app']->id,
-                        'app_instance_id' => $this->fixture['instance']->id,
+                        'instance_id' => $this->fixture['instance']->id,
                         'workspace_id' => null,
                         'node_id' => $this->fixture['appNode']->id,
                         'unit_name' => 'orbit_docs_development_main_vite',
@@ -405,7 +405,7 @@ describe('ProcessStreamController', function (): void {
 
         app()->instance(ProcessStreamSleeper::class, new class($fixture, $createdId) implements ProcessStreamSleeper {
             /**
-             * @param  array{app: Project, instance: AppInstance, appNode: Node}  $fixture
+             * @param  array{app: App, instance: Instance, appNode: Node}  $fixture
              */
             public function __construct(
                 private array $fixture,
@@ -421,7 +421,7 @@ describe('ProcessStreamController', function (): void {
                 $process = Process::factory()
                     ->forOwner($this->fixture['app'], $this->fixture['appNode'])
                     ->create([
-                        'app_instance_id' => $this->fixture['instance']->id,
+                        'instance_id' => $this->fixture['instance']->id,
                         'name' => 'queue',
                     ]);
 
@@ -430,7 +430,7 @@ describe('ProcessStreamController', function (): void {
                     'process_id' => $process->id,
                     'process_name' => 'queue',
                     'app_id' => $this->fixture['app']->id,
-                    'app_instance_id' => $this->fixture['instance']->id,
+                    'instance_id' => $this->fixture['instance']->id,
                     'workspace_id' => null,
                     'node_id' => $this->fixture['appNode']->id,
                     'unit_name' => 'orbit_docs_development_main_queue',
@@ -465,16 +465,16 @@ describe('ProcessStreamController', function (): void {
         $caller = createProcessStreamCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessStreamAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -487,7 +487,7 @@ describe('ProcessStreamController', function (): void {
         $process = Process::factory()
             ->forOwner($app, $appNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
             ]);
         ProcessEvent::factory()->create([
@@ -495,7 +495,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $process->id,
             'process_name' => 'vite',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'node_id' => $appNode->id,
             'unit_name' => 'orbit_docs_development_feature-docs_vite',
@@ -506,7 +506,7 @@ describe('ProcessStreamController', function (): void {
             'process_id' => $process->id,
             'process_name' => 'vite',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'workspace_id' => null,
             'node_id' => $appNode->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -516,14 +516,14 @@ describe('ProcessStreamController', function (): void {
         $workspaceScope = [
             'process_id' => $process->id,
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'node_id' => $appNode->id,
         ];
         app()->instance(ProcessStreamSleeper::class, new class($workspaceScope, $createdId) implements
             ProcessStreamSleeper {
             /**
-             * @param  array{process_id: int, app_id: int, app_instance_id: int, workspace_id: int, node_id: int}  $workspaceScope
+             * @param  array{process_id: int, app_id: int, instance_id: int, workspace_id: int, node_id: int}  $workspaceScope
              */
             public function __construct(
                 private array $workspaceScope,
@@ -541,7 +541,7 @@ describe('ProcessStreamController', function (): void {
                     'process_id' => $this->workspaceScope['process_id'],
                     'process_name' => 'vite',
                     'app_id' => $this->workspaceScope['app_id'],
-                    'app_instance_id' => $this->workspaceScope['app_instance_id'],
+                    'instance_id' => $this->workspaceScope['instance_id'],
                     'workspace_id' => $this->workspaceScope['workspace_id'],
                     'node_id' => $this->workspaceScope['node_id'],
                     'unit_name' => 'orbit_docs_development_feature-docs_vite',
@@ -609,7 +609,7 @@ describe('ProcessStreamController', function (): void {
 
     it('admits browser CORS preflight for the stream path including Last-Event-ID', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',

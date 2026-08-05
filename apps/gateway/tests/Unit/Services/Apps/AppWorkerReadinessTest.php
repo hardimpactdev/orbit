@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppWorkerReadiness;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -25,7 +25,7 @@ beforeEach(function (): void {
 });
 
 /**
- * @return array{app: Project, instance: AppInstance}
+ * @return array{app: App, instance: Instance}
  */
 function makeReadinessTarget(array $overrides = []): array
 {
@@ -37,7 +37,7 @@ function makeReadinessTarget(array $overrides = []): array
             'wireguard_address' => '10.6.0.61',
         ]);
 
-    $app = Project::factory()->for($node, 'node')->create(array_merge([
+    $app = App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
@@ -47,7 +47,7 @@ function makeReadinessTarget(array $overrides = []): array
 
     return [
         'app' => $app,
-        'instance' => AppInstance::factory()->for($app, 'app')->create(),
+        'instance' => Instance::factory()->for($app, 'app')->create(),
     ];
 }
 
@@ -121,13 +121,13 @@ describe('AppWorkerReadiness service', function (): void {
 
     it('returns app.worker_unknown_node when the app has no owning node relation', function (): void {
         // Build an App instance without saving so the node relation resolves to null.
-        $app = new Project;
+        $app = new App;
         $app->name = 'docs';
         $app->path = '/home/orbit/apps/docs';
         $app->document_root = 'public';
         $app->php_version = '8.5';
         $app->runtime = AppRuntimeKind::Php;
-        $instance = AppInstance::factory()->for($app, 'app')->make();
+        $instance = Instance::factory()->for($app, 'app')->make();
 
         $result = readinessProbe('')->assess($app, $instance);
 

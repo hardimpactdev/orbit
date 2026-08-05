@@ -9,7 +9,7 @@ enum ServingNode
     case Gateway;
     case Target;
     case AppOwning;
-    case AppInstanceOwning;
+    case InstanceOwning;
     case WorkspaceOwning;
     case Caller;
 }

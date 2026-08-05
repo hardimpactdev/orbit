@@ -5,7 +5,7 @@ Add a workspace setup step for an app.
 ## Usage
 
 ```bash
-orbit workspace-setup-step:add --command="composer install" [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command="composer install" [--instance=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Description
@@ -13,7 +13,7 @@ orbit workspace-setup-step:add --command="composer install" [--instance=<project
 The `workspace-setup-step:add` command registers a shell command that runs
 whenever Orbit creates or sets up a workspace for one instance. These
 steps are used for instance-specific preparation such as installing
-dependencies, copying environment files, or running project setup commands.
+dependencies, copying environment files, or running app setup commands.
 
 The gateway owns step policy for each instance. Steps execute in the
 workspace path on the owning node. Writes require a dotted instance
@@ -23,8 +23,8 @@ instance.
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--instance=<project.instance>`: The instance selector such as `hauser.nmbp`. Bare parent
-  project slugs are rejected for writes. When omitted, Orbit attempts the same
+- `--instance=<app.instance>`: The instance selector such as `hauser.nmbp`. Bare parent
+  app slugs are rejected for writes. When omitted, Orbit attempts the same
   precedence chain as [`workspace:new`](../1_workspace-new/workspace-new.md),
   but the resolved selector must name a concrete instance before the
   gateway accepts the write.

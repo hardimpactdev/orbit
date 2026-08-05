@@ -75,7 +75,7 @@ Doctor does not create a separate DNS row or DNS state family.
 ## Usage
 
 ```bash
-orbit doctor [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Examples
@@ -106,7 +106,7 @@ orbit doctor --all --stream-json
   only fleet mode and is mutually exclusive with `--node`, `--self`, `--instance`,
   and `--workspace`. Use `--all`; `--node=all` is rejected as
   `validation_failed` before probes.
-- `--instance`: Limit the run to one concrete `<project.instance>` and its owned family facts.
+- `--instance`: Limit the run to one concrete `<app.instance>` and its owned family facts.
 - `--workspace`: Limit the run to one workspace and its owned facts.
 
 **Resolution modes:**
@@ -194,9 +194,9 @@ own concrete issue codes and action maps:
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)
 - [`doctor --family=firewall_rule`](../../4_firewall/firewall-doctor.md)
 
-**Project runtime families:**
+**App runtime families:**
 
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=process`](../../7_process/process-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)

@@ -25,7 +25,7 @@ final class ShowRuntimeInventoryRequest extends GatewayRequest
 
         return new RuntimeInventoryResponse(
             nodes: $this->listOfStringKeyedArrays($data['nodes'] ?? []),
-            projects: $this->listOfStringKeyedArrays($data['projects'] ?? []),
+            apps: $this->listOfStringKeyedArrays($data['apps'] ?? []),
             processes: $this->listOfStringKeyedArrays($data['processes'] ?? []),
             tools: $this->listOfStringKeyedArrays($data['tools'] ?? []),
         );

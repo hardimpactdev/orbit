@@ -10,7 +10,7 @@ final class DeployLogCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:log
-        {instance? : Instance selector (project.instance)}
+        {instance? : Instance selector (app.instance)}
         {run? : Deployment run id}
         {--step= : Deployment run step id}
         {--lines=500 : Lines per captured stream}

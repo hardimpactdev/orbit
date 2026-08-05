@@ -12,10 +12,10 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\ToolDefinition;
 use App\Contracts\UpdateAllGatewayStream;
-use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\Project;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -121,7 +121,7 @@ class AppServiceProvider extends ServiceProvider
         $_SERVER['PAO_DISABLE'] ??= '1';
 
         Relation::morphMap([
-            'App\\Models\\App' => Project::class,
+            \App\Models\App::class => App::class,
         ]);
 
         $this->app->scoped(ActivityLogCorrelation::class);
@@ -129,8 +129,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(OperationResultRegistry::class);
         $this->app->afterResolving(DataConfig::class, function (DataConfig $config): void {
             $config->enforceMorphMap([
-                'orbit_app_instance_driver_config' => OrbitAppInstanceDriverConfigData::class,
-                'laravel_cloud_app_instance_driver_config' => LaravelCloudAppInstanceDriverConfigData::class,
+                'orbit_instance_driver_config' => OrbitInstanceDriverConfigData::class,
+                'laravel_cloud_instance_driver_config' => LaravelCloudInstanceDriverConfigData::class,
             ]);
         });
 

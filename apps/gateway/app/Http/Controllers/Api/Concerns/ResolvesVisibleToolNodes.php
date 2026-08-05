@@ -7,10 +7,10 @@ namespace App\Http\Controllers\Api\Concerns;
 use App\Data\Apps\AppSelection;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -254,7 +254,7 @@ trait ResolvesVisibleToolNodes
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return null;
         }
 
@@ -344,7 +344,7 @@ trait ResolvesVisibleToolNodes
             return $query->exists();
         }
 
-        return Project::query()
+        return App::query()
             ->where(function (Builder $query) use ($value): void {
                 $query->where('name', $value)
                     ->orWhere('domain', $value);

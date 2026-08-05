@@ -64,7 +64,7 @@ These terms define what the DNS command domain must not touch.
   commands must not create, inspect, or repair this projection.
 - **Private `.orbit` service name:** Router-owned service route such as
   `websocket.orbit`, `s3.orbit`, `metrics.orbit`, or `analytics.orbit` that
-  resolves inside the Orbit network. The proxy family projects router/private
+  resolves inside the Orbit network. The proxy family apps router/private
   `.orbit` directives and exact backend records into
   `dnsmasq.d/20-proxy-records.conf`. Database and cache processes use their
   stored WireGuard service endpoints unless a separate proxy contract

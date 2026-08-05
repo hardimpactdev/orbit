@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Access\NodePermissionRegistry;
-use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Tools\LegacyOpenCodeRuntimeCleanup;
 use App\Services\Tools\LegacyPolyscopeRuntimeCleanup;
 use App\Services\Tools\ToolCatalog;
@@ -90,20 +90,20 @@ it('proves removed ADE, OpenCode, and PolyScope public surfaces are absent', fun
 
 it('clears legacy ADE storage, permissions, and tool intent while preserving generic workspaces and process history', function (): void {
     $node = Node::factory()->create();
-    $project = Project::factory()->for($node, 'node')->create();
-    $instance = AppInstance::factory()->for($project)->create([
+    $app = App::factory()->for($node, 'node')->create();
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $project->path,
-            document_root: $project->document_root,
-            domain: $project->domain,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
         ),
     ]);
     $workspace = Workspace::factory()->create([
-        'app_id' => $project->id,
-        'app_instance_id' => $instance->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-ade-cleanup',
         'path' => '/tmp/feature-ade-cleanup',
     ]);
@@ -113,11 +113,11 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
             'agent_ide_config' => json_encode(['adapter' => 'opencode']),
         ]);
     DB::table('apps')
-        ->where('id', $project->id)
+        ->where('id', $app->id)
         ->update([
             'agent_ide_config' => json_encode(['adapter' => 'polyscope']),
         ]);
-    DB::table('app_instances')
+    DB::table('instances')
         ->where('id', $instance->id)
         ->update([
             'agent_ide_config' => json_encode(['adapter' => 'opencode']),
@@ -129,7 +129,7 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
             'agent_ide_workspace_id' => 'ws-123',
         ]);
     $process = Process::factory()
-        ->forOwner($project, $node)
+        ->forOwner($app, $node)
         ->create([
             'name' => 'history-process',
             'crash_notification' => ProcessCrashNotification::None,
@@ -140,7 +140,7 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
     $process->refresh();
     ProcessEvent::factory()->create([
         'process_id' => $process->id,
-        'app_id' => $project->id,
+        'app_id' => $app->id,
         'node_id' => $node->id,
         'event' => ProcessEventType::Crashed,
         'unit_name' => 'history-process',
@@ -187,21 +187,33 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
 
     // RefreshDatabase already applied the migration before fixtures were seeded.
     // Re-run the cleanup body against the seeded legacy residue (same pattern as
-    // OpenCodeCliToolBackfillTest).
-    $migration = require $migrationPath;
-    $migration->up();
+    // OpenCodeCliToolBackfillTest). The historical migration is byte-stable and
+    // owns the pre-cutover app_instances table name; present that schema only for
+    // this re-run. The 2026-08-05 cutover exclusively renames to instances.
+    expect(Schema::hasTable('instances'))->toBeTrue()->and(Schema::hasTable('app_instances'))->toBeFalse();
+
+    Schema::rename('instances', 'app_instances');
+
+    try {
+        $migration = require $migrationPath;
+        $migration->up();
+    } finally {
+        if (Schema::hasTable('app_instances') && ! Schema::hasTable('instances')) {
+            Schema::rename('app_instances', 'instances');
+        }
+    }
 
     $node->refresh();
-    $project->refresh();
+    $app->refresh();
     $instance->refresh();
     $workspace->refresh();
     $process->refresh();
 
     expect(DB::table('nodes')->where('id', $node->id)->value('agent_ide_config'))
         ->toBeNull()
-        ->and(DB::table('apps')->where('id', $project->id)->value('agent_ide_config'))
+        ->and(DB::table('apps')->where('id', $app->id)->value('agent_ide_config'))
         ->toBeNull()
-        ->and(DB::table('app_instances')->where('id', $instance->id)->value('agent_ide_config'))
+        ->and(DB::table('instances')->where('id', $instance->id)->value('agent_ide_config'))
         ->toBeNull()
         ->and(DB::table('workspaces')->where('id', $workspace->id)->value('agent_ide'))
         ->toBeNull()
@@ -250,7 +262,7 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
     foreach ([
         'nodes.agent_ide_config',
         'apps.agent_ide_config',
-        'app_instances.agent_ide_config',
+        'instances.agent_ide_config',
         'workspaces.agent_ide',
         'workspaces.agent_ide_workspace_id',
         'processes.crash_notification',
@@ -261,11 +273,16 @@ it('clears legacy ADE storage, permissions, and tool intent while preserving gen
 });
 
 it('does not expand removed predecessor grants into current permissions', function (): void {
-    $migrator = app(ProjectInstancePermissionMigrator::class);
+    $registry = app(NodePermissionRegistry::class);
+    $normalizer = app(NodePermissionNormalizer::class);
 
-    expect($migrator->migrate(['app:agent', 'app:prune']))
-        ->toBe([])
-        ->and($migrator->current(['app:agent', 'app:prune', 'instance:read']))
+    foreach (['app:agent', 'app:prune'] as $token) {
+        expect($registry->isKnown($token))->toBeFalse();
+        expect(fn () => $normalizer->normalize([$token]))
+            ->toThrow(InvalidArgumentException::class, "Unknown permission [{$token}].");
+    }
+
+    expect($normalizer->normalize(['instance:read'])->permissions)
         ->toBe(['instance:read']);
 });
 

@@ -23,14 +23,14 @@ final class NodePermissionRegistry
             'activity:show',
             'activity:read',
 
-            // Project
-            'project:*',
-            'project:list',
-            'project:show',
-            'project:read',
-            'project:write',
-            'project:remove',
-            'project:new',
+            // App
+            'app:*',
+            'app:list',
+            'app:show',
+            'app:read',
+            'app:write',
+            'app:remove',
+            'app:new',
 
             // Instance
             'instance:*',
@@ -258,7 +258,7 @@ final class NodePermissionRegistry
     {
         return [
             'activity:read' => ['activity:list', 'activity:show'],
-            'project:read' => ['project:list', 'project:show'],
+            'app:read' => ['app:list', 'app:show'],
             'instance:read' => ['instance:list', 'instance:show', 'instance-setup-step:list'],
             'instance:write' => ['instance:setup', 'instance-setup-step:add', 'instance-setup-step:remove'],
             'database:query:write' => ['database:query'],

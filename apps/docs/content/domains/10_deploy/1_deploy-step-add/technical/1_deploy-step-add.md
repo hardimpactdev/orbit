@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `deploy_command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
 | `title` | `--title` | `Optional.` | `Never.` | Command-derived title. | Non-empty display label. |
 | `order` | `--order` | `Optional.` | `Never.` | Next pipeline position. | Positive integer insertion order. |
@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Deployment Policy Rules
 
 - Resolves one concrete production instance through gateway configuration.
-- Fails before side effects unless the selected instance belongs to a production project.
+- Fails before side effects unless the selected instance belongs to a production app.
 - Writes one deploy-step definition owned by the selected instance.
 - Stores the step command exactly as provided. Context placeholders are not
   resolved during policy writes.
@@ -73,8 +73,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Activity Logging
 
@@ -83,13 +83,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:POST /deploy/steps` |
 | Effect | `write` |
 | Subject | `DeployStep` when created; `none` otherwise. |
-| Properties | `project`, `instance`, `step_id`, `title`, `order`. No command secrets. |
+| Properties | `app`, `instance`, `step_id`, `title`, `order`. No command secrets. |
 | Description | derived |
 
 ## Doctor Relationship
 
 Deployment policy is instance-owned gateway state. `deploy:step-add` does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use deployment
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use deployment
 policy when reporting `instance.deployment_pipeline_invalid`.
 
 ## Test Mapping

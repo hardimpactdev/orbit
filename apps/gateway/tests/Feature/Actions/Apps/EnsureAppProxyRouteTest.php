@@ -5,13 +5,13 @@ declare(strict_types=1);
 use App\Actions\Apps\EnsureAppProxyRoute;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -144,12 +144,12 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             'tld' => 'test',
             'wireguard_address' => '10.47.0.31',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create();
+    $instance = Instance::factory()->for($app)->create();
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -249,14 +249,14 @@ it('creates a static app proxy route with file_server', function (): void {
             'tld' => 'test',
             'wireguard_address' => '10.47.0.32',
         ]);
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->static()
         ->create([
             'name' => 'marketing',
             'document_root' => 'public',
         ]);
-    $instance = AppInstance::factory()->for($app)->create();
+    $instance = Instance::factory()->for($app)->create();
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -327,7 +327,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
             'tld' => 'test',
             'wireguard_address' => '10.47.0.33',
         ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'api',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
@@ -392,15 +392,15 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
 
 it('removes stale app-owned proxy routes for the same app when its domain changes', function (): void {
     $node = Node::factory()->appDev(['tld' => 'nmbp'])->create(['tld' => 'nmbp']);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'happie-nmbp',
         'document_root' => 'public',
         'domain' => 'happie.nmbp',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -416,7 +416,7 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         'kind' => 'app',
         'domain' => 'happie-nmbp.nmbp',
         'config' => [
-            'app_instance' => [
+            'instance' => [
                 'id' => $instance->id,
                 'name' => $instance->name,
                 'selector' => 'happie-nmbp.nmbp',
@@ -470,10 +470,10 @@ it('converges production proxy artifacts in backend router ingress order', funct
         ])
         ->and($route->config['target'])
         ->toBe([
-            'type' => 'app_instance',
+            'type' => 'instance',
             'value' => 'hauzer.production',
         ])
-        ->and($route->config['app_instance'])
+        ->and($route->config['instance'])
         ->toMatchArray([
             'name' => 'production',
             'selector' => 'hauzer.production',
@@ -570,13 +570,13 @@ function ensure_app_proxy_route_agent_requests(string $wireguardAddress): array
     return Http::recorded(
         fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
     )
-        ->map(fn (array $record): Request => $record[0])
+        ->map(fn (array $record): array => $record[0]->data())
         ->values()
         ->all();
 }
 
 /**
- * @return array{Project, Node, Node, Node}
+ * @return array{App, Node, Node, Node}
  */
 function ensure_app_proxy_route_production_topology(): array
 {
@@ -611,16 +611,16 @@ function ensure_app_proxy_route_production_topology(): array
         'status' => 'active',
         'settings' => ['ingress_node_id' => $ingress->id],
     ]);
-    $app = Project::factory()->for($backend, 'node')->create([
+    $app = App::factory()->for($backend, 'node')->create([
         'name' => 'hauzer',
         'domain' => 'hauzer.app',
         'environment' => 'production',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $backend->id,
             node: $backend->name,
             path: $app->path,

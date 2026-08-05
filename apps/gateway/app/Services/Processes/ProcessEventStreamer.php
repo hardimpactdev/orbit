@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Collection;
  * Follow always starts after a connect-time high-water mark (snapshot cursor).
  * It never replays rows at or below that mark, regardless of Last-Event-ID.
  *
- * Tail scope is app_instance_id + workspace_id|null + node_id (not a frozen
+ * Tail scope is instance_id + workspace_id|null + node_id (not a frozen
  * process-id list), so processes configured after connect still stream.
  *
  * @mago-expect analysis:less-specific-return-statement
@@ -36,7 +36,7 @@ final readonly class ProcessEventStreamer
     {
         return $this
             ->scopedQuery($scope)
-            ->with(['process', 'node', 'project', 'appInstance', 'workspace'])
+            ->with(['process', 'node', 'app', 'instance', 'workspace'])
             ->where('id', '>', $afterId)
             ->orderBy('id')
             ->get();
@@ -118,7 +118,7 @@ final readonly class ProcessEventStreamer
     private function scopedQuery(ProcessStreamScope $scope): Builder
     {
         $query = ProcessEvent::query()
-            ->where('app_instance_id', $scope->appInstanceId)
+            ->where('instance_id', $scope->instanceId)
             ->where('node_id', $scope->nodeId);
 
         if ($scope->workspaceId !== null) {

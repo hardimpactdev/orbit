@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Data\Apps\AppSelection;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -23,7 +23,7 @@ final readonly class AppSelectorResolver
     ) {}
 
     /**
-     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     * @param  (callable(Instance): bool)|null  $instanceIsVisible
      */
     public function resolve(?string $selector, ?callable $instanceIsVisible = null): ?AppSelection
     {
@@ -33,32 +33,32 @@ final readonly class AppSelectorResolver
             return null;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with(['node', 'instances'])
             ->where('name', $value)
             ->first();
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return new AppSelection(app: $app, selector: $value);
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with(['node', 'instances'])
             ->where('domain', $value)
             ->first();
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return new AppSelection(app: $app, selector: $value);
         }
 
         if (str_contains($value, '.')) {
             [$appName, $instanceSelector] = explode('.', $value, 2);
-            $app = Project::query()
+            $app = App::query()
                 ->with(['node', 'instances'])
                 ->where('name', $appName)
                 ->first();
 
-            if ($app instanceof Project) {
+            if ($app instanceof App) {
                 return new AppSelection(
                     app: $app,
                     instance: $this->resolveInstance(
@@ -73,17 +73,14 @@ final readonly class AppSelectorResolver
             }
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with(['node', 'instances'])
             ->get()
             ->first(
-                fn (Project $candidate): bool => (
-                    $candidate->url() === "https://{$value}"
-                    || $candidate->url() === $value
-                ),
+                fn (App $candidate): bool => $candidate->url() === "https://{$value}" || $candidate->url() === $value,
             );
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return new AppSelection(app: $app, selector: $value);
         }
 
@@ -100,20 +97,20 @@ final readonly class AppSelectorResolver
 
         throw new AppSelectionResolutionFailed(
             'validation_failed',
-            'Project or instance not found. Pass --instance=<project.instance> explicitly.',
+            'App or instance not found. Pass --instance=<app.instance> explicitly.',
             ['field' => $field],
         );
     }
 
     /**
-     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     * @param  (callable(Instance): bool)|null  $instanceIsVisible
      */
     public function requireInstance(
         AppSelection $selection,
         string $field = 'instance',
         ?callable $instanceIsVisible = null,
     ): AppSelection {
-        if ($selection->instance instanceof AppInstance) {
+        if ($selection->instance instanceof Instance) {
             return $selection;
         }
 
@@ -121,7 +118,7 @@ final readonly class AppSelectorResolver
         $instances = $selection->app->instances->values();
         $instance = $instances->first();
 
-        if ($instances->count() === 1 && $instance instanceof AppInstance) {
+        if ($instances->count() === 1 && $instance instanceof Instance) {
             return new AppSelection(
                 app: $selection->app,
                 instance: $instance,
@@ -133,7 +130,7 @@ final readonly class AppSelectorResolver
         $meta = [
             'field' => $field,
             'reason' => 'instance_required',
-            'project' => $selection->app->name,
+            'app' => $selection->app->name,
         ];
         $visibleInstances = $instanceIsVisible === null
             ? $instances
@@ -145,7 +142,7 @@ final readonly class AppSelectorResolver
 
         throw new AppSelectionResolutionFailed(
             'validation_failed',
-            "Project '{$selection->app->name}' requires a concrete instance selector.",
+            "App '{$selection->app->name}' requires a concrete instance selector.",
             $meta,
         );
     }
@@ -166,10 +163,10 @@ final readonly class AppSelectorResolver
             return $instanceSelection;
         }
 
-        $app = Project::query()
+        $app = App::query()
             ->with(['node', 'instances'])
             ->get()
-            ->first(function (Project $app) use ($normalizedPath): bool {
+            ->first(function (App $app) use ($normalizedPath): bool {
                 $appPath = rtrim($app->path, '/');
 
                 return (
@@ -178,12 +175,12 @@ final readonly class AppSelectorResolver
                 );
             });
 
-        if ($app instanceof Project) {
+        if ($app instanceof App) {
             return new AppSelection(app: $app, selector: $normalizedPath);
         }
 
         $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');
@@ -194,7 +191,7 @@ final readonly class AppSelectorResolver
                 );
             });
 
-        if (! $workspace instanceof Workspace || ! $workspace->app instanceof Project) {
+        if (! $workspace instanceof Workspace || ! $workspace->app instanceof App) {
             return null;
         }
 
@@ -211,13 +208,13 @@ final readonly class AppSelectorResolver
             return false;
         }
 
-        if (! $selection->instance instanceof AppInstance) {
+        if (! $selection->instance instanceof Instance) {
             return true;
         }
 
         $instance = $this->placement->instanceForWorkspace($workspace);
 
-        return $instance instanceof AppInstance && $instance->id === $selection->instance->id;
+        return $instance instanceof Instance && $instance->id === $selection->instance->id;
     }
 
     public function applyAppConstraint(Builder $query, AppSelection $selection): Builder
@@ -225,7 +222,7 @@ final readonly class AppSelectorResolver
         return $query->where('app_id', $selection->app->id);
     }
 
-    public function instanceIsVisibleTo(Node $caller, AppInstance $instance, string $permission): bool
+    public function instanceIsVisibleTo(Node $caller, Instance $instance, string $permission): bool
     {
         $node = $this->placement->nodeForInstance($instance);
 
@@ -245,14 +242,14 @@ final readonly class AppSelectorResolver
         $bestSelection = null;
         $bestLength = -1;
 
-        Project::query()
+        App::query()
             ->with(['node', 'instances'])
             ->get()
-            ->each(function (Project $app) use ($path, &$bestSelection, &$bestLength): void {
+            ->each(function (App $app) use ($path, &$bestSelection, &$bestLength): void {
                 $instance = $this->placement->matchingOrbitInstanceForPath($app, $path);
                 $config = $instance?->driver_config;
 
-                if (! $instance instanceof AppInstance || ! $config instanceof OrbitAppInstanceDriverConfigData) {
+                if (! $instance instanceof Instance || ! $config instanceof OrbitInstanceDriverConfigData) {
                     return;
                 }
 
@@ -279,19 +276,19 @@ final readonly class AppSelectorResolver
     }
 
     /**
-     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     * @param  (callable(Instance): bool)|null  $instanceIsVisible
      */
     private function resolveInstance(
-        Project $app,
+        App $app,
         string $instanceSelector,
         string $fullSelector,
         ?callable $instanceIsVisible,
-    ): AppInstance {
+    ): Instance {
         $visible = $app
             ->instances
             ->filter(
-                fn (mixed $instance): bool => (
-                    $instance instanceof AppInstance
+                static fn (mixed $instance): bool => (
+                    $instance instanceof Instance
                     && ($instanceIsVisible === null || $instanceIsVisible($instance))
                 ),
             )
@@ -300,8 +297,8 @@ final readonly class AppSelectorResolver
         $needle = mb_strtolower(trim($instanceSelector));
         $exactNameMatches = $visible
             ->filter(
-                fn (mixed $instance): bool => (
-                    $instance instanceof AppInstance
+                static fn (mixed $instance): bool => (
+                    $instance instanceof Instance
                     && mb_strtolower($instance->name) === $needle
                 ),
             )
@@ -310,7 +307,7 @@ final readonly class AppSelectorResolver
         if ($exactNameMatches->count() === 1) {
             $exact = $exactNameMatches->first();
 
-            if ($exact instanceof AppInstance) {
+            if ($exact instanceof Instance) {
                 return $exact;
             }
         }
@@ -319,7 +316,7 @@ final readonly class AppSelectorResolver
             ? $exactNameMatches
             : $visible
                 ->filter(
-                    fn (mixed $instance): bool => $instance instanceof AppInstance
+                    fn (mixed $instance): bool => $instance instanceof Instance
                     && $this->placement->instanceMatchesSelector(
                         instance: $instance,
                         selector: $instanceSelector,
@@ -331,7 +328,7 @@ final readonly class AppSelectorResolver
 
         $match = $matches->first();
 
-        if ($matches->count() === 1 && $match instanceof AppInstance) {
+        if ($matches->count() === 1 && $match instanceof Instance) {
             return $match;
         }
 
@@ -339,7 +336,7 @@ final readonly class AppSelectorResolver
             $instanceNames = [];
 
             foreach ($matches as $instance) {
-                if ($instance instanceof AppInstance) {
+                if ($instance instanceof Instance) {
                     $instanceNames[] = $instance->name;
                 }
             }
@@ -349,7 +346,7 @@ final readonly class AppSelectorResolver
                 "Instance selector '{$fullSelector}' is ambiguous.",
                 [
                     'field' => 'instance',
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'selector' => $fullSelector,
                     'instances' => $instanceNames,
                 ],
@@ -361,7 +358,7 @@ final readonly class AppSelectorResolver
             "Instance '{$fullSelector}' not found.",
             [
                 'field' => 'instance',
-                'project' => $app->name,
+                'app' => $app->name,
                 'instance' => $instanceSelector,
             ],
         );

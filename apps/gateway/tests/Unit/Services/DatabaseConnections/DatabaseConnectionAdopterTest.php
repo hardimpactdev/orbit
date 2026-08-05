@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\RemoteShell\RemoteEnvFile;
@@ -49,7 +49,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => databaseConnectionAdopterAppInstance($app)->id,
+            'instance_id' => databaseConnectionAdopterInstance($app)->id,
             'name' => 'feature',
             'path' => $workspacePath,
         ]);
@@ -71,13 +71,13 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->toHaveCount(1)
             ->and($results[0]->detail)
             ->toMatchArray([
-                'target_type' => 'app_instance',
+                'target_type' => 'instance',
                 'app' => 'docs',
-                'app_instance' => 'development',
+                'instance' => 'development',
             ])
             ->and(DatabaseConnectionTarget::query()->where('workspace_id', $workspace->id)->exists())
             ->toBeFalse()
-            ->and(DatabaseConnectionTarget::query()->whereNotNull('app_instance_id')->count())
+            ->and(DatabaseConnectionTarget::query()->whereNotNull('instance_id')->count())
             ->toBe(1);
 
         Http::assertNotSent(function (Request $request) use ($workspacePath): bool {
@@ -209,7 +209,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => 'old-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
+            ->forInstance(databaseConnectionAdopterInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -288,7 +288,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
+            ->forInstance(databaseConnectionAdopterInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -369,7 +369,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->and(DatabaseConnection::query()->count())
             ->toBe(1)
             ->and(
-                databaseConnectionAdopterAppInstance($app)
+                databaseConnectionAdopterInstance($app)
                     ->databaseConnectionTargets()
                     ->first()
                     ?->database_connection_id,
@@ -407,7 +407,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         expect($results)
             ->toHaveCount(2)
             ->and(
-                databaseConnectionAdopterAppInstance($app)
+                databaseConnectionAdopterInstance($app)
                     ->databaseConnectionTargets()
                     ->pluck('env_prefix')
                     ->sort()
@@ -440,7 +440,7 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         expect($results)
             ->toHaveCount(1)
-            ->and(databaseConnectionAdopterAppInstance($app)->databaseConnectionTargets()->pluck('env_prefix')->all())
+            ->and(databaseConnectionAdopterInstance($app)->databaseConnectionTargets()->pluck('env_prefix')->all())
             ->toBe(['REPORTING_DB'])
             ->and(DatabaseConnection::query()->where('slug', 'docs-development-reporting-db')->exists())
             ->toBeTrue();
@@ -468,7 +468,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => $storedCredential],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
+            ->forInstance(databaseConnectionAdopterInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -584,12 +584,12 @@ describe('DatabaseConnectionAdopter', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionAdopterApp(array $attributes): Project
+function databaseConnectionAdopterApp(array $attributes): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
@@ -600,7 +600,7 @@ function databaseConnectionAdopterApp(array $attributes): Project
     return $app;
 }
 
-function databaseConnectionAdopterAppInstance(Project $app): AppInstance
+function databaseConnectionAdopterInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
 }

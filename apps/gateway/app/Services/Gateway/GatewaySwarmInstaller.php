@@ -110,7 +110,7 @@ class GatewaySwarmInstaller
         }
 
         $configRoot = $this->configRoot($configRoot);
-        File::ensureDirectoryExists("{$configRoot}/certs", 0700);
+        File::ensureDirectoryExists("{$configRoot}/certs", 0o700);
 
         $gatewayLeaf = $this->issueAndStageGatewayLeaf($wireguardAddress);
 

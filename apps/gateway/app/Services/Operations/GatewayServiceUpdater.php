@@ -298,7 +298,7 @@ class GatewayServiceUpdater
     {
         $settings = $gatewayNode
             ->roleAssignments
-            ->first(fn ($assignment): bool => (string) $assignment->role === 'vpn')
+            ->first(static fn ($assignment): bool => (string) $assignment->role === 'vpn')
             ?->settings;
 
         if (is_array($settings)) {

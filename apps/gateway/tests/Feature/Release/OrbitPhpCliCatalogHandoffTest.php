@@ -8,7 +8,7 @@ it('populates intentional null catalog slots from manifests and is idempotent', 
     $fixtureDir = sys_get_temp_dir().'/orbit-php-cli-handoff-'.bin2hex(random_bytes(4));
     $manifestDir = $fixtureDir.'/manifests';
     $catalogPath = $fixtureDir.'/artifact-catalog.build.json';
-    mkdir($manifestDir, 0777, true);
+    mkdir($manifestDir, 0o777, true);
 
     $catalog = [
         'schema_version' => 1,
@@ -142,7 +142,7 @@ it('rejects manifests with wrong tool, missing filename, filename mismatch, or d
     $fixtureDir = sys_get_temp_dir().'/orbit-php-cli-handoff-neg-'.bin2hex(random_bytes(4));
     $manifestDir = $fixtureDir.'/manifests';
     $catalogPath = $fixtureDir.'/artifact-catalog.build.json';
-    mkdir($manifestDir, 0777, true);
+    mkdir($manifestDir, 0o777, true);
 
     $catalog = json_decode(
         (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),
@@ -256,7 +256,7 @@ it('refuses runtime promotion when build catalog lacks artifact_base_url', funct
     $manifestDir = $fixtureDir.'/manifests';
     $buildPath = $fixtureDir.'/build.json';
     $runtimePath = $fixtureDir.'/runtime.json';
-    mkdir($manifestDir, 0777, true);
+    mkdir($manifestDir, 0o777, true);
 
     $build = json_decode(
         (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),
@@ -313,7 +313,7 @@ it('refuses runtime promotion until the full matrix is published', function (): 
     $manifestDir = $fixtureDir.'/manifests';
     $buildPath = $fixtureDir.'/build.json';
     $runtimePath = $fixtureDir.'/runtime.json';
-    mkdir($manifestDir, 0777, true);
+    mkdir($manifestDir, 0o777, true);
 
     $build = json_decode(
         (string) file_get_contents(repo_path(PhpCliArtifactCatalog::BUILD_CATALOG_RELATIVE_PATH)),

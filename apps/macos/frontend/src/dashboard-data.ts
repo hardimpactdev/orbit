@@ -1,6 +1,6 @@
 export type DashboardSummary = {
     nodes: NodeSummary[];
-    projects: ProjectSummary[];
+    apps: AppSummary[];
     instances: InstanceSummary[];
     databases: DatabaseSummary[];
     processes: ProcessSummary[];
@@ -11,7 +11,7 @@ export type DashboardSummary = {
     loadedAt: Date;
 };
 
-export type ApiEndpointKey = 'runtimeInventory' | 'nodes' | 'projects' | 'processes' | 'tools';
+export type ApiEndpointKey = 'runtimeInventory' | 'nodes' | 'apps' | 'processes' | 'tools';
 
 export type ApiEndpointStatus = {
     endpoint: ApiEndpointKey;
@@ -24,7 +24,7 @@ export type DashboardTotals = {
     nodes: number;
     onlineNodes: number;
     offlineNodes: number;
-    projects: number;
+    apps: number;
     instances: number;
     databases: number;
     processes: number;
@@ -51,7 +51,7 @@ export type NodeSummary = {
     address: string;
 };
 
-export type ProjectSummary = {
+export type AppSummary = {
     name: string;
     instances: InstanceSummary[];
     status: string;
@@ -59,7 +59,7 @@ export type ProjectSummary = {
 
 export type InstanceSummary = {
     name: string;
-    project: string;
+    app: string;
     node: string;
     environment: string;
     status: string;
@@ -75,7 +75,7 @@ export type DatabaseSummary = {
 export type ProcessSummary = {
     name: string;
     node: string;
-    project: string;
+    app: string;
     runtime: string;
     status: string;
 };
@@ -89,7 +89,7 @@ export type ToolSummary = {
 
 export type GatewayPayloads = {
     nodes: unknown;
-    projects: unknown;
+    apps: unknown;
     processes: unknown;
     tools: unknown;
     apiStatuses?: ApiEndpointStatus[];
@@ -114,8 +114,8 @@ const databaseToolNames = new Set([
 
 export function createDashboardSummary(payloads: GatewayPayloads, loadedAt = new Date()): DashboardSummary {
     const nodes = normalizeNodes(payloads.nodes);
-    const projects = normalizeProjects(payloads.projects);
-    const instances = projects.flatMap(project => project.instances);
+    const apps = normalizeApps(payloads.apps);
+    const instances = apps.flatMap(app => app.instances);
     const databases = normalizeDatabases(nodes, payloads.tools);
     const processes = normalizeProcesses(payloads.processes);
     const tools = normalizeTools(payloads.tools);
@@ -124,7 +124,7 @@ export function createDashboardSummary(payloads: GatewayPayloads, loadedAt = new
 
     return {
         nodes,
-        projects,
+        apps,
         instances,
         databases,
         processes,
@@ -135,7 +135,7 @@ export function createDashboardSummary(payloads: GatewayPayloads, loadedAt = new
             nodes: nodeGroups.length,
             onlineNodes: nodeGroups.filter(group => group.statusTone === 'healthy' || group.statusTone === 'idle').length,
             offlineNodes: nodeGroups.filter(group => group.statusTone === 'offline' || group.statusTone === 'error').length,
-            projects: projects.length,
+            apps: apps.length,
             instances: instances.length,
             databases: databases.length,
             processes: processes.length,
@@ -176,17 +176,17 @@ export function normalizeNodes(payload: unknown): NodeSummary[] {
     });
 }
 
-export function normalizeProjects(payload: unknown): ProjectSummary[] {
-    return extractArray(payload, 'projects').map(item => {
-        const project = objectRecord(item);
-        const projectName = stringValue(project.name ?? project.project, 'unknown');
-        const instances = arrayValues(project.instances).map(item => {
+export function normalizeApps(payload: unknown): AppSummary[] {
+    return extractArray(payload, 'apps').map(item => {
+        const app = objectRecord(item);
+        const appName = stringValue(app.name ?? app.app, 'unknown');
+        const instances = arrayValues(app.instances).map(item => {
             const instance = objectRecord(item);
             const node = objectRecord(instance.node);
 
             return {
                 name: stringValue(instance.name ?? instance.instance, 'unknown'),
-                project: projectName,
+                app: appName,
                 node: stringValue(node.name ?? instance.node_name ?? instance.node, 'unknown'),
                 environment: stringValue(instance.environment, 'unknown'),
                 status: stringValue(instance.status ?? instance.state, 'registered'),
@@ -194,9 +194,9 @@ export function normalizeProjects(payload: unknown): ProjectSummary[] {
         });
 
         return {
-            name: projectName,
+            name: appName,
             instances,
-            status: stringValue(project.status ?? project.state, 'registered'),
+            status: stringValue(app.status ?? app.state, 'registered'),
         };
     });
 }
@@ -235,12 +235,12 @@ export function normalizeProcesses(payload: unknown): ProcessSummary[] {
     return extractArray(payload, 'processes').map(item => {
         const process = objectRecord(item);
         const node = objectRecord(process.node);
-        const project = objectRecord(process.project);
+        const app = objectRecord(process.app);
 
         return {
             name: stringValue(process.name, 'unknown'),
             node: stringValue(node.name ?? process.node_name ?? process.node, 'unknown'),
-            project: stringValue(project.name ?? process.project_name ?? process.project ?? process.owner, 'none'),
+            app: stringValue(app.name ?? process.app_name ?? process.app ?? process.owner, 'none'),
             runtime: stringValue(process.runtime ?? process.runtime_backend, 'unknown'),
             status: stringValue(process.status ?? process.state, 'unknown'),
         };
@@ -365,8 +365,8 @@ function endpointLabel(endpoint: ApiEndpointKey): string {
         return 'Nodes';
     }
 
-    if (endpoint === 'projects') {
-        return 'Projects';
+    if (endpoint === 'apps') {
+        return 'Apps';
     }
 
     if (endpoint === 'processes') {

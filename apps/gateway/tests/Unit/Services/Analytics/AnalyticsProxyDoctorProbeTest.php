@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
+use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
@@ -172,7 +172,7 @@ function analyticsProxyBackend(): Node
 }
 
 /**
- * @return array{Node, Project, AppAnalyticsBinding}
+ * @return array{Node, App, AppAnalyticsBinding}
  */
 function analyticsPublicBinding(): array
 {
@@ -192,7 +192,7 @@ function analyticsPublicBinding(): array
         ->roleAssignments()
         ->where('role', 'app-prod')
         ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'domain' => 'docs.test',
         'node_id' => $appNode->id,

@@ -13,7 +13,7 @@ unless a future command contract adds an explicit live inspection option.
 ## Usage
 
 ```bash
-orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]
+orbit tool:list [--instance=<app.instance>] [--node=<node>] [--all] [--json]
 ```
 
 ## Examples

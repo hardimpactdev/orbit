@@ -14,7 +14,7 @@ uses(TestCase::class);
 
 it('targets the activity list endpoint with normalized query parameters', function (): void {
     $request = new ListActivityRequest(
-        project: 'docs',
+        app: 'docs',
         node: 'app-1',
         effect: 'destructive',
         correlation: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -29,7 +29,7 @@ it('targets the activity list endpoint with normalized query parameters', functi
         ->toBe('/api/activity')
         ->and($request->query()->all())
         ->toBe([
-            'project' => 'docs',
+            'app' => 'docs',
             'node' => 'app-1',
             'effect' => 'destructive',
             'correlation' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',

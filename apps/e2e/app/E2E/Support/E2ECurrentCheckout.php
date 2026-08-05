@@ -2385,7 +2385,7 @@ final class E2ECurrentCheckout
 
         return array_all(
             self::archiveExcludePatterns(),
-            fn (string $pattern): bool => ! self::archivePathMatchesPattern($path, $pattern),
+            static fn (string $pattern): bool => ! self::archivePathMatchesPattern($path, $pattern),
         );
     }
 

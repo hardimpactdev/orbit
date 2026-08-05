@@ -10,7 +10,7 @@ describe('workspace:env', function (): void {
     it('sets and applies a workspace env value through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'workspace',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'development',
             'workspace' => 'feature-mail',
             'path' => '/home/orbit/apps/billing/.worktrees/feature-mail/.env',
@@ -56,7 +56,7 @@ describe('workspace:env', function (): void {
     it('renders human workspace target metadata when no explicit values exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'workspace',
-            'project' => 'billing',
+            'app' => 'billing',
             'instance' => 'development',
             'workspace' => 'feature-mail',
             'path' => '/home/orbit/apps/billing/.worktrees/feature-mail/.env',
@@ -79,7 +79,7 @@ describe('workspace:env', function (): void {
             ->and($output)
             ->toContain('Scope: workspace')
             ->and($output)
-            ->toContain('Project: billing')
+            ->toContain('App: billing')
             ->and($output)
             ->toContain('Instance: development')
             ->and($output)
@@ -101,13 +101,13 @@ describe('workspace:env', function (): void {
         Http::fake([
             'https://gateway.test/*' => Http::sequence()
                 ->push(fakeSuccessEnvelope([
-                    'project' => 'billing',
+                    'app' => 'billing',
                     'instance' => 'development',
                     'workspace' => 'feature-mail',
                 ]))
                 ->push(fakeSuccessEnvelope([
                     'scope' => 'workspace',
-                    'project' => 'billing',
+                    'app' => 'billing',
                     'instance' => 'development',
                     'workspace' => 'feature-mail',
                     'path' => '/worktrees/feature-mail/.env',

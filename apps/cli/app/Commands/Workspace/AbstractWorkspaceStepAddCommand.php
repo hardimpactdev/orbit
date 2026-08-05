@@ -78,7 +78,7 @@ abstract class AbstractWorkspaceStepAddCommand extends WorkspaceGatewayCommand
     {
         $data = $this->successData($response);
         $step = is_array($data['step'] ?? null) ? $data['step'] : [];
-        $app = is_string($step['project'] ?? null) && $step['project'] !== '' ? $step['project'] : '';
+        $app = is_string($step['app'] ?? null) && $step['app'] !== '' ? $step['app'] : '';
         $instance = is_string($step['instance'] ?? null) && $step['instance'] !== ''
             ? $step['instance']
             : '';

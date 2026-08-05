@@ -12,13 +12,13 @@ final readonly class RemoveDeployStep
     public function handle(DeployStep $step): void
     {
         DB::transaction(function () use ($step): void {
-            $appInstanceId = $step->app_instance_id;
+            $instanceId = $step->instance_id;
             $order = $step->sort_order;
 
             $step->delete();
 
             DeployStep::query()
-                ->where('app_instance_id', $appInstanceId)
+                ->where('instance_id', $instanceId)
                 ->where('sort_order', '>', $order)
                 ->orderBy('sort_order')
                 ->each(function (DeployStep $step): void {

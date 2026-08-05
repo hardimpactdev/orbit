@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use LogicException;
@@ -22,7 +22,7 @@ final readonly class DatabaseConnectionPayloadMapper
      */
     public function toArray(DatabaseConnection $connection, ?Node $caller = null): array
     {
-        $connection->loadMissing(['node', 'targets.appInstance.app', 'targets.workspace.app']);
+        $connection->loadMissing(['node', 'targets.instance.app', 'targets.workspace.app']);
 
         /** @var list<array<string, string>> $targets */
         $targets = [];
@@ -59,11 +59,11 @@ final readonly class DatabaseConnectionPayloadMapper
      */
     private function targetPayload(DatabaseConnectionTarget $target): array
     {
-        if ($target->appInstance instanceof AppInstance) {
+        if ($target->instance instanceof Instance) {
             return [
                 'type' => 'instance',
-                'project' => $target->appInstance->app->name,
-                'instance' => $target->appInstance->name,
+                'app' => $target->instance->app->name,
+                'instance' => $target->instance->name,
                 'env_prefix' => $target->env_prefix,
             ];
         }
@@ -93,7 +93,7 @@ final readonly class DatabaseConnectionPayloadMapper
     {
         return implode(':', [
             $target['type'],
-            $target['name'] ?? $target['project'] ?? '',
+            $target['name'] ?? $target['app'] ?? '',
             $target['instance'] ?? '',
             $target['env_prefix'],
         ]);

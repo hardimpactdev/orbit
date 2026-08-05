@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
@@ -37,7 +37,7 @@ final readonly class EnactAppRuntime
     /**
      * @return list<array<string, string>>
      */
-    public function handle(Project $app): array
+    public function handle(App $app): array
     {
         $app->loadMissing('instances');
 
@@ -48,7 +48,7 @@ final readonly class EnactAppRuntime
         $warnings = [];
 
         foreach ($app->instances as $instance) {
-            if (! $instance instanceof AppInstance || $instance->driver !== AppInstanceDriver::Orbit) {
+            if (! $instance instanceof Instance || $instance->driver !== InstanceDriver::Orbit) {
                 continue;
             }
 
@@ -95,7 +95,7 @@ final readonly class EnactAppRuntime
         return $warnings;
     }
 
-    private function ensureRuntimeTlsMaterial(Project $app, Node $owningNode): void
+    private function ensureRuntimeTlsMaterial(App $app, Node $owningNode): void
     {
         if (! $this->innerTlsPolicy->appliesToApp($app)) {
             return;
@@ -110,7 +110,7 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function runtimeContainerWarning(Project $app, bool $hadExistingContainer, Throwable $exception): array
+    private function runtimeContainerWarning(App $app, bool $hadExistingContainer, Throwable $exception): array
     {
         $code = $hadExistingContainer
             ? 'process.runtime_unit_mismatch'
@@ -129,7 +129,7 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function phpVersionUnavailableWarning(Project $app, AppRuntimeImageUnavailableException $exception): array
+    private function phpVersionUnavailableWarning(App $app, AppRuntimeImageUnavailableException $exception): array
     {
         return [
             'code' => 'instance.php_version_unavailable',
@@ -142,7 +142,7 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function runtimeUserUnavailableWarning(Project $app, AppRuntimeUserUnavailableException $exception): array
+    private function runtimeUserUnavailableWarning(App $app, AppRuntimeUserUnavailableException $exception): array
     {
         return [
             'code' => 'instance.security.system_user',

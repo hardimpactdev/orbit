@@ -59,7 +59,7 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 
 `doctor --family=tool` verifies base configuration, container, listener,
 client-DNS, and forwarding drift. Record-content drift is reported by the
-family that owns the projection. All five DNS tool codes are restore-only:
+family that owns the appion. All five DNS tool codes are restore-only:
 `tool.dns_container_missing`, `tool.dns_port_not_listening`,
 `tool.dns_base_config_mismatch`, `tool.dns_client_dns_drift`, and
 `tool.dns_forwarding_missing`. Their exact recovery behavior is specified in

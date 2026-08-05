@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
@@ -19,13 +19,13 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionRegistry', function (): void {
     it('lists and shows connections ordered by slug', function (): void {
-        $app = Project::factory()->create();
-        $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create(['name' => 'production']);
         $first = DatabaseConnection::factory()->create(['slug' => 'zebra']);
         $second = DatabaseConnection::factory()->create(['slug' => 'alpha']);
         DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $second->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'env_prefix' => 'DB',
         ]);
 
@@ -43,15 +43,15 @@ describe('DatabaseConnectionRegistry', function (): void {
         $logicalAppNode = Node::factory()->create(['name' => 'logical-app-node']);
         $instanceNode = Node::factory()->create(['name' => 'instance-node']);
         $unrelatedNode = Node::factory()->create(['name' => 'unrelated-node']);
-        $app = Project::factory()->for($logicalAppNode, 'node')->create();
-        $instance = AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        $app = App::factory()->for($logicalAppNode, 'node')->create();
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $instanceNode->id,
                 path: '/srv/apps/docs',
             ),
         ]);
         $workspace = Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         $instanceConnection = DatabaseConnection::factory()->create(['slug' => 'instance-db']);
         $workspaceConnection = DatabaseConnection::factory()->create(['slug' => 'workspace-db']);
@@ -61,7 +61,7 @@ describe('DatabaseConnectionRegistry', function (): void {
         DatabaseConnection::factory()->for($unrelatedNode, 'node')->create(['slug' => 'unrelated-db']);
         DatabaseConnectionTarget::factory()
             ->for($instanceConnection, 'connection')
-            ->forAppInstance($instance)
+            ->forInstance($instance)
             ->create();
         DatabaseConnectionTarget::factory()
             ->for($workspaceConnection, 'connection')
@@ -286,16 +286,16 @@ describe('DatabaseConnectionRegistry', function (): void {
     });
 
     it('attaches and detaches workspace and instance targets with conflict handling', function (): void {
-        $app = Project::factory()->create();
-        $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create(['name' => 'production']);
         $workspace = Workspace::factory()->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db']);
         $registry = app(DatabaseConnectionRegistry::class);
 
-        $instanceTarget = $registry->attachToAppInstance('primary-db', $instance, 'DB');
-        $idempotentInstanceTarget = $registry->attachToAppInstance('primary-db', $instance, 'DB');
-        $instanceConflict = $registry->attachToAppInstance('analytics-db', $instance, 'DB');
+        $instanceTarget = $registry->attachToInstance('primary-db', $instance, 'DB');
+        $idempotentInstanceTarget = $registry->attachToInstance('primary-db', $instance, 'DB');
+        $instanceConflict = $registry->attachToInstance('analytics-db', $instance, 'DB');
 
         $workspaceTarget = $registry->attachToWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         $idempotentWorkspaceTarget = $registry->attachToWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
@@ -328,8 +328,8 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->and(DatabaseConnectionTarget::query()->count())
             ->toBe(2);
 
-        $detachedInstanceTarget = $registry->detachFromAppInstance('primary-db', $instance, 'DB');
-        $missingInstanceDetach = $registry->detachFromAppInstance('primary-db', $instance, 'DB');
+        $detachedInstanceTarget = $registry->detachFromInstance('primary-db', $instance, 'DB');
+        $missingInstanceDetach = $registry->detachFromInstance('primary-db', $instance, 'DB');
         $detachedWorkspaceTarget = $registry->detachFromWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         $missingWorkspaceDetach = $registry->detachFromWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         expect($detachedInstanceTarget)
@@ -353,12 +353,12 @@ describe('DatabaseConnectionRegistry', function (): void {
     });
 
     it('blocks remove when targets exist unless forced', function (): void {
-        $app = Project::factory()->create();
-        $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create(['name' => 'production']);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'env_prefix' => 'DB',
         ]);
         $registry = app(DatabaseConnectionRegistry::class);

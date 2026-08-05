@@ -18,7 +18,7 @@ orbit doctor [--node=<name>] [--self] [--all] [--instance=<name>] [--workspace=<
 | `--node` | local `node:default`, then caller | Target one node by name. `--node=all` is invalid; use `--all`. |
 | `--self` |  -  | Limit to the calling node identity. |
 | `--all` | off | Verify every eligible active role-bearing fleet node. Verify-only and mutually exclusive with node/instance/workspace scope. |
-| `--instance` |  -  | Scope to one `project.instance` placement. |
+| `--instance` |  -  | Scope to one `app.instance` placement. |
 | `--workspace` |  -  | Scope to one workspace. |
 | `--family` | all | State family key (repeatable): `node`, `instance`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`, `database_connection`. |
 | `--key` |  -  | Exact doctor issue key (repeatable). Filters reported drift before action planning; does not select a family. |
@@ -56,7 +56,7 @@ The process family is available for every node with at least one active role
 assignment. Role-less client/operator identities remain node-family only.
 
 **Important:** `--adopt` for the `instance` family treats filesystem presence
-as intent. A directory left over from a previous `project:remove` will be
+as intent. A directory left over from a previous `app:remove` will be
 re-created. Clean the node first.
 
 ## `orbit update`

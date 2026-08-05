@@ -20,7 +20,7 @@ it('records host key security events on the canonical api activity channel', fun
     app(SshHostKeyPinner::class)->pin('203.0.113.10');
 
     $history = app(ActivityHistory::class)->list([
-        'project' => null,
+        'app' => null,
         'node' => null,
         'effect' => null,
         'correlation' => null,
@@ -59,7 +59,7 @@ it('normalizes pre-existing host key activity rows to the canonical activity dto
         ->log('node.host_key.pinned_tofu');
 
     $history = app(ActivityHistory::class)->list([
-        'project' => null,
+        'app' => null,
         'node' => null,
         'effect' => 'write',
         'correlation' => null,

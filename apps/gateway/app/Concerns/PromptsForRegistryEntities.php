@@ -7,13 +7,13 @@ namespace App\Concerns;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Schedules\ScheduleAppInstanceResolver;
+use App\Services\Schedules\ScheduleInstanceResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -29,7 +29,7 @@ trait PromptsForRegistryEntities
      * @throws PromptAborted
      */
     protected function promptForVisibleApp(
-        string $label = 'Select a project',
+        string $label = 'Select an app',
         ?string $node = null,
         ?string $environment = null,
     ): string|GatewayApiException {
@@ -40,8 +40,8 @@ trait PromptsForRegistryEntities
         }
 
         if ($apps === []) {
-            return new GatewayApiException('No projects found.', 'project.not_found', [
-                'field' => 'project',
+            return new GatewayApiException('No apps found.', 'app.not_found', [
+                'field' => 'app',
             ]);
         }
 
@@ -163,8 +163,8 @@ trait PromptsForRegistryEntities
         ?string $node = null,
         ?string $environment = null,
     ): array|GatewayApiException {
-        /** @var Builder<Project> $query */
-        $query = Project::query()->with('node');
+        /** @var Builder<App> $query */
+        $query = App::query()->with('node');
 
         if ($node !== null) {
             $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node));
@@ -178,7 +178,7 @@ trait PromptsForRegistryEntities
         return $query
             ->orderBy('name')
             ->get()
-            ->map(fn (Project $project): array => $this->appPromptPayload($project))
+            ->map(fn (App $app): array => $this->appPromptPayload($app))
             ->values()
             ->all();
     }
@@ -254,7 +254,7 @@ trait PromptsForRegistryEntities
         ?string $node = null,
     ): array|GatewayApiException {
         return Schedule::query()
-            ->with(['app', 'appInstance', 'node'])
+            ->with(['app', 'instance', 'node'])
             ->when($app !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
                 'app',
@@ -518,7 +518,7 @@ trait PromptsForRegistryEntities
     /**
      * @return array<string, mixed>
      */
-    private function appPromptPayload(Project $app): array
+    private function appPromptPayload(App $app): array
     {
         return [
             'name' => $app->name,
@@ -566,7 +566,7 @@ trait PromptsForRegistryEntities
     private function schedulePromptPayload(Schedule $schedule): array
     {
         $targetNode = $schedule->scope === 'app'
-            ? app(ScheduleAppInstanceResolver::class)->targetNode($schedule)
+            ? app(ScheduleInstanceResolver::class)->targetNode($schedule)
             : $schedule->node;
 
         return [

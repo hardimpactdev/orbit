@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Services\Processes\SystemdUnitRenderer;
 use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,7 +21,7 @@ it('renders only PATH and HOME for node-owned systemd processes such as node-exp
         'tld' => 'gateway',
         'platform' => 'ubuntu_24-04',
     ]);
-    $surrogateApp = Project::factory()->for($node, 'node')->create([
+    $surrogateApp = App::factory()->for($node, 'node')->create([
         'name' => 'gateway',
         'path' => '/home/orbit',
     ]);
@@ -56,7 +56,7 @@ it('still renders Laravel Vite URL and TLS variables for app-owned systemd proce
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
     ]);
@@ -87,7 +87,7 @@ it('escapes shell dollars so systemd does not expand process command variables',
         'user' => 'orbit',
         'status' => 'active',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'agent-runtime',
         'path' => '/home/orbit',
     ]);
@@ -122,7 +122,7 @@ it('preserves the Hermes dashboard credential shell pipeline through systemd ren
         'status' => 'active',
         'tld' => 'agent',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'agent-runtime',
         'path' => '/home/orbit',
     ]);

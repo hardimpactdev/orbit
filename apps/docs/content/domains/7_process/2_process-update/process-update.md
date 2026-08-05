@@ -37,8 +37,8 @@ slug, change its display label, and re-render its runtime units.
 - **Scope Resolution**: `--node` updates a node-owned process and cannot be
   combined with `--instance` or `--workspace`; `--workspace` updates a workspace-owned
   process for that workspace's instance; otherwise `--instance` updates an
-  instance-owned process. Prefer `<project.instance>`; a bare project slug is
-  accepted only when that project has exactly one instance.
+  instance-owned process. Prefer `<app.instance>`; a bare app slug is
+  accepted only when that app has exactly one instance.
 - **Runtime Unit Replacement**: Re-renders the runtime units derived from the
   selected process definition and removes or replaces derived units that no
   longer match when the process identity changes.

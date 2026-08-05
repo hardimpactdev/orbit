@@ -9,9 +9,9 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use Throwable;
@@ -37,7 +37,7 @@ final readonly class AppsProbe
         return 'Apps';
     }
 
-    public function introspect(Project $app): ProbeSnapshot
+    public function introspect(App $app): ProbeSnapshot
     {
         $app->loadMissing('node');
 
@@ -51,7 +51,7 @@ final readonly class AppsProbe
         );
     }
 
-    public function introspectInstance(Project $app, AppInstance $instance): ProbeSnapshot
+    public function introspectInstance(App $app, Instance $instance): ProbeSnapshot
     {
         $runtimeApp = $this->appRuntimeContainerRenderer()->runtimeAppForInstance($app, $instance);
         $runtimeApp->loadMissing('node');
@@ -72,15 +72,15 @@ final readonly class AppsProbe
     /**
      * @return array<string, string>
      */
-    private function introspectionPayload(Project $app, ?AppInstance $instance = null): array
+    private function introspectionPayload(App $app, ?Instance $instance = null): array
     {
         $renderer = $this->appRuntimeContainerRenderer();
-        $runtimeApp = $instance instanceof AppInstance ? $renderer->runtimeAppForInstance($app, $instance) : $app;
+        $runtimeApp = $instance instanceof Instance ? $renderer->runtimeAppForInstance($app, $instance) : $app;
         $isPhpApp = $runtimeApp->runtimeKind() === AppRuntimeKind::Php;
         $containerName = '';
 
         if ($isPhpApp) {
-            $containerName = $instance instanceof AppInstance
+            $containerName = $instance instanceof Instance
                 ? $renderer->containerNameForInstance($app, $instance)
                 : $renderer->containerName($runtimeApp);
         }
@@ -91,12 +91,12 @@ final readonly class AppsProbe
 
         if ($isPhpApp) {
             try {
-                $renderedContainer = $instance instanceof AppInstance
+                $renderedContainer = $instance instanceof Instance
                     ? $renderer->renderForInstance($app, $instance)
                     : $renderer->render($runtimeApp);
                 $expectedSpecHash = $renderedContainer->specHash();
                 $expectedRuntimeConfigHash = hash('sha256', $renderedContainer->phpIniContent());
-                $runtimeConfigPath = $instance instanceof AppInstance
+                $runtimeConfigPath = $instance instanceof Instance
                     ? $renderer->phpIniHostPathForInstance($app, $instance)
                     : $renderer->phpIniHostPath($runtimeApp);
                 $expectedImage = $renderedContainer->image();
@@ -249,7 +249,7 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    public function diff(Project $app, ProbeSnapshot $snapshot): array
+    public function diff(App $app, ProbeSnapshot $snapshot): array
     {
         $drift = [];
 
@@ -267,7 +267,7 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    public function diffInstance(Project $app, AppInstance $instance, ProbeSnapshot $snapshot): array
+    public function diffInstance(App $app, Instance $instance, ProbeSnapshot $snapshot): array
     {
         $runtimeApp = $this->appRuntimeContainerRenderer()->runtimeAppForInstance($app, $instance);
         $targetName = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
@@ -284,7 +284,7 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkRecordCompleteness(Project $app): array
+    private function checkRecordCompleteness(App $app): array
     {
         if (
             ! is_string($app->name)
@@ -317,11 +317,11 @@ final readonly class AppsProbe
      * @return list<DriftEntry>
      */
     private function checkRuntimeConfig(
-        Project $app,
+        App $app,
         ProbeSnapshot $snapshot,
         ?string $targetName = null,
-        ?Project $canonicalApp = null,
-        ?AppInstance $instance = null,
+        ?App $canonicalApp = null,
+        ?Instance $instance = null,
     ): array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
@@ -335,7 +335,7 @@ final readonly class AppsProbe
             return [];
         }
 
-        $expectedPath = $instance instanceof AppInstance
+        $expectedPath = $instance instanceof Instance
             ? $this->appRuntimeContainerRenderer()->phpIniHostPathForInstance($canonicalApp, $instance)
             : $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
 
@@ -374,11 +374,11 @@ final readonly class AppsProbe
      * @return list<DriftEntry>
      */
     private function checkPhpRuntime(
-        Project $app,
+        App $app,
         ProbeSnapshot $snapshot,
         ?string $targetName = null,
-        ?Project $canonicalApp = null,
-        ?AppInstance $instance = null,
+        ?App $canonicalApp = null,
+        ?Instance $instance = null,
     ): array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
@@ -448,7 +448,7 @@ final readonly class AppsProbe
         return [];
     }
 
-    private function expectedImageOrEmpty(Project $app): string
+    private function expectedImageOrEmpty(App $app): string
     {
         try {
             return $this->appRuntimeContainerRenderer()->render($app)->image();
@@ -461,14 +461,14 @@ final readonly class AppsProbe
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>
      */
-    private function targetDetail(Project $app, ?AppInstance $instance, array $detail = []): array
+    private function targetDetail(App $app, ?Instance $instance, array $detail = []): array
     {
         $target = [
             'app' => $app->name,
         ];
 
-        if ($instance instanceof AppInstance) {
-            $target['app_instance'] = $instance->name;
+        if ($instance instanceof Instance) {
+            $target['instance'] = $instance->name;
             $target['target'] = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
         }
 
@@ -478,9 +478,9 @@ final readonly class AppsProbe
         ];
     }
 
-    private function containerNameForTarget(Project $canonicalApp, Project $runtimeApp, ?AppInstance $instance): string
+    private function containerNameForTarget(App $canonicalApp, App $runtimeApp, ?Instance $instance): string
     {
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return $this->appRuntimeContainerRenderer()->containerNameForInstance($canonicalApp, $instance);
         }
 
@@ -490,7 +490,7 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkProductionSecurity(Project $app, ProbeSnapshot $snapshot): array
+    private function checkProductionSecurity(App $app, ProbeSnapshot $snapshot): array
     {
         if (! $this->isProductionApp($app)) {
             return [];
@@ -559,7 +559,7 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkOwnerNode(Project $app): array
+    private function checkOwnerNode(App $app): array
     {
         $app->loadMissing('node');
 
@@ -594,11 +594,11 @@ final readonly class AppsProbe
      * @return list<DriftEntry>
      */
     private function checkSourcePath(
-        Project $app,
+        App $app,
         ProbeSnapshot $snapshot,
         ?string $targetName = null,
-        ?Project $canonicalApp = null,
-        ?AppInstance $instance = null,
+        ?App $canonicalApp = null,
+        ?Instance $instance = null,
     ): array {
         $targetName ??= $app->name;
         $canonicalApp ??= $app;
@@ -629,11 +629,11 @@ final readonly class AppsProbe
      * @return list<DriftEntry>
      */
     private function checkDocumentRoot(
-        Project $app,
+        App $app,
         ProbeSnapshot $snapshot,
         ?string $targetName = null,
-        ?Project $canonicalApp = null,
-        ?AppInstance $instance = null,
+        ?App $canonicalApp = null,
+        ?Instance $instance = null,
     ): array {
         $targetName ??= $app->name;
         $canonicalApp ??= $app;
@@ -695,7 +695,7 @@ final readonly class AppsProbe
         return [];
     }
 
-    private function documentRootEscapesPath(Project $app): bool
+    private function documentRootEscapesPath(App $app): bool
     {
         $path = $this->normalizePath($app->path);
         $root = trim($app->document_root, '/');
@@ -745,7 +745,7 @@ final readonly class AppsProbe
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 
-    private function isProductionApp(Project $app): bool
+    private function isProductionApp(App $app): bool
     {
         $app->loadMissing('node');
 

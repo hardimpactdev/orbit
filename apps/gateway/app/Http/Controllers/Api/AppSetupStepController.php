@@ -9,10 +9,10 @@ use App\Actions\Apps\RemoveAppSetupStep;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\AppSetupStepListPayload;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -46,7 +46,7 @@ final class AppSetupStepController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'steps' => $payload->forAppInstance($target['instance']),
+                    'steps' => $payload->forInstance($target['instance']),
                 ],
             ],
         ]);
@@ -99,11 +99,11 @@ final class AppSetupStepController implements Loggable
         $anchor = $this->anchorStep($instance, $before ?? $after);
 
         if (($before !== null || $after !== null) && ! $anchor instanceof AppSetupStep) {
-            return $this->stepNotFound((int) ($before ?? $after), $target['project'], $instance);
+            return $this->stepNotFound((int) ($before ?? $after), $target['app'], $instance);
         }
 
         $step = $this->addAppSetupStep->handle(
-            appInstanceId: $instance->id,
+            instanceId: $instance->id,
             command: $command,
             timeoutSeconds: $timeout,
             beforeStepId: is_int($before) ? $before : null,
@@ -141,12 +141,12 @@ final class AppSetupStepController implements Loggable
 
         $instance = $target['instance'];
         $model = AppSetupStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->whereKey($step)
             ->first();
 
         if (! $model instanceof AppSetupStep) {
-            return $this->stepNotFound($step, $target['project'], $instance);
+            return $this->stepNotFound($step, $target['app'], $instance);
         }
 
         $removed = $payload->forStep($model);
@@ -155,7 +155,7 @@ final class AppSetupStepController implements Loggable
         $this->removeAppSetupStep->handle($model);
 
         $remaining = AppSetupStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->count();
 
         return response()->json([
@@ -173,7 +173,7 @@ final class AppSetupStepController implements Loggable
     }
 
     /**
-     * @return array{project: Project, instance: AppInstance, node: Node}|JsonResponse
+     * @return array{app: App, instance: Instance, node: Node}|JsonResponse
      */
     private function resolveAuthorizedTarget(string $selector, Request $request, string $permission): array|JsonResponse
     {
@@ -184,7 +184,7 @@ final class AppSetupStepController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+        $instanceIsVisible = fn (Instance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
             $caller,
             $instance,
             'instance:read',
@@ -212,7 +212,7 @@ final class AppSetupStepController implements Loggable
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return $this->instanceUnavailable($selection->app, null);
         }
 
@@ -229,20 +229,20 @@ final class AppSetupStepController implements Loggable
         }
 
         return [
-            'project' => $selection->app,
+            'app' => $selection->app,
             'instance' => $instance,
             'node' => $node,
         ];
     }
 
-    private function anchorStep(AppInstance $instance, ?int $stepId): ?AppSetupStep
+    private function anchorStep(Instance $instance, ?int $stepId): ?AppSetupStep
     {
         if ($stepId === null) {
             return null;
         }
 
         return AppSetupStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->whereKey($stepId)
             ->first();
     }
@@ -305,29 +305,29 @@ final class AppSetupStepController implements Loggable
         return $this->error('validation_failed', $message, array_merge(['field' => $field], $meta), 400);
     }
 
-    private function stepNotFound(int $id, Project $project, AppInstance $instance): JsonResponse
+    private function stepNotFound(int $id, App $app, Instance $instance): JsonResponse
     {
         return $this->error(
             'instance_setup.step_not_found',
-            "Setup step '{$id}' not found for instance '{$project->name}.{$instance->name}'.",
+            "Setup step '{$id}' not found for instance '{$app->name}.{$instance->name}'.",
             [
                 'step_id' => $id,
-                'project' => $project->name,
+                'app' => $app->name,
                 'instance' => $instance->name,
             ],
             404,
         );
     }
 
-    private function instanceUnavailable(Project $project, ?AppInstance $instance): JsonResponse
+    private function instanceUnavailable(App $app, ?Instance $instance): JsonResponse
     {
         return $this->error(
             'validation_failed',
-            "Instance '{$project->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            "Instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
             [
                 'field' => 'instance',
                 'reason' => 'instance_unavailable',
-                'project' => $project->name,
+                'app' => $app->name,
                 'instance' => $instance?->name,
             ],
         );
@@ -357,7 +357,7 @@ final class AppSetupStepController implements Loggable
 
     private function forbidden(
         Node $servingNode,
-        AppInstance $instance,
+        Instance $instance,
         AuthorizationResult $result,
         string $permission,
     ): JsonResponse {

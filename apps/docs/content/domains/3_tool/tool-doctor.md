@@ -179,7 +179,7 @@ read-only service-readiness check; route/TLS repair stays with
 `doctor --family=proxy`.
 
 Tools without a safe repair path are reported with the required manual action.
-Tool doctor never creates projects, instances, workspaces, processes, schedules, custom proxy
+Tool doctor never creates apps, instances, workspaces, processes, schedules, custom proxy
 routes, non-tool firewall rules, node identities, or node grants. It may repair
 endpoint configuration owned by the tool only when the selected tool definition declares that
 ownership; live proxy and firewall artifact drift remains in the `proxy` and

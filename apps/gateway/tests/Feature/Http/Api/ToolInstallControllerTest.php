@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -111,10 +111,10 @@ describe('ToolInstallController', function (): void {
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
         assignToolInstallApiRole($node, 'app-dev');
         grantToolInstallApiAccess($caller, $node);
-        $project = Project::factory()->create(['name' => 'docs']);
-        AppInstance::factory()->for($project)->create([
+        $app = App::factory()->create(['name' => 'docs']);
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: '/home/orbit/apps/docs',
                 document_root: 'public',
@@ -591,7 +591,7 @@ describe('ToolInstallController', function (): void {
         );
 
         $response
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'tool.unsupported_action')
             ->assertJsonPath('error.meta.tool', $tool)
             ->assertJsonPath('error.meta.action', 'install');

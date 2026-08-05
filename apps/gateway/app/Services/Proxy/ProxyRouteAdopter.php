@@ -7,8 +7,8 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\AdoptAction;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 
@@ -52,9 +52,9 @@ final readonly class ProxyRouteAdopter
                 continue;
             }
 
-            $app = Project::query()->where('domain', $domain)->first();
+            $app = App::query()->where('domain', $domain)->first();
 
-            if ($app instanceof Project) {
+            if ($app instanceof App) {
                 $results[] = new AdoptResult(
                     family: 'proxy',
                     key: $domain,
@@ -124,7 +124,7 @@ final readonly class ProxyRouteAdopter
 
     private function isWorkspaceDomain(string $domain, Node $node): bool
     {
-        $apps = Project::query()
+        $apps = App::query()
             ->where('node_id', $node->id)
             ->get();
 

@@ -52,7 +52,7 @@ function toolsProbeOrbitRootCaPath(): string
     expect($configRoot)->toBeString();
     $caDir = rtrim((string) $configRoot, '/').'/ca';
     if (! is_dir($caDir)) {
-        mkdir($caDir, 0755, true);
+        mkdir($caDir, 0o755, true);
     }
     $path = $caDir.'/root.crt';
     if (! is_file($path)) {
@@ -163,7 +163,7 @@ function toolsProbeInaccessibleOwnerBinaryPath(): string
 function toolsProbeInstallFakeSudo(array $config = []): array
 {
     $dir = sys_get_temp_dir().'/orbit-fake-sudo-'.bin2hex(random_bytes(8));
-    mkdir($dir, 0700, true);
+    mkdir($dir, 0o700, true);
 
     $allowUser = $config['allow_user'] ?? 'agent';
     $testXOk = $config['test_x_ok'] ?? true ? '1' : '0';
@@ -234,7 +234,7 @@ function toolsProbeInstallFakeSudo(array $config = []): array
 
     $path = $dir.'/sudo';
     file_put_contents($path, $script);
-    chmod($path, 0755);
+    chmod($path, 0o755);
 
     return [
         'dir' => $dir,

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
 | `node` | `--node` or local `node:default` | Required when `instance` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare project shorthand is valid only when exactly one instance is visible.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare app shorthand is valid only when exactly one instance is visible.` |
 | `force` | `--force` | Required for every non-interactive removal, including JSON mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode; never grants consent. |
 
@@ -72,7 +72,7 @@ fall back to the only visible non-gateway node in non-interactive mode.
 
 ### Scope Boundaries
 
-`tool-remove` must not create projects, instances, workspaces, processes, schedules, custom
+`tool-remove` must not create apps, instances, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
 It may remove a process the tool definition already declared via
 `relatedProcess()`; that is tool-owned lifecycle cleanup, not ad-hoc process

@@ -174,7 +174,7 @@ final readonly class LegacyOpenCodeRuntimeCleanup
 
         $process = $context
             ->ownerProcesses()
-            ->where(function (Builder $query): void {
+            ->where(static function (Builder $query): void {
                 $query->where('name', self::PROCESS_NAME)
                     ->orWhereIn('tool', self::ToolAliases);
             })

@@ -9,7 +9,7 @@ use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
@@ -78,7 +78,7 @@ final readonly class WorkspaceListController implements Loggable
             }
         }
 
-        if ($selection instanceof AppSelection && $selection->instance instanceof AppInstance) {
+        if ($selection instanceof AppSelection && $selection->instance instanceof Instance) {
             try {
                 $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces(
                     $selection->app,
@@ -162,7 +162,7 @@ final readonly class WorkspaceListController implements Loggable
         return $selection
             ->app
             ->instances
-            ->contains(function (AppInstance $instance) use ($visibleNodeIds): bool {
+            ->contains(function (Instance $instance) use ($visibleNodeIds): bool {
                 $node = $this->placement->nodeForInstance($instance);
 
                 return $node instanceof Node && in_array($node->id, $visibleNodeIds, true);
@@ -204,7 +204,7 @@ final readonly class WorkspaceListController implements Loggable
         ?string $node,
     ): Collection {
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance']);
+            ->with(['app.node', 'app.instances', 'instance']);
 
         if ($selection instanceof AppSelection) {
             $query->where('app_id', $selection->app->id);
@@ -288,8 +288,8 @@ final readonly class WorkspaceListController implements Loggable
             $workspaces
                 ->map(fn (Workspace $workspace): array => [
                     'name' => $workspace->name,
-                    'project' => $workspace->app?->name,
-                    'instance' => $workspace->appInstance->name,
+                    'app' => $workspace->app?->name,
+                    'instance' => $workspace->instance->name,
                     'node' => $this->placement->nodeForWorkspace($workspace)?->name,
                     'url' => $workspace->url(),
                     'lifecycle_status' => $workspace->lifecycle_status->value,

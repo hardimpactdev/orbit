@@ -60,7 +60,7 @@ it('builds a command catalog from the live CLI surface and docs registries', fun
         'state_families',
     ]);
 
-    expect($catalog['registries']['entity_schemas']['project'])->toBe([
+    expect($catalog['registries']['entity_schemas']['app'])->toBe([
         'required' => [
             'name' => 'string',
             'repository' => 'string|null',
@@ -172,24 +172,24 @@ it('maps double-quoted interpolated gateway paths to truthful P4 metadata', func
         ],
     ]);
 
-    expect($catalog['commands']['project:show']['p4_mapping'])->toMatchArray([
+    expect($catalog['commands']['app:show']['p4_mapping'])->toMatchArray([
         'sdk_request' => [
-            'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Projects\\ShowProjectRequest',
-            'path' => 'packages/sdk/src/Requests/Projects/ShowProjectRequest.php',
+            'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Apps\\ShowAppRequest',
+            'path' => 'packages/sdk/src/Requests/Apps/ShowAppRequest.php',
         ],
         'gateway_route' => [
             'method' => 'GET',
-            'uri' => '/api/projects/{project}',
+            'uri' => '/api/apps/{app}',
         ],
         'gateway_controller' => [
             'class' => 'App\\Http\\Controllers\\Api\\AppShowController',
             'path' => 'apps/gateway/app/Http/Controllers/Api/AppShowController.php',
             'action' => '__invoke',
         ],
-        'authorization_permission' => ['project:read'],
+        'authorization_permission' => ['app:read'],
         'response_dto' => [
-            'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Projects\\ProjectShowResponse',
-            'path' => 'packages/sdk/src/Responses/Projects/ProjectShowResponse.php',
+            'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppShowResponse',
+            'path' => 'packages/sdk/src/Responses/Apps/AppShowResponse.php',
         ],
     ]);
 
@@ -565,7 +565,7 @@ it('scopes command catalog authorization metadata to controller class and action
 
     expect($catalog['commands']['update:all']['p4_mapping']['authorization_permission'])->toBe(['*']);
 
-    expect($catalog['commands']['project:list']['p4_mapping']['authorization_permission'])->toBe(['project:read']);
+    expect($catalog['commands']['app:list']['p4_mapping']['authorization_permission'])->toBe(['app:read']);
 });
 
 it('keeps linked test file paths on disk under the repository root', function (): void {

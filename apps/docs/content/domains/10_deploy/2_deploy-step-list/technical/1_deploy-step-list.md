@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `deploy-step-list` must not create, update, remove, execute, or reorder deploy
 steps. It must not inspect live node state. Deployment health belongs to
-[`instance-doctor.md`](../../../5_project/instance-doctor.md).
+[`instance-doctor.md`](../../../5_app/instance-doctor.md).
 
 ## Renderer Contracts
 
@@ -54,8 +54,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Activity Logging
 
@@ -64,13 +64,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:GET /deploy/steps` |
 | Effect | `read` |
 | Subject | `none` (list). |
-| Properties | `project`, `instance`, `count`. |
+| Properties | `app`, `instance`, `count`. |
 | Description | derived |
 
 ## Doctor Relationship
 
 `deploy:step-list` reads deployment policy that the instance owns. It does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) owns production
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) owns production
 app health checks that may incorporate deployment pipeline validity.
 
 ## Test Mapping

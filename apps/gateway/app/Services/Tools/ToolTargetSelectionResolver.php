@@ -75,7 +75,7 @@ final readonly class ToolTargetSelectionResolver
             return ToolRegistryFailure::validation(
                 'instance',
                 $app,
-                "Invalid value for --instance: '{$app}'. Expected a visible project.instance selector, domain, or instance host.",
+                "Invalid value for --instance: '{$app}'. Expected a visible app.instance selector, domain, or instance host.",
             );
         }
 

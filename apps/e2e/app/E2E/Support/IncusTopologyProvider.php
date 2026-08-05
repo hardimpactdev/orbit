@@ -1093,7 +1093,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                     continue;
                 }
 
-                $cycleTimer->measure("reset.command-ready.{$role}", fn () => $instance->waitForSsh(
+                $cycleTimer->measure("reset.command-ready.{$role}", static fn () => $instance->waitForSsh(
                     $primaryUser,
                     $sshKeyPair,
                 ));

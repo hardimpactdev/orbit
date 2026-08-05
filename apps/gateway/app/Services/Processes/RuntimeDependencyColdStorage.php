@@ -151,7 +151,7 @@ final readonly class RuntimeDependencyColdStorage
     {
         foreach ($siblings as $scope) {
             $query = ProcessEvent::query()
-                ->where('app_instance_id', $scope->context->appInstance?->id);
+                ->where('instance_id', $scope->context->instance?->id);
 
             if ($scope->context->workspace === null) {
                 $query->whereNull('workspace_id');

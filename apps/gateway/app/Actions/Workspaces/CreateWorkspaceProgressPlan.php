@@ -6,9 +6,9 @@ namespace App\Actions\Workspaces;
 
 use App\Contracts\ProgressReporter;
 use App\Exceptions\WorkspaceCreateFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use RuntimeException;
 use Throwable;
@@ -34,12 +34,12 @@ final class CreateWorkspaceProgressPlan
     public function __construct(
         private readonly CreateWorkspace $createWorkspace,
         private readonly SetupWorkspace $setupWorkspace,
-        private readonly Project $app,
+        private readonly App $app,
         private readonly Node $node,
         private readonly string $name,
         private readonly string $base,
         private readonly ?string $phpVersion,
-        private readonly AppInstance $instance,
+        private readonly Instance $instance,
     ) {}
 
     public function title(): string

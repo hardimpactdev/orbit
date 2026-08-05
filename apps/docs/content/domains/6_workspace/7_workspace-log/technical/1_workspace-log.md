@@ -69,7 +69,7 @@ or from the `latest_setup_run.run_id` field returned by
    defined in
    [`6_workspace/README.md`](../../README.md#lifecycle-step-environment)
    are **not** captured into per-step metadata. They are derivable from
-   gateway-tracked workspace configuration (workspace path, parent project,
+   gateway-tracked workspace configuration (workspace path, parent app,
    effective PHP version, derived URL) and from
    [`workspace:history`](../../6_workspace-history/workspace-history.md)
    lifecycle actions such as `php_update`. Snapshotting them on every step
@@ -116,8 +116,8 @@ execute because an earlier step failed; it is not synthesised at read time.
   retention setting.
 - Captured output is removed atomically with the workspace via
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
-  [`project:remove`](../../../5_project/6_project-remove/project-remove.md) or
-  [`instance:remove`](../../../5_project/28_instance-remove/instance-remove.md)
+  [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
+  [`instance:remove`](../../../5_app/28_instance-remove/instance-remove.md)
   when those commands remove a workspace.
 - A run record may exist with its captured output pruned only once a future
   retention rule applied per row lands; until then,

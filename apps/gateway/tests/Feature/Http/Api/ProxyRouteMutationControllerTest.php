@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -87,7 +87,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('denies domain conflicts for non-custom routes', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,
@@ -109,7 +109,7 @@ describe('ProxyRoute mutation API', function (): void {
         $response
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
-            ->assertJsonPath('error.meta.owner_type', 'project');
+            ->assertJsonPath('error.meta.owner_type', 'app');
     });
 
     it('removes custom route intent with destructive consent', function (): void {
@@ -156,7 +156,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('denies force removal of a living workspace-owned route', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
 
         ProxyRoute::factory()->create([
@@ -175,7 +175,7 @@ describe('ProxyRoute mutation API', function (): void {
         ]);
 
         $response
-            ->assertStatus(409)
+            ->assertConflict()
             ->assertJsonPath('error.code', 'proxy.owned_route_denied')
             ->assertJsonPath('error.meta.owner_type', 'workspace');
 
@@ -185,7 +185,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('force-removes an orphaned workspace-owned route and reports why it was safe', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,
@@ -272,7 +272,7 @@ describe('ProxyRoute mutation API', function (): void {
         ]);
 
         $response
-            ->assertStatus(409)
+            ->assertConflict()
             ->assertJsonPath('error.code', 'proxy.owned_route_denied')
             ->assertJsonPath('error.meta.owner_type', 'tool');
 
@@ -297,7 +297,7 @@ final readonly class ProxyMutationFakeCa extends OrbitCaService
         $dir = sys_get_temp_dir().'/orbit-proxy-mutation-ca';
 
         if (! is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0o777, true);
         }
 
         $cert = "{$dir}/{$host}.crt";

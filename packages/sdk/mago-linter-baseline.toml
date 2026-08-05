@@ -433,19 +433,19 @@ message = "Use of the `isset` construct."
 count = 2
 
 [[issues]]
-file = "src/Requests/Projects/CreateProjectRequest.php"
+file = "src/Requests/Apps/CreateAppRequest.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
 count = 1
 
 [[issues]]
-file = "src/Requests/Projects/CreateProjectRequest.php"
+file = "src/Requests/Apps/CreateAppRequest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
-file = "src/Requests/Projects/RemoveProjectRequest.php"
+file = "src/Requests/Apps/RemoveAppRequest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 2

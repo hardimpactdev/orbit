@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Services\Php\PhpRuntimeCatalog;
 
 final readonly class LaravelCloudRuntimeCompatibility
@@ -39,7 +39,7 @@ final readonly class LaravelCloudRuntimeCompatibility
     /**
      * @return array<string, mixed>
      */
-    public function forInstance(AppInstance $instance): array
+    public function forInstance(Instance $instance): array
     {
         $instance->loadMissing('app');
 

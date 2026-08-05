@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\GatewayExtension;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -188,9 +188,9 @@ it('requires the disable permission for the Cloudflare SSL disable API route', f
     Http::assertNothingSent();
 });
 
-it('adds a cache rule for a project without exposing app vocabulary', function (): void {
+it('adds a cache rule for an app without exposing project vocabulary', function (): void {
     $gateway = createCloudflareApiCallerNode();
-    Project::factory()->for($gateway, 'node')->create([
+    App::factory()->for($gateway, 'node')->create([
         'name' => 'docs',
         'domain' => 'docs.example.com',
     ]);
@@ -220,6 +220,6 @@ it('adds a cache rule for a project without exposing app vocabulary', function (
 
     $response
         ->assertOk()
-        ->assertJsonPath('success.data.rule.project', 'docs')
-        ->assertJsonMissingPath('success.data.rule.app');
+        ->assertJsonPath('success.data.rule.app', 'docs')
+        ->assertJsonMissingPath('success.data.rule.project');
 });

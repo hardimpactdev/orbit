@@ -16,8 +16,8 @@ These terms define the core entities in the schedule domain.
   serving node and path; the gateway dispatches through the signed
   `internal:schedule:run` local-executor command over agent-push when the target
   is not the gateway itself.
-- **Schedule instance selector:** Concrete `project.instance` identity such as
-  `docs.production`. A bare project is shorthand only when exactly one
+- **Schedule instance selector:** Concrete `app.instance` identity such as
+  `docs.production`. A bare app is shorthand only when exactly one
   eligible instance is visible for the requested permission; otherwise
   resolution fails without side effects.
 - **Node-scoped schedule:** Schedule whose scope is `node`. Executes on the

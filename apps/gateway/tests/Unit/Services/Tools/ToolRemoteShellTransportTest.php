@@ -26,7 +26,7 @@ uses(TestCase::class, RefreshDatabase::class);
  */
 function hermesAuthFieldName(): string
 {
-    return 'pass'.'word';
+    return 'password';
 }
 
 /**
@@ -34,7 +34,7 @@ function hermesAuthFieldName(): string
  */
 function hermesStaleCredentialPlaceholder(): string
 {
-    return '<generated-'.'pass'.'word>';
+    return '<generated-password>';
 }
 
 /**

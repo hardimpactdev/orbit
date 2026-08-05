@@ -10,9 +10,9 @@ use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -27,7 +27,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AppSetupController implements Loggable
 {
-    private ?AppInstance $activitySubject = null;
+    private ?Instance $activitySubject = null;
 
     /** @var array<string, string> */
     private array $activityProperties = [];
@@ -42,7 +42,7 @@ final class AppSetupController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'The instance setup result.',
-        type: "array{success: array{data: array{project: string, instance: string, node: string, path: string, url: string, action: 'set_up'|'converged', setup_steps: array{status: string, count: int, message: string}}, meta: list<mixed>}}",
+        type: "array{success: array{data: array{app: string, instance: string, node: string, path: string, url: string, action: 'set_up'|'converged', setup_steps: array{status: string, count: int, message: string}}, meta: list<mixed>}}",
     )]
     #[OpenApiResponse(
         status: 403,
@@ -72,12 +72,12 @@ final class AppSetupController implements Loggable
             return $target;
         }
 
-        $targetApp = $target['project'];
+        $targetApp = $target['app'];
         $instance = $target['instance'];
         $node = $target['node'];
         $this->activitySubject = $instance;
         $this->activityProperties = [
-            'project' => $targetApp->name,
+            'app' => $targetApp->name,
             'instance' => $instance->name,
             'status' => 'pending',
         ];
@@ -120,8 +120,8 @@ final class AppSetupController implements Loggable
     private function stream(
         SetupAppProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         Node $node,
     ): StreamedResponse {
         return $streams->make(function ($emitter) use ($setupProgress, $app, $instance, $node): void {
@@ -157,7 +157,7 @@ final class AppSetupController implements Loggable
     }
 
     /**
-     * @return array{project: Project, instance: AppInstance, node: Node}|JsonResponse
+     * @return array{app: App, instance: Instance, node: Node}|JsonResponse
      */
     private function resolveAuthorizedTarget(string $selector, Request $request): array|JsonResponse
     {
@@ -168,7 +168,7 @@ final class AppSetupController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+        $instanceIsVisible = fn (Instance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
             $caller,
             $instance,
             'instance:write',
@@ -191,7 +191,7 @@ final class AppSetupController implements Loggable
 
         $instance = $selection->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return $this->instanceUnavailable($selection->app, null);
         }
 
@@ -208,7 +208,7 @@ final class AppSetupController implements Loggable
         }
 
         return [
-            'project' => $selection->app,
+            'app' => $selection->app,
             'instance' => $instance,
             'node' => $node,
         ];
@@ -243,15 +243,15 @@ final class AppSetupController implements Loggable
         );
     }
 
-    private function instanceUnavailable(Project $project, ?AppInstance $instance): JsonResponse
+    private function instanceUnavailable(App $app, ?Instance $instance): JsonResponse
     {
         return $this->error(
             'validation_failed',
-            "Instance '{$project->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            "Instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
             [
                 'field' => 'instance',
                 'reason' => 'instance_unavailable',
-                'project' => $project->name,
+                'app' => $app->name,
                 'instance' => $instance?->name,
             ],
         );
@@ -267,7 +267,7 @@ final class AppSetupController implements Loggable
 
     private function forbidden(
         Node $servingNode,
-        AppInstance $instance,
+        Instance $instance,
         AuthorizationResult $result,
         string $permission,
     ): JsonResponse {

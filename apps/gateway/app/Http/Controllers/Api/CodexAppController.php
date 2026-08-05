@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\CodexApp\CodexAppConfigMerger;
 use App\Services\CodexApp\RemoteCodexAppConfig;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -148,7 +148,7 @@ final readonly class CodexAppController
     }
 
     /**
-     * @return array{0: Project, 1: Node}|JsonResponse
+     * @return array{0: App, 1: Node}|JsonResponse
      */
     private function mutationContext(Request $request, string $project, ToolCatalog $catalog): array|JsonResponse
     {
@@ -160,7 +160,7 @@ final readonly class CodexAppController
 
         $model = $this->resolveApp($project);
 
-        if (! $model instanceof Project || ! $model->node instanceof Node) {
+        if (! $model instanceof App || ! $model->node instanceof Node) {
             return $this->error('project.not_found', "Project '{$project}' not found.", ['project' => $project], 404);
         }
 
@@ -350,9 +350,9 @@ final readonly class CodexAppController
         ]];
     }
 
-    private function resolveApp(string $selector): ?Project
+    private function resolveApp(string $selector): ?App
     {
-        return Project::query()
+        return App::query()
             ->with('node')
             ->where(function ($query) use ($selector): void {
                 $query->where('name', $selector)
@@ -364,7 +364,7 @@ final readonly class CodexAppController
     /**
      * @return array{project: string, label: string, ssh_alias: string, remote_path: string}
      */
-    private function projectPayload(Project $app): array
+    private function projectPayload(App $app): array
     {
         return [
             'project' => $app->name,
@@ -391,7 +391,7 @@ final readonly class CodexAppController
         ];
     }
 
-    private function sshAlias(Project $app): string
+    private function sshAlias(App $app): string
     {
         return $app->node instanceof Node ? $app->node->name : $app->name;
     }

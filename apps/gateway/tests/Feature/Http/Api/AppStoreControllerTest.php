@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,7 +43,7 @@ function createAppStoreCallerNode(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppStoreAccess(Node $caller, Node $appNode, array $permissions = ['project:new']): void
+function grantAppStoreAccess(Node $caller, Node $appNode, array $permissions = ['app:new']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -95,7 +95,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -116,7 +116,7 @@ describe('AppStoreController', function (): void {
                 'new_repository',
             ]);
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     })->with([
         'missing source' => [[]],
         'template without destination' => [[
@@ -150,7 +150,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -166,7 +166,7 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', $field);
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     })->with([
         'non-GitHub template' => [
             [
@@ -206,7 +206,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -222,7 +222,7 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'repository');
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     })->with([
         'token in HTTPS username' => ['https://secret-token@git.example.com/docs.git'],
         'HTTPS username and password' => ['https://user:secret@git.example.com/docs.git'],
@@ -245,7 +245,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -261,17 +261,17 @@ describe('AppStoreController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
-            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.instance.node', 'app-1')
-            ->assertJsonMissingPath('success.data.project.node')
-            ->assertJsonPath('success.data.project.php_version', '8.4')
-            ->assertJsonPath('success.data.project.runtime', 'php')
-            ->assertJsonPath('success.data.project.runtime_config.proxy_transport', 'http')
-            ->assertJsonMissingPath('success.data.project.worker_enabled')
-            ->assertJsonMissingPath('success.data.project.worker_config')
+            ->assertJsonMissingPath('success.data.app.node')
+            ->assertJsonPath('success.data.app.php_version', '8.4')
+            ->assertJsonPath('success.data.app.runtime', 'php')
+            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
+            ->assertJsonMissingPath('success.data.app.worker_enabled')
+            ->assertJsonMissingPath('success.data.app.worker_config')
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(Project::query()->where('name', 'docs')->exists())
+        expect(App::query()->where('name', 'docs')->exists())
             ->toBeTrue()
             ->and(collect($remoteShell->runs)
                 ->pluck('script')
@@ -299,7 +299,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -313,7 +313,7 @@ describe('AppStoreController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.repository', 'git@github.com:hardimpact/docs.git');
+            ->assertJsonPath('success.data.app.repository', 'git@github.com:hardimpact/docs.git');
 
         $sourceScript = collect($remoteShell->runs)
             ->pluck('script')
@@ -325,7 +325,7 @@ describe('AppStoreController', function (): void {
             ->toContain("--new-repository='hardimpact/docs'")
             ->not
             ->toContain('--repository=')
-            ->and(Project::query()->where('name', 'docs')->firstOrFail()->repository)
+            ->and(App::query()->where('name', 'docs')->firstOrFail()->repository)
             ->toBe('git@github.com:hardimpact/docs.git');
     });
 
@@ -343,7 +343,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -359,10 +359,10 @@ describe('AppStoreController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.runtime', 'php')
-            ->assertJsonPath('success.data.project.runtime_config.proxy_transport', 'https');
+            ->assertJsonPath('success.data.app.runtime', 'php')
+            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'https');
 
-        expect(Project::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+        expect(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
             ->toBe(['proxy_transport' => 'https']);
     });
 
@@ -381,7 +381,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -398,17 +398,17 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime_proxy_transport');
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
-    it('rejects app creation when the caller lacks project:new on the target app node', function (): void {
+    it('rejects app creation when the caller lacks app:new on the target app node', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'status' => 'active',
         ]);
         assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
-        grantAppStoreAccess($caller, $targetNode, ['project:read']);
+        grantAppStoreAccess($caller, $targetNode, ['app:read']);
 
         $remoteShell = new AppStoreRecordingRemoteShell(scriptResults: [
             "id -u 'docs'" => new RemoteShellResult(
@@ -422,7 +422,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -436,13 +436,13 @@ describe('AppStoreController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'project:new')
+            ->assertJsonPath('error.meta.missing_permission', 'app:new')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
-    it('allows database-role callers when project:new is granted on the target app node', function (): void {
+    it('allows database-role callers when app:new is granted on the target app node', function (): void {
         $caller = createAppStoreCallerNode();
         assignAppStoreRole($caller, 'database');
         $targetNode = Node::factory()->create([
@@ -458,7 +458,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -474,9 +474,9 @@ describe('AppStoreController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
-            ->assertJsonPath('success.data.project.name', 'docs');
+            ->assertJsonPath('success.data.app.name', 'docs');
 
-        expect(Project::query()->where('name', 'docs')->exists())
+        expect(App::query()->where('name', 'docs')->exists())
             ->toBeTrue()
             ->and($remoteShell->runs)
             ->not->toBe([]);
@@ -505,7 +505,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -521,7 +521,7 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
             ->assertJsonPath('error.meta.domain', 'docs.test');
 
-        expect(Project::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
     it('reports github transport when github source creation fails', function (): void {
@@ -543,7 +543,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -556,11 +556,11 @@ describe('AppStoreController', function (): void {
 
         $response
             ->assertServerError()
-            ->assertJsonPath('error.code', 'project.source_creation_failed')
+            ->assertJsonPath('error.code', 'app.source_creation_failed')
             ->assertJsonPath('error.meta.reason', 'permission denied')
             ->assertJsonPath('error.meta.transport', 'github');
 
-        expect(Project::query()->where('name', 'docs')->exists())
+        expect(App::query()->where('name', 'docs')->exists())
             ->toBeFalse()
             ->and($remoteShell->runs[0]['script'])
             ->toContain(
@@ -604,7 +604,7 @@ describe('AppStoreController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/projects',
+            '/api/apps',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -621,10 +621,10 @@ describe('AppStoreController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.instance.url', 'https://docs.example.com')
-            ->assertJsonMissingPath('success.data.project.url')
+            ->assertJsonMissingPath('success.data.app.url')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.domain_inactive');
 
-        expect(Project::query()->where('name', 'docs')->value('environment'))->toBe('production');
+        expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
 
         $route = ProxyRoute::query()->where('domain', 'docs.example.com')->firstOrFail();
 
@@ -666,10 +666,10 @@ describe('AppStoreController', function (): void {
             ->toHaveLength(64)
             ->and($route->config['target'])
             ->toBe([
-                'type' => 'app_instance',
+                'type' => 'instance',
                 'value' => 'docs.production',
             ])
-            ->and($route->config['app_instance'])
+            ->and($route->config['instance'])
             ->toMatchArray([
                 'name' => 'production',
                 'selector' => 'docs.production',

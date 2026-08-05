@@ -5,7 +5,7 @@
 Show workspace registry configuration and runtime expectations.
 
 `workspace:show` provides a detailed view of a workspace's gateway-tracked
-configuration. It reports the parent project, required selected instance,
+configuration. It reports the parent app, required selected instance,
 effective owning node, branch, path, and canonical URL.
 
 It also returns runtime expectations (effective PHP version and inheritance
@@ -18,16 +18,16 @@ nodes.
 ## Usage
 
 ```bash
-orbit workspace:show [name] [--instance=<project.instance>] [--json]
+orbit workspace:show [name] [--instance=<app.instance>] [--json]
 ```
 
 ## Arguments and options
 
 - `name`: The workspace name. Optional when the current working directory
   resolves to a known workspace path.
-- `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: The parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to select one concrete instance
-  explicitly. A bare project slug is shorthand only when it resolves to exactly one
+  explicitly. A bare app slug is shorthand only when it resolves to exactly one
   instance; otherwise resolution fails with `instance_required`. Required
   when `name` matches more than one workspace record. Workspace names are unique
   within an app but not globally unique.
@@ -55,7 +55,7 @@ Does not SSH to nodes, probe filesystems, check live process status, or verify l
 
 ### Show a workspace by name
 
-Use this form when the workspace name is unique across all projects.
+Use this form when the workspace name is unique across all apps.
 
 ```bash
 orbit workspace:show feature-docs
@@ -64,7 +64,7 @@ orbit workspace:show feature-docs
 ### Show a workspace with app disambiguation
 
 Pass a bare `--instance` when the workspace name exists under more than one app and
-that project has exactly one concrete instance.
+that app has exactly one concrete instance.
 
 ```bash
 orbit workspace:show feature-docs --instance=docs

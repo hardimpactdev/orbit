@@ -23,7 +23,7 @@ final readonly class ProcessListController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'Process definitions with concrete status for a node, instance, workspace, or app hostname context.',
-        type: 'array{success: array{data: array{context: array{node: string, project: string|null, instance: string|null, workspace: string|null}, processes: list<array{node: string, project: string|null, instance: string|null, workspace: string|null, key: string, label: string, name: string, command: string|null, restart_policy: string, crash_notification: string, runtime: string, tool: string|null, service: array<string, mixed>|null, runtime_unit: string, status: \'starting\'|\'running\'|\'stopping\'|\'stopped\'|\'restarting\'|\'crashed\'|\'unknown\', last_event: array{id: int, type: string}|null}>}, meta: object}}',
+        type: 'array{success: array{data: array{context: array{node: string, app: string|null, instance: string|null, workspace: string|null}, processes: list<array{node: string, app: string|null, instance: string|null, workspace: string|null, key: string, label: string, name: string, command: string|null, restart_policy: string, crash_notification: string, runtime: string, tool: string|null, service: array<string, mixed>|null, runtime_unit: string, status: \'starting\'|\'running\'|\'stopping\'|\'stopped\'|\'restarting\'|\'crashed\'|\'unknown\', last_event: array{id: int, type: string}|null}>}, meta: object}}',
     )]
     public function __invoke(Request $request): JsonResponse
     {

@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--label=<label>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
+orbit process:update [name] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--label=<label>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -28,8 +28,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. Renaming identity never rewrites the persisted display `label`. |
 | `label` | `--label` / body `label` | Optional. At least one editable field is required. | Never. | Current value. | Trimmed non-empty string; max 255 characters. Updates only the display label. |
 | `node` | `--node` | Required when updating a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
-| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare app slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
+| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `none`. |
@@ -63,7 +63,7 @@ commands.
 
 ### Process Definition Update Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Validate that at least one editable field is supplied.
 3. When `--name` is supplied, validate that the new slug is unique in the owning
    scope and that the selected runtime/backend can safely replace derived unit
@@ -79,7 +79,7 @@ commands.
    resolved node or instance serving node. Node-owned and workspace-owned
    processes normally derive one unit. Instance-owned processes derive one
    main-instance unit plus one unit for each active workspace belonging to that
-   same instance. Canonical identities include both project and instance slugs.
+   same instance. Canonical identities include both app and instance slugs.
    Label-only updates do not require runtime-unit identity replacement.
 8. When identity changes, remove or replace derived runtime units for the
    previous identity after the current desired units have been rendered, so
@@ -105,7 +105,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Duplicate process name | `--name` matches another process in the resolved owner scope. | Failure (`error.code=process.name_conflict`; `error.meta.field=name`). |
 | Unsupported rename | The selected runtime/backend cannot safely replace derived unit identity. | Failure (`error.code=process.rename_unsupported`; gateway state remains unchanged). |
 | Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
+| Instance required | A bare app selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
 | Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
 
@@ -121,7 +121,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Subject | Resolved `Node` for node-owned processes or `Instance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node` (string or null), `instance` (string or null), `workspace` (string or null), `old_name` (string), and `new_name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 

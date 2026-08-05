@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 it('stores deployment policy and history only on concrete app instances', function (): void {
-    expect(Schema::hasColumn('app_instances', 'deploy_warmup_paths'))
+    expect(Schema::hasColumn('instances', 'deploy_warmup_paths'))
         ->toBeTrue()
         ->and(Schema::hasColumn('apps', 'deploy_warmup_paths'))
         ->toBeFalse()
@@ -19,11 +19,11 @@ it('stores deployment policy and history only on concrete app instances', functi
         ->toBeFalse()
         ->and(Schema::hasColumn('apps', 'latest_deployment_run_id'))
         ->toBeFalse()
-        ->and(Schema::hasColumn('deploy_steps', 'app_instance_id'))
+        ->and(Schema::hasColumn('deploy_steps', 'instance_id'))
         ->toBeTrue()
         ->and(Schema::hasColumn('deploy_steps', 'app_id'))
         ->toBeFalse()
-        ->and(Schema::hasColumn('deployment_runs', 'app_instance_id'))
+        ->and(Schema::hasColumn('deployment_runs', 'instance_id'))
         ->toBeTrue()
         ->and(Schema::hasColumn('deployment_runs', 'app_id'))
         ->toBeFalse();

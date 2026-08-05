@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Enums\ProcessEventType;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -26,7 +26,7 @@ class ProcessEventFactory extends Factory
             'event_id' => (string) Str::uuid(),
             'process_id' => Process::factory(),
             'process_name' => 'vite',
-            'app_id' => Project::factory(),
+            'app_id' => App::factory(),
             'workspace_id' => null,
             'node_id' => Node::factory(),
             'unit_name' => 'orbit_docs_main_vite',
@@ -39,7 +39,7 @@ class ProcessEventFactory extends Factory
 
     public function configure(): static
     {
-        return $this->afterMaking(function (ProcessEvent $event): void {
+        return $this->afterMaking(static function (ProcessEvent $event): void {
             if (is_string($event->process_name) && $event->process_name !== '') {
                 return;
             }

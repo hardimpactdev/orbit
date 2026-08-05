@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -25,7 +25,7 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'tld' => 'test',
     ]);
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'php_version' => '8.5',
@@ -55,16 +55,16 @@ it('derives workspace url from a matching orbit app instance placement', functio
     $beast = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'Beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = Project::factory()->for($beast, 'node')->create([
+    $app = App::factory()->for($beast, 'node')->create([
         'name' => 'happie',
         'path' => '/Users/nckrtl/apps/happie-beast',
         'domain' => null,
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $beast->id,
             node: 'Beast',
             path: '/Users/nckrtl/apps/happie-beast',
@@ -73,10 +73,10 @@ it('derives workspace url from a matching orbit app instance placement', functio
         ),
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'NMBP',
             path: '/Users/nckrtl/apps/happie',
@@ -98,16 +98,16 @@ it('derives workspace url from explicit workspace proxy route before path placem
     $beast = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = Project::factory()->for($beast, 'node')->create([
+    $app = App::factory()->for($beast, 'node')->create([
         'name' => 'happie',
         'path' => '/home/nckrtl/apps/happie',
         'domain' => null,
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $beast->id,
             node: 'beast',
             path: '/home/nckrtl/apps/happie',
@@ -116,10 +116,10 @@ it('derives workspace url from explicit workspace proxy route before path placem
         ),
     ]);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'NMBP',
             path: '/Users/nckrtl/apps/happie',
@@ -147,7 +147,7 @@ it('derives workspace url from explicit workspace proxy route before path placem
 });
 
 it('prefers an explicit workspace php version over the parent app version', function (): void {
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'php_version' => '8.5',
     ]);
 
@@ -160,8 +160,8 @@ it('prefers an explicit workspace php version over the parent app version', func
 });
 
 it('keeps workspace names unique within a parent app only', function (): void {
-    $firstApp = Project::factory()->create();
-    $secondApp = Project::factory()->create();
+    $firstApp = App::factory()->create();
+    $secondApp = App::factory()->create();
 
     Workspace::factory()->create([
         'app_id' => $firstApp->id,

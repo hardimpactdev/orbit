@@ -224,7 +224,7 @@ describe('tool write commands', function (): void {
             ->and($decoded['success']['data']['tool']['state'])
             ->toBe('removed')
             ->and($decoded['success']['meta'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($output)
             ->toContain('"meta":[]')
             ->and($output)
@@ -263,7 +263,7 @@ describe('tool write commands', function (): void {
                 'routes_removed' => 1,
             ])
             ->and($decoded['success']['meta'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($output)
             ->toContain('"meta":[]')
             ->and($output)

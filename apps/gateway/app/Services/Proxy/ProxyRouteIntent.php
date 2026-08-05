@@ -7,9 +7,9 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -291,7 +291,7 @@ class ProxyRouteIntent
         $route->loadMissing(['app', 'workspace']);
 
         return match ($route->owner_type) {
-            'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof Project,
+            'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof App,
             'workspace' => ! $route->workspace instanceof Workspace,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,

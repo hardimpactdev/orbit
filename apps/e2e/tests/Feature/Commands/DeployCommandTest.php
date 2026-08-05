@@ -10,7 +10,7 @@ function deployCommandSeedProductionApp(E2ETopologyHarness $topology, string $pa
     $script = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        \App\Models\Project::query()->updateOrCreate(
+        \App\Models\App::query()->updateOrCreate(
             ['name' => 'docs'],
             [
                 'node_id' => $node->id,
@@ -112,7 +112,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
 
         expect($addPayload['success']['data']['step'])
             ->toMatchArray([
-                'project' => 'docs',
+                'app' => 'docs',
                 'title' => 'Write marker',
                 'order' => 1,
                 'timeout_seconds' => 120,

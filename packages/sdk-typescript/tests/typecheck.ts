@@ -60,7 +60,7 @@ await client.GET('/nodes', {
     },
 });
 
-await client.GET('/projects', {});
+await client.GET('/apps', {});
 
 // App hostname selector for toolbar process list.
 const appQuery = {
@@ -139,14 +139,14 @@ const snapshotOk: ProcessStreamSnapshot = {
     app: 'test.app.example',
     context: {
         node: 'app-1',
-        project: 'docs',
+        app: 'docs',
         instance: 'development',
         workspace: null,
     },
     processes: [
         {
             node: 'app-1',
-            project: 'docs',
+            app: 'docs',
             instance: 'development',
             workspace: null,
             key: 'vite',
@@ -175,7 +175,7 @@ const updateOk: ProcessStreamUpdate = {
     name: 'vite',
     label: 'Vite Dev Server',
     node: 'app-1',
-    project: 'docs',
+    app: 'docs',
     instance: 'development',
     workspace: null,
     unit_name: 'orbit_docs_development_main_vite',
@@ -258,10 +258,10 @@ await client.GET('/tools', {
     },
 });
 
-await client.GET('/projects/{project}/instances', {
+await client.GET('/apps/{app}/instances', {
     params: {
         path: {
-            project: 'docs',
+            app: 'docs',
         },
     },
 });

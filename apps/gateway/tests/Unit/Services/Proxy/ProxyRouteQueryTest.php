@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteQuery;
@@ -32,7 +32,7 @@ describe('ProxyRouteQuery', function (): void {
     it('normalizes proxy route entities and sorts them by node then domain', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node']);
         $aNode = Node::factory()->create(['name' => 'a-node']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $aNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $aNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $zNode->id,
@@ -72,10 +72,10 @@ describe('ProxyRouteQuery', function (): void {
             ->and($result['routes'][0])
             ->toMatchArray([
                 'domain' => 'docs.test',
-                'kind' => 'project',
-                'owner' => ['type' => 'project', 'name' => 'docs'],
+                'kind' => 'app',
+                'owner' => ['type' => 'app', 'name' => 'docs'],
                 'node' => 'a-node',
-                'target' => ['type' => 'project', 'value' => 'docs'],
+                'target' => ['type' => 'app', 'value' => 'docs'],
                 'redirect_code' => null,
                 'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
                 'status' => 'unknown',
@@ -129,14 +129,14 @@ describe('ProxyRouteQuery', function (): void {
                 'name' => 'nmbp',
                 'tld' => 'nmbp',
             ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'happie',
             'domain' => 'happie.test',
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: 'nmbp',
                 path: '/Users/nckrtl/apps/happie',
@@ -177,7 +177,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -289,7 +289,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -342,7 +342,7 @@ describe('ProxyRouteQuery', function (): void {
 
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
 
         ProxyRoute::factory()->create([
@@ -376,7 +376,7 @@ describe('ProxyRouteQuery', function (): void {
 
         $query = app(ProxyRouteQuery::class);
 
-        expect(array_column($query->list(filter: 'project')['routes'], 'domain'))
+        expect(array_column($query->list(filter: 'app')['routes'], 'domain'))
             ->toBe(['docs.test'])
             ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))
             ->toBe(['feature.docs.test'])

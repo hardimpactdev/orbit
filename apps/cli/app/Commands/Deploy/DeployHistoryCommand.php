@@ -16,7 +16,7 @@ final class DeployHistoryCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:history
-        {instance : Instance selector (project.instance)}
+        {instance : Instance selector (app.instance)}
         {--limit= : Number of runs to return (default 50, hard cap 500)}
         {--json}';
 

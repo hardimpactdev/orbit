@@ -14,7 +14,7 @@ final readonly class ScheduleLogsPayload
 {
     public function __construct(
         private SchedulePayload $schedules,
-        private ScheduleAppInstanceResolver $appInstances,
+        private ScheduleInstanceResolver $instances,
     ) {}
 
     /**
@@ -32,7 +32,7 @@ final readonly class ScheduleLogsPayload
         $run = $this->resolveRun($schedule, $runId);
         [$stdout, $stdoutTruncated] = $this->limitLines($run->stdout ?? '', $lines);
         [$stderr, $stderrTruncated] = $this->limitLines($run->stderr ?? '', $lines);
-        $targetNode = $schedule->scope === 'app' ? $this->appInstances->targetNode($schedule) : $schedule->node;
+        $targetNode = $schedule->scope === 'app' ? $this->instances->targetNode($schedule) : $schedule->node;
 
         return [
             'data' => [

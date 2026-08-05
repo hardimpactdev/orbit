@@ -5,20 +5,20 @@ declare(strict_types=1);
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -91,11 +91,11 @@ beforeEach(function (): void {
         ],
     ]);
 
-    AppInstance::factory()->create([
+    Instance::factory()->create([
         'app_id' => 1,
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: 1,
             path: '/home/nckrtl/apps/demo',
             document_root: 'public',
@@ -119,13 +119,13 @@ function setup_workspace_use_agent_push(): void
 it('sets up a workspace and marks it active', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -133,7 +133,7 @@ it('sets up a workspace and marks it active', function (): void {
 
     expect($result['action'])->toBe('set_up');
     expect($result['workspace'])->toBe('feature-a');
-    expect($result['project'])->toBe('demo');
+    expect($result['app'])->toBe('demo');
 
     $workspace->refresh();
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
@@ -142,13 +142,13 @@ it('sets up a workspace and marks it active', function (): void {
 it('does not render PHP-FPM pool config for PHP workspaces in the steady-state path', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -173,13 +173,13 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
 it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -223,7 +223,7 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
 it('reconciles an existing FrankenPHP workspace runtime process row', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -243,7 +243,7 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
             ],
         ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
@@ -267,13 +267,13 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -368,7 +368,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
             'status' => 'active',
         ]);
 
-    $app = Project::query()->firstOrFail();
+    $app = App::query()->firstOrFail();
     $app->update([
         'name' => 'happie',
         'domain' => 'happie.test',
@@ -377,12 +377,12 @@ it('sets up a Codex worktree against the selected app instance node', function (
     ]);
     $app->refresh();
 
-    $instance = AppInstance::factory()
+    $instance = Instance::factory()
         ->for($app)
         ->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $localNode->id,
                 node: 'NMBP',
                 path: '/Users/nckrtl/apps/happie',
@@ -408,7 +408,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
         ->toBeTrue()
         ->and($resolvedNode->is($localNode))
         ->toBeTrue()
-        ->and($workspace->app_instance_id)
+        ->and($workspace->instance_id)
         ->toBe($instance->id)
         ->and($workspace->url())
         ->toBe('https://recipes.happie.nmbp')
@@ -458,7 +458,7 @@ it('infers the caller app instance for a Codex worktree path when app selector i
             'status' => 'active',
         ]);
 
-    $app = Project::query()->firstOrFail();
+    $app = App::query()->firstOrFail();
     $app->update([
         'name' => 'happie',
         'domain' => 'happie.test',
@@ -467,12 +467,12 @@ it('infers the caller app instance for a Codex worktree path when app selector i
     ]);
     $app->refresh();
 
-    $instance = AppInstance::factory()
+    $instance = Instance::factory()
         ->for($app)
         ->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $localNode->id,
                 node: 'NMBP',
                 path: '/Users/nckrtl/apps/happie',
@@ -493,7 +493,7 @@ it('infers the caller app instance for a Codex worktree path when app selector i
         ->toBeTrue()
         ->and($resolvedNode->is($localNode))
         ->toBeTrue()
-        ->and($workspace->app_instance_id)
+        ->and($workspace->instance_id)
         ->toBe($instance->id)
         ->and($workspace->url())
         ->toBe('https://recipes.happie.nmbp')
@@ -513,7 +513,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
         ->update([
             'wireguard_address' => '10.47.0.42',
         ]);
-    Project::query()
+    App::query()
         ->findOrFail(1)
         ->update([
             'runtime_config' => ['proxy_transport' => 'https'],
@@ -521,7 +521,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
 
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -590,16 +590,16 @@ it('rejects production workspace routes before recording or enacting artifacts',
         ->where('role', 'app-dev')
         ->update(['role' => 'app-prod']);
 
-    Project::query()
+    App::query()
         ->whereKey(1)
         ->update([
             'domain' => 'demo.example.com',
             'environment' => 'production',
         ]);
-    AppInstance::query()
+    Instance::query()
         ->findOrFail(1)
         ->update([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: 1,
                 path: '/home/nckrtl/apps/demo',
                 document_root: 'public',
@@ -609,7 +609,7 @@ it('rejects production workspace routes before recording or enacting artifacts',
 
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -639,13 +639,13 @@ it('starts configured app processes for the workspace after rendering runtime un
 
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->firstOrFail();
+    $app = App::query()->with('node')->firstOrFail();
 
     OrbitProcess::factory()
         ->forOwner($app)
@@ -720,13 +720,13 @@ it('starts configured app processes for the workspace after rendering runtime un
 it('reports converged for already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -738,13 +738,13 @@ it('reports converged for already-active workspace', function (): void {
 it('reports adopted for new workspace with adoption flag', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -756,13 +756,13 @@ it('reports adopted for new workspace with adoption flag', function (): void {
 it('skips setup steps when none are configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -781,14 +781,14 @@ it('continues with workspace-owned env initialization after migration removes an
     try {
         $workspace = Workspace::create([
             'app_id' => 1,
-            'app_instance_id' => 1,
+            'instance_id' => 1,
             'name' => 'feature-a',
             'path' => $path,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
         $unsafeStep = WorkspaceStep::create([
             'app_id' => 1,
-            'app_instance_id' => 1,
+            'instance_id' => 1,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 1,
             'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
@@ -803,7 +803,7 @@ it('continues with workspace-owned env initialization after migration removes an
         expect($migration)->toBeInstanceOf(Migration::class);
         $migration->up();
 
-        $app = Project::query()->with('node')->firstOrFail();
+        $app = App::query()->with('node')->firstOrFail();
         $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
 
         expect(WorkspaceStep::query()->whereKey($unsafeStep->id)->exists())
@@ -820,7 +820,7 @@ it('continues with workspace-owned env initialization after migration removes an
 it('runs setup steps when configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -828,14 +828,14 @@ it('runs setup steps when configured', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'echo "hello"',
         'timeout_seconds' => 60,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -853,12 +853,12 @@ it('runs setup steps when configured', function (): void {
 });
 
 it('runs instance-specific setup steps for workspaces bound to an app instance', function (): void {
-    $app = Project::query()->with('node')->first();
-    $instance = AppInstance::factory()->create([
+    $app = App::query()->with('node')->first();
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             domain: 'demo.nmbp',
@@ -866,7 +866,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
     ]);
     $workspace = Workspace::create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -874,7 +874,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
 
     WorkspaceStep::create([
         'app_id' => $app->id,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'other instance step',
@@ -882,7 +882,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
     ]);
     WorkspaceStep::create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'instance step',
@@ -897,7 +897,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
 it('reports progress while setup steps are running', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -905,7 +905,7 @@ it('reports progress while setup steps are running', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install --no-interaction',
@@ -914,14 +914,14 @@ it('reports progress while setup steps are running', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 2,
         'command' => 'npm ci',
         'timeout_seconds' => 900,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $events = [];
 
@@ -945,7 +945,7 @@ it('reports progress while setup steps are running', function (): void {
 it('routes php and composer setup steps through the selected workspace host php toolchain', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -953,7 +953,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install --no-interaction',
@@ -962,14 +962,14 @@ it('routes php and composer setup steps through the selected workspace host php 
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 2,
         'command' => 'php artisan migrate --force',
         'timeout_seconds' => 300,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1005,7 +1005,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 it('keeps non-php setup steps on the host', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1013,14 +1013,14 @@ it('keeps non-php setup steps on the host', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'npm ci',
         'timeout_seconds' => 900,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1041,7 +1041,7 @@ it('keeps non-php setup steps on the host', function (): void {
 it('passes lifecycle environment into host-routed setup steps', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1049,14 +1049,14 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install',
         'timeout_seconds' => 1200,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1097,18 +1097,18 @@ it(
     function (): void {
         $workspace = Workspace::create([
             'app_id' => 1,
-            'app_instance_id' => 1,
+            'instance_id' => 1,
             'name' => 'feature-a',
             'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
-        $app = Project::query()->with('node')->firstOrFail();
+        $app = App::query()->with('node')->firstOrFail();
 
         OrbitProcess::factory()
             ->forOwner($app)
             ->create([
-                'app_instance_id' => 1,
+                'instance_id' => 1,
                 'name' => 'frankenphp-demo',
                 'command' => 'frankenphp',
                 'runtime' => ProcessRuntime::Docker,
@@ -1117,7 +1117,7 @@ it(
         OrbitProcess::factory()
             ->forOwner($app)
             ->create([
-                'app_instance_id' => 1,
+                'instance_id' => 1,
                 'name' => 'queue',
                 'command' => 'php artisan queue:work',
                 'runtime' => ProcessRuntime::Systemd,
@@ -1146,7 +1146,7 @@ it(
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1154,7 +1154,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'echo "hello"',
@@ -1170,7 +1170,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
         ])),
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -1183,7 +1183,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
 it('throws when setup step fails', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1191,14 +1191,14 @@ it('throws when setup step fails', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
-        'app_instance_id' => 1,
+        'instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'exit 1',
         'timeout_seconds' => 60,
     ]);
 
-    $app = Project::query()->with('node')->first();
+    $app = App::query()->with('node')->first();
     $node = $app->node;
 
     app()->instance(RemoteShell::class, new SetupWorkspaceActionFailingShell);
@@ -1305,8 +1305,8 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace, ?int $exp
     expect($process)
         ->not
         ->toBeNull()
-        ->and($process?->app_instance_id)
-        ->toBe($workspace->app_instance_id)
+        ->and($process?->instance_id)
+        ->toBe($workspace->instance_id)
         ->and($process?->node_id)
         ->toBe($expectedNodeId)
         ->and($process?->command)

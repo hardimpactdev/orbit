@@ -12,11 +12,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $database_connection_id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property int|null $workspace_id
  * @property string $env_prefix
  * @property-read DatabaseConnection|null $connection
- * @property-read AppInstance|null $appInstance
+ * @property-read Instance|null $instance
  * @property-read Workspace|null $workspace
  */
 class DatabaseConnectionTarget extends Model
@@ -27,7 +27,7 @@ class DatabaseConnectionTarget extends Model
     #[\Override]
     protected $fillable = [
         'database_connection_id',
-        'app_instance_id',
+        'instance_id',
         'workspace_id',
         'env_prefix',
     ];
@@ -41,11 +41,11 @@ class DatabaseConnectionTarget extends Model
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     /**

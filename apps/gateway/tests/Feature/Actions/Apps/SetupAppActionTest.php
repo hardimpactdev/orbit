@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Apps\SetupApp;
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -22,15 +22,15 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
             'user' => 'nckrtl',
         ]);
 
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'craft-starterkit-react',
         'domain' => 'craft-starterkit-react.test',
-        'path' => '/home/nckrtl/projects/craft-starterkit-react',
+        'path' => '/home/nckrtl/apps/craft-starterkit-react',
         'php_version' => '8.5',
     ]);
 
-    $instance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -39,7 +39,7 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
         ),
     ]);
 
-    AppSetupStep::factory()->for($instance, 'appInstance')->create([
+    AppSetupStep::factory()->for($instance, 'instance')->create([
         'command' => 'npm install',
         'sort_order' => 1,
     ]);

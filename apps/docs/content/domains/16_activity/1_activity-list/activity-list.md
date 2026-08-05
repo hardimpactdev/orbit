@@ -12,14 +12,14 @@ ties entries from the same operation together.
 ## Usage
 
 ```bash
-orbit activity:list [--node=<node>] [--project=<project>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
+orbit activity:list [--node=<node>] [--app=<app>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit activity:list
-orbit activity:list --project=docs
+orbit activity:list --app=docs
 orbit activity:list --node=app-1 --limit=50
 orbit activity:list --effect=destructive
 orbit activity:list --effect=destructive --node=app-1
@@ -30,7 +30,7 @@ orbit activity:list --json
 
 ## Arguments and options
 
-- `--project`: Limit results to activity associated with the recorded project key.
+- `--app`: Limit results to activity associated with the recorded app key.
 - `--node`: Limit results to activity associated with the recorded node name.
 - `--effect`: Limit results to one effect: `read`, `write`, or `destructive`.
 - `--correlation`: Limit results to one correlated operation.
@@ -46,7 +46,7 @@ orbit activity:list --json
 
 ## What Happens
 
-Run `activity:list` to retrieve recent gateway history filtered by project, node, effect, or correlation id. `activity:list`:
+Run `activity:list` to retrieve recent gateway history filtered by app, node, effect, or correlation id. `activity:list`:
 
 1. Validates the requested filters.
 2. Asks the gateway for recent activity history visible to the caller.

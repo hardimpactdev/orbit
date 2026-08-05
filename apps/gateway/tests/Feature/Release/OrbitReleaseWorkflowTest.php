@@ -529,14 +529,14 @@ it('does not descend into skipped gateway runtime directories while packaging', 
     );
 
     try {
-        mkdir($skippedDirectory, 0000, true);
+        mkdir($skippedDirectory, 0o000, true);
 
         prepareReleaseWorkflowPackage('gateway', '1.2.3', "{$root}/gateway");
 
         expect("{$root}/gateway/storage/framework/testing")->not->toBeDirectory();
     } finally {
         if (is_dir($skippedDirectory)) {
-            chmod($skippedDirectory, 0700);
+            chmod($skippedDirectory, 0o700);
             File::deleteDirectory($skippedDirectory);
         }
 

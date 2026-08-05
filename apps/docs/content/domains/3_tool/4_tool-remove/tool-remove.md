@@ -11,7 +11,7 @@ supported removal path.
 ## Usage
 
 ```bash
-orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples

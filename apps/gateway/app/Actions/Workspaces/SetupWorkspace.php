@@ -11,9 +11,9 @@ use App\Enums\ProcessEventType;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
@@ -56,7 +56,7 @@ final readonly class SetupWorkspace
 
     /**
      * @return array{
-     *     project: string,
+     *     app: string,
      *     instance: string,
      *     workspace: string,
      *     node: string,
@@ -68,7 +68,7 @@ final readonly class SetupWorkspace
      *     http_probe: array{reachable: bool, status: string},
      * }
      */
-    public function handle(Project $app, Workspace $workspace, Node $node, bool $isAdoption = false): array
+    public function handle(App $app, Workspace $workspace, Node $node, bool $isAdoption = false): array
     {
         $workspace->loadMissing('app');
         $app->loadMissing('node');
@@ -133,11 +133,11 @@ final readonly class SetupWorkspace
             $action = 'set_up';
         }
 
-        $workspace->loadMissing('appInstance');
+        $workspace->loadMissing('instance');
 
         return [
-            'project' => $app->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $app->name,
+            'instance' => $workspace->instance->name,
             'workspace' => $workspace->name,
             'node' => $node->name,
             'url' => $workspace->url(),
@@ -174,7 +174,7 @@ final readonly class SetupWorkspace
 
     /**
      * Converge the FrankenPHP runtime container for PHP workspaces. Static /
-     * non-PHP workspaces inherit the parent project's runtime kind and do not get
+     * non-PHP workspaces inherit the parent app's runtime kind and do not get
      * a runtime container.
      *
      * @return array{code: string, family: string, message: string, next_command: string}|null
@@ -184,7 +184,7 @@ final readonly class SetupWorkspace
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
-        if (! $app instanceof Project || $app->runtimeKind() !== AppRuntimeKind::Php) {
+        if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 
@@ -229,16 +229,16 @@ final readonly class SetupWorkspace
      */
     public function runSetupSteps(
         Workspace $workspace,
-        Project $app,
+        App $app,
         Node $node,
         ?callable $onStepProgress = null,
     ): array {
-        $workspace->loadMissing('appInstance');
+        $workspace->loadMissing('instance');
 
         $steps = $this->stepPolicy->stepsFor(
             $app,
             WorkspaceLifecyclePhase::Setup,
-            $workspace->appInstance,
+            $workspace->instance,
         );
 
         if ($steps->isEmpty()) {
@@ -320,14 +320,14 @@ final readonly class SetupWorkspace
     /**
      * @return array{success: bool, message: string, count: int, names: list<string>}
      */
-    public function startProcesses(Project $app, Workspace $workspace, Node $node): array
+    public function startProcesses(App $app, Workspace $workspace, Node $node): array
     {
         $context = new ProcessOwnerContext(
             node: $node,
             app: $app,
             workspace: $workspace,
             owner: $workspace,
-            appInstance: $workspace->appInstance,
+            instance: $workspace->instance,
         );
 
         $appProcesses = $context->effectiveWorkspaceProcessesWithoutRuntime();
@@ -478,7 +478,7 @@ final readonly class SetupWorkspace
     /**
      * @return array<string, string>
      */
-    private function workspaceEnv(Project $app, Workspace $workspace, Node $node): array
+    private function workspaceEnv(App $app, Workspace $workspace, Node $node): array
     {
         return (
             [

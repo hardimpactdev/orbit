@@ -29,7 +29,7 @@ These rules define the analytics command domain and its role boundary.
   reporting success, and returns the script base URL for that instance plus the
   event endpoint operators use to adapt the Plausible-generated snippet.
   Public domains, hosts, route targets, and serving-node authorization are
-  instance-owned placement facts; the project never owns them.
+  instance-owned placement facts; the app never owns them.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
   `--plausible-version` option; the command option is `--requested-version`
@@ -83,7 +83,7 @@ state owned by node, instance, process, and proxy families.
   from the singleton active role assignment.
 - Instance analytics bindings are instance-owned placement state (public domain,
   tracking host, route target, serving-node authorization).
-  [`doctor --family=instance`](../5_project/instance-doctor.md) owns instance
+  [`doctor --family=instance`](../5_app/instance-doctor.md) owns instance
   binding drift.
 
 There is no `doctor --family=analytics` contract in v1.
@@ -110,7 +110,7 @@ convergence.
 
 ## Related
 
-- [`orbit instance:analytics enable`](../5_project/16_instance-analytics-enable/instance-analytics-enable.md)
+- [`orbit instance:analytics enable`](../5_app/16_instance-analytics-enable/instance-analytics-enable.md)
 - [`orbit node role:add`](../1_node/12_node-role-add/node-role-add.md)
 - [`orbit process:*`](../7_process/README.md)
 - [`orbit proxy:*`](../8_proxy/README.md)

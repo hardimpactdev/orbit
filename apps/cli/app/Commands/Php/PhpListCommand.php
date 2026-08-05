@@ -17,7 +17,7 @@ final class PhpListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'php:list
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
         {--live : Inspect available PHP images live}
@@ -86,19 +86,19 @@ final class PhpListCommand extends GatewayCommand
      */
     private function instanceLabel(array $runtime): string
     {
-        $project = $runtime['project'] ?? null;
+        $app = $runtime['app'] ?? null;
         $instance = $runtime['instance'] ?? null;
 
-        $project = $this->associativeArray($project);
+        $app = $this->associativeArray($app);
         $instance = $this->associativeArray($instance);
 
-        if ($project === null || $instance === null) {
+        if ($app === null || $instance === null) {
             return '—';
         }
 
-        $projectName = $this->runtimeString($project, 'name');
+        $projectName = $this->runtimeString($app, 'name');
         $instanceName = $this->runtimeString($instance, 'name');
-        $version = $this->runtimeString($project, 'php_version');
+        $version = $this->runtimeString($app, 'php_version');
 
         if ($projectName === '—' || $instanceName === '—') {
             return '—';

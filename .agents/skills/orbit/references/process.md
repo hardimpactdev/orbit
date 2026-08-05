@@ -25,7 +25,7 @@ orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
 |---|---|---|
 | `name` |  -  | Process slug (<=64 chars). Independent of `--service`. |
 | `command` |  -  | Shell command (run inside the app/workspace path). Omit when `--service` is present. |
-| `--instance` |  -  | Parent `project.instance` selector. |
+| `--instance` |  -  | Parent `app.instance` selector. |
 | `--node` |  -  | Owning node for node-owned processes and managed services. |
 | `--service` |  -  | Managed service identifier (`mysql`, `valkey`, ...). Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |

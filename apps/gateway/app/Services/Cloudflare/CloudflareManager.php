@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
-use App\Models\Project;
+use App\Models\App;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareManager
@@ -139,7 +139,7 @@ final readonly class CloudflareManager
         $client = $this->client();
         $resolved = $this->resolver($client)->resolveZoneOrProject($zoneIdentifier);
         $zone = $resolved['zone'];
-        $project = $resolved['project'];
+        $app = $resolved['app'];
 
         $client->flushCache($zone['id']);
 
@@ -147,7 +147,7 @@ final readonly class CloudflareManager
             'data' => [
                 'cache' => [
                     'zone' => $zone['name'],
-                    'project' => $project instanceof Project ? $project->name : null,
+                    'app' => $app instanceof App ? $app->name : null,
                     'action' => 'flush',
                     'status' => 'flushed',
                 ],
@@ -168,7 +168,7 @@ final readonly class CloudflareManager
         return [
             'data' => [
                 'rule' => [
-                    'project' => $resolved['project']->name,
+                    'app' => $resolved['app']->name,
                     'zone' => $resolved['zone']['name'],
                     'action' => 'add',
                     'cache' => true,
@@ -193,11 +193,11 @@ final readonly class CloudflareManager
 
         if (! $client->removeCacheRule($resolved['zone']['id'])) {
             throw new GatewayApiException(
-                message: 'The project has no Cloudflare cache rule to remove.',
+                message: 'The app has no Cloudflare cache rule to remove.',
                 errorCode: 'validation_failed',
                 errorMeta: [
-                    'field' => 'project',
-                    'project' => $resolved['project']->name,
+                    'field' => 'app',
+                    'app' => $resolved['app']->name,
                     'zone' => $resolved['zone']['name'],
                     'reason' => 'cache_rule_missing',
                 ],
@@ -207,7 +207,7 @@ final readonly class CloudflareManager
         return [
             'data' => [
                 'rule' => [
-                    'project' => $resolved['project']->name,
+                    'app' => $resolved['app']->name,
                     'zone' => $resolved['zone']['name'],
                     'action' => 'remove',
                     'status' => 'removed',

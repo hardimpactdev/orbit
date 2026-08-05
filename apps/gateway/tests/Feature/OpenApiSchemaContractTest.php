@@ -34,7 +34,7 @@ function assert_process_open_api_contracts(array $schema): void
     Assert::assertSame(
         [
             'node',
-            'project',
+            'app',
             'instance',
             'workspace',
             'key',
@@ -56,7 +56,7 @@ function assert_process_open_api_contracts(array $schema): void
         ),
     );
     Assert::assertSame(
-        ['node', 'project', 'instance', 'workspace'],
+        ['node', 'app', 'instance', 'workspace'],
         data_get(
             $schema,
             'paths./processes.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.context.required',
@@ -99,7 +99,7 @@ function assert_process_open_api_contracts(array $schema): void
     Assert::assertArrayHasKey('events', $restartRuntimeProperties);
     Assert::assertArrayNotHasKey('event', $restartRuntimeProperties);
     Assert::assertSame(
-        ['process', 'node', 'project', 'instance', 'workspace', 'runtime_unit', 'state', 'event', 'events'],
+        ['process', 'node', 'app', 'instance', 'workspace', 'runtime_unit', 'state', 'event', 'events'],
         data_get(
             $schema,
             'paths./processes/start.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.runtimes.items.required',
@@ -170,7 +170,7 @@ test('gateway openapi export includes stable contract metadata', function (): vo
     /** @var array<string, mixed>|null $projectListItem */
     $projectListItem = data_get(
         target: $schema,
-        key: 'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.projects.items',
+        key: 'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.apps.items',
     );
 
     Assert::assertIsArray($projectListItem);
@@ -204,14 +204,14 @@ test('gateway openapi export includes stable contract metadata', function (): vo
     Assert::assertSame('integer', data_get($projectListItem, 'properties.workspace_count.type'));
     $projectListResponseStatuses = array_map(
         static fn (int|string $status): string => (string) $status,
-        array_keys(data_get($schema, 'paths./projects.get.responses', [])),
+        array_keys(data_get($schema, 'paths./apps.get.responses', [])),
     );
     sort($projectListResponseStatuses);
 
     Assert::assertSame(['200', '400', '403'], $projectListResponseStatuses);
     Assert::assertSame('array', data_get(
         $schema,
-        'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
+        'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
     ));
 
     /** @var array<string, mixed>|null $instanceSetupResponses */
@@ -234,7 +234,7 @@ test('gateway openapi export includes stable contract metadata', function (): vo
 
     Assert::assertIsArray($instanceSetupData);
     Assert::assertSame([
-        'project',
+        'app',
         'instance',
         'node',
         'path',

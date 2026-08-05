@@ -24,7 +24,7 @@ The database family owns these facts:
   mapping and the supported environment prefix used in that target's `.env`;
 - supported env-prefix expansions in instance and workspace `.env` files;
 - drift between gateway connection intent and observed target `.env` values;
-- adoption of database connection state for existing registered projects and
+- adoption of database connection state for existing registered apps and
   workspaces during rollout, using their current `.env` files as the observed
   source.
 

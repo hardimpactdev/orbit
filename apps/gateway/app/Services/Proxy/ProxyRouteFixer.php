@@ -9,10 +9,10 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -265,12 +265,12 @@ final readonly class ProxyRouteFixer
         $route->loadMissing(['node', 'app']);
         $app = $route->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
-        $instance = $this->appRouteTargets()->appInstanceForRoute($route);
-        $runtimeApp = $instance instanceof AppInstance
+        $instance = $this->appRouteTargets()->instanceForRoute($route);
+        $runtimeApp = $instance instanceof Instance
             ? $this->appRuntimeRenderer()->runtimeAppForInstance($app, $instance)
             : $app;
 
@@ -297,7 +297,7 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(Project $app, ?AppInstance $instance): void
+    private function executeAppRouteEnactment(App $app, ?Instance $instance): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
             ($this->appRouteEnactor)($app, $instance);
@@ -564,11 +564,11 @@ final readonly class ProxyRouteFixer
     {
         $config = is_array($route->config) ? $route->config : [];
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
-        $appInstance = $config['app_instance'] ?? null;
+        $instance = $config['instance'] ?? null;
         $isDevelopmentRuntimeRoute = $node->hasActiveRole('app-dev') && app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->whereNotNull('wireguard_address')
-            ->exists() && ($route->kind === 'workspace' || $route->kind === 'app' && is_array($appInstance) && is_int($appInstance['id'] ?? null));
+            ->exists() && ($route->kind === 'workspace' || $route->kind === 'app' && is_array($instance) && is_int($instance['id'] ?? null));
 
         if (
             ! $isDevelopmentRuntimeRoute

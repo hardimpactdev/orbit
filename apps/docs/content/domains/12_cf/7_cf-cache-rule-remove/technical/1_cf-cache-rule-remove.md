@@ -1,4 +1,4 @@
-# Technical Contract: `orbit cf-cache-rule:remove <project> [--force] [--json]`
+# Technical Contract: `orbit cf-cache-rule:remove <app> [--force] [--json]`
 
 [Back to public `cf-cache-rule:remove` documentation.](../cf-cache-rule-remove.md)
 
@@ -10,12 +10,12 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named project exists and has a Cloudflare-backed `Project.domain`.
+- The named app exists and has a Cloudflare-backed `App.domain`.
 
 ## Signature
 
 ```bash
-orbit cf-cache-rule:remove <project> [--force] [--json]
+orbit cf-cache-rule:remove <app> [--force] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Bare project name. Current resolver uses `Project.domain` for the Cloudflare zone. |
+| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Bare app name. Current resolver uses `App.domain` for the Cloudflare zone. |
 | `force` | `--force` | Required in non-interactive input mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
@@ -38,14 +38,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-### Project Zone Resolution Rules
+### App Zone Resolution Rules
 
-- Resolves a bare project name and reads `Project.domain` through
+- Resolves a bare app name and reads `App.domain` through
   `CloudflareZoneResolver` (current implementation).
-- Fails before provider mutation when the project is missing or has no
+- Fails before provider mutation when the app is missing or has no
   Cloudflare-backed domain.
 - Direction (pending implementation): instance-owned domain resolution via
-  dotted `project.instance` selectors.
+  dotted `app.instance` selectors.
 
 ### Cache Rule Removal Rules
 
@@ -75,7 +75,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-cache-rule:remove` may affect instance performance policy, but it does not create
 a Cloudflare doctor family. Instance-domain and deployment health remain owned by
-[`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
+[`doctor --family=instance`](../../../5_app/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping

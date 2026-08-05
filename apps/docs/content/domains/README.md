@@ -37,7 +37,7 @@ These rules govern every command contract in this directory.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
   `2_gateway` contains `gateway:*` commands, `15_dns` contains `dns:*`
-  commands, and `5_project` contains `project:*` and `instance:*` commands.
+  commands, and `5_app` contains `app:*` and `instance:*` commands.
   `11_operation` is the exception for miscellaneous operational commands such
   as `doctor` and `update`. `activity:*` commands belong to the Activity
   domain (`16_activity`), not Operations.
@@ -306,7 +306,7 @@ without a schema change.
 
 Command docs do not keep sidecar files for tracking in-repo ambiguity. When requested
 behavior, existing docs, implementation evidence, tests, or product vocabulary
-disagree, track the unresolved question outside the project. Once the user
+disagree, track the unresolved question outside the app. Once the user
 decides, update the authoritative command docs directly. Do not leave product
 behavior only in decision-history notes.
 
@@ -692,7 +692,7 @@ in-memory contract owner listed in each command's test mapping.
 
 Domains are ordered by dependency: nodes define fleet membership, gateway
 defines control-plane authority and trust, tools and firewall rules establish
-node capabilities and network policy, and projects and instance-owned runtime behavior
+node capabilities and network policy, and apps and instance-owned runtime behavior
 build on top of that foundation.
 
 ### Foundation domains
@@ -704,7 +704,7 @@ They also define the core app/workspace foundation.
 2. [Gateway](2_gateway/README.md)
 3. [Tools](3_tool/README.md)
 4. [Firewall](4_firewall/README.md)
-5. [Apps](5_project/README.md)
+5. [Apps](5_app/README.md)
 6. [Workspaces](6_workspace/README.md)
 
 Processes, proxy, and database support those foundation domains:

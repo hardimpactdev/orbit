@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
+# Technical Contract: `orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -105,7 +105,7 @@ the concrete Claude Code binary version returned by `claude --version`.
 
 ### Scope Boundaries
 
-`tool-install` must not create projects, instances, workspaces, schedules, custom proxy routes,
+`tool-install` must not create apps, instances, workspaces, schedules, custom proxy routes,
 non-tool firewall rules, node identities, or node grants. It may configure only
 the singleton service process a tool definition declares as its related process;
 all other process creation belongs to the process family. Tool-owned endpoint

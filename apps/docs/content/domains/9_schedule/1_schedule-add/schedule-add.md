@@ -9,7 +9,7 @@ Use `schedule:add` when an app or node needs recurring work managed by Orbit. Th
 ## Usage
 
 ```bash
-orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--instance=<project.instance>|--node=<node>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
+orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--instance=<app.instance>|--node=<node>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
 orbit schedule:add
 ```
 
@@ -24,8 +24,8 @@ orbit schedule:add catalogue-sync --instance=mealou.production --command="php ar
 ## Arguments and options
 
 - `name`: schedule slug, unique within the selected concrete instance or node target.
-- `--instance`: concrete `project.instance` target for an instance-scoped schedule. A bare
-  project name is shorthand only when exactly one eligible instance is visible.
+- `--instance`: concrete `app.instance` target for an instance-scoped schedule. A bare
+  app name is shorthand only when exactly one eligible instance is visible.
 - `--node`: node target for a node-scoped schedule.
 - `--command`: inline command to run as the scheduled work.
 - `--script`: managed script path to run as the scheduled work.
@@ -43,13 +43,13 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 Use `schedule:add` when you need to define a new recurring task for one app
 instance or node. `schedule:add` resolves concrete ownership before writing,
 validates the target, execution source, interval, and timeout, and writes gateway
-schedule configuration. Ambiguous bare project selectors fail before the schedule
+schedule configuration. Ambiguous bare app selectors fail before the schedule
 row is created. The Orbit Scheduler (gateway-only) reads the gateway database
 every tick and dispatches due schedules to the resolved target through
 agent-push; target node agent-push reachability is verified at dispatch time,
 not at `schedule:add` time.
 
-It does not create projects, instances, nodes, process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
+It does not create apps, instances, nodes, process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
 
 ## Output
 

@@ -71,7 +71,7 @@ it('records a completed activity entry when the fleet update succeeds', function
     app(UpdateRunner::class)->run($run->id);
 
     $history = app(ActivityHistory::class)->list([
-        'project' => null,
+        'app' => null,
         'node' => null,
         'effect' => null,
         'correlation' => null,
@@ -132,7 +132,7 @@ it('records a failed activity entry with failed_step when the fleet update fails
         ->toThrow(FleetUpdateVerificationFailed::class);
 
     $history = app(ActivityHistory::class)->list([
-        'project' => null,
+        'app' => null,
         'node' => null,
         'effect' => null,
         'correlation' => null,

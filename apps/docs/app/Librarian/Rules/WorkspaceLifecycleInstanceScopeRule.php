@@ -87,7 +87,7 @@ final readonly class WorkspaceLifecycleInstanceScopeRule implements GroupedRule
             $findings[] = $this->finding(
                 file: $file,
                 line: $this->lineForOffset($contents, (int) $matches[0][1]),
-                message: 'Instance-required workspace lifecycle contracts must not advertise a bare project selector; use a concrete selector such as `--instance=<project.instance>`.',
+                message: 'Instance-required workspace lifecycle contracts must not advertise a bare project selector; use a concrete selector such as `--instance=<app.instance>`.',
             );
         }
 

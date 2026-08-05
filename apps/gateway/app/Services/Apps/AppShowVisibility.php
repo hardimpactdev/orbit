@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,9 +25,9 @@ final readonly class AppShowVisibility
     }
 
     /**
-     * @return list<AppInstance>
+     * @return list<Instance>
      */
-    public function visibleInstances(Project $app, Node $caller): array
+    public function visibleInstances(App $app, Node $caller): array
     {
         $callerIsGateway = $this->callerIsGateway($caller);
         $visibleNodeIds = $callerIsGateway ? [] : $this->visibleAppNodeIds($caller);
@@ -35,7 +35,7 @@ final readonly class AppShowVisibility
         $instances = [];
 
         foreach ($app->instances->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE) as $instance) {
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 continue;
             }
 
@@ -68,7 +68,7 @@ final readonly class AppShowVisibility
         $authorizedNodeIds = [];
 
         foreach ($query->get() as $node) {
-            if (! $this->authorizer->allows($caller, $node, 'project:read')) {
+            if (! $this->authorizer->allows($caller, $node, 'app:read')) {
                 continue;
             }
 
@@ -78,10 +78,10 @@ final readonly class AppShowVisibility
         return $authorizedNodeIds;
     }
 
-    private function instanceNodeId(AppInstance $instance): ?int
+    private function instanceNodeId(Instance $instance): ?int
     {
         $config = $instance->driver_config;
 
-        return $config instanceof OrbitAppInstanceDriverConfigData ? $config->node_id : null;
+        return $config instanceof OrbitInstanceDriverConfigData ? $config->node_id : null;
     }
 }

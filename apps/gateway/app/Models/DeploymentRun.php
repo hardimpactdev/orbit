@@ -13,14 +13,14 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property string $status
  * @property int|null $exit_code
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property int|null $duration_ms
  * @property array<string, mixed>|null $context
- * @property-read AppInstance $appInstance
+ * @property-read Instance $instance
  * @property-read Collection<int, DeploymentRunStep> $steps
  */
 class DeploymentRun extends Model
@@ -29,7 +29,7 @@ class DeploymentRun extends Model
 
     #[\Override]
     protected $fillable = [
-        'app_instance_id',
+        'instance_id',
         'status',
         'exit_code',
         'started_at',
@@ -49,11 +49,11 @@ class DeploymentRun extends Model
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     /**

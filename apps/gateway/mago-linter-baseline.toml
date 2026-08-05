@@ -751,7 +751,7 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 2
 
 [[issues]]
-file = "app/Data/Apps/LaravelCloudAppInstanceDriverConfigData.php"
+file = "app/Data/Apps/LaravelCloudInstanceDriverConfigData.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
 count = 1
@@ -1117,37 +1117,37 @@ message = "Missing description in assert function."
 count = 4
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "kan-defect"
 message = "Class has a high kan defect score."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "prefer-early-continue"
 message = "Consider using early continue pattern to reduce nesting."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "too-many-methods"
 message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceEnvController.php"
+file = "app/Http/Controllers/Api/InstanceEnvController.php"
 code = "too-many-methods"
 message = "Class has too many methods."
 count = 1
@@ -3001,7 +3001,7 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "app/Models/AppInstanceEnvVariable.php"
+file = "app/Models/InstanceEnvVariable.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
 count = 1
@@ -3043,19 +3043,19 @@ message = "This closure does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
-file = "app/Models/Project.php"
+file = "app/Models/App.php"
 code = "literal-named-argument"
 message = "Literal argument `'.'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "app/Models/Project.php"
+file = "app/Models/App.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "app/Models/Project.php"
+file = "app/Models/App.php"
 code = "too-many-methods"
 message = "Class has too many methods."
 count = 1
@@ -3127,19 +3127,19 @@ message = "This closure does not use `$this` and should be declared static."
 count = 7
 
 [[issues]]
-file = "app/Services/Activity/ActivityPayloadCompatibility.php"
+file = "app/Services/Activity/ActivityPayloadFormatter.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Services/Activity/ActivityPayloadCompatibility.php"
+file = "app/Services/Activity/ActivityPayloadFormatter.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "app/Services/Activity/ActivityPayloadCompatibility.php"
+file = "app/Services/Activity/ActivityPayloadFormatter.php"
 code = "no-nested-ternary"
 message = "Nested ternary expressions are confusing due to PHP's operator associativity rules."
 count = 1
@@ -3289,37 +3289,37 @@ message = "Use of the shorthand ternary operator."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvApplier.php"
+file = "app/Services/Apps/InstanceEnvApplier.php"
 code = "explicit-octal"
 message = "Use explicit octal numeral notation."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvApplier.php"
+file = "app/Services/Apps/InstanceEnvApplier.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvApplier.php"
+file = "app/Services/Apps/InstanceEnvApplier.php"
 code = "literal-named-argument"
 message = "Literal argument `0775` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvApplier.php"
+file = "app/Services/Apps/InstanceEnvApplier.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstancePayloads.php"
+file = "app/Services/Apps/InstancePayloads.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
@@ -4651,13 +4651,13 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 1
@@ -10843,7 +10843,7 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 1
 
 [[issues]]
-file = "database/factories/AppInstanceFactory.php"
+file = "database/factories/InstanceFactory.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
@@ -10867,7 +10867,7 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "database/factories/ProjectFactory.php"
+file = "database/factories/AppFactory.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
@@ -11977,91 +11977,91 @@ message = "Literal argument `'gateway'` should be passed as a named argument for
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "function-name"
 message = "Function name `appInstanceApiJson` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "function-name"
-message = "Function name `createAppInstanceApiCaller` should be in snake case."
+message = "Function name `createInstanceApiCaller` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "function-name"
-message = "Function name `grantAppInstanceApiAccess` should be in snake case."
+message = "Function name `grantInstanceApiAccess` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/api/projects/billing/instances'` should be passed as a named argument for clarity."
 count = 7
 
 [[issues]]
-file = "tests/Feature/AppInstanceControllerTest.php"
+file = "tests/Feature/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/api/projects/billing/instances/production-cloud'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "file-name"
-message = "Class `AppInstanceEnvControllerRecordingRemoteShell` should be in a file named `AppInstanceEnvControllerRecordingRemoteShell.php`, found `AppInstanceEnvControllerTest.php`."
+message = "Class `InstanceEnvControllerRecordingRemoteShell` should be in a file named `InstanceEnvControllerRecordingRemoteShell.php`, found `InstanceEnvControllerTest.php`."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "function-name"
 message = "Function name `appInstanceEnvApiJson` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "function-name"
-message = "Function name `createAppInstanceEnvApiCaller` should be in snake case."
+message = "Function name `createInstanceEnvApiCaller` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "function-name"
-message = "Function name `grantAppInstanceEnvApiAccess` should be in snake case."
+message = "Function name `grantInstanceEnvApiAccess` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/api/projects/billing.test/instances/development/env'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/api/projects/billing/instances/development/env'` should be passed as a named argument for clarity."
 count = 6
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/api/projects/billing/instances/development/env/render'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceEnvControllerTest.php"
+file = "tests/Feature/InstanceEnvControllerTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
 count = 1
 
 [[issues]]
-file = "tests/Feature/AppInstanceModelTest.php"
+file = "tests/Feature/InstanceModelTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
@@ -16615,43 +16615,43 @@ message = "Avoid boolean flag parameters."
 count = 3
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "inline-variable-return"
 message = "Variable assignment can be inlined into the return statement."
 count = 2
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'development.runtime.configured_mounts'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'nmbp.runtime.configured_mounts.0.read_only'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'nmbp.runtime.configured_mounts.0.source'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'nmbp.runtime.configured_mounts.0.target'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/AppInstanceControllerTest.php"
+file = "tests/Feature/Http/Api/InstanceControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
@@ -19009,115 +19009,115 @@ message = "Use the dedicated `assertUnprocessable()` assertion instead of `asser
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `grantSchedulePermission` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleAppInstance` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleAppNode` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleAppWithTwoInstances` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleGatewayHeartbeat` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleGatewayNode` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleGet` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `scheduleInstanceCaller` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "function-name"
 message = "Function name `schedulePost` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'*'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/srv/docs-development'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/srv/docs-production'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'app-dev'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'app-prod'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'development'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'production'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'schedule:add'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'schedule:read'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+file = "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 2
@@ -19945,13 +19945,13 @@ message = "Literal argument `2` should be passed as a named argument for clarity
 count = 1
 
 [[issues]]
-file = "tests/Feature/MigrateProjectInstancePermissionsTest.php"
+file = "tests/Feature/MigrateAppPermissionsTest.php"
 code = "function-name"
 message = "Function name `projectInstancePermissionMigration` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Feature/MigrateProjectInstancePermissionsTest.php"
+file = "tests/Feature/MigrateAppPermissionsTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
@@ -22525,19 +22525,19 @@ message = "Use `toBeEmpty()` instead of comparing with empty values for clarity.
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+file = "tests/Unit/Services/Apps/InstanceEnvApplierTest.php"
 code = "file-name"
 message = "Class `AppInstanceEnvApplierRecordingRemoteShell` should be in a file named `AppInstanceEnvApplierRecordingRemoteShell.php`, found `AppInstanceEnvApplierTest.php`."
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+file = "tests/Unit/Services/Apps/InstanceEnvApplierTest.php"
 code = "function-name"
 message = "Function name `appAndNodeForEnvApplierTest` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+file = "tests/Unit/Services/Apps/InstanceEnvApplierTest.php"
 code = "unfulfilled-expect"
 message = "This pragma was not used and may be removed."
 count = 4

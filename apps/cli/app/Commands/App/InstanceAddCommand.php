@@ -10,7 +10,7 @@ final class InstanceAddCommand extends InstanceCommand
 {
     #[\Override]
     protected $signature = 'instance:add
-        {instance? : project.instance selector}
+        {instance? : app.instance selector}
         {--driver=orbit : Instance driver (orbit|laravel-cloud)}
         {--node= : Orbit node for orbit driver}
         {--path= : Orbit instance path for orbit driver}
@@ -28,7 +28,7 @@ final class InstanceAddCommand extends InstanceCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add an instance to a project.';
+    protected $description = 'Add an instance to an app.';
 
     public function handle(): int
     {
@@ -40,7 +40,7 @@ final class InstanceAddCommand extends InstanceCommand
 
         try {
             $response = $this->gatewayPost(
-                $this->apiProjectPath($selector['project'], '/instances'),
+                $this->apiProjectPath($selector['app'], '/instances'),
                 $this->addPayload($selector['instance']),
             );
         } catch (GatewayApiException $exception) {
@@ -53,11 +53,11 @@ final class InstanceAddCommand extends InstanceCommand
 
         $instance = $this->instanceFromGatewayResponse($response);
         $name = $instance === null ? $selector['instance'] : $this->instanceString($instance, 'name');
-        $project = $instance === null
-            ? $selector['project']
-            : $this->instanceString($instance, 'project');
+        $app = $instance === null
+            ? $selector['app']
+            : $this->instanceString($instance, 'app');
 
-        $this->line("Added instance '{$name}' to project '{$project}'.");
+        $this->line("Added instance '{$name}' to app '{$app}'.");
 
         if ($instance !== null) {
             $this->line('  driver: '.$this->instanceString($instance, 'driver'));

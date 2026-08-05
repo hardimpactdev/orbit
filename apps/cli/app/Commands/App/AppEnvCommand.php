@@ -17,7 +17,7 @@ final class AppEnvCommand extends AppGatewayCommand
     #[\Override]
     protected $signature = 'instance:env
         {action? : Action to perform (list|set|render)}
-        {instance? : project.instance selector}
+        {instance? : app.instance selector}
         {--key= : Env key for set}
         {--value= : Env value for set}
         {--apply : Persist and apply set values to the remote instance runtime}
@@ -58,9 +58,9 @@ final class AppEnvCommand extends AppGatewayCommand
         }
 
         return match ($action) {
-            'list' => $this->listEnv($target['project'], $target['instance']),
-            'set' => $this->setEnv($target['project'], $target['instance']),
-            'render' => $this->renderEnv($target['project'], $target['instance']),
+            'list' => $this->listEnv($target['app'], $target['instance']),
+            'set' => $this->setEnv($target['app'], $target['instance']),
+            'render' => $this->renderEnv($target['app'], $target['instance']),
         };
     }
 
@@ -163,7 +163,7 @@ final class AppEnvCommand extends AppGatewayCommand
         $savedKey = $this->savedKey($response, $key);
         $savedInstance = $this->savedInstance($response, $instance);
         $data = $this->successData($response);
-        $savedProject = is_string($data['project'] ?? null) ? $data['project'] : $app;
+        $savedProject = is_string($data['app'] ?? null) ? $data['app'] : $app;
 
         $this->line("Saved '{$savedKey}' for instance '{$savedProject}.{$savedInstance}'.");
         $this->renderTargetOutcome($data);
@@ -292,7 +292,7 @@ final class AppEnvCommand extends AppGatewayCommand
         $path = is_string($data['path'] ?? null) ? $data['path'] : '—';
 
         $this->line("{$prefix}Scope: instance");
-        $this->line("{$prefix}Project: ".(is_string($data['project'] ?? null) ? $data['project'] : '—'));
+        $this->line("{$prefix}App: ".(is_string($data['app'] ?? null) ? $data['app'] : '—'));
         $this->line("{$prefix}Instance: ".(is_string($data['instance'] ?? null) ? $data['instance'] : '—'));
         $this->line("{$prefix}Workspace: —");
         $this->line("{$prefix}Path: {$path}");
@@ -391,7 +391,7 @@ final class AppEnvCommand extends AppGatewayCommand
     }
 
     /**
-     * @return array{project: string, instance: string}|int
+     * @return array{app: string, instance: string}|int
      */
     private function instanceSelector(): array|int
     {
@@ -406,12 +406,12 @@ final class AppEnvCommand extends AppGatewayCommand
         if ($separator === false || $separator === 0 || $separator === (strlen($selector) - 1)) {
             return $this->failValidation(
                 'instance',
-                'Use a project.instance selector, for example billing.production.',
+                'Use a app.instance selector, for example billing.production.',
             );
         }
 
         return [
-            'project' => substr($selector, 0, $separator),
+            'app' => substr($selector, 0, $separator),
             'instance' => substr($selector, $separator + 1),
         ];
     }

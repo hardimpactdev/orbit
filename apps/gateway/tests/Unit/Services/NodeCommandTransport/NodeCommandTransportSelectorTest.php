@@ -77,10 +77,10 @@ function active_gateway_node(): Node
     return $node;
 }
 
-it('selects gateway-only for gateway-owned reads like project:list', function (): void {
+it('selects gateway-only for gateway-owned reads like app:list', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
-    $envelope = NodeCommandEnvelope::gatewayOnlyRead('project:list');
+    $envelope = NodeCommandEnvelope::gatewayOnlyRead('app:list');
 
     expect($selector->select($node, $envelope))->toBe(NodeTransport::GatewayOnly);
 });

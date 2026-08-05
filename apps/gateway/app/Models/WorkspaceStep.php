@@ -14,15 +14,15 @@ use Override;
 /**
  * @property int $id
  * @property int $app_id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property WorkspaceLifecyclePhase $phase
  * @property int $sort_order
  * @property string $command
  * @property int $timeout_seconds
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Project|null $app
- * @property-read AppInstance $appInstance
+ * @property-read App|null $app
+ * @property-read Instance $instance
  *
  * @method static WorkspaceStep|null find(int $id)
  */
@@ -35,7 +35,7 @@ class WorkspaceStep extends Model
     #[Override]
     protected $fillable = [
         'app_id',
-        'app_instance_id',
+        'instance_id',
         'phase',
         'sort_order',
         'command',
@@ -52,27 +52,19 @@ class WorkspaceStep extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     public function timeoutSeconds(): int

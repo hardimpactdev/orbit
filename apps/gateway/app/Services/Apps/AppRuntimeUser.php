@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Contracts\AppRuntimeUserResolver;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class AppRuntimeUser implements AppRuntimeUserResolver
 {
-    public function forApp(Project $app): string
+    public function forApp(App $app): string
     {
         $app->loadMissing('node');
 
@@ -22,7 +22,7 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
         return $this->productionUser($app);
     }
 
-    public function containerUserForApp(Project $app): ?string
+    public function containerUserForApp(App $app): ?string
     {
         if (! $this->isProduction($app)) {
             return null;
@@ -31,7 +31,7 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
         return $this->productionUser($app);
     }
 
-    private function isProduction(Project $app): bool
+    private function isProduction(App $app): bool
     {
         $app->loadMissing('node');
 
@@ -42,7 +42,7 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
         return $app->node instanceof Node && app(NodeRoleAssignments::class)->nodeHasActiveRole($app->node, 'app-prod');
     }
 
-    private function productionUser(Project $app): string
+    private function productionUser(App $app): string
     {
         return $this->userFromHomePath($app->path) ?? $this->nodeUser($app);
     }
@@ -56,7 +56,7 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
         return $matches[1];
     }
 
-    private function nodeUser(Project $app): string
+    private function nodeUser(App $app): string
     {
         return $app->node?->user ?: 'orbit';
     }

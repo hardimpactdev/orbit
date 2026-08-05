@@ -15,7 +15,7 @@ final class DeployRunCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:run
-        {instance? : Instance selector (project.instance)}
+        {instance? : Instance selector (app.instance)}
         {--detach : Start and return after the run is durable}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

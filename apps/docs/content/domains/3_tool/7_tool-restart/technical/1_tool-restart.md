@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:restart <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:restart <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `tool-restart` documentation.](../tool-restart.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:restart <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]
+orbit tool:restart <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-restart` must not create projects, instances, workspaces, processes, schedules, proxy
+`tool-restart` must not create apps, instances, workspaces, processes, schedules, proxy
 routes, firewall rules, node identities, or node grants. It may address the one
 exact matching process row but never creates or repairs that row and never
 falls back to a similarly named process.

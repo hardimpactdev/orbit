@@ -30,7 +30,7 @@ it('detaches a database connection from an app from the operator node through th
         $appNameValue = var_export($appName, true);
         $seedPhp = <<<PHP
             \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            \$app = \\App\\Models\\Project::query()->updateOrCreate(
+            \$app = \\App\\Models\\App::query()->updateOrCreate(
                 ['name' => {$appNameValue}],
                 [
                     'node_id' => \$node->id,
@@ -88,7 +88,7 @@ it('detaches a database connection from an app from the operator node through th
         $appNameValue = var_export($appName, true);
         $cleanupPhp = <<<PHP
             \\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete();
-            \\App\\Models\\Project::query()->where('name', {$appNameValue})->delete();
+            \\App\\Models\\App::query()->where('name', {$appNameValue})->delete();
             echo 'cleaned';
             PHP;
 

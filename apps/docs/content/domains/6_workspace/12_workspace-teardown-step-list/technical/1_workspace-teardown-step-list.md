@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:list [--instance=<project.instance>] [--json]
+orbit workspace-teardown-step:list [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -36,7 +36,7 @@ to read.
 
 - An authorized caller for an app with no configured teardown steps
   receives an empty list (`success.data.steps=[]` in JSON,
-  `No teardown steps defined for [project.instance].` in human output) with exit zero.
+  `No teardown steps defined for [app.instance].` in human output) with exit zero.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
 - Explicitly requested instances that do not exist receive
@@ -45,11 +45,11 @@ to read.
 ## Input Resolution
 
 1. **Resolve instance.** Apply the precedence chain in order:
-   1. `--instance=<project.instance>` flag, using a dotted instance selector such
+   1. `--instance=<app.instance>` flag, using a dotted instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
-      `project:new` / `instance:register` and any workspace-installed marker) that
-      names the owning project slug.
+      `app:new` / `instance:register` and any workspace-installed marker) that
+      names the owning app slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.
    4. Resolution failure: in non-interactive mode, fail with
@@ -85,8 +85,8 @@ to read.
    names the first teardown step that runs during
    [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), not
    a symmetric inverse of any setup ordering.
-3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, project, instance, phase, order, command, timeout_seconds }` already
+3. **Step record shape.** Every returned record uses the shared
+   step shape `{ id, app, instance, phase, order, command, timeout_seconds }` already
    published by `workspace-teardown-step:add`. `phase` is always
    `"teardown"`. There is no `name`, no per-step `working_directory`, no
    `env_overrides`, and no per-step `on_failure` field.

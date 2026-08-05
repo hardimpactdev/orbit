@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class AddDeployStep
 {
     public function handle(
-        int $appInstanceId,
+        int $instanceId,
         string $title,
         string $command,
         int $timeoutSeconds,
@@ -18,7 +18,7 @@ final readonly class AddDeployStep
         ?int $retention = null,
     ): DeployStep {
         return DB::transaction(function () use (
-            $appInstanceId,
+            $instanceId,
             $title,
             $command,
             $timeoutSeconds,
@@ -27,12 +27,12 @@ final readonly class AddDeployStep
         ): DeployStep {
             $nextOrder =
                 (int) DeployStep::query()
-                    ->where('app_instance_id', $appInstanceId)
+                    ->where('instance_id', $instanceId)
                     ->max('sort_order') + 1;
             $targetOrder = max(1, min($order ?? $nextOrder, $nextOrder));
 
             DeployStep::query()
-                ->where('app_instance_id', $appInstanceId)
+                ->where('instance_id', $instanceId)
                 ->where('sort_order', '>=', $targetOrder)
                 ->orderByDesc('sort_order')
                 ->each(function (DeployStep $step): void {
@@ -40,7 +40,7 @@ final readonly class AddDeployStep
                 });
 
             return DeployStep::query()->create([
-                'app_instance_id' => $appInstanceId,
+                'instance_id' => $instanceId,
                 'title' => $title,
                 'command' => $command,
                 'sort_order' => $targetOrder,

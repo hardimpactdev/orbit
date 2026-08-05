@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
@@ -75,7 +75,7 @@ function createAppWebSocketRoutePrerequisites(bool $withRouter = true, bool $wit
     }
 }
 
-function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress = true): Project
+function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress = true): App
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -100,15 +100,15 @@ function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress 
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    $project = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,
     ]);
 
-    AppInstance::factory()->for($project)->create(['name' => 'production']);
+    Instance::factory()->for($app)->create(['name' => 'production']);
 
-    return $project;
+    return $app;
 }
 
 /**
@@ -174,7 +174,7 @@ describe('AppWebSocketController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.project', 'docs')
+            ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', ['ws.docs.test', 'events.docs.test'])
             ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
@@ -244,7 +244,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.prerequisite_failed')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppWebSocketBinding::query()->count())->toBe(0);
     });
@@ -261,7 +261,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.prerequisite_failed')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppWebSocketBinding::query()->count())
             ->toBe(0)
@@ -295,7 +295,7 @@ describe('AppWebSocketController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.credentials.project', 'docs')
+            ->assertJsonPath('success.data.credentials.app', 'docs')
             ->assertJsonPath('success.data.credentials.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.credentials.public_hosts', ['ws.docs.test'])
             ->assertJsonPath('success.data.credentials.allowed_origins', ['https://docs.test'])
@@ -332,7 +332,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.binding_missing')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
     });
 
     it('returns app not found for unknown credential app selectors', function (): void {
@@ -365,7 +365,7 @@ describe('AppWebSocketController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.project', 'docs')
+            ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', [])
             ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
@@ -419,7 +419,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.binding_missing')
-            ->assertJsonPath('error.meta.project', 'docs');
+            ->assertJsonPath('error.meta.app', 'docs');
     });
 
     it('returns app not found for unknown disable app selectors', function (): void {

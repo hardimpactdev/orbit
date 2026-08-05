@@ -25,7 +25,7 @@ orbit deploy:step-add docs.production $'cd {{ release_path }}\ncomposer install 
 
 ## Arguments and options
 
-- `instance`: dotted production instance selector. A bare project name or domain is
+- `instance`: dotted production instance selector. A bare app name or domain is
   valid only when the app has exactly one instance.
 - `command`: shell command or multiline shell script to run during deployment.
 - `--title`: display label. Defaults to a concise command-derived title.
@@ -64,7 +64,7 @@ JSON output returns the created deploy step entity.
 
 - [`orbit deploy:step-list`](../2_deploy-step-list/deploy-step-list.md)
 - [`orbit deploy:run`](../4_deploy-run/deploy-run.md)
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 
 ## Technical Contract
 

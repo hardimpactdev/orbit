@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DeployStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
-use App\Models\Project;
 use App\Services\Deploy\DeployOperationRunner;
 use App\Services\Operations\OperationStreamFrameBroadcaster;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -20,17 +20,17 @@ uses(RefreshDatabase::class);
 
 it('persists deploy progress frames before WebSocket publication and supports journal replay', function (): void {
     $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'environment' => 'production',
         'path' => '/srv/docs',
         'runtime' => 'static',
     ]);
-    $instance = AppInstance::factory()->create([
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/srv/docs',
@@ -38,7 +38,7 @@ it('persists deploy progress frames before WebSocket publication and supports jo
         ),
     ]);
     DeployStep::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'title' => 'Activate release',
         'command' => 'ln -sfn "{{ release_path }}" "{{ live_path }}"',
         'sort_order' => 1,

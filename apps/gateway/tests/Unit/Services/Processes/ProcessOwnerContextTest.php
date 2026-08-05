@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,18 +42,18 @@ it('uses selected app instance placement for app-owned runtime apps', function (
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    /** @var Project $app */
-    $app = Project::factory()->create([
+    /** @var App $app */
+    $app = App::factory()->create([
         'name' => 'happie',
         'node_id' => $beast->id,
         'domain' => 'happie.test',
         'path' => '/home/nckrtl/apps/happie',
         'document_root' => 'public',
     ]);
-    /** @var AppInstance $instance */
-    $instance = AppInstance::factory()->for($app)->create([
+    /** @var Instance $instance */
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'NMBP',
             path: '/Users/nckrtl/apps/happie',
@@ -62,7 +62,7 @@ it('uses selected app instance placement for app-owned runtime apps', function (
         ),
     ]);
 
-    $runtimeApp = new ProcessOwnerContext($nmbp, $app, null, $app, appInstance: $instance)->runtimeApp();
+    $runtimeApp = new ProcessOwnerContext($nmbp, $app, null, $app, instance: $instance)->runtimeApp();
 
     expect($runtimeApp->name)
         ->toBe('happie')
@@ -92,16 +92,16 @@ it('carries dotted app instance selectors into process owner contexts', function
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    /** @var Project $app */
-    $app = Project::factory()->create([
+    /** @var App $app */
+    $app = App::factory()->create([
         'name' => 'happie',
         'node_id' => $beast->id,
         'domain' => 'happie.test',
         'path' => '/home/nckrtl/apps/happie',
     ]);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbp->id,
             node: 'NMBP',
             path: '/Users/nckrtl/apps/happie',

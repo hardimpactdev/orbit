@@ -10,7 +10,7 @@ final class AppSetupCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:setup
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 

@@ -369,7 +369,7 @@ describe('process:add managed service selector contract', function (): void {
 
     it('shows the start step by default in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'mysql8', 'node' => 'beast', 'project' => null, 'workspace' => null],
+            'process' => ['name' => 'mysql8', 'node' => 'beast', 'app' => null, 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [],

@@ -16,7 +16,7 @@ final class DeployStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-list
-        {instance : Instance selector (project.instance)}
+        {instance : Instance selector (app.instance)}
         {--json}';
 
     #[\Override]

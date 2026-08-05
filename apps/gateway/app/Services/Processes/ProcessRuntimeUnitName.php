@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use InvalidArgumentException;
 
@@ -24,18 +24,18 @@ final class ProcessRuntimeUnitName
      */
     public const int MaxLength = 64;
 
-    public static function for(Project $app, Process $process, ?Workspace $workspace = null): string
+    public static function for(App $app, Process $process, ?Workspace $workspace = null): string
     {
-        $process->loadMissing('appInstance');
-        $instance = $process->appInstance;
+        $process->loadMissing('instance');
+        $instance = $process->instance;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new InvalidArgumentException(
                 "Process '{$process->name}' has no concrete instance for runtime-unit identity.",
             );
         }
 
-        if ($workspace instanceof Workspace && $workspace->app_instance_id !== $instance->id) {
+        if ($workspace instanceof Workspace && $workspace->instance_id !== $instance->id) {
             throw new InvalidArgumentException(
                 "Process '{$process->name}' cannot render for a workspace on another instance.",
             );

@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 describe('process write commands', function (): void {
     it('posts process:add payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'project' => 'docs'],
+            'process' => ['name' => 'vite', 'app' => 'docs'],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -49,7 +49,7 @@ describe('process write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [
                 'name' => 'vite',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
             ],
             'runtime_units' => [],
@@ -77,7 +77,7 @@ describe('process write commands', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['process']['project'])
+            ->and($decoded['success']['data']['process']['app'])
             ->toBe('docs')
             ->and($decoded['success']['data']['process']['instance'])
             ->toBe('production');
@@ -379,7 +379,7 @@ describe('process write commands', function (): void {
 
     it('patches process:update payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'project' => 'docs', 'restart_policy' => 'on_failure'],
+            'process' => ['name' => 'vite', 'app' => 'docs', 'restart_policy' => 'on_failure'],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -588,7 +588,7 @@ describe('process write commands', function (): void {
     it('preserves gateway error envelopes for process:update', function (): void {
         fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found.", [
             'name' => 'vite',
-            'project' => 'docs',
+            'app' => 'docs',
         ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
@@ -631,7 +631,7 @@ describe('process write commands', function (): void {
 
     it('deletes process:remove targets with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'project' => 'docs'],
+            'process' => ['name' => 'vite', 'app' => 'docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -663,7 +663,7 @@ describe('process write commands', function (): void {
 
     it('deletes workspace owned process:remove payloads with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'worker', 'project' => 'docs', 'workspace' => 'feature-docs'],
+            'process' => ['name' => 'worker', 'app' => 'docs', 'workspace' => 'feature-docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -697,7 +697,7 @@ describe('process write commands', function (): void {
 
     it('prompts before removing a process without force in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'project' => 'docs'],
+            'process' => ['name' => 'vite', 'app' => 'docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -725,7 +725,7 @@ describe('process write commands', function (): void {
             'runtimes' => [
                 [
                     'process' => 'vite',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'workspace' => 'feature-docs',
                     'status' => 'ok',
                 ],
@@ -889,7 +889,7 @@ describe('process write commands', function (): void {
             'process' => [
                 'name' => 'vite',
                 'node' => 'app-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'workspace' => null,
             ],
@@ -921,7 +921,7 @@ describe('process write commands', function (): void {
 
     it('omits the process:add start step when --no-start is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -948,7 +948,7 @@ describe('process write commands', function (): void {
 
     it('shows the process:add start step by default', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -979,7 +979,7 @@ describe('process write commands', function (): void {
 
     it('renders process:add runtime drift as a success footer with a drift note', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [
@@ -1043,7 +1043,7 @@ describe('process write commands', function (): void {
 
     it('renders process:update human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'changed' => ['command'],
             'runtime_units' => [],
         ], [
@@ -1072,7 +1072,7 @@ describe('process write commands', function (): void {
 
     it('shows the process:update restart step only when --restart is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'changed' => ['command'],
             'runtime_units' => [],
         ], [
@@ -1113,7 +1113,7 @@ describe('process write commands', function (): void {
 
     it('renders process:remove human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'removed_runtime_units' => [],
         ], [
             'warnings' => [],
@@ -1181,7 +1181,7 @@ describe('process write commands', function (): void {
                 [
                     'process' => 'vite',
                     'node' => 'app-1',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'workspace' => null,
                     'state' => 'running',
                 ],
@@ -1219,14 +1219,14 @@ describe('process write commands', function (): void {
                 [
                     'process' => 'vite',
                     'node' => 'app-1',
-                    'project' => null,
+                    'app' => null,
                     'workspace' => 'feature-docs',
                     'state' => 'running',
                 ],
                 [
                     'process' => 'worker',
                     'node' => 'app-1',
-                    'project' => null,
+                    'app' => null,
                     'workspace' => 'feature-docs',
                     'state' => 'running',
                 ],

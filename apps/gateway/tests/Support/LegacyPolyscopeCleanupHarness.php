@@ -64,13 +64,12 @@ function polyscope_cleanup_script_for_harness(string $productionScript, string $
         escapeshellarg($unitDir.'/polyscope-server-usr.service'),
         $script,
     );
-    $script = str_replace(
+
+    return str_replace(
         'sudo rm -f "/etc/systemd/system/${unit}" "/lib/systemd/system/${unit}" "/usr/lib/systemd/system/${unit}"',
         'rm -f '.escapeshellarg($unitDir).'/"${unit}" 2>/dev/null || true',
         $script,
     );
-
-    return $script;
 }
 
 /**

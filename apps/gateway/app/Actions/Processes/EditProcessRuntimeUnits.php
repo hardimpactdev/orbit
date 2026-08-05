@@ -6,8 +6,8 @@ namespace App\Actions\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessEventType;
+use App\Models\App;
 use App\Models\Process;
-use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use Throwable;
@@ -27,7 +27,7 @@ final readonly class EditProcessRuntimeUnits
     }
 
     /**
-     * @param array{context: ProcessOwnerContext, app: Project, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
+     * @param array{context: ProcessOwnerContext, app: App, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
      * @return array{
      *     warnings: list<array<string, mixed>>,
      *     applied_runtime_units: list<array{name: string, context: string}>

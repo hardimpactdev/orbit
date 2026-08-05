@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,7 +59,7 @@ function processLabelColumn(): ?array
 
 it('backfills existing process rows label=name and enforces a non-null label column', function (): void {
     $node = Node::factory()->create(['name' => 'app-label-backfill']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     $process = Process::factory()
         ->forOwner($app, $node)
         ->create([
@@ -103,7 +103,7 @@ it('backfills existing process rows label=name and enforces a non-null label col
 
 it('defaults new process labels to the identity name when omitted after migration', function (): void {
     $node = Node::factory()->create(['name' => 'app-label-default']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
     $process = Process::factory()
         ->forOwner($app, $node)

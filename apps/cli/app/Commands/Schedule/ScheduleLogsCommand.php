@@ -19,7 +19,7 @@ final class ScheduleLogsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'schedule:logs
         {name? : Schedule name}
-        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
+        {--instance= : Filter by instance (app.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--run= : Run history id}
         {--lines=100 : Number of stdout/stderr lines}

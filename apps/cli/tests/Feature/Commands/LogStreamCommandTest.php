@@ -99,7 +99,7 @@ describe('LogStream commands', function (): void {
                     ],
                 ],
             ],
-        ], ['project' => 'docs', 'instance' => 'development']));
+        ], ['app' => 'docs', 'instance' => 'development']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:log', [
             'instance' => 'docs',

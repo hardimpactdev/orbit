@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:run` on the selected production project
+- The current node identity has `deploy:run` on the selected production app
   instance's owning node.
 - The selected production instance's owning node is active and eligible for Agent
   push.
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `detach` | `--detach` | `Optional.` | `Never.` | `false` | Boolean flag. Starts the run and returns without streaming output. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   replays journal gaps by cursor before and after live delivery.
 - Persists every `tree`, `step`, `complete`, or `error` progress frame to the
   operation journal before publishing that frame over WebSocket.
-- Fails before side effects unless the selected instance belongs to a production project.
+- Fails before side effects unless the selected instance belongs to a production app.
 - Reads the instance's deployment steps ordered by `order` ascending.
 - Fails before side effects when the production instance has no deployment steps.
 - Creates a durable deployment run with `status=running` before executing the
@@ -120,8 +120,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 `deploy:run` must not create, update, remove, or reorder deployment steps. It
 must not create process definitions, schedules, proxy routes, workspace setup
 steps, standalone release records, or global retention policy. It does not
-prove application HTTP readiness; production project health belongs to
-[`instance-doctor.md`](../../../5_project/instance-doctor.md).
+prove application HTTP readiness; production app health belongs to
+[`instance-doctor.md`](../../../5_app/instance-doctor.md).
 
 ## Renderer Contracts
 
@@ -137,8 +137,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Instance driver unsupported | The selected instance does not have an Orbit node and source path for Agent execution. | `error.code=deploy.instance_driver_unsupported` |
 | Pipeline empty | The production instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
 | Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
@@ -156,13 +156,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:POST /deploy/run` |
 | Effect | `write` |
 | Subject | `DeploymentRun` when created; `none` otherwise. |
-| Properties | `project`, `instance`, `run_id`, `status`. No step command secrets. |
+| Properties | `app`, `instance`, `run_id`, `status`. No step command secrets. |
 | Description | derived |
 
 ## Doctor Relationship
 
 Deployment run history is instance-owned gateway state. `deploy:run` does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use latest
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use latest
 deployment status when reporting `instance.latest_deployment_failed` or
 `instance.deployment_run_stuck`.
 

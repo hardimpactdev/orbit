@@ -136,9 +136,9 @@ it('updateAll corrects stale role-owned php-cli variants before dispatch', funct
     $devTool->refresh();
 
     expect($prodResult['failed'])
-        ->toBe([])
+        ->toBeEmpty()
         ->and($devResult['failed'])
-        ->toBe([])
+        ->toBeEmpty()
         ->and(collect($prodResult['updated'])->pluck('tool')->all())
         ->toContain('php-cli')
         ->and(collect($devResult['updated'])->pluck('tool')->all())

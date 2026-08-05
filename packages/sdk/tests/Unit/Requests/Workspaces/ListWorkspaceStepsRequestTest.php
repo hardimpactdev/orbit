@@ -39,7 +39,7 @@ it('returns a WorkspaceStepListResponse DTO', function (): void {
                     'steps' => [
                         [
                             'id' => 12,
-                            'project' => 'docs',
+                            'app' => 'docs',
                             'instance' => 'development',
                             'phase' => 'setup',
                             'order' => 1,
@@ -61,7 +61,7 @@ it('returns a WorkspaceStepListResponse DTO', function (): void {
     expect($dto->steps)->toBe([
         [
             'id' => 12,
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'development',
             'phase' => 'setup',
             'order' => 1,

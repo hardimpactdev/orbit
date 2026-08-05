@@ -72,8 +72,8 @@ final readonly class DoctorPublicVocabulary
 
             foreach ($value as $childKey => $childValue) {
                 $publicKey = match ($childKey) {
-                    'app' => 'project',
-                    'app_instance' => 'instance',
+                    'app' => 'app',
+                    'instance' => 'instance',
                     default => $childKey,
                 };
                 $normalized[$publicKey] = $this->publicValue(
@@ -103,8 +103,8 @@ final readonly class DoctorPublicVocabulary
 
         if (in_array($key, ['scope', 'target_type', 'owner_type', 'type'], true)) {
             return match ($value) {
-                'app' => 'project',
-                'app_instance' => 'instance',
+                'app' => 'app',
+                'instance' => 'instance',
                 default => $value,
             };
         }
@@ -119,8 +119,8 @@ final readonly class DoctorPublicVocabulary
 
             foreach ($value as $childKey => $childValue) {
                 $internalKey = match ($childKey) {
-                    'project' => 'app',
-                    'instance' => 'app_instance',
+                    'app' => 'app',
+                    'instance' => 'instance',
                     default => $childKey,
                 };
                 $normalized[$internalKey] = $this->internalValue(
@@ -146,8 +146,8 @@ final readonly class DoctorPublicVocabulary
 
         if (in_array($key, ['scope', 'target_type', 'owner_type', 'type'], true)) {
             return match ($value) {
-                'project' => 'app',
-                'instance' => 'app_instance',
+                'app' => 'app',
+                'instance' => 'instance',
                 default => $value,
             };
         }

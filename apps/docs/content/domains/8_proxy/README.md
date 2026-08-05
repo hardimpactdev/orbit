@@ -11,18 +11,18 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has a public owner: `project`, `instance`, `analytics`, `websocket`,
+- Every proxy route has a public owner: `app`, `instance`, `analytics`, `websocket`,
   `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value
   classifies which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
   by `router`.
-- Every proxy route has a kind: `project`, `instance`, `workspace`, `internal`, `proxy`, or
+- Every proxy route has a kind: `app`, `instance`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `project`, `instance`, `workspace`, `gateway`,
+  `all`, `app`, `instance`, `workspace`, `gateway`,
   `websocket`, `s3`, `analytics`, `tool`, `custom`, and `redirect`.
   `websocket`, `s3`, and `analytics` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
@@ -37,12 +37,12 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes. An explicit `proxy:list --filter=workspace` request fails with
   `workspace.unsupported_for_production` before route facts are returned when
   either side crosses that boundary.
-- Project, instance, workspace, gateway, and tool-owned routes are visible through proxy
+- App, instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - Every instance-primary route targets one concrete instance. The route uses
-  `owner.type=instance` and `owner.name=<project.instance>`, with
-  `target.type=instance`, `target.value=<project.instance>`, and `node` naming
-  the serving node. A bare project is never a valid primary-route target.
+  `owner.type=instance` and `owner.name=<app.instance>`, with
+  `target.type=instance`, `target.value=<app.instance>`, and `node` naming
+  the serving node. A bare app is never a valid primary-route target.
 - Instance WebSocket routes are visible through proxy commands but edited through
   instance WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role
@@ -93,7 +93,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routine route serving, because a node with an app role with intermediate signing
   authority could mint trusted certificates for arbitrary hosts if compromised.
 - Nodes serve TLS material only. They do not become certificate authorities
-  and do not sign certificates for projects, instances, workspaces, or tools.
+  and do not sign certificates for apps, instances, workspaces, or tools.
 - For DNS hostname routes, the TLS managed by Orbit also applies
   compatibility material on the node. That material lets common Laravel
   Vite TLS detection paths find the route certificate.
@@ -121,7 +121,7 @@ Proxy API requests are authorized against the route's serving node.
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
 
-## Project, instance, and workspace ingress baseline
+## App, instance, and workspace ingress baseline
 
 Instance and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed instances and workspaces:
 
@@ -129,7 +129,7 @@ Instance and workspace proxy routes are not generic reverse proxies. They provid
 - route dynamic requests to the resolved app/workspace FrankenPHP runtime
   container;
 - serve static files from the configured document root;
-- for workspace routes, apply the parent project document root relative to the
+- for workspace routes, apply the parent app document root relative to the
   workspace path;
 - apply baseline browser security headers;
 - block direct requests for sensitive project files and framework internals;
@@ -137,7 +137,7 @@ Instance and workspace proxy routes are not generic reverse proxies. They provid
 - cache versioned build assets under `/build/*` with long-lived immutable cache
   headers.
 
-Document-root policy is part of the route contract. Apps or workspaces that serve from a public document root keep project-root files outside the web root and still block adjacent sensitive files such as environment files, VCS metadata, and local entrypoints. Apps or workspaces that intentionally serve from the project root receive the stronger project-root blocking policy for framework config, storage, dependencies, source metadata, and local entrypoints.
+Document-root policy is part of the route contract. Apps or workspaces that serve from a public document root keep app-root files outside the web root and still block adjacent sensitive files such as environment files, VCS metadata, and local entrypoints. Apps or workspaces that intentionally serve from the app root receive the stronger app-root blocking policy for framework config, storage, dependencies, source metadata, and local entrypoints.
 
 Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
@@ -215,16 +215,16 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
-| `kind` | `project`, `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `project`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
-| `owner.name` | string \| null | Owning project, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
+| `kind` | `app`, `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
+| `owner.type` | `app`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
+| `owner.name` | string \| null | Owning app, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 
 The remaining fields describe placement, backend target, TLS, and status.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. Project primary routes always use `instance`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. App primary routes always use `instance`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
@@ -249,7 +249,7 @@ Each command links to its public documentation and technical contract:
 ## Related
 
 - [`doctor --family=proxy`](proxy-doctor.md)
-- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
+- [`orbit app:*` and `orbit instance:*`](../5_app/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../18_s3/README.md)

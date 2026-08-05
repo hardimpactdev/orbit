@@ -12,7 +12,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 12,
                     'workspace' => 'feature-docs',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'action' => 'setup',
                     'status' => 'completed',
                 ],
@@ -96,7 +96,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 12,
                     'workspace' => 'feature-docs',
-                    'project' => 'ohdear',
+                    'app' => 'ohdear',
                     'action' => 'setup',
                     'status' => 'completed',
                     'started_at' => $completedRunStartedAt->toIso8601String(),
@@ -105,7 +105,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 11,
                     'workspace' => 'feature-docs',
-                    'project' => 'ohdear',
+                    'app' => 'ohdear',
                     'action' => 'setup',
                     'status' => 'running',
                     'started_at' => now()->subMinute()->toIso8601String(),

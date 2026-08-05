@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]`
+# Technical Contract: `orbit tool:list [--instance=<app.instance>] [--node=<node>] [--all] [--json]`
 
 [Back to public `tool-list` documentation.](../tool-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]
+orbit tool:list [--instance=<app.instance>] [--node=<node>] [--all] [--json]
 ```
 
 ## Input Contract
@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-list` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-list` must not create apps, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

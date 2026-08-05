@@ -17,7 +17,7 @@ orbit proxy:remove <domain> [--force] [--json]
 `proxy:remove` removes user-authored custom proxy routes and custom redirect
 routes. With destructive consent it also removes a route whose recorded owner
 is proven missing (orphan owner). Example: a route still marked workspace-owned
-after the workspace row is gone. It still refuses routes whose project,
+after the workspace row is gone. It still refuses routes whose app,
 instance, WebSocket, workspace, gateway, S3, or tool owner still exists; those
 remain owned by their domain commands.
 

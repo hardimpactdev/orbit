@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -44,13 +44,13 @@ function grantWorkspaceStepDeleteAccess(Node $caller, Node $appNode): void
     ]);
 }
 
-function createWorkspaceStepDeleteInstance(Project $app, Node $node, string $instanceName): AppInstance
+function createWorkspaceStepDeleteInstance(App $app, Node $node, string $instanceName): Instance
 {
-    return AppInstance::factory()->create([
+    return Instance::factory()->create([
         'app_id' => $app->id,
         'name' => $instanceName,
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             domain: "{$app->name}.{$instanceName}",
@@ -64,7 +64,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepDeleteAccess($caller, $localNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/happie',
@@ -73,7 +73,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $other = createWorkspaceStepDeleteInstance($app, $canonicalNode, 'development');
         $foreignStep = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $other->id,
+            'instance_id' => $other->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'command' => 'composer install',
         ]);
@@ -104,7 +104,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'dev-host', 'tld' => 'dev']);
         grantWorkspaceStepDeleteAccess($caller, $nmbpNode);
         grantWorkspaceStepDeleteAccess($caller, $developmentNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'hauser',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/hauser',
@@ -113,13 +113,13 @@ describe('WorkspaceStepDeleteController', function (): void {
         createWorkspaceStepDeleteInstance($app, $developmentNode, 'development');
         $removed = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $nmbpInstance->id,
+            'instance_id' => $nmbpInstance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'command' => 'composer install',
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $nmbpInstance->id,
+            'instance_id' => $nmbpInstance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 2,
             'command' => 'npm install',
@@ -162,7 +162,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepDeleteAccess($caller, $node);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $step = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
@@ -194,7 +194,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepDeleteAccess($caller, $localNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
@@ -202,20 +202,20 @@ describe('WorkspaceStepDeleteController', function (): void {
         $instance = createWorkspaceStepDeleteInstance($app, $localNode, 'nmbp');
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 1,
         ]);
         $removed = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 2,
             'command' => 'npm install',
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 3,
         ]);
@@ -243,7 +243,7 @@ describe('WorkspaceStepDeleteController', function (): void {
             ->toBeFalse()
             ->and(
                 WorkspaceStep::query()
-                    ->where('app_instance_id', $instance->id)
+                    ->where('instance_id', $instance->id)
                     ->where('phase', WorkspaceLifecyclePhase::Setup)
                     ->orderBy('sort_order')
                     ->pluck('sort_order')
@@ -257,7 +257,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepDeleteAccess($caller, $localNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
@@ -265,7 +265,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $instance = createWorkspaceStepDeleteInstance($app, $localNode, 'nmbp');
         $removed = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Teardown,
             'sort_order' => 1,
         ]);
@@ -298,7 +298,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepDeleteAccess($caller, $localNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
@@ -306,7 +306,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $instance = createWorkspaceStepDeleteInstance($app, $localNode, 'nmbp');
         $step = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
         ]);
 
@@ -330,7 +330,7 @@ describe('WorkspaceStepDeleteController', function (): void {
     it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepDeleteCallerNode(role: 'app-dev');
         $node = createTestAppHostNode();
-        Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call(
             'DELETE',
@@ -353,7 +353,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepDeleteAccess($caller, $localNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
@@ -361,7 +361,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $instance = createWorkspaceStepDeleteInstance($app, $localNode, 'nmbp');
         $step = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Teardown,
         ]);
 

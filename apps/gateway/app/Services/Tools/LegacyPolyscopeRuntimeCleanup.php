@@ -163,7 +163,7 @@ final readonly class LegacyPolyscopeRuntimeCleanup
 
         $process = $context
             ->ownerProcesses()
-            ->where(function (Builder $query): void {
+            ->where(static function (Builder $query): void {
                 $query->where('name', self::PROCESS_NAME)
                     ->orWhere('tool', self::TOOL);
             })

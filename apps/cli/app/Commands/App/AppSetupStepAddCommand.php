@@ -12,7 +12,7 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'instance-setup-step:add
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {--command= : Shell command to run during instance setup}
         {--before= : Insert before this setup step id}
         {--after= : Insert after this setup step id}

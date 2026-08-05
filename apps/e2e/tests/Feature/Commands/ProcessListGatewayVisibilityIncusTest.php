@@ -88,11 +88,11 @@ it('lists gateway-owned process intent from an operator caller on Incus', functi
         expect($result->successful())
             ->toBeTrue($result->output().$result->errorOutput())
             ->and($payload['success']['data']['context'])
-            ->toBe(['node' => 'gateway', 'project' => null, 'instance' => null, 'workspace' => null])
+            ->toBe(['node' => 'gateway', 'app' => null, 'instance' => null, 'workspace' => null])
             ->and($payload['success']['data']['processes'][0])
             ->toMatchArray([
                 'node' => 'gateway',
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
                 'name' => 'prometheus',

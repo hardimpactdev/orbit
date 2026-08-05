@@ -98,7 +98,7 @@ The `gateway` role is Orbit's singleton authority. It owns durable Orbit
 state, the typed API, root CA material, access policy, and convergence
 decisions.
 
-The gateway is the central store of everything Orbit knows: projects, instances, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
+The gateway is the central store of everything Orbit knows: apps, instances, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
 
 The gateway exposes the typed API that the CLI talks to. The managed execution
 model has two normal paths: gateway-owned work stays gateway-only, and
@@ -565,7 +565,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the instances it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own project and instance registry rows through `project:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant project or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node project, instance, or process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app and instance registry rows through `app:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant app or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node app, instance, or process visibility.
 
 Workspace permission policy applies to both endpoints of every grant. A
 permission set containing `*` or `workspace:*` is rejected when its consuming
@@ -597,8 +597,8 @@ only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
 This is why `workspace:setup` works for app-dev workspaces placed on the
-self-granted app-dev node, why `project:list` includes projects with at least
-one instance on that node, and why `project:show` can inspect projects served there.
+self-granted app-dev node, why `app:list` includes apps with at least
+one instance on that node, and why `app:show` can inspect apps served there.
 Production app nodes never create, own, set up, remove, diagnose, or execute
 workspaces. It is also why
 `instance:register`, `process:add`, `process:update`, and `process:remove` work from
@@ -649,7 +649,7 @@ Direct API consumers — including Solo orchestration agents, Codex/loop roles, 
 
 The gateway database is Orbit's source of truth. It stores four kinds of records:
 
-- **Registry** — what exists (nodes, projects, instances).
+- **Registry** — what exists (nodes, apps, instances).
 - **Configuration** — how things should be set up (processes, schedules, proxy routes, tools, firewall rules).
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
@@ -671,7 +671,7 @@ Orbit has nine state families:
 | Family | Owns | Concept doc |
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
-| `instance` | Project and instance config, runtime policy, deploy steps, instance health | [Project and Instance Concepts](domains/5_project/project-concepts.md) |
+| `instance` | App and instance config, runtime policy, deploy steps, instance health | [App and Instance Concepts](domains/5_app/app-concepts.md) |
 | `workspace` | Workspace config, URL, runtime policy, setup/teardown policy | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
 | `process` | Lifecycle-managed long-running units scoped to nodes, instances, or workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
@@ -737,7 +737,7 @@ Orbit's extension points and identity rules keep product concepts stable while i
 
 ### Identity names
 
-Projects, instances, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. Process presentation **labels** are current product surface: they may add spaces or capitalization for humans, while the process slug stays canonical for paths, keys, and selectors.
+Apps, instances, workspaces, processes, and nodes are identified by **slugs** — short, lowercase, URL-safe names that drive paths, hostnames, file names, and database keys. Process presentation **labels** are current product surface: they may add spaces or capitalization for humans, while the process slug stays canonical for paths, keys, and selectors.
 
 A slug must match:
 
@@ -747,18 +747,18 @@ A slug must match:
 
 Length limits:
 
-- project slug: up to 40 characters
+- app slug: up to 40 characters
 - instance slug: up to 40 characters
 - node slug: up to 63 characters
 - workspace slug: up to 63 characters (independent of the parent instance slug)
 - process slug: up to 64 characters
 
-**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). Project identity does not own hostname composition.
+**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). App identity does not own hostname composition.
 
 **Process names** use a five-part runtime-unit key:
 
 ```text
-orbit_<project>_<instance>_<workspace|main>_<process>
+orbit_<app>_<instance>_<workspace|main>_<process>
 ```
 
 Examples:
@@ -768,7 +768,7 @@ orbit_docs_development_main_vite
 orbit_docs_development_feature-docs_vite
 ```
 
-`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is project, instance, workspace (or `main` for the instance checkout), then process.
+`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is app, instance, workspace (or `main` for the instance checkout), then process.
 
 ### Next
 

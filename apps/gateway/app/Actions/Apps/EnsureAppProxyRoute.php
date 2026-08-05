@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppOwningNodeResolver;
@@ -48,7 +48,7 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    public function handle(Project $app, ?AppInstance $instance = null): array
+    public function handle(App $app, ?Instance $instance = null): array
     {
         $instance ??= $this->routeInstance($app);
         $owningNode = $this->appOwningNodeResolver->resolve($app);
@@ -166,7 +166,7 @@ final readonly class EnsureAppProxyRoute
      */
     private function enactProductionRoute(
         ProxyRoute $route,
-        Project $app,
+        App $app,
         Node $owningNode,
         Node $servingNode,
         string $domain,
@@ -364,12 +364,12 @@ final readonly class EnsureAppProxyRoute
      */
     private function requiresRuntimeTrustPool(Node $node, array $config): bool
     {
-        $appInstance = $config['app_instance'] ?? null;
+        $instance = $config['instance'] ?? null;
 
         if (
             $node->hasActiveRole('app-dev')
-            && is_array($appInstance)
-            && is_int($appInstance['id'] ?? null)
+            && is_array($instance)
+            && is_int($instance['id'] ?? null)
             && $this->nodeRoleAssignments
                 ->activeGatewayNodeQuery()
                 ->whereNotNull('wireguard_address')
@@ -526,7 +526,7 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    private function productionActivationWarnings(Project $app, ?AppInstance $instance): array
+    private function productionActivationWarnings(App $app, ?Instance $instance): array
     {
         if (
             $app->environment !== 'production'
@@ -536,7 +536,7 @@ final readonly class EnsureAppProxyRoute
             return [];
         }
 
-        $selector = $instance instanceof AppInstance
+        $selector = $instance instanceof Instance
             ? "{$app->name}.{$instance->name}"
             : $app->name;
 
@@ -585,7 +585,7 @@ final readonly class EnsureAppProxyRoute
         return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
-    private function domain(Project $app, Node $owningNode): string
+    private function domain(App $app, Node $owningNode): string
     {
         if (is_string($app->domain) && $app->domain !== '') {
             return $app->domain;
@@ -604,23 +604,23 @@ final readonly class EnsureAppProxyRoute
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
     private function routeArtifact(
-        Project $app,
-        ?AppInstance $instance,
+        App $app,
+        ?Instance $instance,
         Node $owningNode,
         string $domain,
     ): array {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->runtimeUpstream($app, $instance) : null;
-        $appInstanceConfig = $instance instanceof AppInstance
-            ? $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $domain)
+        $appInstanceConfig = $instance instanceof Instance
+            ? $this->appRouteRuntimeTargets->instanceConfig($app, $instance, $domain)
             : null;
         $instanceConfig = is_array($appInstanceConfig)
             ? [
                 'target' => [
-                    'type' => 'app_instance',
+                    'type' => 'instance',
                     'value' => $appInstanceConfig['selector'],
                 ],
-                'app_instance' => $appInstanceConfig,
+                'instance' => $appInstanceConfig,
             ]
             : [];
 
@@ -730,8 +730,8 @@ final readonly class EnsureAppProxyRoute
      */
     private function removeStaleInstanceRoutes(
         ProxyRoute $currentRoute,
-        Project $app,
-        ?AppInstance $instance,
+        App $app,
+        ?Instance $instance,
         string $domain,
     ): ?array {
         $staleRoutes = ProxyRoute::query()
@@ -741,14 +741,14 @@ final readonly class EnsureAppProxyRoute
             ->where('domain', '!=', $domain)
             ->get();
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $staleRoutes = $staleRoutes->filter(static function (ProxyRoute $route) use ($instance): bool {
                 $config = is_array($route->config) ? $route->config : [];
-                $appInstance = is_array($config['app_instance'] ?? null)
-                    ? $config['app_instance']
+                $instanceConfig = is_array($config['instance'] ?? null)
+                    ? $config['instance']
                     : [];
 
-                return ($appInstance['id'] ?? null) === $instance->id;
+                return ($instanceConfig['id'] ?? null) === $instance->id;
             });
         }
 
@@ -800,9 +800,11 @@ final readonly class EnsureAppProxyRoute
             : [];
 
         foreach ($backendArtifacts as $artifact) {
-            if (is_int($artifact['node_id'] ?? null)) {
-                $nodeIds[] = $artifact['node_id'];
+            if (! is_int($artifact['node_id'] ?? null)) {
+                continue;
             }
+
+            $nodeIds[] = $artifact['node_id'];
         }
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, Node> $nodes */
@@ -811,20 +813,20 @@ final readonly class EnsureAppProxyRoute
         return array_values($nodes->all());
     }
 
-    private function routeInstance(Project $app): ?AppInstance
+    private function routeInstance(App $app): ?Instance
     {
         $app->loadMissing('instances');
         $instance = $app->instances->first(
-            static fn (AppInstance $instance): bool => (
+            static fn (Instance $instance): bool => (
                 $instance->name === $app->environment
-                && $instance->driver === AppInstanceDriver::Orbit
+                && $instance->driver === InstanceDriver::Orbit
             ),
         );
 
-        return $instance instanceof AppInstance ? $instance : null;
+        return $instance instanceof Instance ? $instance : null;
     }
 
-    private function runtimeUpstream(Project $app, ?AppInstance $instance): string
+    private function runtimeUpstream(App $app, ?Instance $instance): string
     {
         if ($this->innerTlsPolicy->appliesToApp($app)) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);

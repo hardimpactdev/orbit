@@ -6,9 +6,9 @@ namespace App\Services\Processes;
 
 use App\Data\Apps\AppSelection;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -198,7 +198,7 @@ final readonly class ProcessOwnerContextResolver
      */
     private function resolveApp(string $appName, ?array $visibleNodeIds): ProcessOwnerContext
     {
-        $selection = $this->resolveRequiredAppInstance($appName);
+        $selection = $this->resolveRequiredInstance($appName);
         $app = $selection->app;
 
         $instance = $selection->instance;
@@ -224,9 +224,9 @@ final readonly class ProcessOwnerContextResolver
         ?string $appName,
         ?array $visibleNodeIds,
     ): ProcessOwnerContext {
-        $selection = $appName !== null ? $this->resolveRequiredAppInstance($appName) : null;
+        $selection = $appName !== null ? $this->resolveRequiredInstance($appName) : null;
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['app.node', 'app.instances', 'instance'])
             ->where('name', $workspaceName);
 
         if ($selection instanceof AppSelection) {
@@ -269,7 +269,7 @@ final readonly class ProcessOwnerContextResolver
             throw new GatewayApiException("Workspace name '{$workspaceName}' is ambiguous.", 'validation_failed', [
                 'field' => 'workspace',
                 'value' => $workspaceName,
-                'projects' => array_values(array_filter(array_map(
+                'apps' => array_values(array_filter(array_map(
                     fn (Workspace $workspace): ?string => $workspace->app?->name,
                     $matches->all(),
                 ))),
@@ -278,11 +278,11 @@ final readonly class ProcessOwnerContextResolver
 
         $workspace = $matches->firstOrFail();
         $app = $workspace->app;
-        $appInstance = $workspace->appInstance;
+        $instance = $workspace->instance;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             throw new GatewayApiException(
-                "Workspace '{$workspaceName}' is not attached to a project.",
+                "Workspace '{$workspaceName}' is not attached to an app.",
                 'validation_failed',
                 [
                     'field' => 'workspace',
@@ -291,14 +291,14 @@ final readonly class ProcessOwnerContextResolver
             );
         }
 
-        if (! $appInstance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new GatewayApiException(
                 "Workspace '{$workspaceName}' is not attached to an instance.",
                 'validation_failed',
                 [
                     'field' => 'instance',
                     'reason' => 'instance_required',
-                    'project' => $app->name,
+                    'app' => $app->name,
                 ],
             );
         }
@@ -317,14 +317,14 @@ final readonly class ProcessOwnerContextResolver
             app: $app,
             workspace: $workspace,
             owner: $workspace,
-            appInstance: $appInstance,
+            instance: $instance,
         );
     }
 
-    private function contextForApp(Project $app, ?AppSelection $selection = null): ProcessOwnerContext
+    private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
         $app->loadMissing('node');
-        $selection ??= $this->requireAppInstance(new AppSelection(app: $app));
+        $selection ??= $this->requireInstance(new AppSelection(app: $app));
         $instance = $selection->instance;
         $node = $instance !== null
             ? $this->placement->nodeForInstance($instance)
@@ -342,11 +342,11 @@ final readonly class ProcessOwnerContextResolver
             app: $app,
             workspace: null,
             owner: $app,
-            appInstance: $instance,
+            instance: $instance,
         );
     }
 
-    private function resolveRequiredAppInstance(string $appName): AppSelection
+    private function resolveRequiredInstance(string $appName): AppSelection
     {
         try {
             $selection = $this->appSelectorResolver->resolve($appName);
@@ -368,7 +368,7 @@ final readonly class ProcessOwnerContextResolver
         }
     }
 
-    private function requireAppInstance(AppSelection $selection): AppSelection
+    private function requireInstance(AppSelection $selection): AppSelection
     {
         try {
             return $this->appSelectorResolver->requireInstance($selection);
@@ -388,16 +388,16 @@ final readonly class ProcessOwnerContextResolver
     private function visibleAppSelections(?array $visibleNodeIds): SupportCollection
     {
         /** @var Collection<int, AppSelection> $selections */
-        $selections = AppInstance::query()
+        $selections = Instance::query()
             ->with('app')
             ->get()
-            ->map(fn (AppInstance $instance): AppSelection => new AppSelection(
+            ->map(fn (Instance $instance): AppSelection => new AppSelection(
                 app: $instance->app,
                 instance: $instance,
                 instanceSelector: $instance->name,
             ))
             ->filter(function (AppSelection $selection) use ($visibleNodeIds): bool {
-                $node = $selection->instance instanceof AppInstance
+                $node = $selection->instance instanceof Instance
                     ? $this->placement->nodeForInstance($selection->instance)
                     : null;
 

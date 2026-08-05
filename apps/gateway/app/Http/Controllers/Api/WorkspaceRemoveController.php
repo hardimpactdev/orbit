@@ -106,8 +106,8 @@ final class WorkspaceRemoveController implements Loggable
                 'Workspace owning node could not be resolved.',
                 [
                     'name' => $workspace->name,
-                    'project' => $workspace->app?->name,
-                    'instance' => $workspace->appInstance->name,
+                    'app' => $workspace->app?->name,
+                    'instance' => $workspace->instance->name,
                 ],
                 403,
             );
@@ -149,7 +149,7 @@ final class WorkspaceRemoveController implements Loggable
     {
         /** @var Collection<int, Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance', 'app.processes'])
+            ->with(['app.node', 'app.instances', 'instance', 'app.processes'])
             ->where('name', $name)
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',

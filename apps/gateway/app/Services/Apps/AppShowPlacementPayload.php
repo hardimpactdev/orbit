@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
 final readonly class AppShowPlacementPayload
 {
     public function __construct(
-        private AppInstancePayloads $instancePayloads,
+        private InstancePayloads $instancePayloads,
         private WorkspacePlacement $workspacePlacement,
         private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
-     * @param  list<AppInstance>  $instances
+     * @param  list<Instance>  $instances
      * @return array{
      *     instances: list<array<string, mixed>>,
      * }
      */
-    public function forApp(Project $app, array $instances, bool $includeWorkspaces = true): array
+    public function forApp(App $app, array $instances, bool $includeWorkspaces = true): array
     {
-        $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
+        $visibleInstanceIds = array_map(static fn (Instance $instance): int => $instance->id, $instances);
         $workspacePayloads = $includeWorkspaces
             ? $this->workspacePayloadsByInstance($app, $visibleInstanceIds)
             : [];
@@ -51,13 +51,13 @@ final readonly class AppShowPlacementPayload
      * @param  list<int>  $visibleInstanceIds
      * @return array<int, list<array{name: string, url: string, lifecycle_status: string}>>
      */
-    private function workspacePayloadsByInstance(Project $app, array $visibleInstanceIds): array
+    private function workspacePayloadsByInstance(App $app, array $visibleInstanceIds): array
     {
         $payloads = [];
         $app->loadMissing('workspaces');
 
         foreach ($app->workspaces as $workspace) {
-            if (! in_array($workspace->app_instance_id, $visibleInstanceIds, strict: true)) {
+            if (! in_array($workspace->instance_id, $visibleInstanceIds, strict: true)) {
                 continue;
             }
 
@@ -69,7 +69,7 @@ final readonly class AppShowPlacementPayload
                 continue;
             }
 
-            $payloads[(int) $workspace->app_instance_id][] = [
+            $payloads[(int) $workspace->instance_id][] = [
                 'name' => $workspace->name,
                 'url' => $workspace->url(),
                 'lifecycle_status' => $workspace->lifecycle_status->value,

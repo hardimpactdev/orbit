@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Processes\RuntimeActivationFence;
@@ -465,7 +465,7 @@ it('returns the progress page immediately for soft wake when no dependencies nee
     expect($run->result['runtime_activation']['cold'] ?? null)
         ->toBeFalse()
         ->and($run->result['runtime_activation']['dependencies'] ?? null)
-        ->toBe([])
+        ->toBeEmpty()
         ->and($executor->actions())
         ->toBe(['internal:caddy-config:runtime-states'])
         ->not->toContain('internal:process-systemd-service:start')
@@ -554,7 +554,7 @@ it('keeps a cold sibling in activation until its already restored source is read
 it('uses the workspace source and its inherited dynamic process plan', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'feature-a',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
     ]);
@@ -643,9 +643,9 @@ it('restores dependencies before starting the planned processes and clearing col
 
 it('single-flights dependency restoration across simultaneous scopes that share one source', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
-    $sibling = AppInstance::factory()->for($app)->create([
+    $sibling = Instance::factory()->for($app)->create([
         'name' => 'preview',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -657,7 +657,7 @@ it('single-flights dependency restoration across simultaneous scopes that share 
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $sibling->id,
+            'instance_id' => $sibling->id,
             'name' => 'horizon-preview',
         ]);
     $executor = new ColdRuntimeExecutor([[
@@ -797,7 +797,7 @@ it('allows only one detached runner to claim an activation operation', function 
 });
 
 /**
- * @return array{Node, Project, AppInstance}
+ * @return array{Node, App, Instance}
  */
 function create_cold_runtime_instance(): array
 {
@@ -805,13 +805,13 @@ function create_cold_runtime_instance(): array
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.21',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,

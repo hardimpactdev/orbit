@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
+use App\Models\App;
 use App\Models\AppWebSocketBinding;
-use App\Models\Project;
 use RuntimeException;
 
 final readonly class WebSocketCredentials
@@ -15,7 +15,7 @@ final readonly class WebSocketCredentials
      * @param  list<string>  $allowedOrigins
      */
     public function __construct(
-        public string $project,
+        public string $app,
         public string $internalHost,
         public array $publicHosts,
         public array $allowedOrigins,
@@ -28,12 +28,12 @@ final readonly class WebSocketCredentials
     {
         $binding->loadMissing('app');
 
-        if (! $binding->app instanceof Project) {
+        if (! $binding->app instanceof App) {
             throw new RuntimeException('WebSocket credentials require an app binding owner.');
         }
 
         return new self(
-            project: $binding->app->name,
+            app: $binding->app->name,
             internalHost: WebSocketRouteRegistrar::ServiceDomain,
             publicHosts: self::stringList($binding->public_hosts),
             allowedOrigins: self::stringList($binding->allowed_origins),
@@ -45,7 +45,7 @@ final readonly class WebSocketCredentials
 
     /**
      * @return array{
-     *     project: string,
+     *     app: string,
      *     internal_host: string,
      *     public_hosts: list<string>,
      *     allowed_origins: list<string>,
@@ -57,7 +57,7 @@ final readonly class WebSocketCredentials
     public function toArray(): array
     {
         return [
-            'project' => $this->project,
+            'app' => $this->app,
             'internal_host' => $this->internalHost,
             'public_hosts' => $this->publicHosts,
             'allowed_origins' => $this->allowedOrigins,

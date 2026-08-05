@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Schedules\RemoveSchedule;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Database\QueryException;
@@ -14,11 +14,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('stores app scoped schedule intent and relates latest run history', function (): void {
-    $app = Project::factory()->create(['name' => 'docs']);
-    $instance = AppInstance::factory()->for($app)->create(['name' => 'development']);
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create(['name' => 'development']);
 
     $schedule = Schedule::factory()
-        ->forAppInstance($instance)
+        ->forInstance($instance)
         ->create([
             'name' => 'laravel-scheduler',
             'schedule_key' => 'app:docs.development:laravel-scheduler',
@@ -43,7 +43,7 @@ it('stores app scoped schedule intent and relates latest run history', function 
 
     expect($schedule->app->is($app))
         ->toBeTrue()
-        ->and($schedule->appInstance->is($instance))
+        ->and($schedule->instance->is($instance))
         ->toBeTrue()
         ->and($app->schedules()->first()->is($schedule))
         ->toBeTrue()

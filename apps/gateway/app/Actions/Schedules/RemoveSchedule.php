@@ -18,7 +18,7 @@ final readonly class RemoveSchedule
      */
     public function handle(Schedule $schedule): array
     {
-        $schedule->loadMissing(['app', 'appInstance', 'node']);
+        $schedule->loadMissing(['app', 'instance', 'node']);
         $serialized = $this->payload->forSchedule($schedule);
         $serialized['status'] = 'removed';
 

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\RemoteShell\RemoteEnvFile;
@@ -53,7 +53,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
+            ->forInstance(databaseConnectionRestorerInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -121,7 +121,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
+            ->forInstance(databaseConnectionRestorerInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -184,7 +184,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
+            ->forInstance(databaseConnectionRestorerInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -228,7 +228,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
+            ->forInstance(databaseConnectionRestorerInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -310,12 +310,12 @@ describe('DatabaseConnectionRestorer', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionRestorerApp(array $attributes): Project
+function databaseConnectionRestorerApp(array $attributes): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
@@ -326,7 +326,7 @@ function databaseConnectionRestorerApp(array $attributes): Project
     return $app;
 }
 
-function databaseConnectionRestorerAppInstance(Project $app): AppInstance
+function databaseConnectionRestorerInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
 }

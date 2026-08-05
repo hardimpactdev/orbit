@@ -10,7 +10,7 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
@@ -124,7 +124,7 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
@@ -246,7 +246,7 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
@@ -284,7 +284,7 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 13,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'title' => 'Clear cache',
                 'command' => 'php artisan cache:clear',
@@ -314,7 +314,7 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',

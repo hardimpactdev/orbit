@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -107,7 +107,7 @@ final readonly class ProxyRouteRenderer
 
         if (
             ! $workspace instanceof Workspace
-            || ! $app instanceof Project
+            || ! $app instanceof App
             || $app->runtimeKind() !== AppRuntimeKind::Php
         ) {
             return;
@@ -144,23 +144,23 @@ final readonly class ProxyRouteRenderer
     {
         $app = $route->app;
 
-        if (! $app instanceof Project || $app->runtimeKind() !== AppRuntimeKind::Php) {
+        if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return;
         }
 
         $config = is_array($route->config) ? $route->config : [];
-        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $instance = $this->appRouteTargets->instanceForRoute($route);
         $node = $this->appRouteTargets->nodeForRoute($route, $instance);
-        $routeDomain = $instance instanceof AppInstance
+        $routeDomain = $instance instanceof Instance
             ? $this->appRouteTargets->routeDomain($route, $app, $instance)
             : $this->innerTlsPolicy->appRouteDomain($app);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $config['target'] = [
-                'type' => 'app_instance',
+                'type' => 'instance',
                 'value' => $this->appRouteTargets->selector($app, $instance),
             ];
-            $config['app_instance'] = $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $routeDomain);
+            $config['instance'] = $this->appRouteRuntimeTargets->instanceConfig($app, $instance, $routeDomain);
         }
 
         $config['runtime_upstream'] = $this->appRouteRuntimeTargets->httpRuntimeUpstream($app, $instance);
@@ -665,10 +665,10 @@ final readonly class ProxyRouteRenderer
             return null;
         }
 
-        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $instance = $this->appRouteTargets->instanceForRoute($route);
 
         return (
-            $instance instanceof AppInstance
+            $instance instanceof Instance
                 ? [
                     'type' => 'app-instance',
                     'id' => $instance->id,
@@ -991,18 +991,18 @@ final readonly class ProxyRouteRenderer
             return "http://orbit-ws-{$slug}-{$route->workspace?->name}";
         }
 
-        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $instance = $this->appRouteTargets->instanceForRoute($route);
         $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 
         if (
-            $route->app instanceof Project
+            $route->app instanceof App
             && $node instanceof Node
             && $this->innerTlsPolicy->appliesToAppOnNode($route->app, $node)
         ) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($route->app, $instance);
         }
 
-        return $route->app instanceof Project
+        return $route->app instanceof App
             ? $this->appRouteRuntimeTargets->httpRuntimeUpstream($route->app, $instance)
             : "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
     }
@@ -1018,7 +1018,7 @@ final readonly class ProxyRouteRenderer
                     $route->workspace->loadMissing('app');
                     $app = $route->workspace?->app;
 
-                    if ($app instanceof Project && is_string($app->name) && $app->name !== '') {
+                    if ($app instanceof App && is_string($app->name) && $app->name !== '') {
                         return (
                             "https://orbit-ws-{$app->name}-{$route->workspace?->name}:"
                             .AppDevelopmentInnerTlsPolicy::InternalTlsPort
@@ -1031,8 +1031,8 @@ final readonly class ProxyRouteRenderer
 
             $app = $route->app;
 
-            if ($app instanceof Project) {
-                $instance = $this->appRouteTargets->appInstanceForRoute($route);
+            if ($app instanceof App) {
+                $instance = $this->appRouteTargets->instanceForRoute($route);
                 $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 
                 if ($node instanceof Node && $this->innerTlsPolicy->appliesToAppOnNode($app, $node)) {
@@ -1082,7 +1082,7 @@ final readonly class ProxyRouteRenderer
 
             $app = $workspace->app;
 
-            if (! $app instanceof Project) {
+            if (! $app instanceof App) {
                 return null;
             }
 
@@ -1100,15 +1100,15 @@ final readonly class ProxyRouteRenderer
 
         $app = $route->app;
 
-        if ($app instanceof Project) {
-            $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        if ($app instanceof App) {
+            $instance = $this->appRouteTargets->instanceForRoute($route);
             $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 
             if (! $node instanceof Node || ! $this->innerTlsPolicy->appliesToAppOnNode($app, $node)) {
                 return null;
             }
 
-            $domain = $instance instanceof AppInstance
+            $domain = $instance instanceof Instance
                 ? $this->appRouteTargets->routeDomain($route, $app, $instance)
                 : $this->innerTlsPolicy->appRouteDomain($app);
 

@@ -23,7 +23,7 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->isKnown('tool:*'))
             ->toBeTrue()
-            ->and($registry->isKnown('project:*'))
+            ->and($registry->isKnown('app:*'))
             ->toBeTrue()
             ->and($registry->isKnown('instance:*'))
             ->toBeTrue();
@@ -40,7 +40,7 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->isKnown('node:read'))
             ->toBeTrue()
-            ->and($registry->isKnown('project:new'))
+            ->and($registry->isKnown('app:new'))
             ->toBeTrue()
             ->and($registry->isKnown('instance:credentials'))
             ->toBeTrue()
@@ -163,9 +163,9 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->allows(['instance:*'], 'instance:credentials'))
             ->toBeTrue()
-            ->and($registry->allows(['project:read'], 'project:show'))
+            ->and($registry->allows(['app:read'], 'app:show'))
             ->toBeTrue()
-            ->and($registry->allows(['project:write'], 'project:new'))
+            ->and($registry->allows(['app:write'], 'app:new'))
             ->toBeFalse()
             ->and($registry->allows(['tool:update'], 'tool:update:agent-tools'))
             ->toBeTrue()
@@ -229,7 +229,7 @@ describe('node permission registry', function (): void {
             ->and($registry->isKnown('agent-ide:message'))
             ->toBeFalse()
             ->and($registry->impliedBy('agent-ide:*'))
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('reports coverage correctly', function (): void {
@@ -266,7 +266,7 @@ describe('node permission registry', function (): void {
             ->not
             ->toContain('agent-ide')
             ->and($namespaces->toArray())
-            ->toContain('project')
+            ->toContain('app')
             ->and($namespaces->toArray())
             ->toContain('instance')
             ->and($namespaces->toArray())

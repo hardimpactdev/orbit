@@ -696,7 +696,7 @@ describe('internal env-file non-regular target publication', function (): void {
                 ->and(is_dir($path))
                 ->toBeTrue()
                 ->and($movedInside)
-                ->toBe([])
+                ->toBeEmpty()
                 ->and(is_file($temporary))
                 ->toBeFalse()
                 ->and(file_exists($path.'/SHOULD_NOT_PUBLISH'))
@@ -741,7 +741,7 @@ describe('internal env-file non-regular target publication', function (): void {
                 ->and(is_dir($envPath))
                 ->toBeTrue()
                 ->and($movedInside)
-                ->toBe([]);
+                ->toBeEmpty();
         } finally {
             env_file_remove_directory_if_present($envPath);
             delete_env_file_development_worktree_workspace($workspace);
@@ -762,9 +762,11 @@ function env_file_glob_entries(string $pattern): array
 function env_file_unlink_glob(string $pattern): void
 {
     foreach (env_file_glob_entries($pattern) as $path) {
-        if (is_file($path) || is_link($path)) {
-            unlink($path);
+        if (! (is_file($path) || is_link($path))) {
+            continue;
         }
+
+        unlink($path);
     }
 }
 
@@ -831,9 +833,9 @@ function make_env_file_codex_worktree_workspace(): string
 
 function make_env_file_development_worktree_workspace(): string
 {
-    $project = 'mealou-env-test-'.bin2hex(random_bytes(3));
+    $app = 'mealou-env-test-'.bin2hex(random_bytes(3));
     $workspaceName = 'feature-mail';
-    $workspace = env_file_codex_home_root()."/apps/{$project}/.worktrees/{$workspaceName}";
+    $workspace = env_file_codex_home_root()."/apps/{$app}/.worktrees/{$workspaceName}";
     mkdir($workspace, permissions: 0o755, recursive: true);
 
     return $workspace;
@@ -850,15 +852,15 @@ function delete_env_file_development_worktree_workspace(string $workspace): void
     }
 
     $worktrees = dirname($workspace);
-    $project = dirname($worktrees);
-    $apps = dirname($project);
+    $app = dirname($worktrees);
+    $apps = dirname($app);
 
     if (is_dir($worktrees)) {
         rmdir_if_empty($worktrees);
     }
 
-    if (is_dir($project)) {
-        rmdir_if_empty($project);
+    if (is_dir($app)) {
+        rmdir_if_empty($app);
     }
 
     if (is_dir($apps) && basename($apps) === 'apps') {

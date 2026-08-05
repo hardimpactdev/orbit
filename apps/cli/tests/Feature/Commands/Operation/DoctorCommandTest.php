@@ -46,7 +46,7 @@ function doctorVerifyReport(
             'node' => 'beast',
             'role' => 'app-dev',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -78,7 +78,7 @@ function doctorFleetReport(): array
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -261,7 +261,7 @@ function doctorPartialFleetProgressReport(
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'project' => null,
+            'app' => null,
             'instance' => null,
             'workspace' => null,
             'key' => null,
@@ -317,7 +317,7 @@ describe('doctor human panel', function (): void {
             'code' => 'instance.runtime_container_missing',
             'kind' => 'missing',
             'summary' => 'Runtime container for nckrtl is missing.',
-            'detail' => ['project' => 'nckrtl'],
+            'detail' => ['app' => 'nckrtl'],
             'restorable' => true,
             'adoptable' => false,
         ];
@@ -1425,7 +1425,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'instance.http_error',
                 'kind' => 'divergent',
                 'summary' => 'https://nckrtl.test returned a 500 error response',
-                'detail' => ['project' => 'nckrtl'],
+                'detail' => ['app' => 'nckrtl'],
                 'restorable' => false,
                 'adoptable' => false,
             ],
@@ -1436,7 +1436,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.missing',
                 'kind' => 'missing',
                 'summary' => 'Workspace should exist on node but is missing',
-                'detail' => ['workspace' => 'abc123.nckrtl.test', 'project' => 'nckrtl'],
+                'detail' => ['workspace' => 'abc123.nckrtl.test', 'app' => 'nckrtl'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1447,7 +1447,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.extra',
                 'kind' => 'extra',
                 'summary' => 'Workspace exists on node but is not expected',
-                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'project' => 'hauser'],
+                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'app' => 'hauser'],
                 'restorable' => false,
                 'adoptable' => true,
             ],
@@ -1458,7 +1458,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'process.runtime_unit_missing',
                 'kind' => 'missing',
                 'summary' => 'process.runtime_unit_missing',
-                'detail' => ['project' => 'nckrtl', 'process' => 'queue-worker'],
+                'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1480,7 +1480,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'database_connection.env_mismatch',
                 'kind' => 'divergent',
                 'summary' => 'database_connection.env_mismatch',
-                'detail' => ['target_type' => 'project', 'project' => 'nckrtl', 'env_prefix' => 'REPORTING'],
+                'detail' => ['target_type' => 'project', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
                 'restorable' => true,
                 'adoptable' => true,
             ],
@@ -1550,7 +1550,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain("\n●  Processes     1 issue detected:")
             ->and($plain)
-            ->toContain('- Process queue-worker for project nckrtl: Runtime unit missing.')
+            ->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
             ->and($plain)
             ->toContain("\n●  Scheduling    1 issue detected:")
             ->and($plain)
@@ -1560,7 +1560,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain('- Database connection ditis_hr: Environment mismatch.')
             ->and($plain)
-            ->toContain('- Database connection REPORTING for project nckrtl: Environment')
+            ->toContain('- Database connection REPORTING for app nckrtl: Environment')
             // Categories with no issues render OK.
             ->and($plain)
             ->toContain('OK')

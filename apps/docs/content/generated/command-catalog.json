@@ -11,7 +11,7 @@
             "family": "activity",
             "arguments": [],
             "options": [
-                "project",
+                "app",
                 "node",
                 "effect",
                 "correlation",
@@ -216,12 +216,329 @@
                 "response_dto": null
             }
         },
+        "app:list": {
+            "name": "app:list",
+            "slug": "app-list",
+            "family": "app",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/3_app-list",
+                "public": "domains/5_app/3_app-list/app-list.md",
+                "technical": "domains/5_app/3_app-list/technical/1_app-list.md",
+                "repo_directory": "apps/docs/content/domains/5_app/3_app-list",
+                "repo_public": "apps/docs/content/domains/5_app/3_app-list/app-list.md",
+                "repo_technical": "apps/docs/content/domains/5_app/3_app-list/technical/1_app-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppListCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppListCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppListCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppListCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppListControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppListControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\ListAppsRequest",
+                    "path": "packages/sdk/src/Requests/Apps/ListAppsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/apps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppListResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppListResponse.php"
+                }
+            }
+        },
+        "app:new": {
+            "name": "app:new",
+            "slug": "app-new",
+            "family": "app",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "node",
+                "repo",
+                "template-repo",
+                "new-repo",
+                "root",
+                "php-version",
+                "domain",
+                "runtime-proxy-transport",
+                "json",
+                "stream-json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": true
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/1_app-new",
+                "public": "domains/5_app/1_app-new/app-new.md",
+                "technical": "domains/5_app/1_app-new/technical/1_app-new.md",
+                "repo_directory": "apps/docs/content/domains/5_app/1_app-new",
+                "repo_public": "apps/docs/content/domains/5_app/1_app-new/app-new.md",
+                "repo_technical": "apps/docs/content/domains/5_app/1_app-new/technical/1_app-new.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": true
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                "packages/core/tests/SourceControl/GitCloneReferenceTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppNewStreamCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppNewStreamCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalAppSourceCreateCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalAppSourceCreateCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppStoreControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreStreamControllerTest.php"
+                },
+                {
+                    "repo_test_path": "packages/core/tests/SourceControl/GitCloneReferenceTest.php",
+                    "working_directory": "packages/core",
+                    "runner": "vendor/bin/pest",
+                    "runner_test_path": "tests/SourceControl/GitCloneReferenceTest.php",
+                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/SourceControl/GitCloneReferenceTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\CreateAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/CreateAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/apps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:new"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppCreateResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppCreateResponse.php"
+                }
+            }
+        },
+        "app:remove": {
+            "name": "app:remove",
+            "slug": "app-remove",
+            "family": "app",
+            "arguments": [
+                "app"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/6_app-remove",
+                "public": "domains/5_app/6_app-remove/app-remove.md",
+                "technical": "domains/5_app/6_app-remove/technical/1_app-remove.md",
+                "repo_directory": "apps/docs/content/domains/5_app/6_app-remove",
+                "repo_public": "apps/docs/content/domains/5_app/6_app-remove/app-remove.md",
+                "repo_technical": "apps/docs/content/domains/5_app/6_app-remove/technical/1_app-remove.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppRemoveControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppRemoveControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "app:show": {
+            "name": "app:show",
+            "slug": "app-show",
+            "family": "app",
+            "arguments": [
+                "app"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/4_app-show",
+                "public": "domains/5_app/4_app-show/app-show.md",
+                "technical": "domains/5_app/4_app-show/technical/1_app-show.md",
+                "repo_directory": "apps/docs/content/domains/5_app/4_app-show",
+                "repo_public": "apps/docs/content/domains/5_app/4_app-show/app-show.md",
+                "repo_technical": "apps/docs/content/domains/5_app/4_app-show/technical/1_app-show.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppShowCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppShowCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppShowControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppShowControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\ShowAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/ShowAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/apps/{app}"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppShowController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppShowController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppShowResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppShowResponse.php"
+                }
+            }
+        },
         "cf-cache-rule:add": {
             "name": "cf-cache-rule:add",
             "slug": "cf-cache-rule-add",
             "family": "cf-cache-rule",
             "arguments": [
-                "project"
+                "app"
             ],
             "options": [
                 "json"
@@ -272,7 +589,7 @@
                 "sdk_request": null,
                 "gateway_route": {
                     "method": "POST",
-                    "uri": "/api/cloudflare/cache-rules/{project}"
+                    "uri": "/api/cloudflare/cache-rules/{app}"
                 },
                 "gateway_controller": {
                     "class": "App\\Http\\Controllers\\Api\\CloudflareController",
@@ -290,7 +607,7 @@
             "slug": "cf-cache-rule-remove",
             "family": "cf-cache-rule",
             "arguments": [
-                "project"
+                "app"
             ],
             "options": [
                 "force",
@@ -342,7 +659,7 @@
                 "sdk_request": null,
                 "gateway_route": {
                     "method": "DELETE",
-                    "uri": "/api/cloudflare/cache-rules/{project}"
+                    "uri": "/api/cloudflare/cache-rules/{app}"
                 },
                 "gateway_controller": {
                     "class": "App\\Http\\Controllers\\Api\\CloudflareController",
@@ -3221,12 +3538,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/23_instance-setup-step-add",
-                "public": "domains/5_project/23_instance-setup-step-add/instance-setup-step-add.md",
-                "technical": "domains/5_project/23_instance-setup-step-add/technical/1_instance-setup-step-add.md",
-                "repo_directory": "apps/docs/content/domains/5_project/23_instance-setup-step-add",
-                "repo_public": "apps/docs/content/domains/5_project/23_instance-setup-step-add/instance-setup-step-add.md",
-                "repo_technical": "apps/docs/content/domains/5_project/23_instance-setup-step-add/technical/1_instance-setup-step-add.md"
+                "directory": "domains/5_app/23_instance-setup-step-add",
+                "public": "domains/5_app/23_instance-setup-step-add/instance-setup-step-add.md",
+                "technical": "domains/5_app/23_instance-setup-step-add/technical/1_instance-setup-step-add.md",
+                "repo_directory": "apps/docs/content/domains/5_app/23_instance-setup-step-add",
+                "repo_public": "apps/docs/content/domains/5_app/23_instance-setup-step-add/instance-setup-step-add.md",
+                "repo_technical": "apps/docs/content/domains/5_app/23_instance-setup-step-add/technical/1_instance-setup-step-add.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3277,12 +3594,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/24_instance-setup-step-list",
-                "public": "domains/5_project/24_instance-setup-step-list/instance-setup-step-list.md",
-                "technical": "domains/5_project/24_instance-setup-step-list/technical/1_instance-setup-step-list.md",
-                "repo_directory": "apps/docs/content/domains/5_project/24_instance-setup-step-list",
-                "repo_public": "apps/docs/content/domains/5_project/24_instance-setup-step-list/instance-setup-step-list.md",
-                "repo_technical": "apps/docs/content/domains/5_project/24_instance-setup-step-list/technical/1_instance-setup-step-list.md"
+                "directory": "domains/5_app/24_instance-setup-step-list",
+                "public": "domains/5_app/24_instance-setup-step-list/instance-setup-step-list.md",
+                "technical": "domains/5_app/24_instance-setup-step-list/technical/1_instance-setup-step-list.md",
+                "repo_directory": "apps/docs/content/domains/5_app/24_instance-setup-step-list",
+                "repo_public": "apps/docs/content/domains/5_app/24_instance-setup-step-list/instance-setup-step-list.md",
+                "repo_technical": "apps/docs/content/domains/5_app/24_instance-setup-step-list/technical/1_instance-setup-step-list.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3335,12 +3652,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/25_instance-setup-step-remove",
-                "public": "domains/5_project/25_instance-setup-step-remove/instance-setup-step-remove.md",
-                "technical": "domains/5_project/25_instance-setup-step-remove/technical/1_instance-setup-step-remove.md",
-                "repo_directory": "apps/docs/content/domains/5_project/25_instance-setup-step-remove",
-                "repo_public": "apps/docs/content/domains/5_project/25_instance-setup-step-remove/instance-setup-step-remove.md",
-                "repo_technical": "apps/docs/content/domains/5_project/25_instance-setup-step-remove/technical/1_instance-setup-step-remove.md"
+                "directory": "domains/5_app/25_instance-setup-step-remove",
+                "public": "domains/5_app/25_instance-setup-step-remove/instance-setup-step-remove.md",
+                "technical": "domains/5_app/25_instance-setup-step-remove/technical/1_instance-setup-step-remove.md",
+                "repo_directory": "apps/docs/content/domains/5_app/25_instance-setup-step-remove",
+                "repo_public": "apps/docs/content/domains/5_app/25_instance-setup-step-remove/instance-setup-step-remove.md",
+                "repo_technical": "apps/docs/content/domains/5_app/25_instance-setup-step-remove/technical/1_instance-setup-step-remove.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3405,35 +3722,35 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/27_instance-add",
-                "public": "domains/5_project/27_instance-add/instance-add.md",
-                "technical": "domains/5_project/27_instance-add/technical/1_instance-add.md",
-                "repo_directory": "apps/docs/content/domains/5_project/27_instance-add",
-                "repo_public": "apps/docs/content/domains/5_project/27_instance-add/instance-add.md",
-                "repo_technical": "apps/docs/content/domains/5_project/27_instance-add/technical/1_instance-add.md"
+                "directory": "domains/5_app/27_instance-add",
+                "public": "domains/5_app/27_instance-add/instance-add.md",
+                "technical": "domains/5_app/27_instance-add/technical/1_instance-add.md",
+                "repo_directory": "apps/docs/content/domains/5_app/27_instance-add",
+                "repo_public": "apps/docs/content/domains/5_app/27_instance-add/instance-add.md",
+                "repo_technical": "apps/docs/content/domains/5_app/27_instance-add/technical/1_instance-add.md"
             },
             "public_options_documented": {
                 "json": true,
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceControllerTest.php"
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
+                "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/AppInstanceControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceControllerTest.php"
+                    "runner_test_path": "tests/Feature/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstanceControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -3461,12 +3778,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/17_instance-analytics-disable",
-                "public": "domains/5_project/17_instance-analytics-disable/instance-analytics-disable.md",
-                "technical": "domains/5_project/17_instance-analytics-disable/technical/1_instance-analytics-disable.md",
-                "repo_directory": "apps/docs/content/domains/5_project/17_instance-analytics-disable",
-                "repo_public": "apps/docs/content/domains/5_project/17_instance-analytics-disable/instance-analytics-disable.md",
-                "repo_technical": "apps/docs/content/domains/5_project/17_instance-analytics-disable/technical/1_instance-analytics-disable.md"
+                "directory": "domains/5_app/17_instance-analytics-disable",
+                "public": "domains/5_app/17_instance-analytics-disable/instance-analytics-disable.md",
+                "technical": "domains/5_app/17_instance-analytics-disable/technical/1_instance-analytics-disable.md",
+                "repo_directory": "apps/docs/content/domains/5_app/17_instance-analytics-disable",
+                "repo_public": "apps/docs/content/domains/5_app/17_instance-analytics-disable/instance-analytics-disable.md",
+                "repo_technical": "apps/docs/content/domains/5_app/17_instance-analytics-disable/technical/1_instance-analytics-disable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3518,12 +3835,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/16_instance-analytics-enable",
-                "public": "domains/5_project/16_instance-analytics-enable/instance-analytics-enable.md",
-                "technical": "domains/5_project/16_instance-analytics-enable/technical/1_instance-analytics-enable.md",
-                "repo_directory": "apps/docs/content/domains/5_project/16_instance-analytics-enable",
-                "repo_public": "apps/docs/content/domains/5_project/16_instance-analytics-enable/instance-analytics-enable.md",
-                "repo_technical": "apps/docs/content/domains/5_project/16_instance-analytics-enable/technical/1_instance-analytics-enable.md"
+                "directory": "domains/5_app/16_instance-analytics-enable",
+                "public": "domains/5_app/16_instance-analytics-enable/instance-analytics-enable.md",
+                "technical": "domains/5_app/16_instance-analytics-enable/technical/1_instance-analytics-enable.md",
+                "repo_directory": "apps/docs/content/domains/5_app/16_instance-analytics-enable",
+                "repo_public": "apps/docs/content/domains/5_app/16_instance-analytics-enable/instance-analytics-enable.md",
+                "repo_technical": "apps/docs/content/domains/5_app/16_instance-analytics-enable/technical/1_instance-analytics-enable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3582,12 +3899,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/18_instance-analytics-show",
-                "public": "domains/5_project/18_instance-analytics-show/instance-analytics-show.md",
-                "technical": "domains/5_project/18_instance-analytics-show/technical/1_instance-analytics-show.md",
-                "repo_directory": "apps/docs/content/domains/5_project/18_instance-analytics-show",
-                "repo_public": "apps/docs/content/domains/5_project/18_instance-analytics-show/instance-analytics-show.md",
-                "repo_technical": "apps/docs/content/domains/5_project/18_instance-analytics-show/technical/1_instance-analytics-show.md"
+                "directory": "domains/5_app/18_instance-analytics-show",
+                "public": "domains/5_app/18_instance-analytics-show/instance-analytics-show.md",
+                "technical": "domains/5_app/18_instance-analytics-show/technical/1_instance-analytics-show.md",
+                "repo_directory": "apps/docs/content/domains/5_app/18_instance-analytics-show",
+                "repo_public": "apps/docs/content/domains/5_app/18_instance-analytics-show/instance-analytics-show.md",
+                "repo_technical": "apps/docs/content/domains/5_app/18_instance-analytics-show/technical/1_instance-analytics-show.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3638,12 +3955,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/21_instance-analytics-verify",
-                "public": "domains/5_project/21_instance-analytics-verify/instance-analytics-verify.md",
-                "technical": "domains/5_project/21_instance-analytics-verify/technical/1_instance-analytics-verify.md",
-                "repo_directory": "apps/docs/content/domains/5_project/21_instance-analytics-verify",
-                "repo_public": "apps/docs/content/domains/5_project/21_instance-analytics-verify/instance-analytics-verify.md",
-                "repo_technical": "apps/docs/content/domains/5_project/21_instance-analytics-verify/technical/1_instance-analytics-verify.md"
+                "directory": "domains/5_app/21_instance-analytics-verify",
+                "public": "domains/5_app/21_instance-analytics-verify/instance-analytics-verify.md",
+                "technical": "domains/5_app/21_instance-analytics-verify/technical/1_instance-analytics-verify.md",
+                "repo_directory": "apps/docs/content/domains/5_app/21_instance-analytics-verify",
+                "repo_public": "apps/docs/content/domains/5_app/21_instance-analytics-verify/instance-analytics-verify.md",
+                "repo_technical": "apps/docs/content/domains/5_app/21_instance-analytics-verify/technical/1_instance-analytics-verify.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3715,12 +4032,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/20_instance-env",
-                "public": "domains/5_project/20_instance-env/instance-env.md",
-                "technical": "domains/5_project/20_instance-env/technical/1_instance-env.md",
-                "repo_directory": "apps/docs/content/domains/5_project/20_instance-env",
-                "repo_public": "apps/docs/content/domains/5_project/20_instance-env/instance-env.md",
-                "repo_technical": "apps/docs/content/domains/5_project/20_instance-env/technical/1_instance-env.md"
+                "directory": "domains/5_app/20_instance-env",
+                "public": "domains/5_app/20_instance-env/instance-env.md",
+                "technical": "domains/5_app/20_instance-env/technical/1_instance-env.md",
+                "repo_directory": "apps/docs/content/domains/5_app/20_instance-env",
+                "repo_public": "apps/docs/content/domains/5_app/20_instance-env/instance-env.md",
+                "repo_technical": "apps/docs/content/domains/5_app/20_instance-env/technical/1_instance-env.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3728,8 +4045,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppEnvCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceEnvControllerTest.php",
-                "apps/gateway/tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+                "apps/gateway/tests/Feature/InstanceEnvControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Apps/InstanceEnvApplierTest.php"
             ],
             "verification_hints": [
                 {
@@ -3740,18 +4057,18 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppEnvCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/AppInstanceEnvControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/InstanceEnvControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/AppInstanceEnvControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceEnvControllerTest.php"
+                    "runner_test_path": "tests/Feature/InstanceEnvControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstanceEnvControllerTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php",
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Apps/InstanceEnvApplierTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+                    "runner_test_path": "tests/Unit/Services/Apps/InstanceEnvApplierTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Apps/InstanceEnvApplierTest.php"
                 }
             ],
             "p4_mapping": {
@@ -3768,7 +4085,7 @@
             "family": "instance",
             "arguments": [],
             "options": [
-                "project",
+                "app",
                 "json"
             ],
             "renderers": {
@@ -3778,43 +4095,43 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/19_instance-list",
-                "public": "domains/5_project/19_instance-list/instance-list.md",
-                "technical": "domains/5_project/19_instance-list/technical/1_instance-list.md",
-                "repo_directory": "apps/docs/content/domains/5_project/19_instance-list",
-                "repo_public": "apps/docs/content/domains/5_project/19_instance-list/instance-list.md",
-                "repo_technical": "apps/docs/content/domains/5_project/19_instance-list/technical/1_instance-list.md"
+                "directory": "domains/5_app/19_instance-list",
+                "public": "domains/5_app/19_instance-list/instance-list.md",
+                "technical": "domains/5_app/19_instance-list/technical/1_instance-list.md",
+                "repo_directory": "apps/docs/content/domains/5_app/19_instance-list",
+                "repo_public": "apps/docs/content/domains/5_app/19_instance-list/instance-list.md",
+                "repo_technical": "apps/docs/content/domains/5_app/19_instance-list/technical/1_instance-list.md"
             },
             "public_options_documented": {
                 "json": true,
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppInstanceControllerTest.php"
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
+                "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/AppInstanceControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceControllerTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/InstanceControllerTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppInstanceControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppInstanceControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppInstanceControllerTest.php"
+                    "runner_test_path": "tests/Feature/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstanceControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -3827,8 +4144,8 @@
                     "uri": "/api/instances"
                 },
                 "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AppInstanceController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AppInstanceController.php",
+                    "class": "App\\Http\\Controllers\\Api\\InstanceController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/InstanceController.php",
                     "action": "all"
                 },
                 "authorization_permission": [
@@ -3862,12 +4179,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/15_instance-mount",
-                "public": "domains/5_project/15_instance-mount/instance-mount.md",
-                "technical": "domains/5_project/15_instance-mount/technical/1_instance-mount.md",
-                "repo_directory": "apps/docs/content/domains/5_project/15_instance-mount",
-                "repo_public": "apps/docs/content/domains/5_project/15_instance-mount/instance-mount.md",
-                "repo_technical": "apps/docs/content/domains/5_project/15_instance-mount/technical/1_instance-mount.md"
+                "directory": "domains/5_app/15_instance-mount",
+                "public": "domains/5_app/15_instance-mount/instance-mount.md",
+                "technical": "domains/5_app/15_instance-mount/technical/1_instance-mount.md",
+                "repo_directory": "apps/docs/content/domains/5_app/15_instance-mount",
+                "repo_public": "apps/docs/content/domains/5_app/15_instance-mount/instance-mount.md",
+                "repo_technical": "apps/docs/content/domains/5_app/15_instance-mount/technical/1_instance-mount.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -3938,7 +4255,7 @@
             "slug": "instance-register",
             "family": "instance",
             "arguments": [
-                "project"
+                "app"
             ],
             "options": [
                 "node",
@@ -3956,12 +4273,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/2_instance-register",
-                "public": "domains/5_project/2_instance-register/instance-register.md",
-                "technical": "domains/5_project/2_instance-register/technical/1_instance-register.md",
-                "repo_directory": "apps/docs/content/domains/5_project/2_instance-register",
-                "repo_public": "apps/docs/content/domains/5_project/2_instance-register/instance-register.md",
-                "repo_technical": "apps/docs/content/domains/5_project/2_instance-register/technical/1_instance-register.md"
+                "directory": "domains/5_app/2_instance-register",
+                "public": "domains/5_app/2_instance-register/instance-register.md",
+                "technical": "domains/5_app/2_instance-register/technical/1_instance-register.md",
+                "repo_directory": "apps/docs/content/domains/5_app/2_instance-register",
+                "repo_public": "apps/docs/content/domains/5_app/2_instance-register/instance-register.md",
+                "repo_technical": "apps/docs/content/domains/5_app/2_instance-register/technical/1_instance-register.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4036,35 +4353,35 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/28_instance-remove",
-                "public": "domains/5_project/28_instance-remove/instance-remove.md",
-                "technical": "domains/5_project/28_instance-remove/technical/1_instance-remove.md",
-                "repo_directory": "apps/docs/content/domains/5_project/28_instance-remove",
-                "repo_public": "apps/docs/content/domains/5_project/28_instance-remove/instance-remove.md",
-                "repo_technical": "apps/docs/content/domains/5_project/28_instance-remove/technical/1_instance-remove.md"
+                "directory": "domains/5_app/28_instance-remove",
+                "public": "domains/5_app/28_instance-remove/instance-remove.md",
+                "technical": "domains/5_app/28_instance-remove/technical/1_instance-remove.md",
+                "repo_directory": "apps/docs/content/domains/5_app/28_instance-remove",
+                "repo_public": "apps/docs/content/domains/5_app/28_instance-remove/instance-remove.md",
+                "repo_technical": "apps/docs/content/domains/5_app/28_instance-remove/technical/1_instance-remove.md"
             },
             "public_options_documented": {
                 "json": true,
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceControllerTest.php"
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
+                "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/AppInstanceControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceControllerTest.php"
+                    "runner_test_path": "tests/Feature/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstanceControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -4093,12 +4410,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/5_instance-root",
-                "public": "domains/5_project/5_instance-root/instance-root.md",
-                "technical": "domains/5_project/5_instance-root/technical/1_instance-root.md",
-                "repo_directory": "apps/docs/content/domains/5_project/5_instance-root",
-                "repo_public": "apps/docs/content/domains/5_project/5_instance-root/instance-root.md",
-                "repo_technical": "apps/docs/content/domains/5_project/5_instance-root/technical/1_instance-root.md"
+                "directory": "domains/5_app/5_instance-root",
+                "public": "domains/5_app/5_instance-root/instance-root.md",
+                "technical": "domains/5_app/5_instance-root/technical/1_instance-root.md",
+                "repo_directory": "apps/docs/content/domains/5_app/5_instance-root",
+                "repo_public": "apps/docs/content/domains/5_app/5_instance-root/instance-root.md",
+                "repo_technical": "apps/docs/content/domains/5_app/5_instance-root/technical/1_instance-root.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4150,12 +4467,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/22_instance-setup",
-                "public": "domains/5_project/22_instance-setup/instance-setup.md",
-                "technical": "domains/5_project/22_instance-setup/technical/1_instance-setup.md",
-                "repo_directory": "apps/docs/content/domains/5_project/22_instance-setup",
-                "repo_public": "apps/docs/content/domains/5_project/22_instance-setup/instance-setup.md",
-                "repo_technical": "apps/docs/content/domains/5_project/22_instance-setup/technical/1_instance-setup.md"
+                "directory": "domains/5_app/22_instance-setup",
+                "public": "domains/5_app/22_instance-setup/instance-setup.md",
+                "technical": "domains/5_app/22_instance-setup/technical/1_instance-setup.md",
+                "repo_directory": "apps/docs/content/domains/5_app/22_instance-setup",
+                "repo_public": "apps/docs/content/domains/5_app/22_instance-setup/instance-setup.md",
+                "repo_technical": "apps/docs/content/domains/5_app/22_instance-setup/technical/1_instance-setup.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4222,35 +4539,35 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/26_instance-show",
-                "public": "domains/5_project/26_instance-show/instance-show.md",
-                "technical": "domains/5_project/26_instance-show/technical/1_instance-show.md",
-                "repo_directory": "apps/docs/content/domains/5_project/26_instance-show",
-                "repo_public": "apps/docs/content/domains/5_project/26_instance-show/instance-show.md",
-                "repo_technical": "apps/docs/content/domains/5_project/26_instance-show/technical/1_instance-show.md"
+                "directory": "domains/5_app/26_instance-show",
+                "public": "domains/5_app/26_instance-show/instance-show.md",
+                "technical": "domains/5_app/26_instance-show/technical/1_instance-show.md",
+                "repo_directory": "apps/docs/content/domains/5_app/26_instance-show",
+                "repo_public": "apps/docs/content/domains/5_app/26_instance-show/instance-show.md",
+                "repo_technical": "apps/docs/content/domains/5_app/26_instance-show/technical/1_instance-show.md"
             },
             "public_options_documented": {
                 "json": true,
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceControllerTest.php"
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
+                "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/AppInstanceControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceControllerTest.php"
+                    "runner_test_path": "tests/Feature/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/InstanceControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -4278,12 +4595,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/14_instance-websocket-credentials",
-                "public": "domains/5_project/14_instance-websocket-credentials/instance-websocket-credentials.md",
-                "technical": "domains/5_project/14_instance-websocket-credentials/technical/1_instance-websocket-credentials.md",
-                "repo_directory": "apps/docs/content/domains/5_project/14_instance-websocket-credentials",
-                "repo_public": "apps/docs/content/domains/5_project/14_instance-websocket-credentials/instance-websocket-credentials.md",
-                "repo_technical": "apps/docs/content/domains/5_project/14_instance-websocket-credentials/technical/1_instance-websocket-credentials.md"
+                "directory": "domains/5_app/14_instance-websocket-credentials",
+                "public": "domains/5_app/14_instance-websocket-credentials/instance-websocket-credentials.md",
+                "technical": "domains/5_app/14_instance-websocket-credentials/technical/1_instance-websocket-credentials.md",
+                "repo_directory": "apps/docs/content/domains/5_app/14_instance-websocket-credentials",
+                "repo_public": "apps/docs/content/domains/5_app/14_instance-websocket-credentials/instance-websocket-credentials.md",
+                "repo_technical": "apps/docs/content/domains/5_app/14_instance-websocket-credentials/technical/1_instance-websocket-credentials.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4326,12 +4643,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/13_instance-websocket-disable",
-                "public": "domains/5_project/13_instance-websocket-disable/instance-websocket-disable.md",
-                "technical": "domains/5_project/13_instance-websocket-disable/technical/1_instance-websocket-disable.md",
-                "repo_directory": "apps/docs/content/domains/5_project/13_instance-websocket-disable",
-                "repo_public": "apps/docs/content/domains/5_project/13_instance-websocket-disable/instance-websocket-disable.md",
-                "repo_technical": "apps/docs/content/domains/5_project/13_instance-websocket-disable/technical/1_instance-websocket-disable.md"
+                "directory": "domains/5_app/13_instance-websocket-disable",
+                "public": "domains/5_app/13_instance-websocket-disable/instance-websocket-disable.md",
+                "technical": "domains/5_app/13_instance-websocket-disable/technical/1_instance-websocket-disable.md",
+                "repo_directory": "apps/docs/content/domains/5_app/13_instance-websocket-disable",
+                "repo_public": "apps/docs/content/domains/5_app/13_instance-websocket-disable/instance-websocket-disable.md",
+                "repo_technical": "apps/docs/content/domains/5_app/13_instance-websocket-disable/technical/1_instance-websocket-disable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4383,12 +4700,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/12_instance-websocket-enable",
-                "public": "domains/5_project/12_instance-websocket-enable/instance-websocket-enable.md",
-                "technical": "domains/5_project/12_instance-websocket-enable/technical/1_instance-websocket-enable.md",
-                "repo_directory": "apps/docs/content/domains/5_project/12_instance-websocket-enable",
-                "repo_public": "apps/docs/content/domains/5_project/12_instance-websocket-enable/instance-websocket-enable.md",
-                "repo_technical": "apps/docs/content/domains/5_project/12_instance-websocket-enable/technical/1_instance-websocket-enable.md"
+                "directory": "domains/5_app/12_instance-websocket-enable",
+                "public": "domains/5_app/12_instance-websocket-enable/instance-websocket-enable.md",
+                "technical": "domains/5_app/12_instance-websocket-enable/technical/1_instance-websocket-enable.md",
+                "repo_directory": "apps/docs/content/domains/5_app/12_instance-websocket-enable",
+                "repo_public": "apps/docs/content/domains/5_app/12_instance-websocket-enable/instance-websocket-enable.md",
+                "repo_technical": "apps/docs/content/domains/5_app/12_instance-websocket-enable/technical/1_instance-websocket-enable.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -4440,12 +4757,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/5_project/11_instance-worker",
-                "public": "domains/5_project/11_instance-worker/instance-worker.md",
-                "technical": "domains/5_project/11_instance-worker/technical/1_instance-worker.md",
-                "repo_directory": "apps/docs/content/domains/5_project/11_instance-worker",
-                "repo_public": "apps/docs/content/domains/5_project/11_instance-worker/instance-worker.md",
-                "repo_technical": "apps/docs/content/domains/5_project/11_instance-worker/technical/1_instance-worker.md"
+                "directory": "domains/5_app/11_instance-worker",
+                "public": "domains/5_app/11_instance-worker/instance-worker.md",
+                "technical": "domains/5_app/11_instance-worker/technical/1_instance-worker.md",
+                "repo_directory": "apps/docs/content/domains/5_app/11_instance-worker",
+                "repo_public": "apps/docs/content/domains/5_app/11_instance-worker/instance-worker.md",
+                "repo_technical": "apps/docs/content/domains/5_app/11_instance-worker/technical/1_instance-worker.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -6626,323 +6943,6 @@
                 "response_dto": null
             }
         },
-        "project:list": {
-            "name": "project:list",
-            "slug": "project-list",
-            "family": "project",
-            "arguments": [],
-            "options": [
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/3_project-list",
-                "public": "domains/5_project/3_project-list/project-list.md",
-                "technical": "domains/5_project/3_project-list/technical/1_project-list.md",
-                "repo_directory": "apps/docs/content/domains/5_project/3_project-list",
-                "repo_public": "apps/docs/content/domains/5_project/3_project-list/project-list.md",
-                "repo_technical": "apps/docs/content/domains/5_project/3_project-list/technical/1_project-list.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppListCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppListCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppListCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppListCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppListControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppListControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Projects\\ListProjectsRequest",
-                    "path": "packages/sdk/src/Requests/Projects/ListProjectsRequest.php"
-                },
-                "gateway_route": {
-                    "method": "GET",
-                    "uri": "/api/projects"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AppListController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AppListController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [
-                    "project:read"
-                ],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Projects\\ProjectListResponse",
-                    "path": "packages/sdk/src/Responses/Projects/ProjectListResponse.php"
-                }
-            }
-        },
-        "project:new": {
-            "name": "project:new",
-            "slug": "project-new",
-            "family": "project",
-            "arguments": [
-                "name"
-            ],
-            "options": [
-                "node",
-                "repo",
-                "template-repo",
-                "new-repo",
-                "root",
-                "php-version",
-                "domain",
-                "runtime-proxy-transport",
-                "json",
-                "stream-json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": true
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/1_project-new",
-                "public": "domains/5_project/1_project-new/project-new.md",
-                "technical": "domains/5_project/1_project-new/technical/1_project-new.md",
-                "repo_directory": "apps/docs/content/domains/5_project/1_project-new",
-                "repo_public": "apps/docs/content/domains/5_project/1_project-new/project-new.md",
-                "repo_technical": "apps/docs/content/domains/5_project/1_project-new/technical/1_project-new.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": true
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
-                "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
-                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
-                "packages/core/tests/SourceControl/GitCloneReferenceTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-                },
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppNewStreamCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppNewStreamCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/InternalAppSourceCreateCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalAppSourceCreateCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppStoreControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreControllerTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreStreamControllerTest.php"
-                },
-                {
-                    "repo_test_path": "packages/core/tests/SourceControl/GitCloneReferenceTest.php",
-                    "working_directory": "packages/core",
-                    "runner": "vendor/bin/pest",
-                    "runner_test_path": "tests/SourceControl/GitCloneReferenceTest.php",
-                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/SourceControl/GitCloneReferenceTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Projects\\CreateProjectRequest",
-                    "path": "packages/sdk/src/Requests/Projects/CreateProjectRequest.php"
-                },
-                "gateway_route": {
-                    "method": "POST",
-                    "uri": "/api/projects"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AppStoreController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AppStoreController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [
-                    "project:new"
-                ],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Projects\\ProjectCreateResponse",
-                    "path": "packages/sdk/src/Responses/Projects/ProjectCreateResponse.php"
-                }
-            }
-        },
-        "project:remove": {
-            "name": "project:remove",
-            "slug": "project-remove",
-            "family": "project",
-            "arguments": [
-                "project"
-            ],
-            "options": [
-                "force",
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/6_project-remove",
-                "public": "domains/5_project/6_project-remove/project-remove.md",
-                "technical": "domains/5_project/6_project-remove/technical/1_project-remove.md",
-                "repo_directory": "apps/docs/content/domains/5_project/6_project-remove",
-                "repo_public": "apps/docs/content/domains/5_project/6_project-remove/project-remove.md",
-                "repo_technical": "apps/docs/content/domains/5_project/6_project-remove/technical/1_project-remove.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppWriteCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppRemoveControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppRemoveControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
-            }
-        },
-        "project:show": {
-            "name": "project:show",
-            "slug": "project-show",
-            "family": "project",
-            "arguments": [
-                "project"
-            ],
-            "options": [
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "extension": null,
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_project/4_project-show",
-                "public": "domains/5_project/4_project-show/project-show.md",
-                "technical": "domains/5_project/4_project-show/technical/1_project-show.md",
-                "repo_directory": "apps/docs/content/domains/5_project/4_project-show",
-                "repo_public": "apps/docs/content/domains/5_project/4_project-show/project-show.md",
-                "repo_technical": "apps/docs/content/domains/5_project/4_project-show/technical/1_project-show.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppShowCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppShowCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppShowControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppShowControllerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Projects\\ShowProjectRequest",
-                    "path": "packages/sdk/src/Requests/Projects/ShowProjectRequest.php"
-                },
-                "gateway_route": {
-                    "method": "GET",
-                    "uri": "/api/projects/{project}"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\AppShowController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/AppShowController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [
-                    "project:read"
-                ],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Projects\\ProjectShowResponse",
-                    "path": "packages/sdk/src/Responses/Projects/ProjectShowResponse.php"
-                }
-            }
-        },
         "proxy:add": {
             "name": "proxy:add",
             "slug": "proxy-add",
@@ -7442,7 +7442,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                 "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
@@ -7454,11 +7454,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php",
@@ -7519,7 +7519,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7530,11 +7530,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleListCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7592,7 +7592,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7603,11 +7603,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7666,8 +7666,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                 "apps/gateway/tests/Feature/Models/ScheduleTest.php"
             ],
             "verification_hints": [
@@ -7679,18 +7679,18 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
-                },
-                {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleDestroyControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Models/ScheduleTest.php",
@@ -7742,7 +7742,7 @@
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                 "apps/cli/tests/Feature/InternalScheduleRunCommandTest.php",
                 "apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7767,11 +7767,11 @@
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7814,7 +7814,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7825,11 +7825,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14339,7 +14339,7 @@
                 "validation_failed"
             ],
             "products": {
-                "project": [
+                "app": [
                     "not_found"
                 ],
                 "instance": [
@@ -14487,10 +14487,24 @@
             }
         },
         "entity_schemas": {
+            "app": {
+                "required": {
+                    "name": "string",
+                    "repository": "string|null",
+                    "runtime": "string",
+                    "runtime_config": "object|null",
+                    "php_version": "string",
+                    "dependency_audit_status": "string",
+                    "dependency_warning_count": "int",
+                    "dependency_danger_count": "int",
+                    "last_dependency_audit_at": "string|null"
+                },
+                "optional": []
+            },
             "instance": {
                 "required": {
                     "name": "string",
-                    "project": "string"
+                    "app": "string"
                 },
                 "optional": {
                     "adopted": "bool",
@@ -14535,7 +14549,7 @@
                     "key": "string",
                     "label": "string|null",
                     "last_event": "object|null",
-                    "project": "string|null",
+                    "app": "string|null",
                     "restart_policy": "string",
                     "runtime": "string",
                     "runtime_unit": "string",
@@ -14543,24 +14557,10 @@
                     "workspace": "string|null"
                 }
             },
-            "project": {
-                "required": {
-                    "name": "string",
-                    "repository": "string|null",
-                    "runtime": "string",
-                    "runtime_config": "object|null",
-                    "php_version": "string",
-                    "dependency_audit_status": "string",
-                    "dependency_warning_count": "int",
-                    "dependency_danger_count": "int",
-                    "last_dependency_audit_at": "string|null"
-                },
-                "optional": []
-            },
             "workspace": {
                 "required": {
                     "name": "string",
-                    "project": "string",
+                    "app": "string",
                     "instance": "string",
                     "node": "string|object",
                     "url": "string"
@@ -14613,7 +14613,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14628,7 +14628,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14643,7 +14643,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14658,7 +14658,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14673,7 +14673,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14688,7 +14688,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14703,7 +14703,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14718,7 +14718,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14733,7 +14733,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14748,7 +14748,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14763,7 +14763,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14778,7 +14778,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14793,7 +14793,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14808,7 +14808,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14823,7 +14823,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14838,7 +14838,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14853,7 +14853,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14868,7 +14868,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14883,7 +14883,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14898,7 +14898,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14913,7 +14913,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14928,7 +14928,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14943,7 +14943,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14958,7 +14958,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14973,7 +14973,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -14988,7 +14988,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15003,7 +15003,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15018,7 +15018,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15033,7 +15033,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15048,7 +15048,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15063,7 +15063,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15078,7 +15078,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15093,7 +15093,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15108,7 +15108,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15123,7 +15123,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15138,7 +15138,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15153,7 +15153,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15168,7 +15168,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15183,7 +15183,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15198,7 +15198,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15213,7 +15213,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15228,7 +15228,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15243,7 +15243,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15258,7 +15258,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15273,7 +15273,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15288,7 +15288,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15303,7 +15303,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15318,7 +15318,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15333,13 +15333,13 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
                     ]
                 },
-                "--project": {
+                "--app": {
                     "allowed_contexts": [
                         "foreign_command_reference",
                         "doctor_command_reference",
@@ -15348,7 +15348,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15363,7 +15363,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15378,7 +15378,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15393,7 +15393,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15408,7 +15408,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15423,7 +15423,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15438,7 +15438,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15453,7 +15453,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15468,7 +15468,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15483,7 +15483,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15498,7 +15498,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15513,7 +15513,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15528,7 +15528,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15543,7 +15543,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15558,7 +15558,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15573,7 +15573,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15588,7 +15588,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15603,7 +15603,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15618,7 +15618,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15633,7 +15633,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15648,7 +15648,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15663,7 +15663,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15678,7 +15678,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15693,7 +15693,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15708,7 +15708,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15723,7 +15723,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15738,7 +15738,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15753,7 +15753,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15768,7 +15768,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15783,7 +15783,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15798,7 +15798,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15813,7 +15813,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15828,7 +15828,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15843,7 +15843,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15858,7 +15858,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15873,7 +15873,7 @@
                     ],
                     "allowed_command_families": [
                         "node",
-                        "project",
+                        "app",
                         "instance",
                         "workspace",
                         "process"
@@ -15888,7 +15888,7 @@
             },
             "instance": {
                 "singular": "instance",
-                "doctor_doc": "domains/5_project/instance-doctor.md"
+                "doctor_doc": "domains/5_app/instance-doctor.md"
             },
             "workspace": {
                 "singular": "workspace",

@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `project`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, `tool`, `custom`, or `redirect`. |
+| `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, `tool`, `custom`, or `redirect`. |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -36,15 +36,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Applies `--node` as a serving-node filter.
 - Does not synchronously SSH to nodes, probe proxy reality, or verify TLS
   material.
-- Project-owned primary routes always report a concrete instance target.
-  `owner.name` remains the project slug, `target.type` is `instance`,
+- App-owned primary routes always report a concrete instance target.
+  `owner.name` remains the app slug, `target.type` is `instance`,
   `target.value` is the dotted instance selector, and `node` is that
-  instance's serving node. A project target is invalid.
+  instance's serving node. An app target is invalid.
 
 ### Filter Rules
 
 - `all` includes every visible route.
-- `project`, `instance`, `workspace`, `gateway`, `analytics`, `websocket`, and `tool` filter by owner
+- `app`, `instance`, `workspace`, `gateway`, `analytics`, `websocket`, and `tool` filter by owner
   type.
 - `websocket`, `s3`, and `analytics` are service filters, not owner-enum mirrors:
   `websocket` selects the router-owned `websocket.orbit` service route; `s3`

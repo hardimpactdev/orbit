@@ -11,7 +11,7 @@ describe('workspace step mutation commands', function (): void {
             'result' => ['action' => 'added'],
             'step' => [
                 'id' => 10,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'phase' => 'setup',
                 'order' => 1,
@@ -51,7 +51,7 @@ describe('workspace step mutation commands', function (): void {
             'result' => ['action' => 'added'],
             'step' => [
                 'id' => 11,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'phase' => 'teardown',
                 'order' => 1,
@@ -88,7 +88,7 @@ describe('workspace step mutation commands', function (): void {
             'result' => ['action' => 'added'],
             'step' => [
                 'id' => 10,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'phase' => 'setup',
                 'order' => 2,
@@ -125,7 +125,7 @@ describe('workspace step mutation commands', function (): void {
             'result' => ['action' => 'added'],
             'step' => [
                 'id' => 11,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'phase' => 'teardown',
                 'order' => 1,
@@ -158,8 +158,8 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace step add gateway failures as prose in human mode', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'workspace.step_not_found',
-            "Referenced insertion step '99' not found for project 'docs' in phase 'setup'.",
-            ['id' => 99, 'project' => 'docs', 'phase' => 'setup'],
+            "Referenced insertion step '99' not found for app 'docs' in phase 'setup'.",
+            ['id' => 99, 'app' => 'docs', 'phase' => 'setup'],
         ), 404);
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
@@ -199,8 +199,8 @@ describe('workspace step mutation commands', function (): void {
     it('renders step-not-found gateway failures when another instance step is used as an anchor', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'workspace.step_not_found',
-            "Referenced insertion step '7' not found for project 'hauser' in phase 'setup'.",
-            ['id' => 7, 'project' => 'hauser', 'phase' => 'setup'],
+            "Referenced insertion step '7' not found for app 'hauser' in phase 'setup'.",
+            ['id' => 7, 'app' => 'hauser', 'phase' => 'setup'],
         ), 404);
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
@@ -337,7 +337,7 @@ describe('workspace step mutation commands', function (): void {
     it('deletes workspace setup steps with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'project' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -369,7 +369,7 @@ describe('workspace step mutation commands', function (): void {
     it('deletes workspace teardown steps with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'project' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -401,7 +401,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-setup-step:remove human output as prose with the renumber hint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'project' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 2,
             'new_step_count' => 2,
@@ -428,7 +428,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-setup-step:remove empty-list hint when the last step is removed', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'project' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -453,7 +453,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-teardown-step:remove human output with the teardown label', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'project' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 1,
             'new_step_count' => 1,
@@ -478,8 +478,8 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace step removal gateway failures as prose in human mode', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'workspace.step_not_found',
-            "Setup step '99' not found for project 'docs' in phase 'setup'.",
-            ['step_id' => 99, 'project' => 'docs', 'phase' => 'setup'],
+            "Setup step '99' not found for app 'docs' in phase 'setup'.",
+            ['step_id' => 99, 'app' => 'docs', 'phase' => 'setup'],
         ), 404);
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:remove', [
@@ -499,7 +499,7 @@ describe('workspace step mutation commands', function (): void {
     it('prompts for setup step ids before confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'project' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -525,7 +525,7 @@ describe('workspace step mutation commands', function (): void {
     it('prompts for teardown step ids before confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'project' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,

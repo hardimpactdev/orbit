@@ -135,7 +135,7 @@ function toolListSeedGatewayIntentWithApp(E2ETopologyHarness $topology): void
     $php = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        \App\Models\Project::query()->updateOrCreate(
+        \App\Models\App::query()->updateOrCreate(
             ['name' => 'docs'],
             [
                 'node_id' => $node->id,

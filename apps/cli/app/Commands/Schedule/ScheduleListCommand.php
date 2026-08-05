@@ -16,7 +16,7 @@ final class ScheduleListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'schedule:list
-        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
+        {--instance= : Filter by instance (app.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--json}';
 

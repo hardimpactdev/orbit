@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolScriptDispatcher;
@@ -496,7 +496,7 @@ describe('registry intent', function (): void {
 
         $id = DB::table('workspaces')->insertGetId([
             'app_id' => $app->id,
-            'app_instance_id' => $app->instances()->value('id'),
+            'instance_id' => $app->instances()->value('id'),
             'name' => 'feature',
             'path' => '',
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected->value,
@@ -539,8 +539,8 @@ describe('registry intent', function (): void {
     it('requires an app instance identity', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app);
-        $workspace->setAttribute('app_instance_id', null);
-        $workspace->setRelation('appInstance', null);
+        $workspace->setAttribute('instance_id', null);
+        $workspace->setRelation('instance', null);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -556,7 +556,7 @@ describe('app instance eligibility', function (): void {
         $app = workspaceableApp();
         $otherApp = workspaceableApp();
         $workspace = workspaceFor($app, [
-            'app_instance_id' => $otherApp->instances()->value('id'),
+            'instance_id' => $otherApp->instances()->value('id'),
         ]);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
@@ -569,7 +569,7 @@ describe('app instance eligibility', function (): void {
 
     it('requires the selected app instance to resolve to an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = Project::factory()->for($node, 'node')->create();
+        $app = App::factory()->for($node, 'node')->create();
         $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
@@ -608,16 +608,16 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function workspaceableApp(array $overrides = [], string $role = 'app-dev'): Project
+function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
 {
     $node = createTestAppHostNode(role: $role);
 
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
 
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             document_root: $app->document_root,
@@ -628,7 +628,7 @@ function workspaceableApp(array $overrides = [], string $role = 'app-dev'): Proj
     return $app;
 }
 
-function workspaceFor(Project $app, array $overrides = []): Workspace
+function workspaceFor(App $app, array $overrides = []): Workspace
 {
     $name = (string) ($overrides['name'] ?? 'feature');
 

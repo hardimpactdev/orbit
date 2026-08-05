@@ -278,9 +278,9 @@ final class SshCommandBuilder
     private function knownHostsDirectory(): string
     {
         $uid = function_exists('posix_geteuid') ? (string) posix_geteuid() : (string) getmyuid();
-        $project = substr(sha1(repo_path()), 0, 12);
+        $app = substr(sha1(repo_path()), 0, 12);
 
-        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)."/orbit-ssh-known-hosts-{$uid}-{$project}";
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)."/orbit-ssh-known-hosts-{$uid}-{$app}";
     }
 
     private function knownHostsContent(Node $node): string

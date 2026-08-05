@@ -3721,31 +3721,31 @@ message = "Literal argument `'instance:env'` should be passed as a named argumen
 count = 11
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:add'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:list'` should be passed as a named argument for clarity."
 count = 3
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:remove'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppInstanceCommandTest.php"
+file = "tests/Feature/Commands/App/InstanceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'instance:show'` should be passed as a named argument for clarity."
 count = 2

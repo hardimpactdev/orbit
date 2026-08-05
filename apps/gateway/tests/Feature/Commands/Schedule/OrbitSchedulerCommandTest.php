@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
@@ -76,15 +76,15 @@ it('dispatches due app schedules with gateway authority on the instance current 
     $logicalDefaultNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $originalInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
     $currentInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $logicalDefaultNode->id,
         'path' => '/srv/docs',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $originalInstanceNode->id,
             node: $originalInstanceNode->name,
             path: '/srv/docs-production',
@@ -92,7 +92,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ),
     ]);
     Schedule::factory()
-        ->forAppInstance($instance)
+        ->forInstance($instance)
         ->create([
             'name' => 'laravel-scheduler',
             'schedule_key' => 'app:docs.production:laravel-scheduler',
@@ -101,7 +101,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
             'timeout_seconds' => 7200,
         ]);
     $instance->update([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $currentInstanceNode->id,
             node: $currentInstanceNode->name,
             path: '/srv/docs-production',
@@ -160,7 +160,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
 it('dispatches remote schedules through the internal schedule command without transitional fallback opt in', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
     Schedule::factory()
         ->forApp($app)
         ->create([
@@ -243,7 +243,7 @@ it('dispatches multiple remote schedules through the internal schedule command',
     $thirdNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
 
     foreach ([[$firstNode, 'one'], [$secondNode, 'two'], [$thirdNode, 'three']] as [$node, $name]) {
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => $name,
             'node_id' => $node->id,
             'path' => "/srv/{$name}",
@@ -321,7 +321,7 @@ it('skips schedules that are not due', function (): void {
 it('records remote dispatch failures as failed gateway history', function (): void {
     createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     Schedule::factory()
         ->forApp($app)
         ->create([

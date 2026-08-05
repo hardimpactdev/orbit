@@ -39,12 +39,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Removes a route when the owner is `custom`.
 - With destructive consent, also removes a non-custom route only when the
   recorded owner reference is proven missing in gateway configuration (orphan
-  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `project`,
+  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `app`,
   `instance`, `analytics`, and `websocket` owners require the corresponding
-  living project, instance, or binding row; `workspace` owners require a living
+  living app, instance, or binding row; `workspace` owners require a living
   workspace row. Missing proof means the relation does not resolve (including a
   null foreign key after cascade null).
-- `--force` never becomes a general ownership bypass. A living project,
+- `--force` never becomes a general ownership bypass. A living app,
   instance, WebSocket, workspace, gateway, S3, or tool owner still denies
   removal with `proxy.owned_route_denied`.
 - Cleans backend route artifacts and Orbit-managed route-scoped TLS material
@@ -70,9 +70,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`proxy-remove` must not remove project, instance, WebSocket, workspace, gateway,
+`proxy-remove` must not remove app, instance, WebSocket, workspace, gateway,
 S3, or tool-owned routes while those owners still exist. It must not delete
-project or instance files, WebSocket bindings, workspaces, tools, S3 route
+app or instance files, WebSocket bindings, workspaces, tools, S3 route
 publication records, DNS records, firewall rules, or service processes.
 Living-owner route removal belongs to the owner domain. Orphan-owner rows that
 doctor reports as `proxy.owner_invalid` are the narrow repair exception for
@@ -101,7 +101,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
-| Owned route denied | The selected route is owned by a project, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
+| Owned route denied | The selected route is owned by an app, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Cleanup failed | Backend route or TLS cleanup failed before registry deletion. | `error.code=proxy.cleanup_failed`; registry row remains; `error.meta.backend_removed=false`, `error.meta.tls_removed=false`, `error.meta.next_command` for doctor repair. |
 

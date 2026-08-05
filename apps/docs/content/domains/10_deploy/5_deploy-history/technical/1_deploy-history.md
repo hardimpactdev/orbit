@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `limit` | `--limit` | `Optional.` | `Never.` | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -62,8 +62,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Activity Logging
 
@@ -72,13 +72,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:GET /deploy/history` |
 | Effect | `read` |
 | Subject | `none` (list). |
-| Properties | `project`, `instance`, `count`, `limit`. |
+| Properties | `app`, `instance`, `count`, `limit`. |
 | Description | derived |
 
 ## Doctor Relationship
 
 `deploy:history` reads deployment history that the instance owns. It does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) owns production
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) owns production
 app health checks that may incorporate latest deployment status through
 `instance.latest_deployment_failed` and `instance.deployment_run_stuck`.
 
@@ -86,7 +86,7 @@ app health checks that may incorporate latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:history` GET forwarding, `--limit` query forwarding, JSON run envelope and metadata, human newest-first table output, empty-history output, missing-instance validation before gateway contact, gateway limit validation passthrough, and `authorization_failed`, `deploy.production_project_required`, and WireGuard failure passthrough. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:history` GET forwarding, `--limit` query forwarding, JSON run envelope and metadata, human newest-first table output, empty-history output, missing-instance validation before gateway contact, gateway limit validation passthrough, and `authorization_failed`, `deploy.production_app_required`, and WireGuard failure passthrough. |
 
 There is no gateway-side coverage for this mapped surface; linked CLI tests cover only the mapped assertions above. Remaining behavior stays a coverage gap until focused tests land.
 

@@ -65,7 +65,7 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
         $data = $this->successData($response);
         $removed = is_array($data['step'] ?? null) ? $data['step'] : [];
         $stepId = is_int($removed['id'] ?? null) ? $removed['id'] : $step;
-        $app = is_string($removed['project'] ?? null) && $removed['project'] !== '' ? $removed['project'] : '';
+        $app = is_string($removed['app'] ?? null) && $removed['app'] !== '' ? $removed['app'] : '';
         $instance = is_string($removed['instance'] ?? null) && $removed['instance'] !== ''
             ? $removed['instance']
             : '';

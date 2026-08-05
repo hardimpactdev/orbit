@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -80,12 +80,12 @@ function deleteAppRuntimeMountJson(string $uri, array $data): TestResponse
     );
 }
 
-function create_app_runtime_mount_instance(Project $app, Node $node, string $name = 'development'): void
+function create_app_runtime_mount_instance(App $app, Node $node, string $name = 'development'): void
 {
     $app->instances()->create([
         'name' => $name,
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -100,7 +100,7 @@ describe('AppRuntimeMountController', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
-        Project::factory()->for($appNode, 'node')->create([
+        App::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
             'runtime' => AppRuntimeKind::Php,
@@ -144,7 +144,7 @@ describe('AppRuntimeMountController', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['instance:read']);
-        Project::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
+        App::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
 
         $response = postAppRuntimeMountJson('/api/instances/nckrtl/mounts', [
             'source' => '/home/nckrtl/packages',
@@ -161,7 +161,7 @@ describe('AppRuntimeMountController', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode);
-        $app = Project::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
             'runtime' => AppRuntimeKind::Php,
@@ -175,7 +175,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
 
-        expect(DB::table('app_instance_runtime_mounts')->count())->toBe(0);
+        expect(DB::table('instance_runtime_mounts')->count())->toBe(0);
     })->with([
         'relative source' => [
             [
@@ -226,7 +226,7 @@ describe('AppRuntimeMountController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
 
-        $app = Project::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
@@ -234,8 +234,8 @@ describe('AppRuntimeMountController', function (): void {
         ]);
         $instance = $app->instances()->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $appNode->id,
                 node: 'NMBP',
                 path: '/Users/nckrtl/apps/hauser',
@@ -245,15 +245,15 @@ describe('AppRuntimeMountController', function (): void {
         ]);
 
         postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
-            'source' => '/Users/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/Users/nckrtl/apps',
+            'target' => '/apps',
             'read_only' => true,
         ])->assertOk();
 
         expect($instance->runtimeMounts()->count())
             ->toBe(1)
             ->and($instance->runtimeMounts()->first()?->source)
-            ->toBe('/Users/nckrtl/projects');
+            ->toBe('/Users/nckrtl/apps');
     });
 
     it('returns app instance target metadata and validates source against the instance node home', function (): void {
@@ -261,7 +261,7 @@ describe('AppRuntimeMountController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
 
-        $app = Project::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
@@ -269,8 +269,8 @@ describe('AppRuntimeMountController', function (): void {
         ]);
         $app->instances()->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $appNode->id,
                 node: 'NMBP',
                 path: '/Users/nckrtl/apps/hauser',
@@ -280,18 +280,18 @@ describe('AppRuntimeMountController', function (): void {
         ]);
 
         postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
-            'source' => '/Users/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/Users/nckrtl/apps',
+            'target' => '/apps',
         ])
             ->assertOk()
             ->assertJsonPath('success.data.target.type', 'instance')
-            ->assertJsonPath('success.data.target.project', 'hauser')
+            ->assertJsonPath('success.data.target.app', 'hauser')
             ->assertJsonPath('success.data.target.instance', 'nmbp')
-            ->assertJsonPath('success.data.mount.source', '/Users/nckrtl/projects');
+            ->assertJsonPath('success.data.mount.source', '/Users/nckrtl/apps');
 
         postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
@@ -309,14 +309,14 @@ describe('AppRuntimeMountController', function (): void {
         grantAppRuntimeMountAccess($caller, $domainAppNode, ['instance:read', 'instance:mount']);
         grantAppRuntimeMountAccess($caller, $instanceNode, ['instance:read', 'instance:mount']);
 
-        Project::factory()->for($domainAppNode, 'node')->create([
+        App::factory()->for($domainAppNode, 'node')->create([
             'name' => 'domain-app',
             'domain' => 'hauser.nmbp',
             'path' => '/home/nckrtl/apps/domain-app',
             'runtime' => AppRuntimeKind::Php,
         ]);
 
-        $hauser = Project::factory()->for($instanceNode, 'node')->create([
+        $hauser = App::factory()->for($instanceNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'runtime' => AppRuntimeKind::Php,
@@ -325,8 +325,8 @@ describe('AppRuntimeMountController', function (): void {
             ->instances()
             ->create([
                 'name' => 'nmbp',
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver' => InstanceDriver::Orbit,
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $instanceNode->id,
                     node: 'NMBP',
                     path: '/Users/nckrtl/apps/hauser',
@@ -336,8 +336,8 @@ describe('AppRuntimeMountController', function (): void {
             ]);
 
         postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
+            'source' => '/home/nckrtl/apps',
+            'target' => '/apps',
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
@@ -357,7 +357,7 @@ describe('AppRuntimeMountController', function (): void {
             ->{$nodeState['role']}()
             ->create(['name' => 'app-node', 'user' => 'orbit']);
         grantAppRuntimeMountAccess($caller, $appNode);
-        $app = Project::factory()->for($appNode, 'node')->create(array_merge([
+        $app = App::factory()->for($appNode, 'node')->create(array_merge([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ], $appState));

@@ -14,7 +14,7 @@ Use `datatable` in the following situations.
 - The command needs to select a single entity from a list and immediately
   act on it (`orbit s3:publish` selecting an s3 node when more than one is
   visible).
-- The command asks for an existing Orbit registry entity such as a project,
+- The command asks for an existing Orbit registry entity such as an app,
   node, workspace, process, schedule, or tool, and the candidates are finite
   registry rows available at prompt time.
 - The list may grow beyond a handful of rows, so a flat `select` would be
@@ -71,10 +71,10 @@ $selected = datatable(
 
 These commands use `datatable` and are good models to follow.
 
-- `orbit project:list` — project selection datatable (`Select a project`).
+- `orbit app:list` — app selection datatable (`Select an app`).
 - Other registry list commands that call `Laravel\Prompts\datatable` through
   shared helpers. Do not cite `s3:credentials` (no prompt), or unbacked
-  `project:remove` / `process:update` rows as datatable references.
+  `app:remove` / `process:update` rows as datatable references.
 
 ## Cross References
 

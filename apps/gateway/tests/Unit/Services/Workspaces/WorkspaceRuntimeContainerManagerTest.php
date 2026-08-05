@@ -6,8 +6,8 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
@@ -43,7 +43,7 @@ afterEach(function (): void {});
 function workspaceAndNodeForManagerTest(): array
 {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-dev');
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',
         'php_version' => '8.5',

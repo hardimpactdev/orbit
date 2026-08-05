@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceEnvApplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,11 +24,11 @@ it('applies values only to the selected workspace path', function (): void {
         'role' => 'app-dev',
         'status' => 'active',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'runtime' => AppRuntimeKind::Static,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             domain: $app->domain,
@@ -39,7 +39,7 @@ it('applies values only to the selected workspace path', function (): void {
     File::put($path.'/.env', "APP_ENV=local\n");
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create(['path' => $path]);
 
     $result = app(WorkspaceEnvApplier::class)->apply($workspace, [
@@ -59,13 +59,13 @@ it('applies values to a registered nested development worktree path and preserve
         'role' => 'app-dev',
         'status' => 'active',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit-test-user/apps/billing',
         'runtime' => AppRuntimeKind::Static,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit-test-user/apps/billing-development',
             domain: 'billing-development.test',
@@ -78,7 +78,7 @@ it('applies values to a registered nested development worktree path and preserve
     chmod($envPath, 0o640);
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-mail',
             'path' => $path,
@@ -116,11 +116,11 @@ it('aborts apply before writing when a remote env read returns a successful enve
         ->appDev()
         ->managed()
         ->create(['status' => 'active']);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'runtime' => AppRuntimeKind::Static,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             domain: $app->domain,
@@ -128,7 +128,7 @@ it('aborts apply before writing when a remote env read returns a successful enve
     ]);
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-protocol',
             'path' => '/home/orbit-test-user/apps/demo/.worktrees/feature-protocol',
@@ -200,11 +200,11 @@ it('derives the env path only from the registered workspace path field', functio
         'role' => 'app-dev',
         'status' => 'active',
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'runtime' => AppRuntimeKind::Static,
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             domain: $app->domain,
@@ -213,7 +213,7 @@ it('derives the env path only from the registered workspace path field', functio
     $registeredPath = storage_path('framework/testing/workspace-env-registered-path');
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create(['path' => $registeredPath]);
 
     expect(app(WorkspaceEnvApplier::class)->envPath($workspace))

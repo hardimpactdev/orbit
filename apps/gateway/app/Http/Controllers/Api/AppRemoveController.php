@@ -9,27 +9,26 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\Project;
+use App\Models\App;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[RequiresPermission('project:remove', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('app:remove', servingNode: ServingNode::AppOwning)]
 final class AppRemoveController implements Loggable
 {
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
-    public function __invoke(string $project, Request $request, RemoveApp $removeApp): JsonResponse
+    public function __invoke(string $app, Request $request, RemoveApp $removeApp): JsonResponse
     {
-        $app = $project;
         if ($request->boolean('destructive_consent') !== true) {
-            return $this->error('validation_failed', 'Use --force to remove this project.', ['field' => 'force'], 422);
+            return $this->error('validation_failed', 'Use --force to remove this app.', ['field' => 'force'], 422);
         }
 
         $targetApp = $this->resolveApp($app);
 
-        if (! $targetApp instanceof Project) {
-            return $this->error('project.not_found', "Project '{$app}' not found.", ['project' => $app], 404);
+        if (! $targetApp instanceof App) {
+            return $this->error('app.not_found', "App '{$app}' not found.", ['app' => $app], 404);
         }
 
         $targetApp->loadMissing('node');
@@ -39,7 +38,7 @@ final class AppRemoveController implements Loggable
         $payload = [
             'success' => [
                 'data' => [
-                    'project' => $result['project'],
+                    'app' => $result['app'],
                     'instances' => $result['instances'],
                     'result' => $result['result'],
                     'cleanup' => $result['cleanup'],
@@ -56,13 +55,13 @@ final class AppRemoveController implements Loggable
         return response()->json($payload);
     }
 
-    private function resolveApp(string $selector): ?Project
+    private function resolveApp(string $selector): ?App
     {
-        $project = Project::query()
+        $app = App::query()
             ->with(['node', 'processes'])
             ->get()
             ->filter(
-                fn (Project $app): bool => (
+                fn (App $app): bool => (
                     $app->name === $selector
                     || $app->domain === $selector
                     || $app->url() === "https://{$selector}"
@@ -71,7 +70,7 @@ final class AppRemoveController implements Loggable
             ->values()
             ->first();
 
-        return $project instanceof Project ? $project : null;
+        return $app instanceof App ? $app : null;
     }
 
     /**
@@ -100,7 +99,7 @@ final class AppRemoveController implements Loggable
 
     public function type(): string
     {
-        return 'api:DELETE /projects/{project}';
+        return 'api:DELETE /apps/{app}';
     }
 
     public function activityLogAction(): string
@@ -124,7 +123,7 @@ final class AppRemoveController implements Loggable
     public function properties(): array
     {
         return [
-            'project' => request()->route('project'),
+            'app' => request()->route('app'),
         ];
     }
 

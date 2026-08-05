@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,16 +21,16 @@ final readonly class ProcessOwnerContext
 {
     public function __construct(
         public Node $node,
-        public ?Project $app,
+        public ?App $app,
         public ?Workspace $workspace,
         public Model $owner,
-        public ?AppInstance $appInstance = null,
+        public ?Instance $instance = null,
     ) {}
 
-    public function runtimeApp(): Project
+    public function runtimeApp(): App
     {
-        if ($this->app instanceof Project) {
-            $app = ProcessRuntimeApp::make($this->app, $this->node, $this->appInstance);
+        if ($this->app instanceof App) {
+            $app = ProcessRuntimeApp::make($this->app, $this->node, $this->instance);
 
             $app->setRelation('node', $this->node);
 
@@ -39,7 +39,7 @@ final readonly class ProcessOwnerContext
 
         $home = new NodeHostPaths()->homeDirectory($this->node);
 
-        $app = new Project([
+        $app = new App([
             'name' => $this->node->name,
             'path' => $home,
             'node_id' => $this->node->id,
@@ -52,7 +52,7 @@ final readonly class ProcessOwnerContext
     public function defaultRuntime(): ProcessRuntime
     {
         // Host-command runtime defaults follow the execution node (instance/
-        // workspace placement), not a possibly different Project::$node.
+        // workspace placement), not a possibly different App::$node.
         if (NodeHostPaths::isMacosPlatform($this->node->platform)) {
             return ProcessRuntime::Launchd;
         }
@@ -138,23 +138,23 @@ final readonly class ProcessOwnerContext
 
     public function ownerProcesses(): MorphMany
     {
-        if ($this->owner instanceof Node || $this->owner instanceof Project || $this->owner instanceof Workspace) {
+        if ($this->owner instanceof Node || $this->owner instanceof App || $this->owner instanceof Workspace) {
             $processes = $this->owner->processes();
 
-            if ($this->app instanceof Project) {
-                if (! $this->appInstance instanceof AppInstance) {
+            if ($this->app instanceof App) {
+                if (! $this->instance instanceof Instance) {
                     throw new GatewayApiException(
                         'A concrete instance is required for project and workspace process ownership.',
                         'validation_failed',
                         [
                             'field' => 'instance',
                             'reason' => 'instance_required',
-                            'project' => $this->app->name,
+                            'app' => $this->app->name,
                         ],
                     );
                 }
 
-                $processes->getQuery()->where('app_instance_id', $this->appInstance->id);
+                $processes->getQuery()->where('instance_id', $this->instance->id);
             }
 
             return $processes;
@@ -170,7 +170,7 @@ final readonly class ProcessOwnerContext
      */
     public function lifecycleProcesses(?string $name): Collection
     {
-        if ($this->workspace instanceof Workspace && $this->app instanceof Project) {
+        if ($this->workspace instanceof Workspace && $this->app instanceof App) {
             return $this->effectiveWorkspaceProcesses($name);
         }
 
@@ -206,7 +206,7 @@ final readonly class ProcessOwnerContext
      */
     private function workspaceProcessesForLifecycle(?string $name): Collection
     {
-        if (! $this->workspace instanceof Workspace || ! $this->app instanceof Project) {
+        if (! $this->workspace instanceof Workspace || ! $this->app instanceof App) {
             /** @var Collection<int, Process> */
             return new Collection;
         }
@@ -214,14 +214,14 @@ final readonly class ProcessOwnerContext
         /** @var Collection<int, Process> $workspaceProcesses */
         $workspaceProcesses = $this->workspace
             ->processes()
-            ->where('app_instance_id', $this->appInstance?->id)
+            ->where('instance_id', $this->instance?->id)
             ->when($name !== null, fn ($query) => $query->where('name', $name))
             ->get();
 
         /** @var Collection<int, Process> $appProcesses */
         $appProcesses = $this->app
             ->processes()
-            ->where('app_instance_id', $this->appInstance?->id)
+            ->where('instance_id', $this->instance?->id)
             ->when($name !== null, fn ($query) => $query->where('name', $name))
             ->get();
 
@@ -250,10 +250,13 @@ final readonly class ProcessOwnerContext
     private function workspaceProcessesForLifecycleWithoutRuntime(?string $name): Collection
     {
         /** @var Collection<int, Process> $processes */
-        $processes = $this
-            ->effectiveWorkspaceProcesses($name)
-            ->reject(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Docker)
-            ->values();
+        $processes = new Collection(
+            $this
+                ->effectiveWorkspaceProcesses($name)
+                ->reject(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Docker)
+                ->values()
+                ->all(),
+        );
 
         return $processes;
     }
@@ -267,25 +270,25 @@ final readonly class ProcessOwnerContext
         return $this->workspace;
     }
 
-    public function eventApp(): ?Project
+    public function eventApp(): ?App
     {
         return $this->app;
     }
 
     public function subject(): Model
     {
-        return $this->appInstance ?? $this->node;
+        return $this->instance ?? $this->node;
     }
 
     /**
-     * @return array{node: string, project: string|null, instance: string|null, workspace: string|null}
+     * @return array{node: string, app: string|null, instance: string|null, workspace: string|null}
      */
     public function payloadContext(): array
     {
         return [
             'node' => $this->node->name,
-            'project' => $this->app?->name,
-            'instance' => $this->appInstance?->name,
+            'app' => $this->app?->name,
+            'instance' => $this->instance?->name,
             'workspace' => $this->workspace?->name,
         ];
     }
@@ -317,8 +320,8 @@ final readonly class ProcessOwnerContext
         return array_filter(
             [
                 'node' => $this->node->name,
-                'project' => $this->app?->name,
-                'instance' => $this->appInstance?->name,
+                'app' => $this->app?->name,
+                'instance' => $this->instance?->name,
                 'workspace' => $this->workspace?->name,
                 'name' => $name,
             ],
@@ -328,11 +331,11 @@ final readonly class ProcessOwnerContext
 
     public function label(): string
     {
-        if ($this->workspace instanceof Workspace && $this->app instanceof Project) {
+        if ($this->workspace instanceof Workspace && $this->app instanceof App) {
             return "workspace '{$this->workspace->name}' on instance '{$this->appIdentity()}'";
         }
 
-        if ($this->app instanceof Project) {
+        if ($this->app instanceof App) {
             return "instance '{$this->appIdentity()}'";
         }
 
@@ -341,12 +344,12 @@ final readonly class ProcessOwnerContext
 
     private function appIdentity(): string
     {
-        if (! $this->app instanceof Project) {
+        if (! $this->app instanceof App) {
             return '';
         }
 
-        return $this->appInstance instanceof AppInstance
-            ? "{$this->app->name}.{$this->appInstance->name}"
+        return $this->instance instanceof Instance
+            ? "{$this->app->name}.{$this->instance->name}"
             : $this->app->name;
     }
 }

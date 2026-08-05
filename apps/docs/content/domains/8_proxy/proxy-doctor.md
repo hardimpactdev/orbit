@@ -52,7 +52,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    serving node, target, and TLS policy. Installed agent tools contribute an
    expected route even when no proxy route row remains.
 2. **Owner eligibility:** the owner reference still resolves when the route is
-   owned by a project, instance, WebSocket binding, workspace, gateway route, router
+   owned by an app, instance, WebSocket binding, workspace, gateway route, router
    service, S3 publication, or tool.
 3. **Node eligibility:** the serving node resolves to a visible active Ubuntu
    gateway or node with proxy capability.
@@ -71,7 +71,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets. Every app primary route must keep
-   its project owner while targeting one concrete instance, that
+   its app owner while targeting one concrete instance, that
    instance's serving node, runtime upstream, and inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
@@ -110,9 +110,9 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | Code | Detected when |
 | --- | --- |
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy.owner_invalid` | A project, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
+| `proxy.owner_invalid` | An app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
 | `proxy.node_invalid` | The route points at a missing, inactive, unsupported, or role-incompatible serving node. |
-| `proxy.domain_conflict` | A custom route claims a domain owned by a project, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
+| `proxy.domain_conflict` | A custom route claims a domain owned by an app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists but is not healthy running, including stopped containers and Docker restart loops. Mounted route artifacts are not served. |
@@ -149,7 +149,7 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
-For an instance primary route, restoring a mismatch also persists its project
+For an instance primary route, restoring a mismatch also persists its app
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.
 
@@ -165,7 +165,7 @@ server name before rendering.
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when it can be identified safely. |
 | `proxy.enactment_incomplete` | Retry the instance route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
-| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
+| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public WebSocket ingress routes from the owning instance binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
@@ -189,9 +189,9 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
-| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing project, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
+| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
 
-`doctor --adopt` does not scan arbitrary hosts, adopt project/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer project ownership from upstream paths, or adopt service health into the proxy family.
+`doctor --adopt` does not scan arbitrary hosts, adopt app/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
 `proxy.dns_mapping_mismatch` is derived projection drift and is never adoptable.
 
 ## Test Mapping
