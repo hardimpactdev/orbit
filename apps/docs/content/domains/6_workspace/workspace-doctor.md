@@ -130,7 +130,7 @@ are explicit commands such as `workspace:setup`, `workspace:remove`, or
 manual path/registry correction after reading the probe findings.
 
 Failed setup and teardown runs are visible through `workspace:history` and
-`workspace:log`; doctor verifies current workspace reality and does not rewrite
+`workspace:run:log`; doctor verifies current workspace reality and does not rewrite
 past runs. Workspace doctor never creates parent apps, changes workspace
 names, moves a workspace to another app, edits setup or teardown step
 definitions, edits workspace-owned proxy routes, edits inherited runtime units,

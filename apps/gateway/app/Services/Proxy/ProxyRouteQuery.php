@@ -291,7 +291,7 @@ class ProxyRouteQuery
      */
     public function toRouteEntity(ProxyRoute $route, ?string $status = null): array
     {
-        $route->loadMissing(['node', 'app', 'workspace']);
+        $route->loadMissing(['node', 'app', 'workspace.instance', 'workspace.app']);
         $config = is_array($route->config) ? $route->config : [];
         $tlsManagedBy = $this->stringConfig($config, ['tls.managed_by', 'tls_managed_by']) ?? 'orbit';
 
@@ -315,12 +315,53 @@ class ProxyRouteQuery
             'status' => $status ?? ProxyRouteEnactment::status($config),
         ];
 
+        $workspaceInstance = $this->workspaceParentInstanceSelector($route);
+
+        if ($workspaceInstance !== null) {
+            // Canonical parent app.instance from the route's FK-owned workspace only.
+            $entity['instance'] = $workspaceInstance;
+        }
+
         if (($config['placement'] ?? null) === 'ingress') {
             $entity['placement'] = 'ingress';
             $entity['router'] = $this->router($config);
         }
 
         return $entity;
+    }
+
+    /**
+     * Parent instance selector for workspace-owned routes, derived only from the
+     * route's FK workspace relation (never a secondary name lookup).
+     */
+    private function workspaceParentInstanceSelector(ProxyRoute $route): ?string
+    {
+        if ($route->owner_type !== 'workspace') {
+            return null;
+        }
+
+        $workspace = $route->workspace;
+
+        if ($workspace === null) {
+            return null;
+        }
+
+        $workspace->loadMissing(['app', 'instance']);
+        $app = $workspace->app;
+        $instance = $workspace->instance;
+
+        if ($app === null || $instance === null) {
+            return null;
+        }
+
+        $appName = trim((string) $app->name);
+        $instanceName = trim((string) $instance->name);
+
+        if ($appName === '' || $instanceName === '') {
+            return null;
+        }
+
+        return "{$appName}.{$instanceName}";
     }
 
     public function publicOwnerType(ProxyRoute $route): string

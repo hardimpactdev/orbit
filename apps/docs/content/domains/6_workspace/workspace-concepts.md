@@ -110,7 +110,7 @@ The terms below describe how a workspace moves through its active states.
   workspace was adopted from an existing path (`true`) or created fresh
   (`false`). Exposed in JSON as `adopted`.
 - **Workspace history:** Durable record of workspace setup and teardown step
-  runs, read through `workspace:history` and `workspace:log`. It is not
+  runs, read through `workspace:history` and `workspace:run:log`. It is not
   workspace-unit configuration.
 
 ## Boundaries

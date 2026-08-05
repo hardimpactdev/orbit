@@ -11,6 +11,7 @@ use App\Commands\App\AppAnalyticsShowCommand;
 use App\Commands\App\AppAnalyticsVerifyCommand;
 use App\Commands\App\AppEnvCommand;
 use App\Commands\App\AppListCommand;
+use App\Commands\App\AppLogCommand;
 use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
 use App\Commands\App\AppRegisterCommand;
@@ -27,6 +28,7 @@ use App\Commands\App\AppWebSocketEnableCommand;
 use App\Commands\App\AppWorkerCommand;
 use App\Commands\App\InstanceAddCommand;
 use App\Commands\App\InstanceListCommand;
+use App\Commands\App\InstanceLogCommand;
 use App\Commands\App\InstanceRemoveCommand;
 use App\Commands\App\InstanceShowCommand;
 use App\Commands\Cloudflare\CfCacheFlushCommand;
@@ -76,6 +78,7 @@ use App\Commands\Internal\AgentRuntimeProbeCommand;
 use App\Commands\Internal\AgentUserEnsureCommand;
 use App\Commands\Internal\AppCacheClearCommand;
 use App\Commands\Internal\AppIntrospectProbeCommand;
+use App\Commands\Internal\ApplicationLogCommand as InternalApplicationLogCommand;
 use App\Commands\Internal\AppRuntimeCommand;
 use App\Commands\Internal\AppRuntimeConfigsProbeCommand;
 use App\Commands\Internal\AppRuntimeContainersProbeCommand;
@@ -193,6 +196,7 @@ use App\Commands\Workspace\WorkspaceListCommand;
 use App\Commands\Workspace\WorkspaceLogCommand;
 use App\Commands\Workspace\WorkspaceNewCommand;
 use App\Commands\Workspace\WorkspaceRemoveCommand;
+use App\Commands\Workspace\WorkspaceRunLogCommand;
 use App\Commands\Workspace\WorkspaceSetupCommand;
 use App\Commands\Workspace\WorkspaceSetupStepAddCommand;
 use App\Commands\Workspace\WorkspaceSetupStepListCommand;
@@ -237,6 +241,8 @@ return [
         InstanceAddCommand::class,
         InstanceRemoveCommand::class,
         AppListCommand::class,
+        AppLogCommand::class,
+        InstanceLogCommand::class,
         AppMountCommand::class,
         AppNewCommand::class,
         AppRegisterCommand::class,
@@ -362,6 +368,7 @@ return [
         WorkspaceEnvCommand::class,
         WorkspaceListCommand::class,
         WorkspaceLogCommand::class,
+        WorkspaceRunLogCommand::class,
         WorkspaceNewCommand::class,
         WorkspaceRemoveCommand::class,
         WorkspaceSetupCommand::class,
@@ -424,6 +431,7 @@ return [
         NodeSecurityPostureProbeCommand::class,
         ProcessDockerContainerCommand::class,
         ProcessDockerSwarmServiceCommand::class,
+        InternalApplicationLogCommand::class,
         InternalProcessLogsCommand::class,
         ProcessSystemdServiceCommand::class,
         ProcessLaunchdServiceCommand::class,

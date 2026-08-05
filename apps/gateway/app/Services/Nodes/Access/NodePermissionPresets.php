@@ -193,7 +193,7 @@ final class NodePermissionPresets
             'workspace:setup',
             'workspace:remove',
             'workspace:history',
-            'workspace:log',
+            'workspace:run:log',
             'process:read',
             'process:add',
             'process:update',
@@ -360,7 +360,7 @@ final class NodePermissionPresets
             'workspace:setup',
             'workspace:remove',
             'workspace:history',
-            'workspace:log',
+            'workspace:run:log',
         ];
     }
 }

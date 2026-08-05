@@ -1,0 +1,330 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
+
+describe('app:log', function (): void {
+    it('is registered as a public command', function (): void {
+        expect(array_key_exists('app:log', Artisan::all()))->toBeTrue();
+    });
+
+    it('accepts a bare hostname and resolves an exact proxy route', function (): void {
+        Http::fake(function (Request $request) {
+            $url = urldecode($request->url());
+
+            if (str_contains($url, '/api/instances') && $request->method() === 'GET' && ! str_contains($url, '/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'instances' => [
+                        ['app' => 'mealou', 'name' => 'development'],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/proxy-routes')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'routes' => [
+                        [
+                            'domain' => 'example.test',
+                            'owner' => ['type' => 'instance', 'name' => 'docs.development'],
+                            'target' => ['type' => 'instance', 'value' => 'docs.development'],
+                        ],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/instances/docs.development/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'path' => 'storage/logs/laravel.log',
+                    'file_exists' => false,
+                    'lines' => [],
+                    'target' => [
+                        'type' => 'instance',
+                        'selector' => 'docs.development',
+                    ],
+                ]));
+            }
+
+            return Http::response(['error' => ['code' => 'unexpected']], 500);
+        });
+
+        [$exitCode, $output] = runCommand($this, 'app:log', [
+            'target' => 'example.test',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['path'])
+            ->toBe('storage/logs/laravel.log');
+    });
+
+    it('rejects a bare registered app.instance token before proxy matching', function (): void {
+        Http::fake(function (Request $request) {
+            $url = urldecode($request->url());
+
+            if (str_contains($url, '/api/instances') && ! str_contains($url, '/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'instances' => [
+                        ['app' => 'mealou', 'name' => 'development'],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/proxy-routes')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'routes' => [
+                        [
+                            'domain' => 'mealou.development',
+                            'owner' => ['type' => 'instance', 'name' => 'mealou.development'],
+                            'target' => ['type' => 'instance', 'value' => 'mealou.development'],
+                        ],
+                    ],
+                ]));
+            }
+
+            return Http::response(['error' => ['code' => 'unexpected']], 500);
+        });
+
+        [$exitCode, $output] = runCommand($this, 'app:log', [
+            'target' => 'mealou.development',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toContain('instance:log');
+
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/log'));
+    });
+
+    it('allows an explicit URL even when the host spelling matches a canonical instance selector', function (): void {
+        Http::fake(function (Request $request) {
+            $url = urldecode($request->url());
+
+            if (str_contains($url, '/api/proxy-routes')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'routes' => [
+                        [
+                            'domain' => 'mealou.development',
+                            'owner' => ['type' => 'instance', 'name' => 'docs.development'],
+                            'target' => ['type' => 'instance', 'value' => 'docs.development'],
+                        ],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/instances/docs.development/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'path' => 'storage/logs/laravel.log',
+                    'file_exists' => true,
+                    'lines' => ['ok'],
+                ]));
+            }
+
+            return Http::response(['error' => ['code' => 'unexpected']], 500);
+        });
+
+        [$exitCode] = runCommand($this, 'app:log', [
+            'target' => 'https://mealou.development',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            urldecode($request->url()),
+            '/api/instances/docs.development/log',
+        ));
+    });
+
+    it('rejects invalid URL shapes with credentials', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:log', [
+            'target' => 'https://user:pass@docs.test',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('validation_failed');
+    });
+
+    it('rejects non-default ports', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:log', [
+            'target' => 'https://docs.test:8443',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('validation_failed');
+    });
+
+    it('requires an explicit target for json mode', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:log', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['meta']['field'] ?? null)
+            ->toBe('target');
+    });
+
+    it('requires an explicit target for noninteractive human mode', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = run_application_log_command_noninteractive('app:log');
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('validation_failed')
+            ->toContain('URL or hostname target is required');
+    });
+
+    it('rejects decimal and scientific --lines values', function (string $lines): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:log', [
+            'target' => 'example.test',
+            '--lines' => $lines,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['meta']['field'] ?? null)
+            ->toBe('lines');
+    })->with(['1.5', '1e3', '-1', '0', '999999999999999999999999']);
+
+    it('accepts PHP_INT_MAX as a strict positive textual --lines value', function (): void {
+        Http::fake(function (Request $request) {
+            $url = urldecode($request->url());
+
+            if (str_contains($url, '/api/instances') && $request->method() === 'GET' && ! str_contains($url, '/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'instances' => [],
+                ]));
+            }
+
+            if (str_contains($url, '/api/proxy-routes')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'routes' => [
+                        [
+                            'domain' => 'example.test',
+                            'owner' => ['type' => 'instance', 'name' => 'docs.development'],
+                            'target' => ['type' => 'instance', 'value' => 'docs.development'],
+                        ],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/instances/docs.development/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'path' => 'storage/logs/laravel.log',
+                    'file_exists' => false,
+                    'lines' => [],
+                    'lines_requested' => PHP_INT_MAX,
+                ]));
+            }
+
+            return Http::response(['error' => ['code' => 'unexpected']], 500);
+        });
+
+        [$exitCode] = runCommand($this, 'app:log', [
+            'target' => 'example.test',
+            '--lines' => (string) PHP_INT_MAX,
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return str_contains($url, '/api/instances/docs.development/log')
+                && str_contains($url, 'lines='.PHP_INT_MAX);
+        });
+    });
+
+    it('infers an instance target from the owned .orbit marker when interactive', function (): void {
+        $root = sys_get_temp_dir().'/orbit-app-log-cwd-'.uniqid('', true);
+        mkdir($root.'/.orbit', 0777, true);
+        file_put_contents($root.'/.orbit/config', json_encode([
+            'instance' => 'docs.development',
+        ], JSON_THROW_ON_ERROR));
+        $previousCwd = getenv('ORBIT_HOST_CWD');
+        putenv('ORBIT_HOST_CWD='.$root);
+
+        try {
+            Http::fake(function (Request $request) {
+                $url = urldecode($request->url());
+
+                if (str_contains($url, '/api/workspaces/resolve-by-path')) {
+                    return Http::response([
+                        'error' => [
+                            'code' => 'workspace.not_found',
+                            'message' => 'No workspace at path.',
+                            'meta' => (object) [],
+                        ],
+                    ], 404);
+                }
+
+                if (str_contains($url, '/api/instances/docs.development/log')) {
+                    return Http::response(fakeSuccessEnvelope([
+                        'path' => 'storage/logs/laravel.log',
+                        'file_exists' => true,
+                        'lines' => ['inferred'],
+                    ]));
+                }
+
+                return Http::response(['error' => ['code' => 'unexpected']], 500);
+            });
+
+            [$exitCode, $output] = run_application_log_command_interactive('app:log', [
+                '--json' => false,
+            ]);
+
+            expect($exitCode)->toBe(0)->and($output)->toContain('inferred');
+            Http::assertSent(fn (Request $request): bool => str_contains(
+                urldecode($request->url()),
+                '/api/instances/docs.development/log',
+            ));
+        } finally {
+            if (is_string($previousCwd) && $previousCwd !== '') {
+                putenv('ORBIT_HOST_CWD='.$previousCwd);
+            } else {
+                putenv('ORBIT_HOST_CWD');
+            }
+            @unlink($root.'/.orbit/config');
+            @rmdir($root.'/.orbit');
+            @rmdir($root);
+        }
+    });
+});

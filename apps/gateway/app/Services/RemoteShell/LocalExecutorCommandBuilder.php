@@ -198,6 +198,12 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             NodeRoleName::Metrics,
             NodeRoleName::Analytics,
         ],
+        InternalCommand::ApplicationLog->value => [
+            NodeRoleName::Gateway,
+            NodeRoleName::AppDevelopment,
+            NodeRoleName::AppProduction,
+            NodeRoleName::Agent,
+        ],
         InternalCommand::ProcessLogs->value => [
             NodeRoleName::Gateway,
             NodeRoleName::Vpn,

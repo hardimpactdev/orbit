@@ -276,22 +276,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/codex/apps/{project}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["codexApp.add"];
-        delete: operations["codexApp.remove"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/dashboard/runtime-inventory": {
         parameters: {
             query?: never;
@@ -607,6 +591,38 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["instance.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["instanceApplicationLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instance}/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["instanceApplicationLogStreamStart"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1077,22 +1093,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/solo/projects": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["soloProxy.projects"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/tools/{tool}/credentials": {
         parameters: {
             query?: never;
@@ -1375,6 +1375,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["vpnWebUiChangePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["workspaceApplicationLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace}/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspaceApplicationLogStreamStart"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2926,48 +2958,6 @@ export interface operations {
             };
         };
     };
-    "codexApp.add": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
-    "codexApp.remove": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
     dashboardRuntimeInventory: {
         parameters: {
             query?: never;
@@ -4001,6 +3991,218 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    instanceApplicationLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                target: {
+                                    /** @constant */
+                                    type: "instance";
+                                    app: string;
+                                    instance: string;
+                                    workspace: null;
+                                    selector: string;
+                                };
+                                node: string;
+                                /** @constant */
+                                path: "storage/logs/laravel.log";
+                                lines_requested: number;
+                                file_exists: boolean;
+                                lines: unknown[];
+                            };
+                            meta: string[];
+                        };
+                    } | string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                /** @enum {string} */
+                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
+                                /** @constant */
+                                missing_permission: "instance:read";
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "instance.not_found";
+                            message: string;
+                            meta: {
+                                instance: string;
+                            };
+                        };
+                    };
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The instance serving node could not be resolved.";
+                            meta: {
+                                /** @constant */
+                                field: "instance";
+                                instance: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    instanceApplicationLogStreamStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instance: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                operation: {
+                                    uuid: string;
+                                    stream_descriptor_url: string;
+                                    events_url: string;
+                                };
+                            };
+                            meta: string;
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                /** @enum {string} */
+                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
+                                /** @constant */
+                                missing_permission: "instance:read";
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "instance.not_found";
+                            message: string;
+                            meta: {
+                                instance: string;
+                            };
+                        };
+                    };
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The instance serving node could not be resolved.";
+                            meta: {
+                                /** @constant */
+                                field: "instance";
+                            };
+                        };
+                    };
                 };
             };
         };
@@ -5298,7 +5500,7 @@ export interface operations {
                                 /** @enum {string} */
                                 reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
                                 /** @enum {string|null} */
-                                missing_permission: "process:logs" | null;
+                                missing_permission: "process:log" | null;
                                 serving_node: string;
                             };
                         };
@@ -6204,25 +6406,6 @@ export interface operations {
             };
         };
     };
-    "soloProxy.projects": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
     toolCredentials: {
         parameters: {
             query?: never;
@@ -7042,6 +7225,265 @@ export interface operations {
             };
         };
     };
+    workspaceApplicationLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                target: {
+                                    /** @constant */
+                                    type: "workspace";
+                                    app: string;
+                                    instance: string;
+                                    workspace: string;
+                                    selector: string;
+                                };
+                                node: string;
+                                /** @constant */
+                                path: "storage/logs/laravel.log";
+                                lines_requested: number;
+                                file_exists: boolean;
+                                lines: unknown[];
+                            };
+                            meta: string[];
+                        };
+                    } | string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                /** @enum {string} */
+                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
+                                /** @constant */
+                                missing_permission: "workspace:read";
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "workspace.not_found";
+                            message: string;
+                            meta: {
+                                workspace: string;
+                                instance: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The workspace serving node could not be resolved.";
+                            meta: {
+                                /** @constant */
+                                field: "workspace";
+                            };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The instance query parameter is required.";
+                            meta: {
+                                /** @constant */
+                                field: "instance";
+                            };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    workspaceApplicationLogStreamStart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                operation: {
+                                    uuid: string;
+                                    stream_descriptor_url: string;
+                                    events_url: string;
+                                };
+                            };
+                            meta: string;
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                /** @enum {string} */
+                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
+                                /** @constant */
+                                missing_permission: "workspace:read";
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "workspace.not_found";
+                            message: string;
+                            meta: {
+                                workspace: string;
+                                instance: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string | "validation_failed";
+                            message: string;
+                            meta: string;
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The workspace serving node could not be resolved.";
+                            meta: {
+                                /** @constant */
+                                field: "workspace";
+                            };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "The instance field is required.";
+                            meta: {
+                                /** @constant */
+                                field: "instance";
+                            };
+                        };
+                    };
+                };
+            };
+        };
+    };
     "workspaceHistory.fromPath": {
         parameters: {
             query?: never;
@@ -7408,6 +7850,12 @@ export interface operations {
                                 name: string;
                                 instances: string[];
                             };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
                         };
                     };
                 };
@@ -7847,6 +8295,12 @@ export interface operations {
                                 field: "path";
                             };
                         };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
+                        };
                     };
                 };
             };
@@ -7961,6 +8415,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             code: string;
                             message: string;
@@ -8251,6 +8713,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             code: string;
                             message: string;

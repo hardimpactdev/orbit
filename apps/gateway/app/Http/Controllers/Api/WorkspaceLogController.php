@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[RequiresPermission('workspace:log', servingNode: ServingNode::WorkspaceOwning)]
+#[RequiresPermission('workspace:run:log', servingNode: ServingNode::WorkspaceOwning)]
 final readonly class WorkspaceLogController implements Loggable
 {
     public function __construct(
@@ -74,10 +74,10 @@ final readonly class WorkspaceLogController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:log');
+        $authorization = $this->authorizer->authorize($caller, $node, 'workspace:run:log');
 
         if (! $authorization->allowed) {
-            return $this->forbidden($node, $authorization, 'workspace:log');
+            return $this->forbidden($node, $authorization, 'workspace:run:log');
         }
 
         return response()->json([

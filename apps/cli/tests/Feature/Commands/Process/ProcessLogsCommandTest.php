@@ -6,7 +6,7 @@ use App\Services\GatewayOperationStreamSubscriber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('process:logs', function (): void {
+describe('process:log', function (): void {
     it('returns bounded logs as a canonical success envelope and forwards filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'logs' => [
@@ -20,7 +20,7 @@ describe('process:logs', function (): void {
             ],
         ], ['line_count' => 1]));
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--workspace' => 'feature-docs',
@@ -61,7 +61,7 @@ describe('process:logs', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
         ]);
@@ -85,7 +85,7 @@ describe('process:logs', function (): void {
             ],
         ], ['line_count' => 1]));
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'opencode-server',
             '--node' => 'app-1',
             '--lines' => 5,
@@ -131,7 +131,7 @@ describe('process:logs', function (): void {
             ]), 202),
         ]);
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--follow' => true,
@@ -155,7 +155,7 @@ describe('process:logs', function (): void {
     it('rejects json output for followed logs before opening a gateway stream', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--follow' => true,
@@ -177,7 +177,7 @@ describe('process:logs', function (): void {
     it('fails validation before opening the gateway request when name is missing', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'process:log', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -194,7 +194,7 @@ describe('process:logs', function (): void {
     it('fails validation before opening the gateway request when lines is invalid', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--lines' => 0,
@@ -216,7 +216,7 @@ describe('process:logs', function (): void {
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('No route to host');
 
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
+        [$exitCode, $output] = runCommand($this, 'process:log', [
             'name' => 'vite',
             '--instance' => 'docs',
             '--json' => true,

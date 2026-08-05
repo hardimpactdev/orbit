@@ -76,12 +76,12 @@ Show workspace lifecycle history (setup runs, teardown runs, status changes).
 orbit workspace:history [<name>] [--instance=<name>] [--limit=<n>] [--since=<iso>] [--until=<iso>] [--json]
 ```
 
-## `orbit workspace:log [run]`
+## `orbit workspace:run:log [run]`
 
 Show captured stdout/stderr for one lifecycle run.
 
 ```bash
-orbit workspace:log [<run>] [--json]
+orbit workspace:run:log [<run>] [--json]
 ```
 
 `<run>` is the run id from `workspace:history`.

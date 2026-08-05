@@ -167,7 +167,10 @@ command catalog when command completeness matters.
 | `orbit workspace:setup [name]` | Run setup steps to converge the workspace to ready-to-develop |
 | `orbit workspace:remove [name]` | Remove a workspace and its artifacts (`--keep-files` to retain disk) |
 | `orbit workspace:history [name]` | Show workspace lifecycle history |
-| `orbit workspace:log [run]` | Show captured stdout/stderr for a lifecycle run |
+| `orbit workspace:log [workspace]` | Read/follow fixed Laravel application log (`storage/logs/laravel.log`) |
+| `orbit workspace:run:log [run]` | Show captured stdout/stderr for a lifecycle run |
+| `orbit instance:log [instance]` | Read/follow fixed Laravel application log for an Instance |
+| `orbit app:log [url]` | Read/follow Laravel application log resolved from proxy URL/hostname |
 | `orbit workspace-setup-step:add\|list\|remove` | Manage an instance-scoped workspace setup pipeline |
 | `orbit workspace-teardown-step:add\|list\|remove` | Manage an instance-scoped workspace teardown pipeline |
 
@@ -180,7 +183,7 @@ command catalog when command completeness matters.
 | `orbit process:remove [name]` | Remove a process definition |
 | `orbit process:list` | List configured processes |
 | `orbit process:start\|stop\|restart [name]` | Control runtime units |
-| `orbit process:logs [name]` | Read runtime logs (`--follow`, `--lines`) |
+| `orbit process:log [name]` | Read runtime logs (`--follow`, `--lines`) |
 
 ### Schedules  -  [`references/schedule.md`](references/schedule.md)
 

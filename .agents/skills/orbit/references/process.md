@@ -102,12 +102,12 @@ orbit process:restart [<name>] [--instance=<name>] [--workspace=<name>] [--json]
 
 Without `--workspace`, the command targets the main app instance. Use `--workspace=<slug>` to target a specific workspace's rendered unit.
 
-## `orbit process:logs [name]`
+## `orbit process:log [name]`
 
 Read runtime logs.
 
 ```bash
-orbit process:logs [<name>] [--instance=<name>] [--workspace=<name>]
+orbit process:log [<name>] [--instance=<name>] [--workspace=<name>]
                    [--follow] [--lines=100] [--json]
 ```
 

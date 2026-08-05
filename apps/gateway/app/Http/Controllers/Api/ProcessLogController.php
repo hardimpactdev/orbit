@@ -17,7 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
-#[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('process:log', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
 {
     private ?Model $activitySubject = null;
@@ -54,7 +54,7 @@ final class ProcessLogController implements Loggable
             );
         }
 
-        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:logs');
+        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:log');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;

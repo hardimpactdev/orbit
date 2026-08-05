@@ -48,7 +48,7 @@ Use this command to inspect process configuration and last known state without l
 
 ## Related
 
-- [`process:logs`](../8_process-logs/process-logs.md)
+- [`process:log`](../8_process-log/process-log.md)
 - [`process:start`](../5_process-start/process-start.md)
 - [`process-doctor.md`](../process-doctor.md)
 

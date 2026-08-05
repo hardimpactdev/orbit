@@ -285,6 +285,73 @@
                 }
             }
         },
+        "app:log": {
+            "name": "app:log",
+            "slug": "app-log",
+            "family": "app",
+            "arguments": [
+                "target"
+            ],
+            "options": [
+                "lines",
+                "follow",
+                "node",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/30_app-log",
+                "public": "domains/5_app/30_app-log/app-log.md",
+                "technical": "domains/5_app/30_app-log/technical/1_app-log.md",
+                "repo_directory": "apps/docs/content/domains/5_app/30_app-log",
+                "repo_public": "apps/docs/content/domains/5_app/30_app-log/app-log.md",
+                "repo_technical": "apps/docs/content/domains/5_app/30_app-log/technical/1_app-log.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppLogCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppLogCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppLogCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppLogCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "app:new": {
             "name": "app:new",
             "slug": "app-new",
@@ -4157,6 +4224,65 @@
                 }
             }
         },
+        "instance:log": {
+            "name": "instance:log",
+            "slug": "instance-log",
+            "family": "instance",
+            "arguments": [
+                "target"
+            ],
+            "options": [
+                "lines",
+                "follow",
+                "node",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/29_instance-log",
+                "public": "domains/5_app/29_instance-log/instance-log.md",
+                "technical": "domains/5_app/29_instance-log/technical/1_instance-log.md",
+                "repo_directory": "apps/docs/content/domains/5_app/29_instance-log",
+                "repo_public": "apps/docs/content/domains/5_app/29_instance-log/instance-log.md",
+                "repo_technical": "apps/docs/content/domains/5_app/29_instance-log/technical/1_instance-log.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/InstanceLogCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceLogCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceLogCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceLogCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "instance:mount": {
             "name": "instance:mount",
             "slug": "instance-mount",
@@ -6495,9 +6621,9 @@
                 }
             }
         },
-        "process:logs": {
-            "name": "process:logs",
-            "slug": "process-logs",
+        "process:log": {
+            "name": "process:log",
+            "slug": "process-log",
             "family": "process",
             "arguments": [
                 "name"
@@ -6517,12 +6643,12 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/7_process/8_process-logs",
-                "public": "domains/7_process/8_process-logs/process-logs.md",
-                "technical": "domains/7_process/8_process-logs/technical/1_process-logs.md",
-                "repo_directory": "apps/docs/content/domains/7_process/8_process-logs",
-                "repo_public": "apps/docs/content/domains/7_process/8_process-logs/process-logs.md",
-                "repo_technical": "apps/docs/content/domains/7_process/8_process-logs/technical/1_process-logs.md"
+                "directory": "domains/7_process/8_process-log",
+                "public": "domains/7_process/8_process-log/process-log.md",
+                "technical": "domains/7_process/8_process-log/technical/1_process-log.md",
+                "repo_directory": "apps/docs/content/domains/7_process/8_process-log",
+                "repo_public": "apps/docs/content/domains/7_process/8_process-log/process-log.md",
+                "repo_technical": "apps/docs/content/domains/7_process/8_process-log/technical/1_process-log.md"
             },
             "public_options_documented": {
                 "json": true,
@@ -6571,7 +6697,7 @@
                     "action": "__invoke"
                 },
                 "authorization_permission": [
-                    "process:logs"
+                    "process:log"
                 ],
                 "response_dto": {
                     "class": "Orbit\\Sdk\\Laravel\\Responses\\Processes\\ProcessLogsResponse",
@@ -13959,9 +14085,13 @@
             "slug": "workspace-log",
             "family": "workspace",
             "arguments": [
-                "run"
+                "target"
             ],
             "options": [
+                "instance",
+                "lines",
+                "follow",
+                "node",
                 "json"
             ],
             "renderers": {
@@ -13971,35 +14101,35 @@
             "extension": null,
             "destructive_consent": null,
             "docs": {
-                "directory": "domains/6_workspace/7_workspace-log",
-                "public": "domains/6_workspace/7_workspace-log/workspace-log.md",
-                "technical": "domains/6_workspace/7_workspace-log/technical/1_workspace-log.md",
-                "repo_directory": "apps/docs/content/domains/6_workspace/7_workspace-log",
-                "repo_public": "apps/docs/content/domains/6_workspace/7_workspace-log/workspace-log.md",
-                "repo_technical": "apps/docs/content/domains/6_workspace/7_workspace-log/technical/1_workspace-log.md"
+                "directory": "domains/6_workspace/15_workspace-log",
+                "public": "domains/6_workspace/15_workspace-log/workspace-log.md",
+                "technical": "domains/6_workspace/15_workspace-log/technical/1_workspace-log.md",
+                "repo_directory": "apps/docs/content/domains/6_workspace/15_workspace-log",
+                "repo_public": "apps/docs/content/domains/6_workspace/15_workspace-log/workspace-log.md",
+                "repo_technical": "apps/docs/content/domains/6_workspace/15_workspace-log/technical/1_workspace-log.md"
             },
             "public_options_documented": {
                 "json": true,
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/WorkspaceLogControllerTest.php"
+                "apps/cli/tests/Feature/Commands/Workspace/WorkspaceApplicationLogCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Workspace/WorkspaceApplicationLogCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceApplicationLogCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceApplicationLogCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceLogControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceLogControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceLogControllerTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceApplicationLogControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14142,6 +14272,62 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "workspace:run:log": {
+            "name": "workspace:run:log",
+            "slug": "workspace-run-log",
+            "family": "workspace",
+            "arguments": [
+                "run"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/6_workspace/7_workspace-run-log",
+                "public": "domains/6_workspace/7_workspace-run-log/workspace-run-log.md",
+                "technical": "domains/6_workspace/7_workspace-run-log/technical/1_workspace-run-log.md",
+                "repo_directory": "apps/docs/content/domains/6_workspace/7_workspace-run-log",
+                "repo_public": "apps/docs/content/domains/6_workspace/7_workspace-run-log/workspace-run-log.md",
+                "repo_technical": "apps/docs/content/domains/6_workspace/7_workspace-run-log/technical/1_workspace-run-log.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceLogControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceLogCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceLogControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceLogControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceLogControllerTest.php"
                 }
             ],
             "p4_mapping": {

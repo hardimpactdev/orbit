@@ -17,7 +17,7 @@ test('gateway openapi schema-only operations are classified for sdk generation',
 
     $schemaOperations = collect(schema_operations($schema));
 
-    Assert::assertSame(171, $schemaOperations->count());
+    Assert::assertSame(175, $schemaOperations->count());
 
     $schemaOnlyOperations = $schemaOperations
         ->reject(fn (array $operation): bool => sdk_covers_operation($sdkOperations, $operation['operation']))

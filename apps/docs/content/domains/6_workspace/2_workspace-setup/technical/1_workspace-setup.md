@@ -260,7 +260,7 @@ all documented command failures exit with the standard command failure status
   `workspace.http_probe_unhealthy` is not owned by the workspaces doctor
   family.
 - Failed setup-step runs are visible through `workspace:history` and
-  `workspace:log`; doctor verifies current workspace reality and does not
+  `workspace:run:log`; doctor verifies current workspace reality and does not
   rewrite past runs.
 
 ## Test Mapping

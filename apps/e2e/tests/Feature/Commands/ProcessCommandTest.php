@@ -104,7 +104,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $logs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$process} --instance=".escapeshellarg($app).' --lines=5 --json',
+            "cd {$checkout} && orbit process:log {$process} --instance=".escapeshellarg($app).' --lines=5 --json',
             timeoutSeconds: 120,
         );
         $logsPayload = processCommandPayload($logs->output());
@@ -217,7 +217,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceLogs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$workspaceProcess} --instance="
+            "cd {$checkout} && orbit process:log {$workspaceProcess} --instance="
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -392,7 +392,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
 
         $logs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$runtimeUnit} --node=app-dev-1 --lines=20 --json",
+            "cd {$checkout} && orbit process:log {$runtimeUnit} --node=app-dev-1 --lines=20 --json",
             timeoutSeconds: 120,
         );
         $logsPayload = processCommandPayload($logs->output());

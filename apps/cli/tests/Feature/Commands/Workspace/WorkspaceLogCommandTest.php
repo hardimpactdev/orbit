@@ -5,11 +5,11 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('workspace:log', function (): void {
+describe('workspace:run:log', function (): void {
     it('returns captured run detail as a canonical success envelope and requests the run log API', function (): void {
         fakeGateway(fakeWorkspaceLogEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', [
             'run' => '12',
             '--json' => true,
         ]);
@@ -44,7 +44,7 @@ describe('workspace:log', function (): void {
     it('renders captured step output for human output', function (): void {
         fakeGateway(fakeWorkspaceLogEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', ['run' => '12']);
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', ['run' => '12']);
 
         expect($exitCode)
             ->toBe(0)
@@ -73,7 +73,7 @@ describe('workspace:log', function (): void {
     it('fails validation before opening a gateway request when run is missing', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -92,7 +92,7 @@ describe('workspace:log', function (): void {
     it('fails validation before opening a gateway request when run is not positive integer', function (string $run): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', [
             'run' => $run,
             '--json' => true,
         ]);
@@ -116,7 +116,7 @@ describe('workspace:log', function (): void {
     it('surfaces gateway run-not-found failures without collapsing the error code', function (): void {
         fakeGateway(fakeErrorEnvelope('workspace.run_not_found', 'Workspace run 999 not found.', ['id' => 999]), 404);
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', [
             'run' => '999',
             '--json' => true,
         ]);
@@ -140,7 +140,7 @@ describe('workspace:log', function (): void {
             ['workspace' => 'feature-docs', 'app' => 'docs'],
         ), 403);
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', [
             'run' => '12',
             '--json' => true,
         ]);
@@ -160,7 +160,7 @@ describe('workspace:log', function (): void {
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('No route to host');
 
-        [$exitCode, $output] = runCommand($this, 'workspace:log', [
+        [$exitCode, $output] = runCommand($this, 'workspace:run:log', [
             'run' => '12',
             '--json' => true,
         ]);

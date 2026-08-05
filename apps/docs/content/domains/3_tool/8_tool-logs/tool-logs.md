@@ -23,7 +23,7 @@ ambiguous runtimes fail before reading logs.
 Direct remote runtimes use Agent push. Process-backed tools read through their
 exact process row. `dns` is the gateway-local exception and reads the one
 `orbit-dns` container directly. This command is a bounded retained-log read; use
-`process:logs --follow` when a process-owned live stream is required.
+`process:log --follow` when a process-owned live stream is required.
 
 ## Options
 
@@ -38,4 +38,4 @@ exact process row. `dns` is the gateway-local exception and reads the one
 - [Technical contract](technical/1_tool-logs.md)
 - [`tool:restart`](../7_tool-restart/tool-restart.md)
 - [`tool:reload`](../11_tool-reload/tool-reload.md)
-- [`process:logs`](../../7_process/8_process-logs/process-logs.md)
+- [`process:log`](../../7_process/8_process-log/process-log.md)

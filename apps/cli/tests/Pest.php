@@ -15,6 +15,7 @@ use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
@@ -26,6 +27,9 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
+use Symfony\Component\Console\Command\Command as SymfonyCommand;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\StreamOutput;
 use Tests\TestCase;
 
@@ -512,6 +516,54 @@ function runCommand(object $test, string $command, array $params = []): array
     $exitCode = $test->artisan($command, $params);
 
     return [$exitCode, trim(app(Kernel::class)->output())];
+}
+
+/**
+ * Run a registered command with interactive input enabled (cwd inference paths).
+ *
+ * @param  array<string, mixed>  $params
+ * @return array{0: int, 1: string}
+ */
+function run_application_log_command_interactive(string $command, array $params = []): array
+{
+    return run_application_log_command_with_interactivity($command, $params, interactive: true);
+}
+
+/**
+ * Run a registered command with interactive input disabled (noninteractive omission paths).
+ *
+ * @param  array<string, mixed>  $params
+ * @return array{0: int, 1: string}
+ */
+function run_application_log_command_noninteractive(string $command, array $params = []): array
+{
+    return run_application_log_command_with_interactivity($command, $params, interactive: false);
+}
+
+/**
+ * @param  array<string, mixed>  $params
+ * @return array{0: int, 1: string}
+ */
+function run_application_log_command_with_interactivity(
+    string $command,
+    array $params,
+    bool $interactive,
+): array {
+    $instance = Artisan::all()[$command] ?? null;
+
+    if (! $instance instanceof SymfonyCommand) {
+        throw new RuntimeException("Command [{$command}] is not registered.");
+    }
+
+    $instance->setLaravel(app());
+
+    $input = new ArrayInput($params);
+    $input->setInteractive($interactive);
+    $output = new BufferedOutput;
+
+    $exitCode = $instance->run($input, $output);
+
+    return [$exitCode, trim($output->fetch())];
 }
 
 function orbit_test_config_path(string $prefix): string
