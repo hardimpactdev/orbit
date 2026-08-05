@@ -192,7 +192,9 @@ final class ZshShellIntegration
     public static function hasCompleteManagedBlock(string $contents, string $snippetPath): bool
     {
         $source = self::sourceLine($snippetPath);
-        $lines = preg_split("/\r\n|\n|\r/", $contents) ?: [];
+        // Match installer awk line reads: only LF splits count. CRLF-terminated
+        // or CR-only lines are non-canonical and must not satisfy the block.
+        $lines = explode("\n", $contents);
 
         // Trailing empty element from a final newline is EOF after the last line.
         $count = count($lines);

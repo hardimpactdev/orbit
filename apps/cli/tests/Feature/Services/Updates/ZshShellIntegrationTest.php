@@ -432,6 +432,41 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
             ->and(file_get_contents($zshrc))
             ->toBe($afterEnd);
+
+        // CRLF-terminated "block" is non-canonical (installer/PHP use LF only).
+        $crlfBlock =
+            ZshShellIntegration::BEGIN_MARKER
+            ."\r\n"
+            .$source
+            ."\r\n"
+            .ZshShellIntegration::END_MARKER
+            ."\r\n"
+            ."export KEEP_CRLF=1\r\n";
+
+        expect(ZshShellIntegration::hasCompleteManagedBlock($crlfBlock, $snippet))->toBeFalse();
+
+        file_put_contents($zshrc, $crlfBlock);
+        $fifth = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        $afterCrlf = file_get_contents($zshrc);
+
+        expect($fifth['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(str_starts_with($afterCrlf, $crlfBlock))
+            ->toBeTrue()
+            ->and($afterCrlf)
+            ->toContain("export KEEP_CRLF=1\r\n")
+            ->and($afterCrlf)
+            ->toContain("\r\n")
+            ->and(ZshShellIntegration::hasCompleteManagedBlock($afterCrlf, $snippet))
+            ->toBeTrue()
+            ->and(str_contains($afterCrlf, ZshShellIntegration::zshrcBlock($snippet)))
+            ->toBeTrue();
+
+        $sixth = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        expect($sixth['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(file_get_contents($zshrc))
+            ->toBe($afterCrlf);
     });
 
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {
