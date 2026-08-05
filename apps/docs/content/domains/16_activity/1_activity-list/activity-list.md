@@ -19,7 +19,7 @@ orbit activity:list [--node=<node>] [--app=<app>] [--effect=<effect>] [--correla
 
 ```bash
 orbit activity:list
-orbit activity:list --appdocs
+orbit activity:list --app=docs
 orbit activity:list --node=app-1 --limit=50
 orbit activity:list --effect=destructive
 orbit activity:list --effect=destructive --node=app-1

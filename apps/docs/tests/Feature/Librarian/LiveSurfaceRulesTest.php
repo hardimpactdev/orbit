@@ -6,6 +6,7 @@ use App\Librarian\CliCommand;
 use App\Librarian\CliSurface;
 use App\Librarian\Rules\BannedTermsRule;
 use App\Librarian\Rules\CommandSurfaceCoverageRule;
+use App\Librarian\Rules\GluedOptionValueFormRule;
 use App\Librarian\Rules\PublicStreamJsonOptionContractRule;
 use App\Librarian\Rules\SignatureLiveSurfaceRule;
 use HardImpact\Librarian\Docs\DocsConfig;
@@ -439,6 +440,48 @@ it('allows banned terms under an allowed directory path', function (): void {
     $payload = runLiveSurfaceLint();
 
     expect(liveSurfaceFindings($payload, 'command_docs.banned_terms'))->toBeEmpty();
+});
+
+it('rejects glued option value forms after renames while accepting --app=docs', function (): void {
+    config()->set('librarian.rules', [GluedOptionValueFormRule::class]);
+    bindLiveSurfaceFake([]);
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/16_activity/1_activity-list/activity-list.md',
+        "# `orbit activity:list`\n\n## Examples\n\n```bash\norbit activity:list --appdocs\norbit activity:list --app=docs\norbit activity:list --apply\norbit activity:list --node=app-1\n```\n",
+    );
+
+    $payload = runLiveSurfaceLint();
+    $findings = liveSurfaceFindings($payload, 'command_docs.glued_option_value_form');
+
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/16_activity/1_activity-list/activity-list.md')
+        ->and($findings[0]['line'])
+        ->toBe(6)
+        ->and($findings[0]['message'])
+        ->toContain('`--appdocs`')
+        ->toContain('`--app=docs`')
+        ->and(collect($findings)->pluck('message')->implode("\n"))
+        ->not->toContain('`--apply` is invalid')
+        ->not->toContain('`--node');
+});
+
+it('does not flag multi-word option names that share a shorter option prefix', function (): void {
+    config()->set('librarian.rules', [GluedOptionValueFormRule::class]);
+    bindLiveSurfaceFake([]);
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/5_app/1_app-new/app-new.md',
+        "# App New\n\nUse `--apply` after review. Filter with `--app=docs`.\n",
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    expect(liveSurfaceFindings($payload, 'command_docs.glued_option_value_form'))->toBeEmpty();
 });
 
 function bindLiveSurfaceFake(array $commands): void

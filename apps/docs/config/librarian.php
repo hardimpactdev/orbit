@@ -25,6 +25,7 @@ use App\Librarian\Rules\DriftIssueSuffixRule;
 use App\Librarian\Rules\ErrorCodeRegistryRule;
 use App\Librarian\Rules\ExitStatusPolicyRule;
 use App\Librarian\Rules\FamilyCommandPrefixRule;
+use App\Librarian\Rules\GluedOptionValueFormRule;
 use App\Librarian\Rules\HumanRendererProgressTreeRule;
 use App\Librarian\Rules\InputModeContractRule;
 use App\Librarian\Rules\JsonMetadataShapeRule;
@@ -143,6 +144,7 @@ return [
         NoLegacyNarrativeRule::class,
         CommandSurfaceCoverageRule::class,
         SignatureLiveSurfaceRule::class,
+        GluedOptionValueFormRule::class,
         TransitionalSseContractRule::class,
         WorkspaceLifecycleInstanceScopeRule::class,
         BannedTermsRule::class,
