@@ -7,7 +7,6 @@ use App\Models\Node;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use RuntimeException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -46,7 +45,7 @@ it('throws when a successful read envelope lacks string contents', function (str
     $path = '/home/orbit/apps/demo/.env';
 
     expect(fn () => new RemoteEnvFile($executor)->read($node, $path))
-        ->toThrow(RuntimeException::class, "Env file read response for {$path} is missing string contents.");
+        ->toThrow(\RuntimeException::class, "Env file read response for {$path} is missing string contents.");
 })->with([
     'missing contents key' =>
         json_encode([
@@ -71,7 +70,7 @@ it('throws on non-not-found read failures', function (): void {
     $node = Node::factory()->create();
 
     expect(fn () => new RemoteEnvFile($executor)->read($node, '/home/orbit/apps/demo/.env'))
-        ->toThrow(RuntimeException::class, 'Env file could not be read.');
+        ->toThrow(\RuntimeException::class, 'Env file could not be read.');
 });
 
 it('never writes after a malformed successful read', function (): void {
@@ -97,12 +96,12 @@ it('never writes after a malformed successful read', function (): void {
         $contents = $envFile->read($node, $path);
         // Callers only write after a successful read; this path must not be reached.
         $envFile->write($node, $path, $contents ?? '');
-    } catch (RuntimeException $exception) {
+    } catch (\RuntimeException $exception) {
         $caught = $exception;
     }
 
     expect($caught)
-        ->toBeInstanceOf(RuntimeException::class)
+        ->toBeInstanceOf(\RuntimeException::class)
         ->and($caught?->getMessage())
         ->toContain('missing string contents')
         ->and($executor->actions)
