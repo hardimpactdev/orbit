@@ -1,0 +1,28 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-08-05T09:49:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-proof-venue-routing/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-114928-codex-loop-proof-venue-routing",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T094141Z-5565fff6f2f6.json"
+    ],
+    "entry_digests": {
+        "loop.md": "55d4ac9fb888a5e006e18ac5dc4490955378b8029bf363890a555cb4fda1962a",
+        "quality-gates/quality-check-2026-08-05T094141Z-5565fff6f2f6.json": "38930fea01659d333034250f9db2b525bd017193f7e48d496994f667af4cf8f1"
+    },
+    "slug": "codex-loop-proof-venue-routing",
+    "requested_slug": "codex-loop-proof-venue-routing",
+    "compatible_slugs": [
+        "codex-loop-proof-venue-routing"
+    ],
+    "branch": "codex/loop-proof-venue-routing",
+    "candidate_commit": "53fa9849b5dee995c09094846806886b91b40562",
+    "accepted_feature_tip": "53fa9849b5dee995c09094846806886b91b40562",
+    "accepted_main_tip": "d45b2dee05209fd0529da21d509db233208ff794",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

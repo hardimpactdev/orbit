@@ -48,18 +48,21 @@ review PASS must record `human-judgment=required|not-required` and the exact
 committed HEAD in `Reviewed feature tip`. Blast radius must be `not-required -
 <reason>` or `complete - evidence=<repository-wide search, inventory, or
 lintable check>; result=<summary>` before acceptance; `gaps` returns to BUILD.
-For non-`automated` venues, `Verification.runtime: passed` must use one
-candidate-bound structured receipt on that same single line. Required fields
-are candidate=, venue=, environment=, expected=, observed=, result=passed, and
-evidence= as one exact inline-code path under the worktree evidence or
-quality-gates trees. Use exactly one of target= or command=. Semicolons
-separate fields, so values must not embed raw semicolon-delimited
-pseudo-fields. Known keys only. Example evidence citation: write a real receipt
-and cite one exact regular file below the worktree evidence tree (not a
-directory root). A failed, excluded, still-required, or deferred final hop
-cannot be recorded as passed; remain in PROVE, disarm any armed or recorded
-acceptance, and follow FIX -> BUILD -> PROVE before ACCEPT. Keep a still-valid
-Review and Reviewed feature tip on proof-only retries; a HEAD change still needs
-a refreshed review. Automated venues keep `runtime: not applicable`. Proof files
-retained by the compact archive must be cited as one exact inline-code path;
-prose, directories, padded code spans, and partial paths are not proof citations.
+After FRAME, run `bin/orbit-feature-acceptance route` for the read-only
+diff-derived venue before expensive PROVE work. For non-`automated` venues,
+`Verification.runtime: passed` must use one candidate-bound structured receipt
+on that same single line. Required fields are candidate=, venue=, environment=,
+expected=, observed=, result=passed, and evidence= as one exact inline-code path
+under the worktree evidence or quality-gates trees. Use exactly one of target= or command=.
+Live/production claims require exact environment=live; ordinary retained
+topology may use environment=dev-fixture. Semicolons separate fields,
+so values must not embed raw semicolon-delimited pseudo-fields. Known keys
+only. Example evidence citation: write a real receipt and cite one exact regular
+file below the worktree evidence tree (not a directory root). A failed,
+excluded, still-required, or deferred final hop cannot be recorded as passed;
+remain in PROVE, disarm any armed or recorded acceptance, and follow FIX ->
+BUILD -> PROVE before ACCEPT. Keep a still-valid Review and Reviewed feature tip
+on proof-only retries; a HEAD change still needs a refreshed review. Automated
+venues keep `runtime: not applicable`. Proof files retained by the compact
+archive must be cited as one exact inline-code path; prose, directories, padded
+code spans, and partial paths are not proof citations.

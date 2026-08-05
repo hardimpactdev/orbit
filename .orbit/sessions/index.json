@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 213,
+    "record_count": 214,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -5768,6 +5768,28 @@
             "archive": "2026-08-05-105918-loop-prove-repair-transition",
             "slug": "loop-prove-repair-transition",
             "timestamp": "2026-08-05-105918",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "state": "land",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-05-114928-codex-loop-proof-venue-routing",
+            "slug": "codex-loop-proof-venue-routing",
+            "timestamp": "2026-08-05-114928",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "land",

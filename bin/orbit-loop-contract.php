@@ -486,7 +486,10 @@ function orbitLoopRuntimeProofProblem(
         }
     }
 
-    return null;
+    // After deferred-hop narrative checks so open final-hop language keeps its
+    // existing error surface; completed live/production claims still require
+    // exact environment=live.
+    return orbitLoopRuntimeProofLiveEnvironmentProblem($fields);
 }
 
 function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
@@ -604,6 +607,39 @@ function orbitLoopRuntimeProofReceiptProblem(
     }
 
     return orbitLoopRuntimeProofEvidenceProblem($worktree, $fields['evidence']);
+}
+
+/**
+ * Non-automated receipts that claim a live/production surface must set
+ * environment=live exactly. Scan only environment/target/command/expected/observed.
+ *
+ * @param  array<string, string>  $fields
+ */
+function orbitLoopRuntimeProofLiveEnvironmentProblem(array $fields): ?string
+{
+    $claimFields = ['environment', 'target', 'command', 'expected', 'observed'];
+    $claimsLiveOrProduction = false;
+
+    foreach ($claimFields as $key) {
+        if (! array_key_exists($key, $fields)) {
+            continue;
+        }
+
+        if (preg_match('/\b(?:live|production)\b/i', $fields[$key]) === 1) {
+            $claimsLiveOrProduction = true;
+            break;
+        }
+    }
+
+    if (! $claimsLiveOrProduction) {
+        return null;
+    }
+
+    if ($fields['environment'] === 'live') {
+        return null;
+    }
+
+    return 'Verification runtime structured receipt that claims a live/production surface requires exact environment=live; remain in PROVE and re-prove the final hop';
 }
 
 function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidenceField): ?string
@@ -777,6 +813,10 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
+        // TypeScript SDK is repository packaging only. PHP packages/sdk is a
+        // production require of CLI/gateway and stays retained-incus by default.
+        // packages/core/src remains retained-incus.
+        || str_starts_with($path, 'packages/sdk-typescript/')
         // Narrow docs automation surfaces only. Do not classify all of apps/docs:
         // apps/docs/resources/** must stay browser; other docs/runtime source stays retained-incus.
         || str_starts_with($path, 'apps/docs/app/Librarian/')
@@ -811,14 +851,25 @@ function orbitLoopStrongerVenue(string $left, string $right): string
 }
 
 /**
- * @return list<string>
+ * Fail-closed exact proof-route derivation shared by route/ready/accept.
+ *
+ * @return array{
+ *     candidate: string,
+ *     base: string,
+ *     base_tip: string,
+ *     merge_base: string,
+ *     changed_files: list<string>,
+ *     venue: string
+ * }
  */
-function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $head = 'HEAD'): array
 {
+    $candidate = orbitLoopGitValue($cwd, ['rev-parse', $head]);
+    $baseTip = orbitLoopGitValue($cwd, ['rev-parse', $base]);
     $mergeBase = orbitLoopGitValue($cwd, ['merge-base', $base, $head]);
 
-    if ($mergeBase === null) {
-        return [];
+    if ($candidate === null || $candidate === '' || $baseTip === null || $baseTip === '' || $mergeBase === null || $mergeBase === '') {
+        throw new RuntimeException('unable to derive exact proof route');
     }
 
     $output = orbitLoopGitOutput($cwd, [
@@ -831,9 +882,26 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
     ]);
 
     if ($output === null) {
-        return [];
+        throw new RuntimeException('unable to derive exact proof route');
     }
 
+    $changedFiles = orbitLoopParseNameStatusDiff($output);
+
+    return [
+        'candidate' => $candidate,
+        'base' => $base,
+        'base_tip' => $baseTip,
+        'merge_base' => $mergeBase,
+        'changed_files' => $changedFiles,
+        'venue' => orbitLoopAcceptanceVenue($changedFiles),
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function orbitLoopParseNameStatusDiff(string $output): array
+{
     $tokens = explode("\0", $output);
     $paths = [];
 
@@ -860,6 +928,21 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
     }
 
     return array_values(array_unique($paths));
+}
+
+/**
+ * Nullable legacy helper for non-acceptance callers. Prefer
+ * orbitLoopExactProofRoute() for acceptance/route fail-closed derivation.
+ *
+ * @return list<string>
+ */
+function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+{
+    try {
+        return orbitLoopExactProofRoute($cwd, $base, $head)['changed_files'];
+    } catch (RuntimeException) {
+        return [];
+    }
 }
 
 function orbitLoopGitValue(string $cwd, array $arguments): ?string

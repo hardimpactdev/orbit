@@ -15,7 +15,7 @@ it('shows global help without requiring a loop packet', function (string $argume
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and(trim($process->getOutput()))
-            ->toBe('Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]')
+            ->toBe('Usage: bin/orbit-feature-acceptance route|ready|accept|reprove|invalidate|show [options]')
             ->and($process->getErrorOutput())
             ->toBe('')
             ->and(is_dir("{$workspace}/.orbit"))
@@ -52,6 +52,12 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         ],
         'automated',
     ],
+    'php sdk package source stays retained-incus' => [
+        ['packages/sdk/src/GatewayConnector.php'],
+        'retained-incus',
+    ],
+    'typescript sdk package source' => [['packages/sdk-typescript/src/client.ts'], 'automated'],
+    'shared core runtime source' => [['packages/core/src/Http/JsonEnvelope.php'], 'retained-incus'],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
     'node runtime' => [['apps/gateway/app/Actions/Node/RepairNode.php'], 'retained-incus'],
     'docs non-librarian runtime php' => [['apps/docs/app/Http/Controllers/DocsController.php'], 'retained-incus'],
@@ -59,6 +65,13 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         [
             'bin/orbit-example',
             'apps/cli/app/Commands/FooCommand.php',
+        ],
+        'retained-incus',
+    ],
+    'php sdk does not stay automated when mixed with typescript sdk' => [
+        [
+            'packages/sdk/src/GatewayConnector.php',
+            'packages/sdk-typescript/src/client.ts',
         ],
         'retained-incus',
     ],
@@ -72,6 +85,195 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         'browser',
     ],
     'native mac app' => [['apps/macos/src/main.rs'], 'host-macos'],
+]);
+
+it('routes proof venue from the exact candidate diff without a loop packet', function (): void {
+    $fixture = acceptance_test_workspace(
+        'route-typescript-sdk-package',
+        'packages/sdk-typescript/src/client.ts',
+    );
+
+    try {
+        $candidate = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        $baseTip = acceptance_test_git($fixture, ['rev-parse', 'main']);
+        $mergeBase = acceptance_test_git($fixture, ['merge-base', 'main', 'HEAD']);
+        $loopBefore = is_file("{$fixture}/.orbit/loop.md")
+            ? (string) file_get_contents("{$fixture}/.orbit/loop.md")
+            : null;
+
+        $process = new Process([
+            repo_path('bin/orbit-feature-acceptance'),
+            'route',
+            "--cwd={$fixture}",
+        ], $fixture);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toBe('');
+
+        $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($payload)
+            ->toMatchArray([
+                'candidate' => $candidate,
+                'base' => 'main',
+                'base_tip' => $baseTip,
+                'merge_base' => $mergeBase,
+                'venue' => 'automated',
+            ])
+            ->and($payload['changed_files'])
+            ->toBe(['packages/sdk-typescript/src/client.ts'])
+            ->and(array_keys($payload))
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue']);
+
+        $loopAfter = is_file("{$fixture}/.orbit/loop.md")
+            ? (string) file_get_contents("{$fixture}/.orbit/loop.md")
+            : null;
+
+        expect($loopAfter)->toBe($loopBefore);
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('uses the same exact diff derivation for route and ready', function (): void {
+    $fixture = acceptance_test_workspace(
+        'route-ready-agreement',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        $route = new Process([
+            repo_path('bin/orbit-feature-acceptance'),
+            'route',
+            "--cwd={$fixture}",
+        ], $fixture);
+        $route->run();
+
+        expect($route->getExitCode())->toBe(0, $route->getErrorOutput());
+
+        $routePayload = json_decode($route->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+
+        expect($ready->getExitCode())
+            ->toBe(0, $ready->getErrorOutput())
+            ->and($ready->getOutput())
+            ->toContain('ACCEPTANCE READY venue='.$routePayload['venue'].' actor=automated')
+            ->and($routePayload)
+            ->toMatchArray([
+                'venue' => 'retained-incus',
+                'changed_files' => ['apps/cli/app/Commands/FooCommand.php'],
+            ])
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- Acceptance venue: retained-incus');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('fails closed when route cannot derive the exact proof route', function (): void {
+    $fixture = acceptance_test_workspace(
+        'route-missing-base',
+        'packages/sdk/src/GatewayConnector.php',
+    );
+
+    try {
+        acceptance_test_git($fixture, ['branch', '-D', 'main']);
+
+        $process = new Process([
+            repo_path('bin/orbit-feature-acceptance'),
+            'route',
+            "--cwd={$fixture}",
+        ], $fixture);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('unable to derive exact proof route')
+            ->and($process->getOutput())
+            ->toBe('');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('requires exact environment=live when a non-automated receipt claims a live or production surface', function (
+    string $runtime,
+    bool $accepted,
+    string $needle,
+): void {
+    $fixture = acceptance_test_workspace(
+        'live-environment-receipt-'.bin2hex(random_bytes(3)),
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        acceptance_test_write_runtime_row(
+            $fixture,
+            str_replace('<TIP>', $tip, $runtime),
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+
+        if ($accepted) {
+            expect($ready->getExitCode())
+                ->toBe(0, $ready->getErrorOutput())
+                ->and($ready->getOutput())
+                ->toContain('ACCEPTANCE READY venue=retained-incus actor=automated');
+        } else {
+            expect($ready->getExitCode())
+                ->toBe(2)
+                ->and($ready->getErrorOutput())
+                ->toContain($needle)
+                ->toContain('FIX -> BUILD -> PROVE');
+        }
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'ordinary retained topology may stay dev-fixture' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        '',
+    ],
+    'exact live environment accepts live surface target' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=live; target=live production gateway; expected=exit 0; observed=exit 0 on live topology; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        '',
+    ],
+    'dev-fixture cannot claim production target' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=production gateway; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'environment=live',
+    ],
+    'dev-fixture cannot claim live command surface' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; command=orbit doctor --node=live-1; expected=healthy; observed=healthy; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'environment=live',
+    ],
+    'environment production synonym is not exact live' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=production; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'environment=live',
+    ],
 ]);
 
 it('allows stronger acceptance venues without allowing downgrades', function (): void {

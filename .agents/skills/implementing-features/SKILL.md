@@ -70,8 +70,14 @@ observer, analyzer, capture, or specialist lanes.
 
 ## PROVE
 
-Run the narrowest relevant verification while building. Before review, run the
-diff-routed broader gate:
+After FRAME, derive the proof venue before expensive PROVE work:
+
+```bash
+bin/orbit-feature-acceptance route
+```
+
+Use that venue for the rest of the loop. Run the narrowest relevant verification
+while building. Before review, run the diff-routed broader gate:
 
 - docs-only: `composer docs-lint`;
 - any non-docs repository change: `composer quality-check`;
@@ -87,13 +93,15 @@ venues, record the structured runtime receipt on the existing
 `Verification.runtime` row (candidate-bound `candidate=`, `venue=`,
 `environment=`, `target=` or `command=`, `expected=`, `observed=`,
 `result=passed`, exact existing `evidence=` file under `.orbit/evidence/` or
-`.orbit/quality-gates/`). Scan incomplete final-hop language in free-form
-detail or `observed=` only. Do not invent a parallel receipt, artifact, or
-lane. If the final hop is incomplete, failed, or deferred, remain in PROVE:
-acceptance cannot arm or stay armed; follow FIX -> BUILD -> PROVE before ACCEPT
-or LAND. A same-candidate proof retry may keep Review and Reviewed feature tip;
-a repair that changes HEAD still needs a refreshed review. Do not treat post-LAND
-closure proof as a substitute for the current candidate receipt.
+`.orbit/quality-gates/`). Live/production claims require exact
+`environment=live`; ordinary retained topology may use `environment=dev-fixture`.
+Scan incomplete final-hop language in free-form detail or `observed=` only. Do
+not invent a parallel receipt, artifact, or lane. If the final hop is
+incomplete, failed, or deferred, remain in PROVE: acceptance cannot arm or stay
+armed; follow FIX -> BUILD -> PROVE before ACCEPT or LAND. A same-candidate
+proof retry may keep Review and Reviewed feature tip; a repair that changes HEAD
+still needs a refreshed review. Do not treat post-LAND closure proof as a
+substitute for the current candidate receipt.
 
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.
@@ -150,10 +158,13 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 
 The conservative venues are:
 
-- `automated` as the proof venue for docs, tests, declarative workflow files,
-  and repository tooling under `bin/`; repository tooling still requires
-  diff-routed `composer quality-check`;
-- `retained-incus` for CLI and node/runtime behavior;
+- `automated` for docs, tests, declarative workflow files, repository tooling
+  under `bin/`, and repository-only TypeScript SDK packaging under
+  `packages/sdk-typescript/**`; those surfaces still require diff-routed
+  `composer quality-check`;
+- `retained-incus` for shared core (`packages/core/src/**`), PHP SDK
+  (`packages/sdk/**`; production require of CLI/gateway), CLI, and
+  node/runtime behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
 
