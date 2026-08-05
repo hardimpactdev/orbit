@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,21 +59,21 @@ describe('ProcessListController', function (): void {
             ]);
         $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         Process::factory()
             ->forOwner($app, $appNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
             ]);
 
@@ -97,28 +97,28 @@ describe('ProcessListController', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
         $productionNode = createTestAppHostNode(['name' => 'app-production']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
-        $development = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $development = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $developmentNode->id),
         ]);
-        $production = AppInstance::factory()->create([
+        $production = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $productionNode->id),
         ]);
         $process = Process::factory()
             ->forOwner($app, $developmentNode)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'vite',
             ]);
         $developmentEvent = ProcessEvent::factory()->create([
             'event' => ProcessEventType::Started,
             'process_id' => $process->id,
             'app_id' => $app->id,
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'node_id' => $developmentNode->id,
             'recorded_at' => now()->subMinute(),
         ]);
@@ -126,7 +126,7 @@ describe('ProcessListController', function (): void {
             'event' => ProcessEventType::Crashed,
             'process_id' => $process->id,
             'app_id' => $app->id,
-            'app_instance_id' => $production->id,
+            'instance_id' => $production->id,
             'node_id' => $productionNode->id,
             'recorded_at' => now(),
         ]);
@@ -152,7 +152,7 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         Process::factory()
             ->forOwner($app)
@@ -186,7 +186,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => null,
             ])
@@ -201,7 +201,7 @@ describe('ProcessListController', function (): void {
     it('uses workspace context for inherited process runtime units', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 1]);
 
@@ -218,7 +218,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
@@ -228,7 +228,7 @@ describe('ProcessListController', function (): void {
     it('lists workspace owned process rows for workspace context', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()
             ->forOwner($workspace)
@@ -252,7 +252,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
@@ -285,7 +285,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
             ])
@@ -321,7 +321,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', [
                 'node' => 'gateway',
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
             ])
@@ -392,8 +392,8 @@ describe('ProcessListController', function (): void {
         $hiddenNode = createTestAppHostNode();
         grantProcessListAccess($caller, $visibleNode);
 
-        Project::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
-        $hiddenApp = Project::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
+        App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
 
         $response = $this->call(
@@ -416,15 +416,15 @@ describe('ProcessListController', function (): void {
         $legacyNode = createTestAppHostNode(['name' => 'legacy-app-node']);
         $instanceNode = createTestAppHostNode(['name' => 'instance-node']);
         grantProcessListAccess($caller, $instanceNode);
-        $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
-        $instance = AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $instanceNode->id),
         ]);
         Process::factory()
             ->forOwner($app, $instanceNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'queue',
             ]);
 
@@ -440,19 +440,19 @@ describe('ProcessListController', function (): void {
         $singleNode = createTestAppHostNode(['name' => 'single-node']);
         $developmentNode = createTestAppHostNode(['name' => 'development-node']);
         $productionNode = createTestAppHostNode(['name' => 'production-node']);
-        $singleApp = Project::factory()->for($singleNode, 'node')->create(['name' => 'single']);
-        $multiApp = Project::factory()->for($developmentNode, 'node')->create(['name' => 'multi']);
-        AppInstance::factory()->for($singleApp)->create([
+        $singleApp = App::factory()->for($singleNode, 'node')->create(['name' => 'single']);
+        $multiApp = App::factory()->for($developmentNode, 'node')->create(['name' => 'multi']);
+        Instance::factory()->for($singleApp)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $singleNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $singleNode->id),
         ]);
-        AppInstance::factory()->for($multiApp)->create([
+        Instance::factory()->for($multiApp)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $developmentNode->id),
         ]);
-        AppInstance::factory()->for($multiApp)->create([
+        Instance::factory()->for($multiApp)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $productionNode->id),
         ]);
 
         $this
@@ -467,10 +467,10 @@ describe('ProcessListController', function (): void {
         $legacyNode = createTestAppHostNode(['name' => 'legacy-app-node']);
         $instanceNode = createTestAppHostNode(['name' => 'instance-node']);
         grantProcessListAccess($caller, $legacyNode);
-        $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
-        AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $instanceNode->id),
         ]);
 
         $this
@@ -490,7 +490,7 @@ describe('ProcessListController', function (): void {
     it('returns authorization failure when the caller has no process visibility', function (): void {
         createProcessListCallerNode();
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create();
 
         $response = $this->call(
@@ -545,11 +545,11 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -558,7 +558,7 @@ describe('ProcessListController', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'name' => 'development',
                     'selector' => 'docs.development',
                 ],
@@ -567,7 +567,7 @@ describe('ProcessListController', function (): void {
         Process::factory()
             ->forOwner($app, $appNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
             ]);
 
@@ -582,7 +582,7 @@ describe('ProcessListController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.context.project', 'docs')
+            ->assertJsonPath('success.data.context.app', 'docs')
             ->assertJsonPath('success.data.context.instance', 'development')
             ->assertJsonPath('success.data.processes.0.name', 'vite')
             ->assertJsonPath('success.data.processes.0.status', 'unknown');
@@ -592,16 +592,16 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -614,7 +614,7 @@ describe('ProcessListController', function (): void {
         Process::factory()
             ->forOwner($app, $appNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
             ]);
 
@@ -645,7 +645,7 @@ describe('ProcessListController', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
             )
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'context');
     });
@@ -662,7 +662,7 @@ describe('ProcessListController', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
             )
-            ->assertStatus(400)
+            ->assertBadRequest()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'app')
             ->assertJsonPath('error.meta.reason', 'hostname_only');
@@ -670,7 +670,7 @@ describe('ProcessListController', function (): void {
 
     it('admits browser CORS preflight for a registered Origin without peer-IP headers', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -708,7 +708,7 @@ describe('ProcessListController', function (): void {
 
     it('rejects browser CORS preflight that requests peer-IP identity headers', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -755,7 +755,7 @@ describe('ProcessListController', function (): void {
 
     it('rejects browser CORS preflight for a registered hostname with a non-default origin port', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -786,11 +786,11 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -799,7 +799,7 @@ describe('ProcessListController', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'name' => 'development',
                     'selector' => 'docs.development',
                 ],
@@ -828,11 +828,11 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $instance = AppInstance::factory()->create([
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -841,7 +841,7 @@ describe('ProcessListController', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'name' => 'development',
                     'selector' => 'docs.development',
                 ],
@@ -850,7 +850,7 @@ describe('ProcessListController', function (): void {
         Process::factory()
             ->forOwner($app, $appNode)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'vite',
             ]);
 
@@ -887,7 +887,7 @@ describe('ProcessListController', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessListAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -923,7 +923,7 @@ describe('ProcessListController', function (): void {
     it('keeps CORS headers on grant failures after Origin admission without treating Origin as identity', function (): void {
         createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',

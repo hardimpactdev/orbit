@@ -9,18 +9,18 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
-- **Route owner:** The domain that owns route lifecycle. One of `project`,
+- **Route owner:** The domain that owns route lifecycle. One of `app`,
   `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
   `tool`, or `custom`. The `owner` value classifies which domain's convergence
   edits the route record; it is not necessarily the role that owns the hostname
   or artifact.
-- **Route kind:** Route behavior at ingress. One of `project`, `instance`, `workspace`,
+- **Route kind:** Route behavior at ingress. One of `app`, `instance`, `workspace`,
   `internal`, `proxy`, or `redirect`.
-- **Project route:** Proxy route whose owner is the project and whose kind is
+- **App route:** Proxy route whose owner is the app and whose kind is
   `instance`, and whose target is always one concrete instance. The route stores
-  the project slug as `owner.name`, the dotted instance selector as
+  the app slug as `owner.name`, the dotted instance selector as
   `target.value`, and that instance's serving node as `node`. Edited through
-  project and instance commands.
+  app and instance commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
   `workspace`. Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired
@@ -37,7 +37,7 @@ These terms define the types of routes that the proxy family owns and manages.
   `websocket` and whose kind is `proxy`. It is created from an instance
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
-- **Project analytics route:** Public analytics tracking route whose public
+- **App analytics route:** Public analytics tracking route whose public
   owner is `analytics` and whose kind is `proxy`. It is created from an
   instance analytics binding (instance-owned placement), rendered on an
   `ingress` node, forwards to `router`, and proxies only Plausible script and
@@ -51,7 +51,7 @@ These terms define the types of routes that the proxy family owns and manages.
   owned by `router`. It exists while at least one active `websocket` role
   assignment exists in the topology and is removed when none remains. It
   targets the websocket backend pool owned by the router and is the stable
-  private publishing endpoint projects and instances use.
+  private publishing endpoint apps and instances use.
 - **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
   `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
   S3 request metadata needed for uploads, and must not target a concrete s3
@@ -59,7 +59,7 @@ These terms define the types of routes that the proxy family owns and manages.
 - **S3 service route:** Private router route for `s3.orbit`, owned by
   `router`. It exists while at least one active `s3` role assignment exists in
   the topology and is removed when none remains. It targets the S3 backend
-  pool owned by the router and is the stable private S3 endpoint projects and
+  pool owned by the router and is the stable private S3 endpoint apps and
   VPN clients use.
 - **Metrics service route:** Private router route for `metrics.orbit`, owned by
   `router`. It exists while an active `metrics` role assignment has converged
@@ -93,7 +93,7 @@ These terms define the types of routes that the proxy family owns and manages.
   operation completed. `intent_only` remains only for older custom rows that
   never recorded one-step enactment evidence; new custom adds do not use it as
   the happy path. `unknown` is an existing row without enactment evidence.
-- **Production enactment order:** Project production artifacts are applied backend
+- **Production enactment order:** App production artifacts are applied backend
   first, router second, and ingress last. Orbit never reports convergence if
   any layer fails and records the exact layer, node, and operation for repair.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
@@ -140,7 +140,7 @@ These terms define certificate authority, leaf certificate scope, and hostname c
 
 These terms define the ingress behavior applied to app and workspace routes.
 
-- **Project ingress baseline:** Standard browser ingress contract applied to project and instance
+- **App ingress baseline:** Standard browser ingress contract applied to app and instance
   and workspace routes: TLS termination, dynamic routing to the resolved
   FrankenPHP runtime container,
   static file serving from the configured document root, baseline security
@@ -148,7 +148,7 @@ These terms define the ingress behavior applied to app and workspace routes.
   caching for `/build/*`.
 - **Document-root policy:** Route-level policy that determines how aggressively
   ingress blocks adjacent sensitive files. Public-document-root instances and
-  workspaces use the lighter policy; project-root instances and workspaces use the
+  workspaces use the lighter policy; app-root instances and workspaces use the
   stronger blocking policy.
 - **Development runtime wake gate:** App-instance and workspace routes rendered
   on `app-dev` use only standard Caddy directives. A node-local awake marker
@@ -208,7 +208,7 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that projection changes. It does not own project, instance WebSocket binding, instance
+  and restart path when that projection changes. It does not own app, instance WebSocket binding, instance
   analytics binding, workspace, gateway, websocket service, S3 service,
   analytics service, or tool identity, does not create or remove owner-side
   records, and does not manage TCP tool service endpoints or firewall policy.

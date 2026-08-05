@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -32,15 +32,15 @@ beforeEach(function (): void {
         'wireguard_address' => '10.6.0.7',
     ]);
 
-    $app = Project::factory()->for($appNode, 'node')->create([
+    $app = App::factory()->for($appNode, 'node')->create([
         'name' => 'demo',
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $appNode->id,
             path: $app->path,
             document_root: $app->document_root,
@@ -67,7 +67,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'feature-a');
-    $response->assertJsonPath('success.data.workspace.project', 'demo');
+    $response->assertJsonPath('success.data.workspace.app', 'demo');
     $response->assertJsonPath('success.data.workspace.path', '/home/nckrtl/apps/demo/.worktrees/feature-a');
     $response->assertJsonPath('success.data.workspace.lifecycle_status', 'active');
     $response->assertJsonPath('success.data.result.action', 'created');
@@ -95,18 +95,18 @@ it('creates a workspace on the selected app instance node', function (): void {
         'wireguard_address' => '10.6.0.18',
         'tld' => 'nmbp',
     ]);
-    $app = Project::factory()->for($canonicalNode, 'node')->create([
+    $app = App::factory()->for($canonicalNode, 'node')->create([
         'name' => 'happie',
         'domain' => 'happie.test',
         'path' => '/home/nckrtl/apps/happie',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = AppInstance::factory()->create([
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'nmbp',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $localNode->id,
             path: '/Users/nckrtl/apps/happie',
             domain: 'happie.nmbp',
@@ -128,7 +128,7 @@ it('creates a workspace on the selected app instance node', function (): void {
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'recipes');
-    $response->assertJsonPath('success.data.workspace.project', 'happie');
+    $response->assertJsonPath('success.data.workspace.app', 'happie');
     $response->assertJsonPath('success.data.workspace.instance', 'nmbp');
     $response->assertJsonPath('success.data.workspace.node', 'NMBP');
     $response->assertJsonPath('success.data.workspace.path', '/Users/nckrtl/apps/happie/.worktrees/recipes');
@@ -148,7 +148,7 @@ it('creates a workspace on the selected app instance node', function (): void {
     expect($workspace)
         ->not
         ->toBeNull()
-        ->and($workspace?->app_instance_id)
+        ->and($workspace?->instance_id)
         ->toBe($instance->id)
         ->and($nodeNames)
         ->toBe(['NMBP'])
@@ -219,7 +219,7 @@ it('rejects invalid workspace names', function (): void {
 it('rejects duplicate workspace names per app', function (): void {
     Workspace::create([
         'app_id' => 1,
-        'app_instance_id' => AppInstance::query()->where('app_id', 1)->valueOrFail('id'),
+        'instance_id' => Instance::query()->where('app_id', 1)->valueOrFail('id'),
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
@@ -247,7 +247,7 @@ it('rejects workspace creation for production app nodes', function (): void {
         'host' => 'prod-1',
         'wireguard_address' => '10.6.0.8',
     ], role: 'app-prod');
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'prod',
@@ -255,8 +255,8 @@ it('rejects workspace creation for production app nodes', function (): void {
             'path' => '/home/orbit/apps/prod',
             'php_version' => '8.5',
         ]);
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: $app->path,
             document_root: $app->document_root,
@@ -279,7 +279,7 @@ it('rejects workspace creation for production app nodes', function (): void {
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'workspace.unsupported_for_production');
     expect(
-        Workspace::query()->where('app_id', Project::query()->where('name', 'prod')->value('id'))->exists(),
+        Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists(),
     )->toBeFalse();
 });
 
@@ -358,7 +358,7 @@ it('creates php workspace source without converging runtime containers during cr
 });
 
 it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {
-    Project::query()
+    App::query()
         ->where('name', 'demo')
         ->update([
             'runtime' => AppRuntimeKind::Static->value,

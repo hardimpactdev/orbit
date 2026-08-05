@@ -6,9 +6,9 @@ namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -22,7 +22,7 @@ class ProxyRouteQuery
 {
     public const array AllowedFilters = [
         'all',
-        'project',
+        'app',
         'instance',
         'workspace',
         'gateway',
@@ -102,7 +102,7 @@ class ProxyRouteQuery
                 ->values();
         }
 
-        if (in_array($filter, ['project', 'instance'], true)) {
+        if (in_array($filter, ['app', 'instance'], true)) {
             foreach ($proxyRoutes as $index => $route) {
                 if (! $route instanceof ProxyRoute) {
                     $proxyRoutes->forget($index);
@@ -110,7 +110,7 @@ class ProxyRouteQuery
                     continue;
                 }
 
-                $hasInstance = $this->appRouteTargets->appInstanceForRoute($route) instanceof AppInstance;
+                $hasInstance = $this->appRouteTargets->instanceForRoute($route) instanceof Instance;
 
                 if (($filter === 'instance') !== $hasInstance) {
                     $proxyRoutes->forget($index);
@@ -283,7 +283,7 @@ class ProxyRouteQuery
             });
         }
 
-        return $query->where('owner_type', in_array($filter, ['project', 'instance'], true) ? 'app' : $filter);
+        return $query->where('owner_type', in_array($filter, ['app', 'instance'], true) ? 'app' : $filter);
     }
 
     /**
@@ -398,7 +398,7 @@ class ProxyRouteQuery
 
     private function appRouteTargetType(ProxyRoute $route): string
     {
-        return $this->appRouteTargets->appInstanceForRoute($route) instanceof AppInstance ? 'instance' : 'project';
+        return $this->appRouteTargets->instanceForRoute($route) instanceof Instance ? 'instance' : 'app';
     }
 
     private function appRouteTargetValue(ProxyRoute $route): ?string
@@ -406,13 +406,13 @@ class ProxyRouteQuery
         $route->loadMissing('app.instances');
         $app = $route->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
-        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $instance = $this->appRouteTargets->instanceForRoute($route);
 
-        return $instance instanceof AppInstance ? $this->appRouteTargets->selector($app, $instance) : $app->name;
+        return $instance instanceof Instance ? $this->appRouteTargets->selector($app, $instance) : $app->name;
     }
 
     /**

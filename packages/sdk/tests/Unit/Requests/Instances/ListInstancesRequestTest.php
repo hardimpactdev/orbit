@@ -25,9 +25,9 @@ it('resolves to GET /api/instances', function (): void {
         ->toBe([]);
 });
 
-it('serializes the project filter', function (): void {
-    expect(new ListInstancesRequest(project: 'mealou')->query()->all())
-        ->toBe(['project' => 'mealou']);
+it('serializes the app filter', function (): void {
+    expect(new ListInstancesRequest(app: 'mealou')->query()->all())
+        ->toBe(['app' => 'mealou']);
 });
 
 it('returns an instance list response', function (): void {
@@ -36,7 +36,7 @@ it('returns an instance list response', function (): void {
             'success' => [
                 'data' => [
                     'instances' => [[
-                        'project' => 'mealou',
+                        'app' => 'mealou',
                         'name' => 'production',
                     ]],
                 ],
@@ -52,7 +52,7 @@ it('returns an instance list response', function (): void {
         ->toBeInstanceOf(InstanceListResponse::class)
         ->and($dto->instances)
         ->toBe([[
-            'project' => 'mealou',
+            'app' => 'mealou',
             'name' => 'production',
         ]]);
 });

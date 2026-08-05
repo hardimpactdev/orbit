@@ -158,11 +158,11 @@ final class WorkspaceEnvController implements Loggable
         }
 
         $this->activitySubject = $workspace;
-        $workspace->loadMissing(['app', 'appInstance']);
+        $workspace->loadMissing(['app', 'instance']);
 
         return $this->success([
-            'project' => $workspace->app?->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $workspace->app?->name,
+            'instance' => $workspace->instance->name,
             'workspace' => $workspace->name,
         ]);
     }
@@ -230,13 +230,13 @@ final class WorkspaceEnvController implements Loggable
     private function queryForSelection(?AppSelection $selection): Builder
     {
         /** @var Builder<Workspace> $query */
-        $query = Workspace::query()->with(['app', 'appInstance']);
+        $query = Workspace::query()->with(['app', 'instance']);
 
         if ($selection instanceof AppSelection) {
             $query->where('app_id', $selection->app->id);
 
             if ($selection->instance !== null) {
-                $query->where('app_instance_id', $selection->instance->id);
+                $query->where('instance_id', $selection->instance->id);
             }
         }
 
@@ -246,7 +246,7 @@ final class WorkspaceEnvController implements Loggable
     /**
      * @return array{
      *     scope: string,
-     *     project: string|null,
+     *     app: string|null,
      *     instance: string,
      *     workspace: string,
      *     path: string,
@@ -257,12 +257,12 @@ final class WorkspaceEnvController implements Loggable
      */
     private function targetPayload(Workspace $workspace, bool $stored = false): array
     {
-        $workspace->loadMissing(['app', 'appInstance']);
+        $workspace->loadMissing(['app', 'instance']);
 
         return [
             'scope' => 'workspace',
-            'project' => $workspace->app?->name,
-            'instance' => $workspace->appInstance->name,
+            'app' => $workspace->app?->name,
+            'instance' => $workspace->instance->name,
             'workspace' => $workspace->name,
             'path' => $this->applier->envPath($workspace),
             'stored' => $stored,

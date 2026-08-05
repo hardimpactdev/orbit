@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:list [--instance=<project.instance>] [--json]
+orbit workspace-teardown-step:list [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -36,7 +36,7 @@ to read.
 
 - An authorized caller for an app with no configured teardown steps
   receives an empty list (`success.data.steps=[]` in JSON,
-  `No teardown steps defined for [project.instance].` in human output) with exit zero.
+  `No teardown steps defined for [app.instance].` in human output) with exit zero.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
 - Explicitly requested instances that do not exist receive
@@ -45,10 +45,10 @@ to read.
 ## Input Resolution
 
 1. **Resolve instance.** Apply the precedence chain in order:
-   1. `--instance=<project.instance>` flag, using a dotted instance selector such
+   1. `--instance=<app.instance>` flag, using a dotted instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
-      `project:new` / `instance:register` and any workspace-installed marker) that
+      `app:new` / `instance:register` and any workspace-installed marker) that
       names the owning project slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.

@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -38,15 +38,15 @@ it('stores renders and applies env only to the selected workspace', function ():
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit/apps/billing',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/billing-development',
             document_root: null,
@@ -61,9 +61,9 @@ it('stores renders and applies env only to the selected workspace', function ():
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.82',
         ]);
-    $stagingInstance = AppInstance::factory()->for($app)->create([
+    $stagingInstance = Instance::factory()->for($app)->create([
         'name' => 'staging',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $stagingNode->id,
             path: '/srv/orbit/apps/billing-staging',
             document_root: null,
@@ -79,7 +79,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         ]);
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-mail',
             'path' => '/worktrees/feature-mail',
@@ -107,7 +107,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         ->create(['env_prefix' => 'DB']);
     Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-billing',
             'path' => '/worktrees/feature-billing',
@@ -147,7 +147,7 @@ it('stores renders and applies env only to the selected workspace', function ():
     $response
         ->assertOk()
         ->assertJsonPath('success.data.scope', 'workspace')
-        ->assertJsonPath('success.data.project', 'billing')
+        ->assertJsonPath('success.data.app', 'billing')
         ->assertJsonPath('success.data.instance', 'development')
         ->assertJsonPath('success.data.workspace', 'feature-mail')
         ->assertJsonPath('success.data.path', '/worktrees/feature-mail/.env')
@@ -213,15 +213,15 @@ it('derives the public apply path only from the registered workspace and ignores
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing-path-derivation',
         'path' => '/home/orbit/apps/billing-path-derivation',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/billing-path-derivation-development',
             document_root: null,
@@ -231,7 +231,7 @@ it('derives the public apply path only from the registered workspace and ignores
     $registeredWorkspacePath = '/home/orbit-test-user/apps/billing-path-derivation/.worktrees/feature-path';
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-path',
             'path' => $registeredWorkspacePath,
@@ -318,15 +318,15 @@ it('reports phase-specific failures when the workspace env file write fails afte
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing-write-fail',
         'path' => '/home/orbit/apps/billing-write-fail',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/billing-write-fail-development',
             document_root: null,
@@ -335,7 +335,7 @@ it('reports phase-specific failures when the workspace env file write fails afte
     ]);
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-write-fail',
             'path' => '/home/orbit-test-user/apps/billing-write-fail/.worktrees/feature-write-fail',
@@ -373,7 +373,7 @@ it('reports phase-specific failures when the workspace env file write fails afte
     );
 
     $response
-        ->assertStatus(500)
+        ->assertInternalServerError()
         ->assertJsonPath('error.code', 'workspace.env_apply_failed')
         ->assertJsonPath('error.meta.stored', true)
         ->assertJsonPath('error.meta.env_written', false)
@@ -408,15 +408,15 @@ it('reports phase-specific failures when runtime restart fails after the env fil
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'billing-runtime-fail',
         'path' => '/home/orbit/apps/billing-runtime-fail',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/billing-runtime-fail-development',
             document_root: null,
@@ -425,7 +425,7 @@ it('reports phase-specific failures when runtime restart fails after the env fil
     ]);
     $workspace = Workspace::factory()
         ->for($app)
-        ->for($instance, 'appInstance')
+        ->for($instance, 'instance')
         ->create([
             'name' => 'feature-runtime-fail',
             'path' => '/home/orbit-test-user/apps/billing-runtime-fail/.worktrees/feature-runtime-fail',
@@ -463,7 +463,7 @@ it('reports phase-specific failures when runtime restart fails after the env fil
     );
 
     $response
-        ->assertStatus(500)
+        ->assertInternalServerError()
         ->assertJsonPath('error.code', 'workspace.env_apply_failed')
         ->assertJsonPath('error.meta.stored', true)
         ->assertJsonPath('error.meta.env_written', true)
@@ -496,20 +496,20 @@ it('rejects incomplete instance selectors before an unauthorized cross-node writ
             'name' => 'other-node',
             'wireguard_address' => '10.44.0.92',
         ]);
-    $targetApp = Project::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
-    $otherApp = Project::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
-    $targetInstance = AppInstance::factory()->for($targetApp)->create([
+    $targetApp = App::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
+    $otherApp = App::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
+    $targetInstance = Instance::factory()->for($targetApp)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $targetNode->id,
             path: '/srv/billing',
             document_root: 'public',
             domain: 'billing.test',
         ),
     ]);
-    $otherInstance = AppInstance::factory()->for($otherApp)->create([
+    $otherInstance = Instance::factory()->for($otherApp)->create([
         'name' => 'staging',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $otherNode->id,
             path: '/srv/docs',
             document_root: 'public',
@@ -518,11 +518,11 @@ it('rejects incomplete instance selectors before an unauthorized cross-node writ
     ]);
     $targetWorkspace = Workspace::factory()
         ->for($targetApp)
-        ->for($targetInstance, 'appInstance')
+        ->for($targetInstance, 'instance')
         ->create(['name' => 'shared-name']);
     Workspace::factory()
         ->for($otherApp)
-        ->for($otherInstance, 'appInstance')
+        ->for($otherInstance, 'instance')
         ->create(['name' => 'shared-name']);
 
     $response = test()->call(

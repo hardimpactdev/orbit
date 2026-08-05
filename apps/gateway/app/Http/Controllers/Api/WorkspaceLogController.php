@@ -44,7 +44,7 @@ final readonly class WorkspaceLogController implements Loggable
         }
 
         $workspaceRun = WorkspaceRun::query()
-            ->with(['workspace.app.node', 'workspace.app.instances', 'workspace.appInstance', 'runSteps.step'])
+            ->with(['workspace.app.node', 'workspace.app.instances', 'workspace.instance', 'runSteps.step'])
             ->whereKey((int) $run)
             ->first();
 

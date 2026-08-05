@@ -31,7 +31,7 @@ final class ProcessStopController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'Stopped process runtime units with durable stopped events when successful.',
-        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, project: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, event: array{id: int, type: string}|null}>}, meta: object}}',
+        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, app: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, event: array{id: int, type: string}|null}>}, meta: object}}',
     )]
     public function __invoke(Request $request, ProcessLifecycle $processLifecycle): JsonResponse
     {

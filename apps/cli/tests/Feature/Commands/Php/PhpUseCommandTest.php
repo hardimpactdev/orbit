@@ -19,14 +19,14 @@ describe('php:use', function (): void {
                 'supported' => ['8.5', '8.4', '8.3'],
                 'available_images' => ['8.5'],
                 'cli' => '8.5',
-                'project' => ['name' => 'docs', 'php_version' => '8.5'],
-                'instance' => ['name' => 'development', 'project' => 'docs'],
+                'app' => ['name' => 'docs', 'php_version' => '8.5'],
+                'instance' => ['name' => 'development', 'app' => 'docs'],
                 'workspace' => null,
             ],
             'result' => [
                 'target' => 'instance',
                 'node' => 'app-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => null,
                 'previous' => '8.4',
@@ -73,7 +73,7 @@ describe('php:use', function (): void {
 
         fakeGateway(fakeSuccessEnvelope([
             'php' => ['node' => 'app-1'],
-            'result' => ['target' => 'instance', 'project' => 'docs', 'instance' => 'development', 'version' => '8.5'],
+            'result' => ['target' => 'instance', 'app' => 'docs', 'instance' => 'development', 'version' => '8.5'],
         ], ['warnings' => []]));
 
         try {
@@ -97,7 +97,7 @@ describe('php:use', function (): void {
             'php' => ['node' => 'app-1'],
             'result' => [
                 'target' => 'workspace',
-                'project' => 'docs',
+                'app' => 'docs',
                 'workspace' => 'feature-docs',
                 'version' => '8.5',
                 'inherits' => true,
@@ -164,7 +164,7 @@ describe('php:use', function (): void {
     it('prompts for version in interactive mode when version is missing', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => ['node' => 'app-1'],
-            'result' => ['target' => 'instance', 'project' => 'docs', 'instance' => 'development', 'version' => '8.5'],
+            'result' => ['target' => 'instance', 'app' => 'docs', 'instance' => 'development', 'version' => '8.5'],
         ], ['warnings' => []]));
 
         $this

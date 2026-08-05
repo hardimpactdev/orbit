@@ -28,7 +28,7 @@ if (! function_exists('workspaceLifecycleSeed')) {
             \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-            \\App\\Models\\Project::query()->delete();
+            \\App\\Models\\App::query()->delete();
             \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
                 'consumer_node_id' => \$nodes->get('operator-1'),
@@ -39,7 +39,7 @@ if (! function_exists('workspaceLifecycleSeed')) {
                 'updated_at' => now(),
             ]);
 
-            \\App\\Models\\Project::query()->create([
+            \\App\\Models\\App::query()->create([
                 'name' => 'docs',
                 'node_id' => \$nodes->get('app-dev-1'),
                 'path' => {$appPathValue},
@@ -112,7 +112,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
 
         expect($data['workspace'])
             ->toBe($workspaceName)
-            ->and($data['project'])
+            ->and($data['app'])
             ->toBe('docs')
             ->and($data['action'])
             ->toBe('adopted')

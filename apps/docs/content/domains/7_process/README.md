@@ -20,13 +20,13 @@ These rules cover who owns process configuration and how process definitions are
 - `process:update --name=<new-slug>` is the public rename path when the selected
   runtime/backend can safely replace derived unit identity.
 - Process definitions may be scoped to a node, concrete instance, or
-  workspace. An instance-scoped definition belongs to the `AppInstance`, never only
-  to the project. A workspace-scoped definition belongs to a workspace
+  workspace. An instance-scoped definition belongs to the `Instance`, never only
+  to the app. A workspace-scoped definition belongs to a workspace
   that already identifies its instance. The scope selects the serving node
   and default runtime context.
 - Canonical instance identity stores and returns both the logical `project` slug
   and the concrete `instance` slug. Public commands prefer
-  `--instance=<project.instance>`. A bare project slug is shorthand only when that
+  `--instance=<app.instance>`. A bare project slug is shorthand only when that
   project has exactly one instance; otherwise commands fail with
   `error.code=validation_failed`, `error.meta.field=instance`, and
   `error.meta.reason=instance_required`.
@@ -70,7 +70,7 @@ These rules describe how runtime units are derived from process definitions.
   `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
   `orbit_docs_development_main_vite`). Node-owned units use the bare process
   slug as the unit name. Including both project and instance slugs prevents two
-  instances of one project from colliding. When process identity is renamed,
+  instances of one app from colliding. When process identity is renamed,
   Orbit replaces derived runtime units and removes names from the previous
   identity instead of leaving
   orphaned units.

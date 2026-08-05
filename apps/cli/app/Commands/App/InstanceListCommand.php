@@ -11,17 +11,17 @@ use function Laravel\Prompts\table;
 final class InstanceListCommand extends InstanceCommand
 {
     #[\Override]
-    protected $signature = 'instance:list {--project= : Limit results to one project} {--json : Output JSON}';
+    protected $signature = 'instance:list {--app : Limit results to one app} {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'List instances, optionally filtered by project.';
+    protected $description = 'List instances, optionally filtered by app.';
 
     public function handle(): int
     {
         try {
             $response = $this->gatewayGet('/api/instances', array_filter(
                 [
-                    'project' => $this->stringOption('project'),
+                    'app' => $this->stringOption('app'),
                 ],
                 is_string(...),
             ));
@@ -44,7 +44,7 @@ final class InstanceListCommand extends InstanceCommand
         table(
             headers: ['PROJECT', 'NAME', 'DRIVER', 'MODE', 'PHP', 'EXTENSIONS', 'DEPLOYMENT'],
             rows: array_map(fn (array $instance): array => [
-                $this->instanceString($instance, 'project'),
+                $this->instanceString($instance, 'app'),
                 $this->instanceString($instance, 'name'),
                 $this->instanceString($instance, 'driver'),
                 $this->runtimeString($instance, 'mode'),

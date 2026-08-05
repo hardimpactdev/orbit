@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:show [name] [--instance=<project.instance>] [--node=<node>] [--json]`
+# Technical Contract: `orbit schedule:show [name] [--instance=<app.instance>] [--node=<node>] [--json]`
 
 [Back to public `schedule-show` documentation.](../schedule-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:show [name] [--instance=<project.instance>] [--node=<node>] [--json]
+orbit schedule:show [name] [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug visible to the caller. |
-| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `project.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -78,6 +78,6 @@ schedule detail reads.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | CLI schedule lookup and filter forwarding, validation before gateway contact, interactive name selection, `schedule.not_found` passthrough, and WireGuard failure surfacing. |
-| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit instance lookup and ambiguous bare project-selector rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php` | Explicit instance lookup and ambiguous bare project-selector rejection. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

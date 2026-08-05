@@ -12,7 +12,7 @@ Valkey are not tool credentials.
 ## Usage
 
 ```bash
-orbit tool:credentials [tool] [--instance=<project.instance>] [--node=<node>] [--json]
+orbit tool:credentials [tool] [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples

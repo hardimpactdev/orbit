@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Deploy;
 
 use App\Contracts\ConvergesAppRuntimeContainers;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\RemoteAppSourcePathProbe;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -34,7 +34,7 @@ final readonly class ActiveReleaseRuntimeActivator
      * @param  array<string, mixed>  $context
      * @return array{live_path: string, resolved_path: string}
      */
-    public function activate(Project $app, AppInstance $instance, array $context): array
+    public function activate(App $app, Instance $instance, array $context): array
     {
         try {
             return $this->activateRuntime($app, $instance, $context);
@@ -45,7 +45,7 @@ final readonly class ActiveReleaseRuntimeActivator
                 message: "The active release runtime for '{$this->targetName($instance)}' could not be activated.",
                 errorCode: 'deploy.runtime_activation_failed',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                     'failure' => $exception::class,
                 ],
@@ -57,7 +57,7 @@ final readonly class ActiveReleaseRuntimeActivator
      * @param  array<string, mixed>  $context
      * @return array{live_path: string, resolved_path: string}
      */
-    private function activateRuntime(Project $app, AppInstance $instance, array $context): array
+    private function activateRuntime(App $app, Instance $instance, array $context): array
     {
         $node = $app->node;
 
@@ -74,7 +74,7 @@ final readonly class ActiveReleaseRuntimeActivator
                 message: "The active release path for '{$this->targetName($instance)}' is unavailable.",
                 errorCode: 'deploy.active_release_missing',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -89,7 +89,7 @@ final readonly class ActiveReleaseRuntimeActivator
                 message: "The active release for '{$this->targetName($instance)}' does not exist.",
                 errorCode: 'deploy.active_release_missing',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -100,7 +100,7 @@ final readonly class ActiveReleaseRuntimeActivator
                 message: "The active release for '{$this->targetName($instance)}' resolves outside its app boundary.",
                 errorCode: 'deploy.active_release_unsafe',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -127,7 +127,7 @@ final readonly class ActiveReleaseRuntimeActivator
                 message: "The active release runtime for '{$this->targetName($instance)}' could not be restarted.",
                 errorCode: 'deploy.runtime_restart_failed',
                 errorMeta: [
-                    'project' => $app->name,
+                    'app' => $app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -139,22 +139,22 @@ final readonly class ActiveReleaseRuntimeActivator
         ];
     }
 
-    private function persistActiveDocumentRoot(AppInstance $instance): void
+    private function persistActiveDocumentRoot(Instance $instance): void
     {
         $config = $instance->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
             throw new GatewayApiException(
                 message: "Instance '{$this->targetName($instance)}' does not support active releases.",
                 errorCode: 'deploy.instance_driver_unsupported',
                 errorMeta: [
-                    'project' => $instance->app->name,
+                    'app' => $instance->app->name,
                     'instance' => $instance->name,
                 ],
             );
         }
 
-        $instance->driver_config = new OrbitAppInstanceDriverConfigData(
+        $instance->driver_config = new OrbitInstanceDriverConfigData(
             node_id: $config->node_id,
             node: $config->node,
             path: $config->path,
@@ -179,7 +179,7 @@ final readonly class ActiveReleaseRuntimeActivator
         return "live/{$documentRoot}";
     }
 
-    private function targetName(AppInstance $instance): string
+    private function targetName(Instance $instance): string
     {
         $instance->loadMissing('app');
 

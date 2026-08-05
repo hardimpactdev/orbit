@@ -430,9 +430,11 @@ final readonly class PhpCliArtifactCatalog
             }
 
             foreach ($extra as $extension) {
-                if (is_string($extension) && $extension !== '' && ! in_array($extension, $extensions, true)) {
-                    $extensions[] = $extension;
+                if (! (is_string($extension) && $extension !== '' && ! in_array($extension, $extensions, true))) {
+                    continue;
                 }
+
+                $extensions[] = $extension;
             }
         }
 
@@ -583,7 +585,7 @@ final readonly class PhpCliArtifactCatalog
 
     public function matrixFullyPublished(): bool
     {
-        return array_all($this->matrix(), fn ($row) => $row['published']);
+        return array_all($this->matrix(), static fn ($row) => $row['published']);
     }
 
     /**
@@ -823,9 +825,11 @@ final readonly class PhpCliArtifactCatalog
         $normalized = [];
 
         foreach ($input as $key => $value) {
-            if (is_string($key)) {
-                $normalized[$key] = $value;
+            if (! is_string($key)) {
+                continue;
             }
+
+            $normalized[$key] = $value;
         }
 
         return $normalized;

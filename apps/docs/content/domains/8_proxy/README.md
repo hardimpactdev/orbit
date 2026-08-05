@@ -40,8 +40,8 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - Project, instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - Every instance-primary route targets one concrete instance. The route uses
-  `owner.type=instance` and `owner.name=<project.instance>`, with
-  `target.type=instance`, `target.value=<project.instance>`, and `node` naming
+  `owner.type=instance` and `owner.name=<app.instance>`, with
+  `target.type=instance`, `target.value=<app.instance>`, and `node` naming
   the serving node. A bare project is never a valid primary-route target.
 - Instance WebSocket routes are visible through proxy commands but edited through
   instance WebSocket binding commands. Public WebSocket hosts are `ingress` routes
@@ -93,7 +93,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routine route serving, because a node with an app role with intermediate signing
   authority could mint trusted certificates for arbitrary hosts if compromised.
 - Nodes serve TLS material only. They do not become certificate authorities
-  and do not sign certificates for projects, instances, workspaces, or tools.
+  and do not sign certificates for apps, instances, workspaces, or tools.
 - For DNS hostname routes, the TLS managed by Orbit also applies
   compatibility material on the node. That material lets common Laravel
   Vite TLS detection paths find the route certificate.
@@ -137,7 +137,7 @@ Instance and workspace proxy routes are not generic reverse proxies. They provid
 - cache versioned build assets under `/build/*` with long-lived immutable cache
   headers.
 
-Document-root policy is part of the route contract. Apps or workspaces that serve from a public document root keep project-root files outside the web root and still block adjacent sensitive files such as environment files, VCS metadata, and local entrypoints. Apps or workspaces that intentionally serve from the project root receive the stronger project-root blocking policy for framework config, storage, dependencies, source metadata, and local entrypoints.
+Document-root policy is part of the route contract. Apps or workspaces that serve from a public document root keep project-root files outside the web root and still block adjacent sensitive files such as environment files, VCS metadata, and local entrypoints. Apps or workspaces that intentionally serve from the app root receive the stronger project-root blocking policy for framework config, storage, dependencies, source metadata, and local entrypoints.
 
 Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
@@ -249,7 +249,7 @@ Each command links to its public documentation and technical contract:
 ## Related
 
 - [`doctor --family=proxy`](proxy-doctor.md)
-- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
+- [`orbit app:*` and `orbit instance:*`](../5_app/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../18_s3/README.md)

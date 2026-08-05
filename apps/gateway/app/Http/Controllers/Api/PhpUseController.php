@@ -89,7 +89,7 @@ final readonly class PhpUseController implements Loggable
         }
 
         if ($this->nullableString($request->input('instance')) !== null) {
-            return $this->servingNodeResolver->resolve($request, ServingNode::AppInstanceOwning);
+            return $this->servingNodeResolver->resolve($request, ServingNode::InstanceOwning);
         }
 
         return $this->servingNodeResolver->resolve($request, ServingNode::Target);

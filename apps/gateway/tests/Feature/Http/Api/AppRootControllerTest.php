@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -53,14 +53,14 @@ describe('AppRootController', function (): void {
         ]);
         grantAppRootAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $targetNode->id,
                 path: $app->path,
                 document_root: 'public',
@@ -86,16 +86,16 @@ describe('AppRootController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.instance.root', 'web')
             ->assertJsonPath('success.data.result.changed', true)
             ->assertJsonPath('success.meta.node', 'app-1');
 
         expect($instance->refresh()->driver_config)
-            ->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
             ->and($instance->driver_config->document_root)
             ->toBe('web')
-            ->and(Project::query()->where('name', 'docs')->value('document_root'))
+            ->and(App::query()->where('name', 'docs')->value('document_root'))
             ->toBe('public');
     });
 
@@ -111,12 +111,12 @@ describe('AppRootController', function (): void {
         ]);
         grantAppRootAccess($caller, $targetNode, ['instance:read']);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
-        AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+        Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
 
         app()->instance(RemoteShell::class, new AppRootApiSequencedRemoteShell([]));
@@ -138,7 +138,7 @@ describe('AppRootController', function (): void {
             ->assertJsonPath('error.meta.missing_permission', 'instance:root')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(Project::query()->where('name', 'docs')->value('document_root'))->toBe('public');
+        expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('public');
     });
 });
 

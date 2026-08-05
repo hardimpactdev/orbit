@@ -12,10 +12,10 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Apps\RemoteAppRuntimeContainersProbe;
@@ -791,12 +791,12 @@ final readonly class ProcessesProbe
         array $expectedUnits,
         array $runtimeUnits,
     ): array {
-        $process->loadMissing(['owner', 'appInstance']);
-        $appInstance = $process->appInstance;
+        $process->loadMissing(['owner', 'instance']);
+        $instance = $process->instance;
 
         if (
             $process->owner instanceof Node
-            || ! $appInstance instanceof AppInstance
+            || ! $instance instanceof Instance
             || $process->restart_policy !== ProcessRestartPolicy::Always
             || ! app(NodeRoleAssignments::class)->nodeHasActiveRole(
                 $node,
@@ -820,7 +820,7 @@ final readonly class ProcessesProbe
 
             $scopeKeysByUnit[$unitName] = $workspace instanceof Workspace
                 ? "workspace-{$workspace->id}"
-                : "app-instance-{$appInstance->id}";
+                : "app-instance-{$instance->id}";
         }
 
         if ($scopeKeysByUnit === []) {
@@ -875,15 +875,15 @@ final readonly class ProcessesProbe
         $process->loadMissing('owner');
         $restartPolicy = $process->getRawOriginal('restart_policy');
         $crashNotification = $process->getRawOriginal('crash_notification');
-        $requiresAppInstance = $process->owner instanceof Project || $process->owner instanceof Workspace;
+        $requiresInstance = $process->owner instanceof App || $process->owner instanceof Workspace;
 
         if (
             ! is_int($process->node_id)
             || ! is_string($process->owner_type)
             || $process->owner_type === ''
             || ! is_int($process->owner_id)
-            || $requiresAppInstance
-            && ! is_int($process->app_instance_id)
+            || $requiresInstance
+            && ! is_int($process->instance_id)
             || ! is_string($process->name)
             || $process->name === ''
             || ! is_string($process->command)
@@ -933,7 +933,7 @@ final readonly class ProcessesProbe
         $this->loadProcessApp($process);
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -945,10 +945,10 @@ final readonly class ProcessesProbe
         }
 
         $node = $this->processNode($process);
-        $instance = $process->appInstance;
+        $instance = $process->instance;
 
         if (
-            ! $instance instanceof AppInstance
+            ! $instance instanceof Instance
             || $instance->app_id !== $app->id
             || ! $node instanceof Node
             || ! $node->isActive()
@@ -1086,15 +1086,15 @@ final readonly class ProcessesProbe
         $app = $process->ownerApp();
         $node = $this->processNode($process);
 
-        if (! $app instanceof Project || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
             return [];
         }
 
         $runtimeUnits = [];
 
         $query = Process::query()
-            ->with(['owner', 'appInstance'])
-            ->where('app_instance_id', $process->app_instance_id);
+            ->with(['owner', 'instance'])
+            ->where('instance_id', $process->instance_id);
 
         if ($this->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
@@ -1103,7 +1103,7 @@ final readonly class ProcessesProbe
         $query->each(function (Process $candidate) use ($app, $node, &$runtimeUnits): void {
             $candidateApp = $candidate->ownerApp();
 
-            if (! $candidateApp instanceof Project || ! $candidateApp->is($app)) {
+            if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
                 return;
             }
 
@@ -1130,14 +1130,14 @@ final readonly class ProcessesProbe
     {
         $app = $process->ownerApp();
 
-        if (! $app instanceof Project || $app->name === '') {
+        if (! $app instanceof App || $app->name === '') {
             return null;
         }
 
-        $process->loadMissing('appInstance');
+        $process->loadMissing('instance');
 
-        return $process->appInstance instanceof AppInstance
-            ? "orbit_{$app->name}_{$process->appInstance->name}_"
+        return $process->instance instanceof Instance
+            ? "orbit_{$app->name}_{$process->instance->name}_"
             : "orbit_{$app->name}_";
     }
 
@@ -1395,7 +1395,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof Project) {
+        if (! $process->app instanceof App) {
             return [];
         }
 
@@ -1433,7 +1433,7 @@ final readonly class ProcessesProbe
 
     private function processNode(Process $process): ?Node
     {
-        $process->loadMissing(['owner', 'node', 'appInstance']);
+        $process->loadMissing(['owner', 'node', 'instance']);
 
         if ($process->owner instanceof Node) {
             return $process->owner;
@@ -1449,8 +1449,8 @@ final readonly class ProcessesProbe
             }
         }
 
-        if ($process->appInstance instanceof AppInstance) {
-            $placed = app(WorkspacePlacement::class)->nodeForInstance($process->appInstance);
+        if ($process->instance instanceof Instance) {
+            $placed = app(WorkspacePlacement::class)->nodeForInstance($process->instance);
 
             if ($placed instanceof Node) {
                 return $placed;
@@ -1474,9 +1474,11 @@ final readonly class ProcessesProbe
 
         if (is_array($config['endpoints'] ?? null)) {
             foreach ($config['endpoints'] as $endpoint) {
-                if (is_array($endpoint)) {
-                    $rawEndpoints[] = $endpoint;
+                if (! is_array($endpoint)) {
+                    continue;
                 }
+
+                $rawEndpoints[] = $endpoint;
             }
         }
 
@@ -1546,7 +1548,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1602,7 +1604,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof Project) {
+        if (! $process->app instanceof App) {
             return [];
         }
 
@@ -1649,15 +1651,15 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        $project = $process->app;
+        $app = $process->app;
 
-        if (! $project instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
         return collect($this->runtimeContexts($process))
-            ->map(function (?Workspace $workspace) use ($process, $project): array {
-                $container = $this->dockerContainerRenderer()->render($project, $process, $workspace);
+            ->map(function (?Workspace $workspace) use ($process, $app): array {
+                $container = $this->dockerContainerRenderer()->render($app, $process, $workspace);
                 $config = is_array($process->runtime_config) ? $process->runtime_config : [];
                 $configuredHash = $config['container_spec_hash'] ?? null;
                 $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
@@ -1728,7 +1730,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1785,7 +1787,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1830,9 +1832,11 @@ final readonly class ProcessesProbe
         $lines = [];
 
         foreach (explode("\n", $content) as $line) {
-            if (str_starts_with($line, 'Environment=')) {
-                $lines[] = $line;
+            if (! str_starts_with($line, 'Environment=')) {
+                continue;
             }
+
+            $lines[] = $line;
         }
 
         return $lines;
@@ -1870,7 +1874,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return [];
         }
 
@@ -1880,9 +1884,9 @@ final readonly class ProcessesProbe
 
         $app->loadMissing('workspaces');
 
-        $workspaces = $process->app_instance_id === null
+        $workspaces = $process->instance_id === null
             ? $app->workspaces
-            : $app->workspaces->where('app_instance_id', $process->app_instance_id);
+            : $app->workspaces->where('instance_id', $process->instance_id);
 
         /** @var list<Workspace> $workspaceModels */
         $workspaceModels = array_values($workspaces->all());
@@ -1897,7 +1901,7 @@ final readonly class ProcessesProbe
             '--filter label=orbit.managed=true',
         ];
 
-        if ($process->app instanceof Project) {
+        if ($process->app instanceof App) {
             $parts[] = '--filter label=orbit.app='.escapeshellarg($process->app->name);
         }
 
@@ -2001,9 +2005,9 @@ final readonly class ProcessesProbe
         ];
     }
 
-    private function surrogateAppForNode(Node $node): Project
+    private function surrogateAppForNode(Node $node): App
     {
-        $app = new Project([
+        $app = new App([
             'name' => $node->name,
             'path' => ($node->user ?: 'orbit') === 'root'
                 ? '/root'
@@ -2049,14 +2053,14 @@ final readonly class ProcessesProbe
 
     private function loadProcessApp(Process $process, bool $withWorkspaces = false): void
     {
-        $process->loadMissing(['owner', 'node', 'appInstance']);
+        $process->loadMissing(['owner', 'node', 'instance']);
         $logicalApp = $process->ownerApp();
-        $instance = $process->appInstance;
+        $instance = $process->instance;
         $node = $process->node;
 
         if (
-            ! $logicalApp instanceof Project
-            || ! $instance instanceof AppInstance
+            ! $logicalApp instanceof App
+            || ! $instance instanceof Instance
             || ! $node instanceof Node
             || $instance->app_id !== $logicalApp->id
         ) {
@@ -2071,11 +2075,11 @@ final readonly class ProcessesProbe
                 'workspaces',
                 $this->processNodeExcludesWorkspaces($process)
                     ? $logicalApp->newCollection()
-                    : $logicalApp->workspaces()->where('app_instance_id', $instance->id)->get(),
+                    : $logicalApp->workspaces()->where('instance_id', $instance->id)->get(),
             );
         }
 
-        if ($process->owner instanceof Project) {
+        if ($process->owner instanceof App) {
             $process->setRelation('owner', $runtimeApp);
 
             return;
@@ -2104,19 +2108,19 @@ final readonly class ProcessesProbe
     private function processOwnershipDetail(Process $process): array
     {
         $app = $process->ownerApp();
-        $process->loadMissing('appInstance');
+        $process->loadMissing('instance');
         /** @var array<string, string> $detail */
         $detail = [];
         $appName = $app?->name;
-        $appInstance = $process->appInstance;
-        $appInstanceName = $appInstance?->name;
+        $instance = $process->instance;
+        $appInstanceName = $instance?->name;
 
         if (is_string($appName) && $appName !== '') {
             $detail['app'] = $appName;
         }
 
         if (is_string($appInstanceName) && $appInstanceName !== '') {
-            $detail['app_instance'] = $appInstanceName;
+            $detail['instance'] = $appInstanceName;
         }
 
         return $detail;

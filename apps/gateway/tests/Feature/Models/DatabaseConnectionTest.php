@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
-use App\Models\Project;
+use App\Models\Instance;
 use App\Models\Workspace;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,18 +37,18 @@ describe('DatabaseConnection models', function (): void {
     });
 
     it('relates an app instance target to its connection and owning instance', function (): void {
-        $app = Project::factory()->create();
-        $instance = AppInstance::factory()->for($app)->create();
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $connection = DatabaseConnection::factory()->create();
 
         $target = DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forAppInstance($instance)
+            ->forInstance($instance)
             ->create(['env_prefix' => 'DB']);
 
         expect($target->connection->is($connection))
             ->toBeTrue()
-            ->and($target->appInstance->is($instance))
+            ->and($target->instance->is($instance))
             ->toBeTrue()
             ->and($target->workspace)
             ->toBeNull();
@@ -67,23 +67,23 @@ describe('DatabaseConnection models', function (): void {
             ->toBeTrue()
             ->and($target->workspace->is($workspace))
             ->toBeTrue()
-            ->and($target->appInstance)
+            ->and($target->instance)
             ->toBeNull();
     });
 
     it('maps app instance database connections through its target rows', function (): void {
-        $app = Project::factory()->create();
-        $instance = AppInstance::factory()->for($app)->create();
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'app-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'app-analytics']);
 
         DatabaseConnectionTarget::factory()
             ->for($primary, 'connection')
-            ->forAppInstance($instance)
+            ->forInstance($instance)
             ->create(['env_prefix' => 'DB']);
         DatabaseConnectionTarget::factory()
             ->for($analytics, 'connection')
-            ->forAppInstance($instance)
+            ->forInstance($instance)
             ->create(['env_prefix' => 'ANALYTICS_DB']);
 
         expect($instance->databaseConnectionTargets)

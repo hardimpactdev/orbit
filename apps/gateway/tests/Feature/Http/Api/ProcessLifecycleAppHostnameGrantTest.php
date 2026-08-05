@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -39,22 +39,22 @@ function processLifecycleHostnameGrantFixture(): array
     $grantedNode = createTestAppHostNode(['name' => 'granted-node']);
     $otherNode = createTestAppHostNode(['name' => 'other-node']);
 
-    $grantedApp = Project::factory()->create(['name' => 'docs', 'node_id' => $grantedNode->id]);
-    $otherApp = Project::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
-    $grantedInstance = AppInstance::factory()->create([
+    $grantedApp = App::factory()->create(['name' => 'docs', 'node_id' => $grantedNode->id]);
+    $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+    $grantedInstance = Instance::factory()->create([
         'app_id' => $grantedApp->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $grantedNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $grantedNode->id),
     ]);
-    AppInstance::factory()->create([
+    Instance::factory()->create([
         'app_id' => $otherApp->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $otherNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $otherNode->id),
     ]);
     $workspace = Workspace::factory()->create([
         'name' => 'feature-docs',
         'app_id' => $grantedApp->id,
-        'app_instance_id' => $grantedInstance->id,
+        'instance_id' => $grantedInstance->id,
     ]);
 
     // Intentionally create the other-node process first so unscoped process-name
@@ -63,7 +63,7 @@ function processLifecycleHostnameGrantFixture(): array
     Process::factory()
         ->forOwner($grantedApp, $grantedNode)
         ->create([
-            'app_instance_id' => $grantedInstance->id,
+            'instance_id' => $grantedInstance->id,
             'name' => 'vite',
         ]);
 
@@ -74,7 +74,7 @@ function processLifecycleHostnameGrantFixture(): array
         'owner_type' => 'app',
         'kind' => 'app',
         'config' => [
-            'app_instance' => [
+            'instance' => [
                 'name' => 'development',
                 'selector' => 'docs.development',
             ],
@@ -150,7 +150,7 @@ describe('process lifecycle app-hostname grant authorization', function (): void
             if ($hostKind === 'workspace') {
                 $response->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs');
             } else {
-                $response->assertJsonPath('success.data.runtimes.0.project', 'docs');
+                $response->assertJsonPath('success.data.runtimes.0.app', 'docs');
             }
         },
     )->with([

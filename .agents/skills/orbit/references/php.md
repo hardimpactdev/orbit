@@ -27,7 +27,7 @@ orbit php:list [--instance=<name>] [--workspace=<name>] [--node=<name>] [--live]
 
 | Option | Notes |
 |---|---|
-| `--instance` | Show selected runtime for one `project.instance`. |
+| `--instance` | Show selected runtime for one `app.instance`. |
 | `--workspace` | Show effective runtime for one workspace (own override or inherited). |
 | `--node` | Show CLI default for the node. |
 | `--live` | Probe the node for actually-installed PHP versions instead of relying on gateway-tracked facts. |

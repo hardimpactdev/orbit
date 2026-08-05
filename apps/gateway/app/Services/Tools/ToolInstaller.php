@@ -347,22 +347,18 @@ final readonly class ToolInstaller
 
         if ($storedVariant instanceof PhpCliVariant) {
             /** @var array<string, mixed> $resolved */
-            $resolved = [
+            return [
                 ...$existingConfig,
                 ...$config,
                 'variant' => $storedVariant->value,
             ];
-
-            return $resolved;
         }
 
         /** @var array<string, mixed> $resolved */
-        $resolved = [
+        return [
             ...$config,
             'variant' => PhpCliVariant::Coverage->value,
         ];
-
-        return $resolved;
     }
 
     private function phpCliRoleForNode(Node $node): ?string

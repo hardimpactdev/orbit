@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]`
+# Technical Contract: `orbit tool:show <tool> [--instance=<app.instance>] [--node=<node>] [--live] [--json]`
 
 [Back to public `tool-show` documentation.](../tool-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--instance=<app.instance>] [--node=<node>] [--live] [--json]
 ```
 
 ## Input Contract
@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-show` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-show` must not create apps, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

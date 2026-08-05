@@ -65,14 +65,13 @@ function opencode_cleanup_script_for_harness(string $productionScript, string $r
         escapeshellarg($unitDir.'/opencode-server-usr.service'),
         $script,
     );
+
     // stop_unit also rm -f unit paths under /etc|/lib|/usr — rewrite those sudo rms.
-    $script = str_replace(
+    return str_replace(
         'sudo rm -f "/etc/systemd/system/${unit}" "/lib/systemd/system/${unit}" "/usr/lib/systemd/system/${unit}"',
         'rm -f '.escapeshellarg($unitDir).'/"${unit}" 2>/dev/null || true',
         $script,
     );
-
-    return $script;
 }
 
 /**

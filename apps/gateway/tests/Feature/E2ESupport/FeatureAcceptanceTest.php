@@ -111,7 +111,7 @@ it('routes proof venue from the exact candidate diff without a loop packet', fun
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getErrorOutput())
-            ->toBe('');
+            ->toBeEmpty();
 
         $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
@@ -202,7 +202,7 @@ it('fails closed when route cannot derive the exact proof route', function (): v
             ->and($process->getErrorOutput())
             ->toContain('unable to derive exact proof route')
             ->and($process->getOutput())
-            ->toBe('');
+            ->toBeEmpty();
     } finally {
         acceptance_test_remove($fixture);
     }
@@ -715,7 +715,7 @@ it('keeps LOOP.md.example free of compact proof path citations', function (): vo
     // Fresh automated loops copy this template; any compact proof marker would
     // force a dummy evidence file before operators write a real receipt.
     expect(orbitLoopProofReferences($content))
-        ->toBe([])
+        ->toBeEmpty()
         ->and($content)
         ->not->toContain('evidence=\`')
         ->not->toContain('.orbit/evidence/')

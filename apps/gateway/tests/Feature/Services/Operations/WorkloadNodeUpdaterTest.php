@@ -733,14 +733,14 @@ it('retries workload CLI installs when the previous launcher exits during self u
         ->and($shell->updateScriptCallsFor('app-dev-1'))
         ->toBe(3)
         ->and($payloads[0]['role_images'])
-        ->toBe([])
+        ->toBeEmpty()
         ->and($payloads[0]['agent_artifact'])
         ->toBeNull()
         ->and($shell->calls[0]['options']['input'])
         ->toBe($shell->calls[1]['options']['input'])
         ->and($payloads[2]['role_images'])
         ->not
-        ->toBe([])
+        ->toBeEmpty()
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
 });

@@ -6,11 +6,11 @@ namespace App\Services\Apps;
 
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\PromptAborted;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Services\Support\GatewayActionResult;
 use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -88,8 +88,8 @@ final class AppRootUpdater
         $instance = $selection->instance;
 
         if (
-            ! $instance instanceof AppInstance
-            || ! $instance->driver_config instanceof OrbitAppInstanceDriverConfigData
+            ! $instance instanceof Instance
+            || ! $instance->driver_config instanceof OrbitInstanceDriverConfigData
         ) {
             return $this->failCommand(
                 code: 'instance.unsupported_driver',
@@ -128,8 +128,8 @@ final class AppRootUpdater
     }
 
     private function updateRootForHuman(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         string $normalized,
         EnactAppRuntime $enactAppRuntime,
     ): int {
@@ -139,12 +139,12 @@ final class AppRootUpdater
         return $this->successCommand($app, $instance->refresh(), $changed, $warnings);
     }
 
-    private function applyRootChange(AppInstance $instance, string $normalized): bool
+    private function applyRootChange(Instance $instance, string $normalized): bool
     {
         $config = $instance->driver_config;
-        assert($config instanceof OrbitAppInstanceDriverConfigData);
+        assert($config instanceof OrbitInstanceDriverConfigData);
         $changed = $config->document_root !== $normalized;
-        $instance->driver_config = new OrbitAppInstanceDriverConfigData(
+        $instance->driver_config = new OrbitInstanceDriverConfigData(
             node_id: $config->node_id,
             node: $config->node,
             path: $config->path,
@@ -160,8 +160,8 @@ final class AppRootUpdater
      * @return string|array{field: string, root: string, resolved_path: string, app_path: string}
      */
     private function normalizeRoot(
-        Project $app,
-        OrbitAppInstanceDriverConfigData $config,
+        App $app,
+        OrbitInstanceDriverConfigData $config,
         string $root,
     ): string|array {
         $root = trim(str_replace('\\', '/', $root));
@@ -257,8 +257,8 @@ final class AppRootUpdater
      * @param  list<array<string, mixed>>  $warnings
      */
     private function successCommand(
-        Project $app,
-        AppInstance $instance,
+        App $app,
+        Instance $instance,
         bool $changed,
         array $warnings,
     ): int {
@@ -266,11 +266,11 @@ final class AppRootUpdater
 
         return $this->successPayload(
             [
-                'project' => $this->appPayload($app),
-                'instance' => app(AppInstancePayloads::class)->instance($instance),
+                'app' => $this->appPayload($app),
+                'instance' => app(InstancePayloads::class)->instance($instance),
                 'result' => [
                     'hostname' => parse_url(
-                        (string) app(AppInstancePayloads::class)->placement($instance)['url'],
+                        (string) app(InstancePayloads::class)->placement($instance)['url'],
                         PHP_URL_HOST,
                     ) ?: "{$app->name}.{$instance->name}",
                     'changed' => $changed,
@@ -340,7 +340,7 @@ final class AppRootUpdater
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(Project $app): array
+    private function appPayload(App $app): array
     {
         return app(AppResponsePayload::class)->forApp($app);
     }

@@ -15,7 +15,7 @@ final readonly class DoctorIssueCodePrefixRule implements GroupedRule
      * @var array<string, string>
      */
     private const array FAMILY_KEYS = [
-        'project' => 'instance',
+        'app' => 'instance',
         'database' => 'database_connection',
         'firewall' => 'firewall_rule',
         'node' => 'node',
@@ -30,7 +30,7 @@ final readonly class DoctorIssueCodePrefixRule implements GroupedRule
      * @var array<string, string>
      */
     private const array STATE_FAMILY_DOCTORS = [
-        'project' => 'instance-doctor.md',
+        'app' => 'instance-doctor.md',
         'database' => 'database-doctor.md',
         'firewall' => 'firewall-doctor.md',
         'node' => 'node-doctor.md',

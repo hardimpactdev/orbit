@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
@@ -68,14 +68,14 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->for($targetNode, 'node')->create([
             'name' => 'docs',
             'runtime' => 'static',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $targetNode->id,
                 path: '/srv/docs-development',
                 document_root: 'public',
@@ -84,13 +84,13 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Teardown,
             'command' => 'cp "$ORBIT_APP_PATH/.env" .env.backup',
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-api',
             'path' => '/srv/docs-development-feature-api',
         ]);
@@ -129,7 +129,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -226,17 +226,17 @@ describe('WorkspaceRemoveController', function (): void {
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceRemoveAccess($caller, $localNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'domain' => 'happie.test',
         ]);
-        $instance = AppInstance::factory()
+        $instance = Instance::factory()
             ->for($app)
             ->create([
                 'name' => 'nmbp',
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                'driver' => InstanceDriver::Orbit,
+                'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $localNode->id,
                     node: 'NMBP',
                     path: '/Users/nckrtl/apps/happie',
@@ -246,7 +246,7 @@ describe('WorkspaceRemoveController', function (): void {
             ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'recipes',
             'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
         ]);
@@ -288,7 +288,7 @@ describe('WorkspaceRemoveController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.name', 'recipes')
-            ->assertJsonPath('success.data.project', 'happie')
+            ->assertJsonPath('success.data.app', 'happie')
             ->assertJsonPath('success.data.instance', 'nmbp')
             ->assertJsonPath('success.data.proxy_routes_removed', 1)
             ->assertJsonPath('success.meta.kept_files', true);
@@ -312,15 +312,15 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $sharedNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $sharedNode->id,
             'runtime' => 'static',
         ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $sharedNode->id,
                 node: $sharedNode->name,
                 path: '/srv/docs-development',
@@ -328,10 +328,10 @@ describe('WorkspaceRemoveController', function (): void {
                 domain: 'docs-development.test',
             ),
         ]);
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $sharedNode->id,
                 node: $sharedNode->name,
                 path: '/srv/docs-production',
@@ -341,7 +341,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'name' => 'feature-api',
             'path' => '/srv/docs-development-feature-api',
         ]);
@@ -349,14 +349,14 @@ describe('WorkspaceRemoveController', function (): void {
         OrbitProcess::factory()
             ->forOwner($app, $sharedNode)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'queue',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
         OrbitProcess::factory()
             ->forOwner($app, $sharedNode)
             ->create([
-                'app_instance_id' => $production->id,
+                'instance_id' => $production->id,
                 'name' => 'queue',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
@@ -406,16 +406,16 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $appNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/srv/docs-development',
             'runtime' => 'php',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $appNode->id,
                 node: $appNode->name,
                 path: '/srv/docs-development',
@@ -425,7 +425,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-api',
             'path' => '/srv/docs-development-feature-api',
         ]);
@@ -509,15 +509,15 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $appNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'runtime' => 'static',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $appNode->id,
                 node: $appNode->name,
                 path: '/srv/docs-development',
@@ -527,7 +527,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-api',
             'path' => '/srv/docs-development-feature-api',
         ]);
@@ -577,7 +577,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'runtime' => 'static',
@@ -636,7 +636,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'runtime' => 'php',
@@ -695,7 +695,7 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -730,7 +730,7 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);

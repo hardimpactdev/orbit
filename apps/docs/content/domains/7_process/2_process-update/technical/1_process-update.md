@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--label=<label>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
+orbit process:update [name] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--label=<label>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -28,8 +28,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. Renaming identity never rewrites the persisted display `label`. |
 | `label` | `--label` / body `label` | Optional. At least one editable field is required. | Never. | Current value. | Trimmed non-empty string; max 255 characters. Updates only the display label. |
 | `node` | `--node` | Required when updating a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
-| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
+| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `none`. |
@@ -121,7 +121,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Subject | Resolved `Node` for node-owned processes or `Instance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node` (string or null), `instance` (string or null), `workspace` (string or null), `old_name` (string), and `new_name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 

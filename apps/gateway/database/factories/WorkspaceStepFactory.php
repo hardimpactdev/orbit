@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -21,16 +21,16 @@ class WorkspaceStepFactory extends Factory
     public function definition(): array
     {
         return [
-            'app_id' => Project::factory(),
-            'app_instance_id' => static function (array $attributes): int {
+            'app_id' => App::factory(),
+            'instance_id' => static function (array $attributes): int {
                 $appId = (int) $attributes['app_id'];
-                $app = Project::query()->findOrFail($appId);
+                $app = App::query()->findOrFail($appId);
 
                 return (int) (
-                    AppInstance::query()->where('app_id', $appId)->value('id')
-                    ?? AppInstance::factory()->create([
+                    Instance::query()->where('app_id', $appId)->value('id')
+                    ?? Instance::factory()->create([
                         'app_id' => $appId,
-                        'driver_config' => new OrbitAppInstanceDriverConfigData(
+                        'driver_config' => new OrbitInstanceDriverConfigData(
                             node_id: $app->node_id,
                             path: $app->path,
                             document_root: $app->document_root,

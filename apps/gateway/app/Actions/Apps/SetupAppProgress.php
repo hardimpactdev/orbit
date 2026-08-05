@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 
 final readonly class SetupAppProgress
@@ -16,7 +16,7 @@ final readonly class SetupAppProgress
         private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
-    public function for(Project $app, AppInstance $instance, Node $node): SetupAppProgressPlan
+    public function for(App $app, Instance $instance, Node $node): SetupAppProgressPlan
     {
         return new SetupAppProgressPlan(
             setupApp: $this->setupApp,

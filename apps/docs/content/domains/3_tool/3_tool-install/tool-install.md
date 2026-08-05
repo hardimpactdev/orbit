@@ -14,7 +14,7 @@ MySQL or Valkey are not tool installs; use `process:add --service=<identifier>` 
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Examples

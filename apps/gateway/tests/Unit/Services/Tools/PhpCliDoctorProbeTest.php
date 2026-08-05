@@ -106,7 +106,7 @@ it('does not emit false coverage drift under compatibility when standard runtime
     $diff = $probe->diff($tool, $snapshot, allowProvisioning: true);
 
     expect($issues)
-        ->toBe([])
+        ->toBeEmpty()
         ->and(collect($diff)->where(
             fn (DriftEntry $entry): bool => $entry->key === 'tool.php_cli_coverage_missing',
         ))
@@ -191,7 +191,7 @@ it('does not emit coverage_missing under matrix when desired coverage is healthy
     $repair->setAccessible(true);
 
     // Healthy coverage matrix runtime: no coverage_missing drift.
-    expect($issues)->toBe([]);
+    expect($issues)->toBeEmpty();
 
     // After matrix cutover, a real coverage_missing repair installs variant-named
     // coverage artifacts (not bulk / non-variant filenames).
@@ -395,7 +395,7 @@ it('reports capability_missing for empty minors after a failed or silent probe',
         ->and($runtimeIssues[0]->detail['reason'] ?? null)
         ->toBe('probe_incomplete')
         ->and($capabilityIssues)
-        ->toBe([])
+        ->toBeEmpty()
         ->and(collect($diff)->where(fn (DriftEntry $entry): bool => $entry->key === 'tool.capability_missing'))
         ->toHaveCount(1);
 });
@@ -438,7 +438,7 @@ it('reports capability_missing for malformed incomplete per-minor probe output',
         ->and($runtimeIssues[0]->detail['observed_minors'] ?? null)
         ->toBe(['8.5'])
         ->and($capabilityIssues)
-        ->toBe([])
+        ->toBeEmpty()
         ->and(collect($diff)->first(
             fn (DriftEntry $entry): bool => (
                 $entry->key === 'tool.capability_missing'
@@ -482,5 +482,5 @@ it('still suppresses generic capability drift when the per-minor snapshot is com
     $runtimeIssues = new ReflectionMethod($probe, 'checkPhpCliRuntimeState')
         ->invoke($probe, $tool, $snapshot);
 
-    expect($capabilityIssues)->toBe([])->and($runtimeIssues)->toBe([]);
+    expect($capabilityIssues)->toBeEmpty()->and($runtimeIssues)->toBeEmpty();
 });

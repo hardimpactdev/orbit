@@ -29,9 +29,9 @@ abstract class AppGatewayCommand extends GatewayCommand
         return '/api/instances/'.rawurlencode($selector).$suffix;
     }
 
-    protected function apiProjectPath(string $project, string $suffix = ''): string
+    protected function apiProjectPath(string $app, string $suffix = ''): string
     {
-        return '/api/projects/'.rawurlencode($project).$suffix;
+        return '/api/apps/'.rawurlencode($app).$suffix;
     }
 
     /**

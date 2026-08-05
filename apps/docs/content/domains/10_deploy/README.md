@@ -15,7 +15,7 @@ The deploy command domain does not own a state family. Deployment policy,
 deployment history, run logs, and latest deployment status are owned by one
 concrete production instance in gateway state.
 
-[`doctor --family=instance`](../5_project/instance-doctor.md) owns deployment pipeline
+[`doctor --family=instance`](../5_app/instance-doctor.md) owns deployment pipeline
 validation and latest deployment health. A failed or stale latest deployment is
 reported as app health, not as deploy-family drift, and is not fixable or
 adoptable by doctor.
@@ -31,7 +31,7 @@ These rules define what the deploy command family owns and how it behaves.
   the command fails with `error.meta.reason=instance_required`.
 - The gateway is the source of truth for deployment step definitions, step
   metadata, run history, and latest deployment status.
-- Deployment commands apply only to concrete instances of production projects.
+- Deployment commands apply only to concrete instances of production apps.
 - Grant authorization targets the instance's owning Orbit node. For an external
   instance without an Orbit node, gateway-owned policy and history reads target
   the gateway grant boundary; execution still fails until its driver is supported.
@@ -68,7 +68,7 @@ Deploy JSON renderers that return one step entity embed this shape under
 ```json
 {
   "id": 12,
-  "project": "docs",
+  "app": "docs",
   "instance": "production",
   "title": "Pull latest",
   "command": "git pull origin main",
@@ -98,7 +98,7 @@ Deploy JSON renderers that return one run entity embed this shape under
 ```json
 {
   "id": 42,
-  "project": "docs",
+  "app": "docs",
   "instance": "production",
   "status": "completed",
   "exit_code": 0,
@@ -139,5 +139,5 @@ Use these commands to manage deployment steps, run deployments, and inspect depl
 
 ## Related
 
-- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
-- [`doctor --family=instance`](../5_project/instance-doctor.md)
+- [`orbit app:*` and `orbit instance:*`](../5_app/README.md)
+- [`doctor --family=instance`](../5_app/instance-doctor.md)

@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:list [--instance=<project.instance>] [--json]
+orbit workspace-setup-step:list [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -44,10 +44,10 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
 ## Input Resolution
 
 1. **Resolve instance.** Apply the precedence chain in order:
-   1. `--instance=<project.instance>` flag, using a dotted instance selector such
+   1. `--instance=<app.instance>` flag, using a dotted instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
-      `project:new` / `instance:register` and any workspace-installed marker) that
+      `app:new` / `instance:register` and any workspace-installed marker) that
       names the owning project slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.

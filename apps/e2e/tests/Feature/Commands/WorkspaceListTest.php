@@ -24,7 +24,7 @@ function workspaceListSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -35,7 +35,7 @@ function workspaceListSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -137,7 +137,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
 
         expect($filteredPayload['success']['data']['workspaces'])
             ->toHaveCount(2)
-            ->and($filteredPayload['success']['data']['workspaces'][0]['project'])
+            ->and($filteredPayload['success']['data']['workspaces'][0]['app'])
             ->toBe('docs');
 
         // Filter by node
@@ -163,7 +163,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg(implode("\n", [
                     '$nodes = \App\Models\Node::query()->whereIn(\'name\', [\'app-dev-1\'])->pluck(\'id\', \'name\');',
-                    '\App\Models\Project::query()->create([\'name\' => \'empty-app\', \'node_id\' => $nodes->get(\'app-dev-1\'), \'environment\' => \'development\', \'path\' => \'/srv/empty\', \'document_root\' => \'public\']);',
+                    '\App\Models\App::query()->create([\'name\' => \'empty-app\', \'node_id\' => $nodes->get(\'app-dev-1\'), \'environment\' => \'development\', \'path\' => \'/srv/empty\', \'document_root\' => \'public\']);',
                     'echo \'seeded-empty\';',
                 ])),
             timeoutSeconds: 120,

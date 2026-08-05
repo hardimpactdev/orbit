@@ -19,7 +19,7 @@ owns the signature, input resolution, behavior, and failure semantics.
 ## Signature
 
 ```bash
-orbit workspace-setup-step:remove --step=<id> [--instance=<project.instance>] [--force] [--json]
+orbit workspace-setup-step:remove --step=<id> [--instance=<app.instance>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -40,13 +40,13 @@ This command follows the shared
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md)
    precedence chain:
-   - Explicit `--instance=<project.instance>`, which must be a dotted instance
+   - Explicit `--instance=<app.instance>`, which must be a dotted instance
      selector such as `happie.nmbp`.
-   - `.orbit/config` marker on the caller filesystem (installed by `project:new`
+   - `.orbit/config` marker on the caller filesystem (installed by `app:new`
      / `instance:register` and any workspace-installed marker) that names the
      owning project slug.
    - Gateway path-ownership lookup keyed on `(caller node identity,
-     absolute cwd)` that returns the project slug whose registered app path or
+     absolute cwd)` that returns the app slug whose registered app path or
      any registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.

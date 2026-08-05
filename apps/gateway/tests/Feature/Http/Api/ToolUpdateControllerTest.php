@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -104,10 +104,10 @@ it('updates a host capability through an instance target', function (): void {
     $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
     assignToolUpdateApiRole($node, 'app-dev');
     grantToolUpdateApiAccess($caller, $node);
-    $project = Project::factory()->create(['name' => 'docs']);
-    AppInstance::factory()->for($project)->create([
+    $app = App::factory()->create(['name' => 'docs']);
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/docs',
             document_root: 'public',
@@ -149,10 +149,10 @@ it('limits bulk updates to the selected instance node', function (): void {
     assignToolUpdateApiRole($targetNode, 'app-dev');
     assignToolUpdateApiRole($otherNode, 'app-dev');
     grantToolUpdateApiAccess($caller, $targetNode);
-    $project = Project::factory()->create(['name' => 'docs']);
-    AppInstance::factory()->for($project)->create([
+    $app = App::factory()->create(['name' => 'docs']);
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $targetNode->id,
             path: '/home/orbit/apps/docs',
             document_root: 'public',

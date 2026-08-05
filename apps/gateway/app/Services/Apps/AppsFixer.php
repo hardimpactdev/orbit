@@ -7,9 +7,9 @@ namespace App\Services\Apps;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -46,7 +46,7 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    public function fix(Project $app, DriftEntry $entry): ?array
+    public function fix(App $app, DriftEntry $entry): ?array
     {
         $app->loadMissing('node');
         $node = $app->node;
@@ -73,7 +73,7 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    public function fixInstance(Project $app, AppInstance $instance, DriftEntry $entry): ?array
+    public function fixInstance(App $app, Instance $instance, DriftEntry $entry): ?array
     {
         $node = $this->placement->nodeForInstance($instance);
 
@@ -129,20 +129,20 @@ final readonly class AppsFixer
      * @return array<string, mixed>|null
      */
     private function reapplyRuntimeConfig(
-        Project $app,
+        App $app,
         Node $node,
         DriftEntry $entry,
-        ?AppInstance $instance = null,
+        ?Instance $instance = null,
     ): ?array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 
         $this->ensureFrankenPhpRuntimeProcess->forApp($app, $instance);
-        $container = $instance instanceof AppInstance
+        $container = $instance instanceof Instance
             ? $this->appRuntimeContainerRenderer->renderForInstance($app, $instance)
             : $this->appRuntimeContainerRenderer->render($app);
-        $path = $instance instanceof AppInstance
+        $path = $instance instanceof Instance
             ? $this->appRuntimeContainerRenderer->phpIniHostPathForInstance($app, $instance)
             : $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name);
 
@@ -155,16 +155,16 @@ final readonly class AppsFixer
             'key' => $entry->key,
             'mode' => 'fix',
             'status' => 'completed',
-            'summary' => $instance instanceof AppInstance
+            'summary' => $instance instanceof Instance
                 ? "Re-applied managed runtime config for {$app->name}.{$instance->name}."
                 : "Re-applied managed runtime config for {$app->name}.",
             'details' => [
                 'app' => $app->name,
                 'path' => $path,
                 ...(
-                    $instance instanceof AppInstance
+                    $instance instanceof Instance
                         ? [
-                            'app_instance' => $instance->name,
+                            'instance' => $instance->name,
                             'target' => $this->appRuntimeContainerRenderer->targetName($app, $instance),
                         ]
                         : []
@@ -179,7 +179,7 @@ final readonly class AppsFixer
      *
      * @return array<string, mixed>
      */
-    private function reapplyAppSecurity(Project $app, Node $node, DriftEntry $entry): array
+    private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry): array
     {
         $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";

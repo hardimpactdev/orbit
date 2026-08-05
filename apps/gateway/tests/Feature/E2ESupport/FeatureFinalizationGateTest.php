@@ -3690,7 +3690,7 @@ function full_template_finalization_packet(): string
 
         ## Feature Context
 
-        - Scratchpad: solo://projects/12/scratchpads/34
+        - Scratchpad: solo://apps/12/scratchpads/34
         - Worktree: .worktrees/example
         - Branch: feature
         - Completed slices:

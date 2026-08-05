@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Nodes\InstalledAgentArtifact;
@@ -13,16 +13,15 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
-use App\Models\LocalGatewaySettings;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
@@ -142,10 +141,10 @@ function createDoctorRunnerAppHostNode(array $attributes = []): Node
 it('selects app processes by current placement instead of a stale process.node_id', function (): void {
     $oldNode = createDoctorRunnerAppHostNode(['name' => 'beast']);
     $newNode = createDoctorRunnerAppHostNode(['name' => 'nmbp']);
-    $app = Project::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $oldNode->id,
             node: $oldNode->name,
             path: $app->path,
@@ -156,14 +155,14 @@ it('selects app processes by current placement instead of a stale process.node_i
     $process = OrbitProcess::factory()
         ->forOwner($app)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'dev',
             'command' => 'php artisan serve',
             'runtime' => ProcessRuntime::Docker,
         ]);
 
     $instance->forceFill([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $newNode->id,
             node: $newNode->name,
             path: $app->path,
@@ -427,7 +426,7 @@ function fakeDoctorRunnerSchedulerSwarmService(
 describe('DoctorReportRunner', function (): void {
     it('leaves concrete app runtime-unit drift to the process family', function (): void {
         $node = createDoctorRunnerAppHostNode();
-        Project::factory()->create([
+        App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -456,7 +455,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('does not probe or fix workspace PHP-FPM pools for PHP apps because workspaces use Docker containers', function (): void {
         $node = createDoctorRunnerAppHostNode();
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -769,7 +768,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
@@ -847,7 +846,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -910,11 +909,11 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $docs = Project::factory()->for($node, 'node')->create([
+        $docs = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
-        $blog = Project::factory()->for($node, 'node')->create([
+        $blog = App::factory()->for($node, 'node')->create([
             'name' => 'blog',
             'path' => '/home/orbit/apps/blog',
         ]);
@@ -988,7 +987,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'blog',
-                    'app_instance' => 'development',
+                    'instance' => 'development',
                     'process' => 'vp-dev',
                 ],
             ])
@@ -1008,20 +1007,20 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: '/home/orbit/apps/docs-development',
             ),
         ]);
-        $production = AppInstance::factory()->for($app)->create([
+        $production = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: '/home/orbit/apps/docs-production',
             ),
@@ -1029,7 +1028,7 @@ describe('DoctorReportRunner', function (): void {
         OrbitProcess::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'vp-dev',
                 'command' => 'npm run development',
                 'restart_policy' => 'on_failure',
@@ -1039,7 +1038,7 @@ describe('DoctorReportRunner', function (): void {
         OrbitProcess::factory()
             ->forOwner($app, $node)
             ->create([
-                'app_instance_id' => $production->id,
+                'instance_id' => $production->id,
                 'name' => 'vp-dev',
                 'command' => 'npm run production',
                 'restart_policy' => 'on_failure',
@@ -1095,7 +1094,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'docs',
-                    'app_instance' => 'production',
+                    'instance' => 'production',
                     'process' => 'vp-dev',
                 ],
             ])
@@ -1123,15 +1122,15 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,
@@ -1142,7 +1141,7 @@ describe('DoctorReportRunner', function (): void {
         $process = OrbitProcess::factory()
             ->forOwner($app)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'frankenphp-docs',
                 'command' => 'frankenphp',
                 'runtime' => ProcessRuntime::Docker,
@@ -1204,7 +1203,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'docs',
-                    'app_instance' => 'development',
+                    'instance' => 'development',
                     'process' => 'frankenphp-docs',
                     'container' => 'orbit-app-docs-development',
                     'outcome' => 'unchanged',
@@ -1227,15 +1226,15 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
                 document_root: $app->document_root,
@@ -1246,7 +1245,7 @@ describe('DoctorReportRunner', function (): void {
         OrbitProcess::factory()
             ->forOwner($app)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'frankenphp-docs',
                 'command' => 'frankenphp',
                 'runtime' => ProcessRuntime::Docker,
@@ -1306,7 +1305,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'docs',
-                    'app_instance' => 'development',
+                    'instance' => 'development',
                     'process' => 'frankenphp-docs',
                     'container' => 'orbit-app-docs-development',
                     'outcome' => 'recreated',
@@ -1323,7 +1322,7 @@ describe('DoctorReportRunner', function (): void {
                 ))
             ->toBeTrue()
             ->and(
-                Project::query()
+                App::query()
                     ->where('name', 'docs')
                     ->first()
                     ?->processes()
@@ -1341,15 +1340,15 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'nmbp',
             'platform' => 'macos_14',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/Users/nckrtl/apps/nckrtl',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: $app->path,
@@ -1357,9 +1356,9 @@ describe('DoctorReportRunner', function (): void {
                 domain: $app->domain,
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/Users/nckrtl/.config/orbit/worktrees/nckrtl-nmbp',
@@ -1395,13 +1394,13 @@ describe('DoctorReportRunner', function (): void {
                 'restorable' => true,
                 'detail' => [
                     'app' => 'nckrtl',
-                    'app_instance' => 'nmbp',
+                    'instance' => 'nmbp',
                     'process' => 'frankenphp-nckrtl',
                     'runtime_unit' => 'orbit-app-nckrtl-nmbp',
                     'reason' => 'runtime_process_missing',
                 ],
             ])
-            ->and(OrbitProcess::query()->where('app_instance_id', $development->id)->count())
+            ->and(OrbitProcess::query()->where('instance_id', $development->id)->count())
             ->toBe(1)
             ->and(OrbitProcess::query()->count())
             ->toBe(1);
@@ -1413,15 +1412,15 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'nmbp',
             'platform' => 'macos_14',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/Users/nckrtl/apps/nckrtl',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $development = AppInstance::factory()->for($app)->create([
+        $development = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: $app->path,
@@ -1429,9 +1428,9 @@ describe('DoctorReportRunner', function (): void {
                 domain: $app->domain,
             ),
         ]);
-        $nmbp = AppInstance::factory()->for($app)->create([
+        $nmbp = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/Users/nckrtl/.config/orbit/worktrees/nckrtl-nmbp',
@@ -1495,7 +1494,7 @@ describe('DoctorReportRunner', function (): void {
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
         $action = collect($report['actions'])
             ->first(
-                fn (array $action): bool => ($action['details']['app_instance'] ?? null) === 'nmbp',
+                fn (array $action): bool => ($action['details']['instance'] ?? null) === 'nmbp',
             );
 
         expect($report['healthy'])
@@ -1509,13 +1508,13 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'nckrtl',
-                    'app_instance' => 'nmbp',
+                    'instance' => 'nmbp',
                     'process' => 'frankenphp-nckrtl',
                     'container' => 'orbit-app-nckrtl-nmbp',
                     'outcome' => 'created',
                 ],
             ])
-            ->and(OrbitProcess::query()->where('app_instance_id', $nmbp->id)->exists())
+            ->and(OrbitProcess::query()->where('instance_id', $nmbp->id)->exists())
             ->toBeTrue()
             ->and(collect($shell->scripts)
                 ->contains(
@@ -1533,7 +1532,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -1632,7 +1631,7 @@ describe('DoctorReportRunner', function (): void {
             'name' => 'app-1',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -1940,21 +1939,21 @@ describe('DoctorReportRunner', function (): void {
                 'platform' => 'ubuntu_24-04',
                 'user' => 'orbit',
             ]);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'dutchlaravelfoundation',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/dutchlaravelfoundation',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $app->path,
             ),
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'best-practices-sync',
             'path' => '/home/orbit/apps/dutchlaravelfoundation/workspaces/best-practices-sync',
         ]);
@@ -1964,7 +1963,7 @@ describe('DoctorReportRunner', function (): void {
                 'name' => 'vite',
                 'command' => 'npm run dev',
                 'runtime' => ProcessRuntime::Systemd,
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'restart_policy' => 'always',
                 'crash_notification' => 'none',
             ]);
@@ -2282,7 +2281,7 @@ describe('DoctorReportRunner', function (): void {
                 // After rehydrate, render succeeds; re-probe must observe a matching running unit.
                 $this->process->refresh();
                 $this->process->loadMissing('owner');
-                $surrogate = new Project([
+                $surrogate = new App([
                     'name' => $node->name,
                     'path' => '/tmp/'.$node->name,
                 ]);
@@ -2793,7 +2792,7 @@ describe('DoctorReportRunner', function (): void {
         expect($verify['healthy'])
             ->toBeTrue()
             ->and($verify['issues'] ?? [])
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('restores supported node role baseline drift through the node converger', function (): void {
@@ -3120,7 +3119,7 @@ describe('DoctorReportRunner', function (): void {
         expect($verify['mode'])
             ->toBe('verify')
             ->and($verify['actions'] ?? null)
-            ->toBe([])
+            ->toBeEmpty()
             ->and($dryRun['dry_run'] ?? false)
             ->toBeTrue()
             ->and($dryRun['actions'][0]['status'] ?? null)
@@ -3155,9 +3154,9 @@ describe('DoctorReportRunner', function (): void {
         expect($report['mode'])
             ->toBe('restore')
             ->and($report['actions'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($report['issues'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($report['healthy'])
             ->toBeTrue()
             ->and($shell->scripts)
@@ -3185,9 +3184,9 @@ describe('DoctorReportRunner', function (): void {
         expect($report['mode'])
             ->toBe('adopt')
             ->and($report['actions'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($report['issues'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and($report['healthy'])
             ->toBeTrue()
             ->and($shell->scripts)
@@ -3280,7 +3279,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('does not apply a crafted restorable app.runtime_config_probe_failed issue', function (): void {
         $node = createDoctorRunnerAppHostNode(['name' => 'crafted-app-probe']);
-        Project::factory()->for($node, 'node')->create(['name' => 'docs']);
+        App::factory()->for($node, 'node')->create(['name' => 'docs']);
         $shell = new DoctorReportRunnerRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -3299,9 +3298,9 @@ describe('DoctorReportRunner', function (): void {
         ]]);
 
         expect($actions)
-            ->toBe([])
+            ->toBeEmpty()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('supports the database connection family on app nodes but not database-only nodes', function (): void {
@@ -3372,7 +3371,7 @@ describe('DoctorReportRunner', function (): void {
         $path = storage_path('framework/testing/doctor-database-unverifiable');
         File::ensureDirectoryExists($path);
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -3387,7 +3386,7 @@ describe('DoctorReportRunner', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(doctorRunnerDatabaseAppInstance($app))
+            ->forInstance(doctorRunnerDatabaseInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -3413,7 +3412,7 @@ describe('DoctorReportRunner', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\n");
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -3428,7 +3427,7 @@ describe('DoctorReportRunner', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(doctorRunnerDatabaseAppInstance($app))
+            ->forInstance(doctorRunnerDatabaseInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -3482,13 +3481,13 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $logicalAppNode->id,
             'name' => 'docs',
             'path' => $path,
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $path,
                 document_root: $app->document_root,
@@ -3534,7 +3533,7 @@ describe('DoctorReportRunner', function (): void {
             ->and(
                 DatabaseConnectionTarget::query()
                     ->where('database_connection_id', $connection->id)
-                    ->where('app_instance_id', $instance->id)
+                    ->where('instance_id', $instance->id)
                     ->where('env_prefix', 'DB')
                     ->exists(),
             )
@@ -3550,12 +3549,12 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
         ]);
-        doctorRunnerDatabaseAppInstance($app);
+        doctorRunnerDatabaseInstance($app);
         $env = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
         $envResult = new RemoteShellResult(exitCode: 0, stdout: $env, stderr: '', durationMs: 1);
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell(
@@ -3592,7 +3591,7 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n",
         );
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -3607,7 +3606,7 @@ describe('DoctorReportRunner', function (): void {
             'credentials' => ['password' => 'stored-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(doctorRunnerDatabaseAppInstance($app))
+            ->forInstance(doctorRunnerDatabaseInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -3653,13 +3652,13 @@ describe('DoctorReportRunner', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\n");
 
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $logicalAppNode->id,
             'name' => 'docs',
             'path' => $path,
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $path,
                 document_root: $app->document_root,
@@ -3667,7 +3666,7 @@ describe('DoctorReportRunner', function (): void {
             ),
         ]);
         $workspace = Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-db',
             'path' => $path,
         ]);
@@ -3791,16 +3790,16 @@ describe('DoctorReportRunner', function (): void {
     });
 });
 
-function doctorRunnerDatabaseAppInstance(Project $app): AppInstance
+function doctorRunnerDatabaseInstance(App $app): Instance
 {
     $instance = $app->instances()->first();
 
-    if ($instance instanceof AppInstance) {
+    if ($instance instanceof Instance) {
         return $instance;
     }
 
-    return AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    return Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
@@ -4095,7 +4094,7 @@ it('rejects workspace doctor family and scope on app production nodes', function
         families: ['app'],
         runner: $runner,
         target: $node,
-        scope: DoctorTargetScope::from('docs', 'feature', appInstance: 'production'),
+        scope: DoctorTargetScope::from('docs', 'feature', instance: 'production'),
     );
 
     expect($runner->categoriesForRole('app-prod'))
@@ -4321,8 +4320,8 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ]);
         }
 
-        $hauzer = Project::factory()->create(['node_id' => $ingress->id, 'name' => 'hauzer-production']);
-        $mealou = Project::factory()->create(['node_id' => $ingress->id, 'name' => 'mealou-production']);
+        $hauzer = App::factory()->create(['node_id' => $ingress->id, 'name' => 'hauzer-production']);
+        $mealou = App::factory()->create(['node_id' => $ingress->id, 'name' => 'mealou-production']);
 
         foreach ([
             [$hauzer, 'hauzer.app'],
@@ -4436,7 +4435,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'managed' => true,
                 'tld' => 'test',
             ]);
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->for($node, 'node')
             ->create([
@@ -4444,9 +4443,9 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'environment' => 'production',
                 'path' => '/srv/docs',
             ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: $app->path,
@@ -4454,7 +4453,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
             'path' => '/srv/docs/.worktrees/feature',
         ]);
@@ -4480,7 +4479,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'node_id' => $node->id,
             'owner_type' => 'workspace',
             'owner_id' => $workspace->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'legacy-workspace-queue',
             'command' => 'php artisan queue:work',
             'restart_policy' => 'never',
@@ -4581,14 +4580,14 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'status' => 'active',
                 'managed' => true,
             ]);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'environment' => 'production',
             'path' => '/srv/docs',
         ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: $app->path,
@@ -4596,7 +4595,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
             'path' => '/srv/docs/.worktrees/feature',
         ]);
@@ -4633,7 +4632,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'detail' => [
                     'process' => 'workspace-runtime',
                     'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'instance' => $instance->name,
                 ],
             ],
             [
@@ -4656,11 +4655,11 @@ describe('DoctorReportRunner metrics role categories', function (): void {
         ]);
 
         expect($actions)
-            ->toBe([])
+            ->toBeEmpty()
             ->and(DatabaseConnectionTarget::query()->where('workspace_id', $workspace->id)->exists())
             ->toBeFalse()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
         Http::assertNothingSent();
     });
 
@@ -4672,16 +4671,16 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'status' => 'active',
                 'managed' => true,
             ]);
-        $app = Project::factory()
+        $app = App::factory()
             ->static()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
                 'environment' => 'production',
             ]);
-        $instance = AppInstance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/srv/docs',
@@ -4689,7 +4688,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
         ]);
         $routes = [

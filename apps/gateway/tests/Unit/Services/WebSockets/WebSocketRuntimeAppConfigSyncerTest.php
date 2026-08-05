@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
@@ -51,7 +51,7 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
             'wireguard_address' => '10.6.0.45',
         ]);
 
-    $app = Project::factory()->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
 
     AppWebSocketBinding::factory()->create([
         'app_id' => $app->id,

@@ -9,8 +9,8 @@ use App\Enums\ActivityLogType;
 use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppRegistrar;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -22,7 +22,7 @@ use Illuminate\Http\Request;
 #[RequiresPermission('instance:register', servingNode: ServingNode::Target)]
 final class AppRegisterController implements Loggable
 {
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
@@ -65,7 +65,7 @@ final class AppRegisterController implements Loggable
         $name = $this->optionalString($request, 'name');
         $this->activitySubject = $name === null
             ? null
-            : Project::query()->where('name', $name)->first();
+            : App::query()->where('name', $name)->first();
 
         return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
@@ -84,7 +84,7 @@ final class AppRegisterController implements Loggable
             return null;
         }
 
-        $existingNode = Project::query()
+        $existingNode = App::query()
             ->with('node')
             ->where('name', $name)
             ->first()

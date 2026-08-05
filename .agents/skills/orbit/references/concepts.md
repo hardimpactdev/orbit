@@ -122,7 +122,7 @@ Hostnames:
 - Production instance: the value of `--domain` (globally unique across the fleet).
 
 Process runtime unit name:
-`orbit_<project>_<instance>_<workspace|main>_<process>`.
+`orbit_<app>_<instance>_<workspace|main>_<process>`.
 Launchd-backed units use label `dev.hardimpact.orbit.<runtimeUnit>`.
 
 ## Target resolution order
@@ -158,7 +158,7 @@ transitional transport only for commands that have not yet migrated.
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
-agent-facing stream JSON commands include `doctor`, `project:new`, `instance:setup`,
+agent-facing stream JSON commands include `doctor`, `app:new`, `instance:setup`,
 `workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
 `tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, `s3:unpublish`,
 and `update:all`. `--stream-json` and `--json` are mutually exclusive; use
@@ -184,6 +184,6 @@ not need this.
 - It doesn't keep a separate "sync" command per family  -  adoption is `doctor --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.
 - It doesn't use PHP-FPM or Supervisor for instance/workspace web runtimes.
-- It doesn't proxy git credentials. `project:new --repo=...` clones through Agent
+- It doesn't proxy git credentials. `app:new --repo=...` clones through Agent
   push as the target node's Orbit runtime user, using credentials already
   available on that node.

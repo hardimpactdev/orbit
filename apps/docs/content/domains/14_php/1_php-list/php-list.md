@@ -6,7 +6,7 @@ the current project, instance, or workspace PHP selection.
 ## Usage
 
 ```bash
-orbit php:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
+orbit php:list [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples
@@ -22,7 +22,7 @@ orbit php:list --node=app-1 --json
 ## Arguments and options
 
 - `--node=<node>`: Target node for available-image inspection.
-- `--instance=<project.instance>`: Concrete dotted instance context for project PHP
+- `--instance=<app.instance>`: Concrete dotted instance context for project PHP
   version and serving-node image reporting. A bare project slug is accepted only
   when that project has exactly one visible instance.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
@@ -38,7 +38,7 @@ Run this command to inspect PHP image support and selection for a node, instance
 
 `php:list` resolves one node, concrete instance, or workspace context from
 explicit options, caller context, concrete instance placement, or local
-`node:default`. It never chooses one instance to represent a project. It
+`node:default`. It never chooses one instance to represent an app. It
 reads the shared project PHP policy and the PHP image facts tracked for the selected
 instance serving node.
 

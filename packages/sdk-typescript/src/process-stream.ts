@@ -35,14 +35,14 @@ export interface ProcessStreamLastEvent {
 
 export interface ProcessStreamContext {
     node: string;
-    project: string | null;
+    app: string | null;
     instance: string | null;
     workspace: string | null;
 }
 
 export interface ProcessStreamProcess {
     node: string;
-    project: string | null;
+    app: string | null;
     instance: string | null;
     workspace: string | null;
     /** Stable process identity slug (current Process.name). */
@@ -89,7 +89,7 @@ export interface ProcessStreamUpdate {
      */
     label: string;
     node: string | null;
-    project: string | null;
+    app: string | null;
     instance: string | null;
     workspace: string | null;
     unit_name: string | null;
@@ -346,17 +346,17 @@ function asContext(value: unknown): ProcessStreamContext | null {
         return null;
     }
 
-    const project = asNullableString(value.project);
+    const app = asNullableString(value.app);
     const instance = asNullableString(value.instance);
     const workspace = asNullableString(value.workspace);
 
-    if (project === false || instance === false || workspace === false) {
+    if (app === false || instance === false || workspace === false) {
         return null;
     }
 
     return {
         node: value.node,
-        project,
+        app,
         instance,
         workspace,
     };
@@ -385,13 +385,13 @@ function asProcess(value: unknown): ProcessStreamProcess | null {
         return null;
     }
 
-    const project = asNullableString(value.project);
+    const app = asNullableString(value.app);
     const instance = asNullableString(value.instance);
     const workspace = asNullableString(value.workspace);
     const command = asNullableString(value.command);
     const tool = asNullableString(value.tool);
 
-    if (project === false || instance === false || workspace === false || command === false || tool === false) {
+    if (app === false || instance === false || workspace === false || command === false || tool === false) {
         return null;
     }
 
@@ -423,7 +423,7 @@ function asProcess(value: unknown): ProcessStreamProcess | null {
 
     return {
         node: value.node,
-        project,
+        app,
         instance,
         workspace,
         key,
@@ -473,7 +473,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         : key;
 
     const node = asNullableString(value.node);
-    const project = asNullableString(value.project);
+    const app = asNullableString(value.app);
     const instance = asNullableString(value.instance);
     const workspace = asNullableString(value.workspace);
     const unitName = asNullableString(value.unit_name);
@@ -483,7 +483,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
 
     if (
         node === false
-        || project === false
+        || app === false
         || instance === false
         || workspace === false
         || unitName === false
@@ -502,7 +502,7 @@ function asUpdate(value: unknown): ProcessStreamUpdate | null {
         name: key,
         label,
         node,
-        project,
+        app,
         instance,
         workspace,
         unit_name: unitName,

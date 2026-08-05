@@ -13,7 +13,7 @@ final readonly class SetupWorkspaceResponse
      * @param  array<string, mixed>  $httpProbe
      */
     public function __construct(
-        public string $project,
+        public string $app,
         public string $instance,
         public string $workspace,
         public string $node,

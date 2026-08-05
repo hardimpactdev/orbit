@@ -27,7 +27,7 @@ Use this command to inspect process configuration and last known state without l
   Machine payloads expose stable identity as `key` (and deprecated alias
   `name`) plus durable human `label`.
 - **Context Resolution**: Resolves a node, instance, workspace, or `app`
-  hostname context. Prefer `<project.instance>` for instance mode; a bare
+  hostname context. Prefer `<app.instance>` for instance mode; a bare
   project slug is accepted only when that project has exactly one instance. A
   workspace context includes workspace-owned definitions and instance-owned
   definitions inherited by that workspace. `--app` accepts an app-instance or

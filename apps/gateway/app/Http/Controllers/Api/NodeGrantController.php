@@ -15,7 +15,6 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
-use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
@@ -28,7 +27,6 @@ final readonly class NodeGrantController implements Loggable
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private WorkspaceRoleGuard $workspaceRoleGuard,
-        private ProjectInstancePermissionMigrator $permissionMigrator,
     ) {}
 
     public function __invoke(GrantNodeApiRequest $request): JsonResponse
@@ -134,7 +132,7 @@ final readonly class NodeGrantController implements Loggable
             'serving_node' => $serving->name,
             'action' => $action,
             'already_granted' => $alreadyGranted,
-            'permissions' => $this->permissionMigrator->current($grant->permissions ?? ['*']),
+            'permissions' => $grant->permissions ?? ['*'],
         ];
 
         $payload = ['success' => ['data' => $data]];

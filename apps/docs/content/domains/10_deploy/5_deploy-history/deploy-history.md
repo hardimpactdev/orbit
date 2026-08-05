@@ -24,7 +24,7 @@ orbit deploy:history docs.production --json
 
 ## Arguments and options
 
-- `instance`: dotted production instance selector. A bare project name or domain is
+- `instance`: dotted production instance selector. A bare app name or domain is
   valid only when the app has exactly one instance.
 - `--limit`: Maximum number of runs to return. Defaults to `50`; hard cap
   `500`.
@@ -53,7 +53,7 @@ Use `--json` for machine-readable output.
 
 - [`orbit deploy:run`](../4_deploy-run/deploy-run.md)
 - [`orbit deploy:log`](../6_deploy-log/deploy-log.md)
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 
 ## Technical Contract
 

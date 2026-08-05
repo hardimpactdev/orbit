@@ -67,7 +67,7 @@ describe('profile', function (): void {
 
         file_put_contents(filename: $tree['root'].'/.env', data: "APP_URL=https://farther.test\n");
         file_put_contents(
-            filename: $tree['project'].'/.env',
+            filename: $tree['app'].'/.env',
             data: "ORBIT_PROFILE_MUST_NOT_IMPORT=forbidden\nAPP_URL = \"https://nearest.test/path?filter=active\" # local app\n",
         );
 
@@ -102,7 +102,7 @@ describe('profile', function (): void {
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         $previousCwd = getcwd();
 
-        file_put_contents(filename: $tree['project'].'/.env', data: "APP_URL=https://cwd.test/dashboard\n");
+        file_put_contents(filename: $tree['app'].'/.env', data: "APP_URL=https://cwd.test/dashboard\n");
         putenv('ORBIT_HOST_CWD');
         chdir($tree['cwd']);
 
@@ -132,7 +132,7 @@ describe('profile', function (): void {
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         $explicitUrl = 'http://127.0.0.1:8080/status?full=1';
 
-        file_put_contents(filename: $tree['project'].'/.env', data: "APP_URL=https://env.test\n");
+        file_put_contents(filename: $tree['app'].'/.env', data: "APP_URL=https://env.test\n");
         putenv("ORBIT_HOST_CWD={$tree['cwd']}");
 
         $profiler = fakeLocalProfile(fakeProfileData(url: $explicitUrl));
@@ -186,7 +186,7 @@ describe('profile', function (): void {
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         $url = 'https://prompted-after-invalid-env.test/profile';
 
-        file_put_contents(filename: $tree['project'].'/.env', data: "APP_URL=/relative-only\n");
+        file_put_contents(filename: $tree['app'].'/.env', data: "APP_URL=/relative-only\n");
         putenv("ORBIT_HOST_CWD={$tree['cwd']}");
 
         $profiler = fakeLocalProfile(fakeProfileData(url: $url));
@@ -272,7 +272,7 @@ describe('profile', function (): void {
         $tree = create_profile_env_tree();
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
 
-        file_put_contents(filename: $tree['project'].'/.env', data: "APP_URL=/relative-only\n");
+        file_put_contents(filename: $tree['app'].'/.env', data: "APP_URL=/relative-only\n");
         putenv("ORBIT_HOST_CWD={$tree['cwd']}");
 
         $profiler = fakeLocalProfile(fakeProfileData());
@@ -491,19 +491,19 @@ final class ProfileCommandFakeProfiler implements ProfileRequestProfiler
 }
 
 /**
- * @return array{root: string, project: string, cwd: string}
+ * @return array{root: string, app: string, cwd: string}
  */
 function create_profile_env_tree(): array
 {
     $root = sys_get_temp_dir().'/orbit-profile-env-'.bin2hex(random_bytes(6));
-    $project = "{$root}/project";
-    $cwd = "{$project}/storage/cache";
+    $app = "{$root}/project";
+    $cwd = "{$app}/storage/cache";
 
     if (! mkdir(directory: $cwd, permissions: 0o777, recursive: true) && ! is_dir($cwd)) {
         throw new RuntimeException("Unable to create profile env test tree: {$cwd}");
     }
 
-    return compact('root', 'project', 'cwd');
+    return compact('root', 'app', 'cwd');
 }
 
 function remove_profile_env_tree(string $root): void

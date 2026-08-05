@@ -6,11 +6,11 @@ namespace Tests\Unit\Actions\Php;
 
 use App\Actions\Php\UsePhpRuntime;
 use App\Contracts\PhpRuntimeArtifactConverger;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,10 +18,10 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function place_use_php_runtime_app(Project $app, Node $node): AppInstance
+function place_use_php_runtime_app(App $app, Node $node): Instance
 {
-    return AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    return Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -37,7 +37,7 @@ final class RecordingPhpRuntimeArtifactConverger implements PhpRuntimeArtifactCo
     /** @var list<string> */
     public array $targets = [];
 
-    public function forApp(Project $app): array
+    public function forApp(App $app): array
     {
         $this->targets[] = "app:{$app->name}";
 
@@ -66,7 +66,7 @@ it('converges an app runtime after writing PHP selection intent', function (): v
             'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
         ],
     ]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'php_version' => '8.4',
@@ -99,7 +99,7 @@ it('converges a workspace runtime on its owning node after selection', function 
             'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
         ],
     ]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $legacyNode->id,
         'php_version' => '8.5',

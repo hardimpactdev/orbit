@@ -15,7 +15,7 @@ use Override;
  * @property int $app_id
  * @property bool $enabled
  * @property list<string> $public_hosts
- * @property-read Project $app
+ * @property-read App $app
  */
 class AppAnalyticsBinding extends Model
 {
@@ -42,18 +42,10 @@ class AppAnalyticsBinding extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 }

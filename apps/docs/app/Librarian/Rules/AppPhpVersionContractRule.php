@@ -25,7 +25,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
-            if (basename($familyDirectory) !== '5_project') {
+            if (basename($familyDirectory) !== '5_app') {
                 continue;
             }
 
@@ -59,7 +59,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
                 continue;
             }
 
-            $violations[] = 'Project PHP version defaults must not be described as the node default; project PHP-FPM intent is separate from node CLI PHP defaults.';
+            $violations[] = 'App PHP version defaults must not be described as the node default; app PHP-FPM intent is separate from node CLI PHP defaults.';
 
             break;
         }

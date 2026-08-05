@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\AdoptAction;
-use App\Models\Project;
+use App\Models\App;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteAdopter;
@@ -102,7 +102,7 @@ describe('ProxyRouteAdopter', function (): void {
 
     it('skips routes that conflict with app domains', function (): void {
         $node = createTestAppHostNode();
-        Project::factory()->create(['node_id' => $node->id, 'domain' => 'docs.test']);
+        App::factory()->create(['node_id' => $node->id, 'domain' => 'docs.test']);
         $snapshot = new ProbeSnapshot([
             'docs.test' => [
                 'hash' => str_repeat('a', 64),
@@ -117,7 +117,7 @@ describe('ProxyRouteAdopter', function (): void {
 
     it('skips routes that match workspace patterns', function (): void {
         $node = createTestAppHostNode(['tld' => 'test']);
-        $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'docs', 'domain' => 'docs.test']);
+        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs', 'domain' => 'docs.test']);
         Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature']);
         $snapshot = new ProbeSnapshot([
             'feature.docs.test' => [

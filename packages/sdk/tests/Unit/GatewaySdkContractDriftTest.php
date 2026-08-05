@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Laravel\Tests\Unit;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
+use Orbit\Sdk\Laravel\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Laravel\Requests\Dashboard\ShowRuntimeInventoryRequest;
 use Orbit\Sdk\Laravel\Requests\Database\DetachDatabaseConnectionTargetRequest;
 use Orbit\Sdk\Laravel\Requests\Database\ListDatabaseConnectionsRequest;
@@ -16,7 +17,6 @@ use Orbit\Sdk\Laravel\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Laravel\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Laravel\Requests\Php\ShowPhpRuntimeRequest;
 use Orbit\Sdk\Laravel\Requests\Processes\ListProcessesRequest;
-use Orbit\Sdk\Laravel\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Laravel\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Laravel\Requests\Workspaces\RemoveWorkspaceRequest;
 use Orbit\Sdk\Laravel\Tests\TestCase;
@@ -62,11 +62,11 @@ function core_dashboard_request_contracts(): array
 {
     return [
         [
-            'name' => 'GET /projects',
-            'request' => ListProjectsRequest::class,
+            'name' => 'GET /apps',
+            'request' => ListAppsRequest::class,
             'arguments' => ['environment' => 'production'],
             'method' => Method::GET,
-            'endpoint' => '/api/projects',
+            'endpoint' => '/api/apps',
             'query' => ['environment' => 'production'],
             'body' => [],
         ],

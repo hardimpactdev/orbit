@@ -14,7 +14,7 @@ final class AppRootCommand extends AppGatewayCommand
 
     #[\Override]
     protected $signature = 'instance:root
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {root? : Document root relative to the instance path}
         {--json : Output JSON}';
 
@@ -191,11 +191,11 @@ final class AppRootCommand extends AppGatewayCommand
      */
     private function instanceName(array $response, array $instance): string
     {
-        $project = $this->successData($response)['project'] ?? null;
-        $projectName = is_array($project) && is_string($project['name'] ?? null) ? $project['name'] : '';
+        $app = $this->successData($response)['app'] ?? null;
+        $appName = is_array($app) && is_string($app['name'] ?? null) ? $app['name'] : '';
         $instanceName = is_string($instance['name'] ?? null) ? $instance['name'] : '';
 
-        return $projectName !== '' && $instanceName !== '' ? "{$projectName}.{$instanceName}" : $instanceName;
+        return $appName !== '' && $instanceName !== '' ? "{$appName}.{$instanceName}" : $instanceName;
     }
 
     /**

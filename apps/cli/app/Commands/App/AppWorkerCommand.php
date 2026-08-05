@@ -11,7 +11,7 @@ final class AppWorkerCommand extends AppGatewayCommand
     #[\Override]
     protected $signature = 'instance:worker
         {action? : Action to perform (show|enable|disable)}
-        {instance? : Instance selector (project.instance or hostname)}
+        {instance? : Instance selector (app.instance or hostname)}
         {--json : Output JSON}';
 
     #[\Override]
@@ -55,11 +55,11 @@ final class AppWorkerCommand extends AppGatewayCommand
     private function renderWorker(string $action, string $selector, array $response): int
     {
         $data = $this->successData($response);
-        $project = is_string($data['project'] ?? null) && $data['project'] !== '' ? $data['project'] : $selector;
+        $app = is_string($data['app'] ?? null) && $data['app'] !== '' ? $data['app'] : $selector;
         $instance = is_string($data['instance'] ?? null) && $data['instance'] !== ''
             ? $data['instance']
             : null;
-        $target = $instance !== null ? "{$project}.{$instance}" : $selector;
+        $target = $instance !== null ? "{$app}.{$instance}" : $selector;
         $enabled = ($data['worker_enabled'] ?? null) === true;
         $changed = ($data['changed'] ?? null) === true;
 

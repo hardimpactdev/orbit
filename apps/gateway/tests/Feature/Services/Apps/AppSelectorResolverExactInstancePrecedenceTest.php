@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -17,16 +17,16 @@ it('resolves exact instance names before node domain path or tld aliases', funct
         'tld' => 'nmbp',
     ]);
 
-    $project = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'mealou',
         'node_id' => $nmbpNode->id,
         'domain' => 'mealou.test',
         'path' => '/srv/mealou',
     ]);
 
-    $nmbp = AppInstance::factory()->for($project)->create([
+    $nmbp = Instance::factory()->for($app)->create([
         'name' => 'nmbp',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbpNode->id,
             node: $nmbpNode->name,
             path: '/srv/mealou',
@@ -34,9 +34,9 @@ it('resolves exact instance names before node domain path or tld aliases', funct
         ),
     ]);
 
-    AppInstance::factory()->for($project)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbpNode->id,
             node: $nmbpNode->name,
             path: '/srv/mealou-development',
@@ -61,13 +61,13 @@ it('resolves exact instance names before node domain path or tld aliases', funct
 
 it('keeps bare project selectors ambiguous when multiple instances exist', function (): void {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $project = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'mealou',
         'node_id' => $node->id,
     ]);
 
-    AppInstance::factory()->for($project)->create(['name' => 'nmbp']);
-    AppInstance::factory()->for($project)->create(['name' => 'development']);
+    Instance::factory()->for($app)->create(['name' => 'nmbp']);
+    Instance::factory()->for($app)->create(['name' => 'development']);
 
     $resolver = app(AppSelectorResolver::class);
     $selection = $resolver->resolve('mealou');

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--instance=<project.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:update [tool] [--instance=<app.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--instance=<project.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--instance=<app.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -49,7 +49,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-update` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-update` must not create apps, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

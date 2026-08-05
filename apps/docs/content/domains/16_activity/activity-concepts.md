@@ -42,11 +42,11 @@ Each activity entry carries the following fields.
 
   Every Loggable implementation MUST declare its effect. The line between
   `write` and `destructive` is irreversibility through normal workflows,
-  not data sensitivity: `project:new` is `write`; `node:remove`,
+  not data sensitivity: `app:new` is `write`; `node:remove`,
   `node:revoke`, `vpn-client:remove`, and deploy retention prune are
   `destructive`.
 - **Subject:** Product-family entity the action targets, when there is one.
-  Examples: the `Node` granted, the `Project` deployed, the `AppInstance` configured, the `Workspace` created,
+  Examples: the `Node` granted, the `Project` deployed, the `Instance` configured, the `Workspace` created,
   the `ProxyRoute` stored. `null` when the action has no single domain
   target.
 - **Causer (actor):** Node identity that initiated the action, resolved from

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -33,7 +33,7 @@ final readonly class ToolAppNodeResolver
             return null;
         }
 
-        if (! $selection->instance instanceof AppInstance) {
+        if (! $selection->instance instanceof Instance) {
             return null;
         }
 

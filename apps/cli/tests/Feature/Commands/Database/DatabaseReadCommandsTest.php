@@ -248,7 +248,7 @@ describe('database:show', function (): void {
                 'targets' => [
                     [
                         'type' => 'instance',
-                        'project' => 'ditis-hr',
+                        'app' => 'ditis-hr',
                         'instance' => 'development',
                         'env_prefix' => 'DB',
                     ],

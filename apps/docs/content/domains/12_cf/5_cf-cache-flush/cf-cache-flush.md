@@ -20,7 +20,7 @@ orbit cf-cache:flush --zone=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 
 - `--zone=<zone>`: Cloudflare zone ID, exact zone domain name, or bare project
   name whose `Project.domain` maps to a configured Cloudflare zone. Current
-  gateway resolution does not implement dotted `project.instance` selectors.
+  gateway resolution does not implement dotted `app.instance` selectors.
 - `--json`: Return the flush result in the JSON output.
 
 ## What Happens

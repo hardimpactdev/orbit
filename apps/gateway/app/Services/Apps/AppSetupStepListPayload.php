@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\AppInstance;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use Illuminate\Database\Eloquent\Collection;
 
 final class AppSetupStepListPayload
@@ -13,11 +13,11 @@ final class AppSetupStepListPayload
     /**
      * @return list<array<string, mixed>>
      */
-    public function forAppInstance(AppInstance $instance): array
+    public function forInstance(Instance $instance): array
     {
         /** @var Collection<int, AppSetupStep> $steps */
         $steps = AppSetupStep::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
@@ -35,12 +35,12 @@ final class AppSetupStepListPayload
      */
     public function forStep(AppSetupStep $step): array
     {
-        $step->loadMissing('appInstance.project');
+        $step->loadMissing('instance.app');
 
         return [
             'id' => $step->id,
-            'project' => $step->appInstance?->project?->name,
-            'instance' => $step->appInstance?->name,
+            'app' => $step->instance?->app?->name,
+            'instance' => $step->instance?->name,
             'order' => $step->sort_order,
             'command' => $step->command,
             'timeout_seconds' => $step->timeoutSeconds(),

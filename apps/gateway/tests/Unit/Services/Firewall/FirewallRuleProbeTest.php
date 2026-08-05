@@ -400,7 +400,7 @@ describe('firewall registry probe foundation', function (): void {
 
         $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
-        expect($drift)->toBe([]);
+        expect($drift)->toBeEmpty();
     });
 
     it('detects incomplete firewall rule records', function (): void {

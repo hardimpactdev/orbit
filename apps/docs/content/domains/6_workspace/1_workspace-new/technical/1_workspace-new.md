@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:new [name] [--instance=<project.instance>] [--base=<ref>] [--php-version=<version>] [--json|--stream-json]
+orbit workspace:new [name] [--instance=<app.instance>] [--base=<ref>] [--php-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -38,9 +38,9 @@ one registered instance matches. Zero or multiple matches fail with
 
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
-instance-level default branch is not supported because the project domain does not yet
+instance-level default branch is not supported because the app domain does not yet
 track a `default_branch` field on project configuration. Adding gateway-tracked
-default-branch support is a future explicit feature on `project:update`/project
+default-branch support is a future explicit feature on `app:update`/project
 configuration; until then `workspace:new` does not consult project configuration
 for this default.
 
@@ -55,8 +55,8 @@ for this default.
      resolves a concrete instance from gateway-tracked metadata, not from
      project file inspection:
      - **`.orbit/config` marker** installed on the caller filesystem by
-       `project:new`/`instance:register` (and any workspace-installed marker),
-       identifying a project or concrete instance;
+       `app:new`/`instance:register` (and any workspace-installed marker),
+       identifying an app or concrete instance;
      - **gateway path lookup** keyed on (caller node identity, absolute
        cwd): a path owned by an instance resolves that instance directly.
        The same applies to a workspace path owned by an instance. An instance main
@@ -84,13 +84,13 @@ for this default.
      `main` would collide with that backend layer.
    - Length: `workspace_slug` must not exceed 63 characters. The workspace
      hostname shape uses the workspace slug as its own DNS label
-     (`{workspace}.{project}.{tld}`), so the workspace identity limit is
+     (`{workspace}.{app}.{tld}`), so the workspace identity limit is
      independent of the parent project slug. Backend artifact renderers must
      still validate final generated names such as runtime containers, Docker
      process services, systemd process units on supported Linux nodes, launchd
      process jobs on macOS, and certificate paths before writing them.
    - Per-project uniqueness: the workspace name must not already exist for the
-     resolved parent project. Workspace identity is unique within a project, not
+     resolved parent project. Workspace identity is unique within an app, not
      globally - unlike the `project` slug, which is globally unique. An instance
      selector chooses placement and URL context. It does not create a separate
      namespace for duplicate workspace names under the same parent project.
@@ -155,7 +155,7 @@ The command performs:
    `process.runtime_unit_mismatch`; plus `proxy` handoffs for workspace route
    drift). The operator repairs each warning through its owning family doctor.
    This matches the
-   `project:new`/`instance:register` pattern: once configuration is durable, apply drift
+   `app:new`/`instance:register` pattern: once configuration is durable, apply drift
    is convergence work, not a hard failure.
    HTTP probe failures that occur at setup time use the command-owned
    `workspace.http_probe_unhealthy` warning with `family: null`, matching
@@ -203,7 +203,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
-- **Probe:** `doctor --family=workspace --workspace=<name> --instance=<project.instance>`
+- **Probe:** `doctor --family=workspace --workspace=<name> --instance=<app.instance>`
   verifies registry configuration and runtime artifacts.
 - **Convergence:** Workspace doctor is report-only in the current runtime;
   `doctor --family=workspace --restore` does not auto-fix workspace codes.

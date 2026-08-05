@@ -156,7 +156,7 @@ final class GatewayOpenApi
                                 'Strict app-instance or workspace hostname (no scheme/path/port) resolved via exact proxy_routes.domain. Mutually exclusive with node, instance, and workspace.',
                             ),
                             self::stringQueryParameter('node', 'Filter processes by node name.'),
-                            self::stringQueryParameter('instance', 'Filter processes by project.instance selector.'),
+                            self::stringQueryParameter('instance', 'Filter processes by app.instance selector.'),
                             self::stringQueryParameter('workspace', 'Filter processes by workspace name.'),
                         ]);
                         $operation->addResponse(self::processListSuccessResponse());
@@ -240,7 +240,7 @@ final class GatewayOpenApi
         $node = new StringType;
         $node->setDescription('Owning node name.');
         $instance = new StringType;
-        $instance->setDescription('Project.instance selector.');
+        $instance->setDescription('App.instance selector.');
         $workspace = new StringType;
         $workspace->setDescription('Workspace name.');
         $name = new StringType;
@@ -271,7 +271,7 @@ final class GatewayOpenApi
 
         $process = new ObjectType;
         $process->addProperty('node', new StringType);
-        $process->addProperty('project', new StringType()->nullable(true));
+        $process->addProperty('app', new StringType()->nullable(true));
         $process->addProperty('instance', new StringType()->nullable(true));
         $process->addProperty('workspace', new StringType()->nullable(true));
         $key = new StringType;
@@ -299,7 +299,7 @@ final class GatewayOpenApi
         $process->addProperty('last_event', $lastEvent);
         $process->setRequired([
             'node',
-            'project',
+            'app',
             'instance',
             'workspace',
             'key',
@@ -318,10 +318,10 @@ final class GatewayOpenApi
 
         $context = new ObjectType;
         $context->addProperty('node', new StringType);
-        $context->addProperty('project', new StringType()->nullable(true));
+        $context->addProperty('app', new StringType()->nullable(true));
         $context->addProperty('instance', new StringType()->nullable(true));
         $context->addProperty('workspace', new StringType()->nullable(true));
-        $context->setRequired(['node', 'project', 'instance', 'workspace']);
+        $context->setRequired(['node', 'app', 'instance', 'workspace']);
 
         $data = new ObjectType;
         $data->addProperty('context', $context);
@@ -364,7 +364,7 @@ final class GatewayOpenApi
         $runtime->setRequired([
             'process',
             'node',
-            'project',
+            'app',
             'instance',
             'workspace',
             'runtime_unit',
@@ -390,7 +390,7 @@ final class GatewayOpenApi
         $runtime->setRequired([
             'process',
             'node',
-            'project',
+            'app',
             'instance',
             'workspace',
             'runtime_unit',
@@ -442,7 +442,7 @@ final class GatewayOpenApi
         $runtime = new ObjectType;
         $runtime->addProperty('process', new StringType);
         $runtime->addProperty('node', new StringType);
-        $runtime->addProperty('project', new StringType()->nullable(true));
+        $runtime->addProperty('app', new StringType()->nullable(true));
         $runtime->addProperty('instance', new StringType()->nullable(true));
         $runtime->addProperty('workspace', new StringType()->nullable(true));
         $runtime->addProperty('runtime_unit', new StringType);

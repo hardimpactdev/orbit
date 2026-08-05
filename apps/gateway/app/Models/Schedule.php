@@ -19,7 +19,7 @@ use Override;
  * @property string $name
  * @property string $scope
  * @property int|null $app_id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property int|null $node_id
  * @property string $target_name
  * @property string $interval
@@ -31,8 +31,8 @@ use Override;
  * @property string $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Project|null $app
- * @property-read AppInstance|null $appInstance
+ * @property-read App|null $app
+ * @property-read Instance|null $instance
  * @property-read Node|null $node
  * @property-read ScheduleRun|null $latestRun
  * @property-read Collection<int, ScheduleRun> $runs
@@ -47,7 +47,7 @@ class Schedule extends Model
         'name',
         'scope',
         'app_id',
-        'app_instance_id',
+        'instance_id',
         'node_id',
         'target_name',
         'interval',
@@ -69,27 +69,19 @@ class Schedule extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 
     /**
-     * @return BelongsTo<AppInstance, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class);
     }
 
     /**

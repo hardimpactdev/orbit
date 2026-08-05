@@ -101,7 +101,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
-| Owned route denied | The selected route is owned by a project, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
+| Owned route denied | The selected route is owned by an app, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Cleanup failed | Backend route or TLS cleanup failed before registry deletion. | `error.code=proxy.cleanup_failed`; registry row remains; `error.meta.backend_removed=false`, `error.meta.tls_removed=false`, `error.meta.next_command` for doctor repair. |
 

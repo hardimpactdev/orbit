@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Processes\AddProcess;
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -21,18 +21,18 @@ uses(RefreshDatabase::class);
 
 it('records a started process event when AddProcess successfully starts runtime units', function (): void {
     $appNode = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
     $context = new ProcessOwnerContext(
         node: $appNode,
         app: $app,
         workspace: null,
         owner: $app,
-        appInstance: $instance,
+        instance: $instance,
     );
 
     app()->instance(RemoteShell::class, new class implements RemoteShell {
@@ -68,18 +68,18 @@ it('records a started process event when AddProcess successfully starts runtime 
 
 it('records starting then failed when the runtime backend fails to start', function (): void {
     $appNode = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
     $context = new ProcessOwnerContext(
         node: $appNode,
         app: $app,
         workspace: null,
         owner: $app,
-        appInstance: $instance,
+        instance: $instance,
     );
 
     app()->instance(RemoteShell::class, new class implements RemoteShell {

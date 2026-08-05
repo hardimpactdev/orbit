@@ -6,15 +6,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
-use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppShowPlacementPayload;
 use App\Services\Apps\AppShowVisibility;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
+use App\Services\Apps\InstancePayloads;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,26 +25,25 @@ use Illuminate\Http\Request;
  */
 final class AppShowController implements Loggable
 {
-    private ?Project $activitySubject = null;
+    private ?App $activitySubject = null;
 
     public function __construct(
         private readonly AppShowVisibility $visibility,
         private readonly AppShowPlacementPayload $placementPayload,
-        private readonly AppInstancePayloads $instancePayloads,
+        private readonly InstancePayloads $instancePayloads,
     ) {}
 
-    public function __invoke(Request $request, string $project): JsonResponse
+    public function __invoke(Request $request, string $app): JsonResponse
     {
-        $app = $project;
         $model = $this->resolveApp($app);
 
-        if (! $model instanceof Project) {
+        if (! $model instanceof App) {
             return response()->json([
                 'error' => [
-                    'code' => 'project.not_found',
-                    'message' => "Project '{$app}' not found.",
+                    'code' => 'app.not_found',
+                    'message' => "App '{$app}' not found.",
                     'meta' => [
-                        'project' => $app,
+                        'app' => $app,
                     ],
                 ],
             ], 404);
@@ -64,10 +63,10 @@ final class AppShowController implements Loggable
 
         if (! $callerIsGateway && $instances === []) {
             return $this->authorizationFailed(
-                'This node is not authorized to read this project.',
+                'This node is not authorized to read this app.',
                 [
                     'reason' => 'missing_permission',
-                    'missing_permission' => 'project:read',
+                    'missing_permission' => 'app:read',
                 ],
             );
         }
@@ -75,7 +74,7 @@ final class AppShowController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'project' => $this->appPayload($model),
+                    'app' => $this->appPayload($model),
                     'details' => $this->detailsPayload(
                         $model,
                         $instances,
@@ -86,21 +85,21 @@ final class AppShowController implements Loggable
         ]);
     }
 
-    private function resolveApp(string $selector): ?Project
+    private function resolveApp(string $selector): ?App
     {
-        $baseQuery = Project::query()->with('instances');
+        $baseQuery = App::query()->with('instances');
 
         $nameMatch = (clone $baseQuery)->where('name', $selector)->first();
 
-        if ($nameMatch instanceof Project) {
+        if ($nameMatch instanceof App) {
             return $nameMatch;
         }
 
         $matches = $baseQuery
             ->get()
-            ->filter(function (Project $app) use ($selector): bool {
+            ->filter(function (App $app) use ($selector): bool {
                 foreach ($app->instances as $instance) {
-                    if (! $instance instanceof AppInstance) {
+                    if (! $instance instanceof Instance) {
                         continue;
                     }
 
@@ -118,39 +117,37 @@ final class AppShowController implements Loggable
 
         $match = $matches->first();
 
-        return $matches->count() === 1 && $match instanceof Project ? $match : null;
+        return $matches->count() === 1 && $match instanceof App ? $match : null;
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(Project $app): array
+    private function appPayload(App $app): array
     {
         return app(AppResponsePayload::class)->forApp($app);
     }
 
     /**
-     * @param  list<AppInstance>  $instances
+     * @param  list<Instance>  $instances
      * @return array<string, mixed>
      */
-    private function detailsPayload(Project $app, array $instances, bool $includeWorkspaces): array
+    private function detailsPayload(App $app, array $instances, bool $includeWorkspaces): array
     {
         $app->loadMissing([
             'dependencyAuditSummaries',
             'instances',
-            'processes.appInstance',
-            'workspaces.appInstance',
+            'processes.instance',
+            'workspaces.instance',
         ]);
 
-        $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
+        $visibleInstanceIds = array_map(static fn (Instance $instance): int => $instance->id, $instances);
         $placements = $this->placementPayload->forApp($app, $instances, $includeWorkspaces);
-
-        foreach ($instances as $index => $instance) {}
 
         $processModels = [];
 
         foreach ($app->processes as $process) {
-            if (! in_array($process->app_instance_id, $visibleInstanceIds, strict: true)) {
+            if (! in_array($process->instance_id, $visibleInstanceIds, strict: true)) {
                 continue;
             }
 
@@ -161,11 +158,11 @@ final class AppShowController implements Loggable
             $processModels,
             static fn (Process $left, Process $right): int => (
                 [
-                    $left->app_instance_id,
+                    $left->instance_id,
                     $left->sort_order,
                     $left->id,
                 ] <=> [
-                    $right->app_instance_id,
+                    $right->instance_id,
                     $right->sort_order,
                     $right->id,
                 ]
@@ -177,7 +174,7 @@ final class AppShowController implements Loggable
         foreach ($processModels as $process) {
             $processes[] = [
                 'name' => $process->name,
-                'instance' => $process->appInstance?->name,
+                'instance' => $process->instance?->name,
                 'runtime' => $process->runtime->value,
             ];
         }
@@ -247,7 +244,7 @@ final class AppShowController implements Loggable
 
     public function type(): string
     {
-        return 'api:GET /projects/{project}';
+        return 'api:GET /apps/{app}';
     }
 
     public function activityLogAction(): string

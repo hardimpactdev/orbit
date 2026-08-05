@@ -128,15 +128,15 @@ final class ProcessListCommand extends ProcessGatewayCommand
             return null;
         }
 
-        $app = $context['project'] ?? null;
-        $appInstance = $context['instance'] ?? null;
+        $app = $context['app'] ?? null;
+        $instance = $context['instance'] ?? null;
         $workspace = $context['workspace'] ?? null;
         $appLabel = is_scalar($app) && (string) $app !== ''
             ? (string) $app
             : null;
 
-        if ($appLabel !== null && is_scalar($appInstance) && (string) $appInstance !== '') {
-            $appLabel .= '.'.(string) $appInstance;
+        if ($appLabel !== null && is_scalar($instance) && (string) $instance !== '') {
+            $appLabel .= '.'.(string) $instance;
         }
 
         if (is_scalar($workspace) && (string) $workspace !== '') {

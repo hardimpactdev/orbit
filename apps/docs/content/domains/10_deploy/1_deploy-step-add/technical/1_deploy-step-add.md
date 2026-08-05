@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_app_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Activity Logging
@@ -89,7 +89,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 Deployment policy is instance-owned gateway state. `deploy:step-add` does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use deployment
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use deployment
 policy when reporting `instance.deployment_pipeline_invalid`.
 
 ## Test Mapping

@@ -14,8 +14,6 @@ use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
-use App\Services\Nodes\Access\NodePermissionRegistry;
-use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
@@ -28,8 +26,6 @@ final readonly class NodePermissionsController implements Loggable
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
         private WorkspaceRoleGuard $workspaceRoleGuard,
-        private ProjectInstancePermissionMigrator $permissionMigrator,
-        private NodePermissionRegistry $permissionRegistry,
     ) {}
 
     private function requiredPermission(NodePermissionsApiRequest $request): string
@@ -99,7 +95,7 @@ final readonly class NodePermissionsController implements Loggable
                 'serving_node' => $servingName,
                 'action' => 'read',
                 'mode' => 'read',
-                'permissions' => $this->permissionMigrator->current($grant->permissions ?? ['*']),
+                'permissions' => $grant->permissions ?? ['*'],
             ]);
         }
 
@@ -123,7 +119,7 @@ final readonly class NodePermissionsController implements Loggable
             }
 
             $storedPermissions = $grant->permissions ?? ['*'];
-            $currentPermissions = $this->permissionMigrator->current($storedPermissions);
+            $currentPermissions = is_array($storedPermissions) ? $storedPermissions : ['*'];
             $newPermissions = array_values(array_diff($currentPermissions, $toRemove));
 
             if ($newPermissions === []) {
@@ -144,11 +140,7 @@ final readonly class NodePermissionsController implements Loggable
             }
 
             $grant->update([
-                'permissions' => $this->permissionMigrator->forStorage(
-                    $storedPermissions,
-                    $newPermissions,
-                    $this->permissionRegistry,
-                ),
+                'permissions' => $newPermissions,
             ]);
 
             $data = [
@@ -224,15 +216,7 @@ final readonly class NodePermissionsController implements Loggable
                 'permissions' => $normalized->permissions,
             ];
         } else {
-            $storedPermissions = $mode === 'add'
-                ? $this->permissionMigrator->forStorage(
-                    $grant->permissions ?? ['*'],
-                    $normalized->permissions,
-                    $this->permissionRegistry,
-                )
-                : $normalized->permissions;
-
-            $grant->update(['permissions' => $storedPermissions]);
+            $grant->update(['permissions' => $normalized->permissions]);
 
             $data = [
                 'consuming_node' => $consumerName,
@@ -407,7 +391,7 @@ final readonly class NodePermissionsController implements Loggable
             }
 
             $currentPermissions = $grant !== null
-                ? $this->permissionMigrator->current($grant->permissions ?? ['*'])
+                ? (is_array($grant->permissions) ? $grant->permissions : ['*'])
                 : [];
             $merged = array_values(array_unique(array_merge($currentPermissions, $toAdd)));
 

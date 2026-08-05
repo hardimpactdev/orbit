@@ -54,7 +54,7 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
 
         return new CreateWorkspaceResponse(
             name: is_string($workspace['name'] ?? null) ? $workspace['name'] : $this->name,
-            project: is_string($workspace['project'] ?? null) ? $workspace['project'] : '',
+            app: is_string($workspace['app'] ?? null) ? $workspace['app'] : '',
             instance: is_string($workspace['instance'] ?? null) ? $workspace['instance'] : '',
             node: is_string($workspace['node'] ?? null) ? $workspace['node'] : null,
             path: is_string($workspace['path'] ?? null) ? $workspace['path'] : null,

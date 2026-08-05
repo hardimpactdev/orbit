@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -171,7 +171,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -189,7 +189,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
 
     it('removes custom route backend and TLS through the fixer in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -216,7 +216,7 @@ describe('ProxyRouteIntent', function (): void {
             ->and($result['meta']['removal_reason'])
             ->toBe('custom')
             ->and($result['meta']['warnings'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
             ->toBeFalse();
     });
@@ -258,7 +258,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('denies removal when a workspace owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
 
         ProxyRoute::factory()->create([
@@ -275,7 +275,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('removes orphaned workspace-owned routes when the workspace record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -302,14 +302,14 @@ describe('ProxyRouteIntent', function (): void {
             ->and($result['meta']['tls_removed'])
             ->toBeTrue()
             ->and($result['meta']['warnings'])
-            ->toBe([])
+            ->toBeEmpty()
             ->and(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())
             ->toBeFalse();
     });
 
     it('denies removal when an app owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -322,7 +322,7 @@ describe('ProxyRouteIntent', function (): void {
         app(ProxyRouteIntent::class)->remove('docs.test');
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by");
 
-    it('removes orphaned app-owned routes when the project record is missing', function (): void {
+    it('removes orphaned app-owned routes when the app record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
 
         ProxyRoute::factory()->create([
@@ -338,7 +338,7 @@ describe('ProxyRouteIntent', function (): void {
         expect($result['meta']['removal_reason'])
             ->toBe('orphan_owner')
             ->and($result['meta']['owner_type'])
-            ->toBe('project')
+            ->toBe('app')
             ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
             ->toBeFalse();
     });
@@ -363,7 +363,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -381,7 +381,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
 });
 
 /**
@@ -446,7 +446,7 @@ final readonly class ProxyIntentFakeCa extends OrbitCaService
         $dir = sys_get_temp_dir().'/orbit-proxy-intent-ca';
 
         if (! is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0o777, true);
         }
 
         $cert = "{$dir}/{$host}.crt";

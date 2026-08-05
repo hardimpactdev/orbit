@@ -3,16 +3,16 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\RemoteShell\RemoteEnvFile;
@@ -51,7 +51,7 @@ describe('DatabaseConnectionProbe', function (): void {
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
-            'app_instance_id' => databaseConnectionProbeAppInstance($app)->id,
+            'instance_id' => databaseConnectionProbeInstance($app)->id,
             'name' => 'feature',
             'path' => $workspacePath,
         ]);
@@ -68,7 +68,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'path' => '/srv/docs/.worktrees/feature/database/database.sqlite',
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $appConnection->id,
                 'env_prefix' => 'DB',
@@ -126,7 +126,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -167,7 +167,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'stored-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -236,7 +236,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -298,7 +298,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $dbPassword],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -406,7 +406,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -447,7 +447,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -490,7 +490,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -518,9 +518,9 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe('unverifiable')
             ->and($issue['detail'])
             ->toMatchArray([
-                'target_type' => 'app_instance',
+                'target_type' => 'instance',
                 'app' => 'docs',
-                'app_instance' => 'development',
+                'instance' => 'development',
                 'env_prefix' => 'DB',
                 'connection' => 'docs',
                 'node' => 'gateway-1',
@@ -572,7 +572,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -747,7 +747,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'path' => $path,
         ]);
 
-        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBeEmpty();
     });
 
     it('reports a missing target mapping when observed env matches an existing connection', function (): void {
@@ -884,7 +884,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->forInstance(databaseConnectionProbeInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -988,12 +988,12 @@ describe('DatabaseConnectionProbe', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionProbeApp(array $attributes): Project
+function databaseConnectionProbeApp(array $attributes): App
 {
-    $app = Project::factory()->create($attributes);
+    $app = App::factory()->create($attributes);
 
-    AppInstance::factory()->for($app)->create([
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $app->node_id,
             path: $app->path,
             document_root: $app->document_root,
@@ -1004,7 +1004,7 @@ function databaseConnectionProbeApp(array $attributes): Project
     return $app;
 }
 
-function databaseConnectionProbeAppInstance(Project $app): AppInstance
+function databaseConnectionProbeInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
 }

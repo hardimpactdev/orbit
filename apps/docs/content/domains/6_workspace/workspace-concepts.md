@@ -24,8 +24,8 @@ The terms below define the core identity vocabulary for the workspace family.
 - **Workspace hostname:** Workspace-owned hostname formed by prepending the
   workspace slug as its own DNS label to the parent instance's primary
   hostname. For development instances this yields
-  `{workspace}.{instance-hostname}` (for example `{workspace}.{project}.{tld}`
-  when the instance hostname is `{project}.{tld}`). Project identity does not
+  `{workspace}.{instance-hostname}` (for example `{workspace}.{app}.{tld}`
+  when the instance hostname is `{app}.{tld}`). Project identity does not
   own hostname composition.
 - **Workspace path:** Absolute path on the owning instance node where
   workspace files live. Derived from gateway configuration and applied through

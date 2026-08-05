@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 /**
- * Monorepo Pest version contract: five projects on Pest 5, CLI retained on Pest 4.
+ * Monorepo Pest version contract: five apps on Pest 5, CLI retained on Pest 4.
  *
  * apps/cli stays on Pest 4 while Laravel Zero 12 hard-requires Symfony Process 7.x
  * and Pest 5 requires Symfony Process ^8.1. Remove the CLI exception when a stable
  * Laravel Zero (or successor stack) resolves Pest 5 without process 7/8 conflict.
  */
-it('keeps five active composer projects on pest 5 and retains cli on pest 4', function (): void {
-    $pestFiveProjects = [
+it('keeps five active composer apps on pest 5 and retains cli on pest 4', function (): void {
+    $pestFiveApps = [
         'apps/gateway',
         'apps/docs',
         'apps/e2e',
@@ -18,7 +18,7 @@ it('keeps five active composer projects on pest 5 and retains cli on pest 4', fu
         'packages/sdk',
     ];
 
-    foreach ($pestFiveProjects as $projectPath) {
+    foreach ($pestFiveApps as $projectPath) {
         $composer = json_decode(
             (string) file_get_contents(repo_path("{$projectPath}/composer.json")),
             true,

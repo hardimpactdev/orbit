@@ -112,7 +112,7 @@ describe('node permission presets', function (): void {
 
             expect($presets->permissions('app-dev-self'))
                 ->toBe([
-                    'project:read',
+                    'app:read',
                     'instance:read',
                     'instance:register',
                     'process:add',
@@ -122,7 +122,7 @@ describe('node permission presets', function (): void {
                     'workspace:setup',
                 ])
                 ->and($presets->permissions('app-prod-self'))
-                ->toBe(['project:read', 'instance:read']);
+                ->toBe(['app:read', 'instance:read']);
         });
     });
 
@@ -131,7 +131,7 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('operator');
 
             expect($permissions)
-                ->toContain('project:read')
+                ->toContain('app:read')
                 ->and($permissions)
                 ->toContain('instance:read')
                 ->and($permissions)
@@ -199,7 +199,7 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('read-only');
 
             expect($permissions)
-                ->toContain('project:read')
+                ->toContain('app:read')
                 ->and($permissions)
                 ->toContain('instance:read')
                 ->and($permissions)
@@ -228,9 +228,9 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('developer');
 
             expect($permissions)
-                ->toContain('project:read')
+                ->toContain('app:read')
                 ->and($permissions)
-                ->toContain('project:write')
+                ->toContain('app:write')
                 ->and($permissions)
                 ->toContain('instance:read')
                 ->and($permissions)

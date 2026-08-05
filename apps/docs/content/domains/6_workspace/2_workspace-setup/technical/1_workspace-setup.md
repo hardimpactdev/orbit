@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:setup [name] [--instance=<project.instance>] [--path=<path>] [--json|--stream-json]
+orbit workspace:setup [name] [--instance=<app.instance>] [--path=<path>] [--json|--stream-json]
 ```
 
 ## Input Contract

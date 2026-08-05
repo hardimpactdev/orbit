@@ -8,12 +8,12 @@ use App\Actions\Schedules\AddSchedule;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Schedules\ScheduleAppInstanceResolver;
+use App\Services\Schedules\ScheduleInstanceResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -24,7 +24,7 @@ final readonly class ScheduleStoreController implements Loggable
 
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
-        private ScheduleAppInstanceResolver $appInstances,
+        private ScheduleInstanceResolver $instances,
     ) {}
 
     public function __invoke(Request $request, AddSchedule $addSchedule): JsonResponse
@@ -172,11 +172,11 @@ final readonly class ScheduleStoreController implements Loggable
         ];
     }
 
-    private function resolveTarget(Node $caller, ?string $instance, ?string $node): AppInstance|Node|JsonResponse
+    private function resolveTarget(Node $caller, ?string $instance, ?string $node): Instance|Node|JsonResponse
     {
         if ($instance !== null) {
             try {
-                $selection = $this->appInstances->resolve($instance, $caller, 'schedule:add');
+                $selection = $this->instances->resolve($instance, $caller, 'schedule:add');
             } catch (GatewayApiException $exception) {
                 return $this->error(
                     $exception->errorCode() ?? 'validation_failed',
@@ -187,11 +187,11 @@ final readonly class ScheduleStoreController implements Loggable
             }
 
             return (
-                $selection->instance instanceof AppInstance
+                $selection->instance instanceof Instance
                     ? $selection->instance
                     : $this->error(
                         'validation_failed',
-                        "Project '{$instance}' requires a concrete instance selector.",
+                        "App '{$instance}' requires a concrete instance selector.",
                         ['field' => 'instance', 'reason' => 'instance_required'],
                         422,
                     )
@@ -216,9 +216,9 @@ final readonly class ScheduleStoreController implements Loggable
         );
     }
 
-    private function authorizeTarget(Node $caller, AppInstance|Node $target): ?JsonResponse
+    private function authorizeTarget(Node $caller, Instance|Node $target): ?JsonResponse
     {
-        $servingNode = $target instanceof AppInstance ? $this->appInstances->targetNode($target) : $target;
+        $servingNode = $target instanceof Instance ? $this->instances->targetNode($target) : $target;
 
         if (! $servingNode instanceof Node) {
             return $this->error(

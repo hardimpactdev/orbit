@@ -6,8 +6,8 @@ namespace App\Actions\Php;
 
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Data\Php\PhpRuntimeOperation;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeManager;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -74,10 +74,10 @@ final readonly class UsePhpRuntime
      */
     private function convergeProject(array $result): array
     {
-        $name = $this->requiredString($result, 'project');
-        $app = Project::query()->with('node')->where('name', $name)->first();
+        $name = $this->requiredString($result, 'app');
+        $app = App::query()->with('node')->where('name', $name)->first();
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             throw new RuntimeException("PHP runtime target project '{$name}' disappeared before convergence.");
         }
 
@@ -91,9 +91,9 @@ final readonly class UsePhpRuntime
     private function convergeWorkspace(array $result): array
     {
         $workspaceName = $this->requiredString($result, 'workspace');
-        $appName = $this->requiredString($result, 'project');
+        $appName = $this->requiredString($result, 'app');
         $workspace = Workspace::query()
-            ->with(['app', 'appInstance'])
+            ->with(['app', 'instance'])
             ->where('name', $workspaceName)
             ->whereHas('app', static fn ($query) => $query->where('name', $appName))
             ->first();

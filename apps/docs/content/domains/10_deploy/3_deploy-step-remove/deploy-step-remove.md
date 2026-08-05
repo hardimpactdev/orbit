@@ -23,7 +23,7 @@ orbit deploy:step-remove docs.production "Run migrations" --force
 
 ## Arguments and options
 
-- `instance`: dotted production instance selector. A bare project name or domain is
+- `instance`: dotted production instance selector. A bare app name or domain is
   valid only when the app has exactly one instance.
 - `step`: step id or exact title.
 - `--force`: Skip destructive confirmation.
@@ -54,7 +54,7 @@ JSON output returns the removed step entity with removal metadata.
 
 - [`orbit deploy:step-list`](../2_deploy-step-list/deploy-step-list.md)
 - [`orbit deploy:step-add`](../1_deploy-step-add/deploy-step-add.md)
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 
 ## Technical Contract
 

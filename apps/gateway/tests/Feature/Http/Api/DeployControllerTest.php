@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
 use App\Models\DeployStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -18,7 +18,7 @@ const DEPLOY_API_CALLER_WG_IP = '10.6.0.89';
 
 /**
  * @param  list<string>  $permissions
- * @return array{caller: Node, node: Node, app: Project, instance: AppInstance}
+ * @return array{caller: Node, node: Node, app: App, instance: Instance}
  */
 function createDeployApiFixture(string $executionContext, array $permissions): array
 {
@@ -27,17 +27,17 @@ function createDeployApiFixture(string $executionContext, array $permissions): a
         'host' => '10.6.0.7',
     ], 'app-prod');
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'environment' => 'production',
         'domain' => 'docs.example.com',
         'path' => '/srv/docs',
     ]);
-    $instance = AppInstance::factory()->create([
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/srv/docs',
@@ -90,7 +90,7 @@ it('lists deployment steps for a caller with deploy read on the app node', funct
     $response
         ->assertOk()
         ->assertJsonPath('success.data.steps', [])
-        ->assertJsonPath('success.meta.project', 'docs')
+        ->assertJsonPath('success.meta.app', 'docs')
         ->assertJsonPath('success.meta.instance', 'production')
         ->assertJsonPath('success.meta.count', 0);
 });
@@ -141,7 +141,7 @@ it('allows app-dev role callers when they hold the deployment grant', function (
 
     $response
         ->assertOk()
-        ->assertJsonPath('success.data.step.project', 'docs')
+        ->assertJsonPath('success.data.step.app', 'docs')
         ->assertJsonPath('success.data.step.instance', 'production')
         ->assertJsonPath('success.data.step.title', 'Run migrations')
         ->assertJsonPath('success.meta.action', 'created');
@@ -150,7 +150,7 @@ it('allows app-dev role callers when they hold the deployment grant', function (
 it('returns canonical destructive consent metadata before removing a deployment step', function (): void {
     ['instance' => $instance] = createDeployApiFixture('control', ['deploy:step']);
     $step = DeployStep::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'title' => 'Run migrations',
         'command' => 'php artisan migrate --force',
         'sort_order' => 10,
@@ -182,15 +182,15 @@ it('returns canonical destructive consent metadata before removing a deployment 
 it('authorizes deployment against the concrete app instance node', function (): void {
     $logicalNode = createTestAppHostNode(['name' => 'logical-app-node'], role: 'app-prod');
     $instanceNode = createTestAppHostNode(['name' => 'production-instance-node'], role: 'app-prod');
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'billing',
         'node_id' => $logicalNode->id,
         'environment' => 'production',
     ]);
-    AppInstance::factory()->create([
+    Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $instanceNode->id,
             node: $instanceNode->name,
             path: '/srv/billing',
@@ -220,7 +220,7 @@ it('authorizes deployment against the concrete app instance node', function (): 
 
     $response
         ->assertOk()
-        ->assertJsonPath('success.meta.project', 'billing')
+        ->assertJsonPath('success.meta.app', 'billing')
         ->assertJsonPath('success.meta.instance', 'production');
 });
 

@@ -47,11 +47,11 @@ the gateway always dispatches.
   another serving node explicitly.
 - A Laravel scheduler is a normal instance-scoped schedule that runs `php artisan schedule:run` every minute.
 
-Instance selectors use `project.instance`, such as `docs.production`. A bare project
+Instance selectors use `app.instance`, such as `docs.production`. A bare project
 name is shorthand only when exactly one eligible instance is visible to the
 caller for the requested schedule permission. Ambiguity fails before reads,
 writes, dispatch, or destructive side effects. Schedule names are unique within
-the concrete target, so two instances of one project may own schedules with
+the concrete target, so two instances of one app may own schedules with
 the same name.
 
 When the target is not the gateway itself, the gateway dispatches the run through `internal:schedule:run` over agent-push. The scheduled command executes on the target node, but the gateway records every result centrally.
@@ -163,7 +163,7 @@ items.
 | `name` | string | Schedule slug, unique within the selected concrete target. |
 | `scope` | `instance`, `node`, or `orbit` | Scope that owns the schedule. Public `SchedulePayload` can render stored `orbit` rows. Creatable scopes through `schedule:add` remain `instance` and `node` only. |
 | `target.type` | string | Target kind. |
-| `target.name` | string | Concrete `project.instance` selector, node, or Orbit maintenance target. |
+| `target.name` | string | Concrete `app.instance` selector, node, or Orbit maintenance target. |
 | `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over agent-push when the target is not the gateway. |
 | `interval` | string | Portable Orbit interval expression. |
 | `timezone` | string | Timezone used to interpret the interval. |
@@ -191,5 +191,5 @@ Use these commands to manage schedules across the full lifecycle.
 These references cover schedule diagnostics and the neighboring command families that schedules interact with.
 
 - [`doctor --family=schedule`](schedule-doctor.md)
-- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
+- [`orbit app:*` and `orbit instance:*`](../5_app/README.md)
 - [`orbit node:*`](../1_node/README.md)

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:list [--instance=<project.instance>] [--node=<node>] [--json]`
+# Technical Contract: `orbit schedule:list [--instance=<app.instance>] [--node=<node>] [--json]`
 
 [Back to public `schedule-list` documentation.](../schedule-list.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit schedule:list [--instance=<project.instance>] [--node=<node>] [--json]
+orbit schedule:list [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `project.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -78,6 +78,6 @@ schedule registry reads.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | CLI filter forwarding, JSON envelope shape, human table with last-run summary, empty states, and gateway/WireGuard failure passthrough. |
-| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit instance list filtering and ambiguous bare-selector rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php` | Explicit instance list filtering and ambiguous bare-selector rejection. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

@@ -23,7 +23,7 @@ orbit process:logs queue --instance=docs.production --lines=200 --json
 
 Use this command to read or stream logs for a resolved process runtime context.
 
-- **Context Resolution**: Resolves the process and node/instance/workspace runtime context. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
+- **Context Resolution**: Resolves the process and node/instance/workspace runtime context. Prefer `<app.instance>`; a bare project slug is accepted only when that project has exactly one instance.
 - **Placement**: Instance and workspace logs are read from the instance's serving node.
 - **Log Streaming**: Streams or returns logs from the selected process runtime
   backend through the gateway.

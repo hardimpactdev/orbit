@@ -9,7 +9,7 @@ return [
     ],
     'instance' => [
         'singular' => 'instance',
-        'doctor_doc' => 'domains/5_project/instance-doctor.md',
+        'doctor_doc' => 'domains/5_app/instance-doctor.md',
     ],
     'workspace' => [
         'singular' => 'workspace',

@@ -57,7 +57,7 @@ it('serves a registered app on a prepared app-dev topology', function (): void {
 
         expect($appRegisterData['result']['action'])
             ->toBe('adopted')
-            ->and($appRegisterData['project']['name'])
+            ->and($appRegisterData['app']['name'])
             ->toBe($appName)
             ->and($appRegisterData['instance']['node'])
             ->toBe('app-dev-1');

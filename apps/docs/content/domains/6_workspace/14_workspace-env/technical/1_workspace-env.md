@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:env [action] [name] [--instance=<project.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
+orbit workspace:env [action] [name] [--instance=<app.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
 ```
 
 ## Input Contract
@@ -51,7 +51,7 @@ database values are redacted from responses.
 | `GET` | `/api/workspaces/env/resolve-by-path?path=<absolute>` | `workspace:read` | Resolve the workspace containing caller CWD. |
 
 The workspace routes accept an optional `instance` query parameter for
-disambiguation. It accepts `project.instance`, or a bare project only when that
+disambiguation. It accepts `app.instance`, or a bare project only when that
 project resolves to one concrete instance.
 
 ## Behavior Contract

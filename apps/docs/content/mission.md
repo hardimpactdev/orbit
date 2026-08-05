@@ -14,7 +14,7 @@ For agents the gap is the same shape. An LLM can drive each tool as a separate s
 
 ## How
 
-Orbit wraps that model in a single command surface — the same commands from `orbit project:new` on day one to a security-update sweep on day three hundred. Because Orbit runs on always-on machines, an agent can keep working against a stable environment while you're away from the keyboard.
+Orbit wraps that model in a single command surface — the same commands from `orbit app:new` on day one to a security-update sweep on day three hundred. Because Orbit runs on always-on machines, an agent can keep working against a stable environment while you're away from the keyboard.
 
 That surface sits on a private VPN. Orbit uses a gateway as the fleet authority; every other actor — workload nodes, developer machines, CI runners, nodes running first-party agent tools like Hermes — joins the VPN as a peer and acts through the gateway.
 

@@ -25,7 +25,7 @@ orbit process:start --instance=docs.development --workspace=feature-docs
 Use this command to start one process or all processes for a resolved node, instance, workspace, or app hostname context.
 
 - **Context Resolution**: Resolves the node, instance, workspace, or `--app`
-  hostname runtime context. Prefer `<project.instance>`; a bare project slug is
+  hostname runtime context. Prefer `<app.instance>`; a bare project slug is
   accepted only when that project has exactly one instance. `--app` is mutually
   exclusive with `--node`, `--instance`, and `--workspace`.
 - **Placement**: Instance, workspace, and app-hostname runtime units are started on the instance's serving node.

@@ -45,7 +45,7 @@ final class DoctorProgressReportFactory
         array $familyCheckCounts = [],
         ?string $app = null,
         ?string $workspace = null,
-        ?string $appInstance = null,
+        ?string $instance = null,
     ): array {
         return [
             'healthy' => false,
@@ -59,7 +59,7 @@ final class DoctorProgressReportFactory
                     : $roles,
                 'self' => false,
                 'app' => $app,
-                'app_instance' => $appInstance,
+                'instance' => $instance,
                 'workspace' => $workspace,
                 'key' => $key,
             ],

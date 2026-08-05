@@ -121,12 +121,12 @@ final readonly class DatabaseAuditPayload
     {
         $targetRow = null;
 
-        foreach ($connection->targets()->with(['appInstance.app', 'workspace'])->get() as $candidate) {
+        foreach ($connection->targets()->with(['instance.app', 'workspace'])->get() as $candidate) {
             if (! $candidate instanceof DatabaseConnectionTarget) {
                 continue;
             }
 
-            $instanceTarget = $candidate->appInstance?->app?->name.'.'.$candidate->appInstance?->name;
+            $instanceTarget = $candidate->instance?->app?->name.'.'.$candidate->instance?->name;
 
             if ($instanceTarget === $target || $candidate->workspace?->name === $target) {
                 $targetRow = $candidate;
@@ -139,9 +139,9 @@ final readonly class DatabaseAuditPayload
         $targetName = null;
 
         if ($targetRow instanceof DatabaseConnectionTarget) {
-            if ($targetRow->appInstance !== null) {
-                $targetType = 'app_instance';
-                $targetName = $targetRow->appInstance->app->name.'.'.$targetRow->appInstance->name;
+            if ($targetRow->instance !== null) {
+                $targetType = 'instance';
+                $targetName = $targetRow->instance->app->name.'.'.$targetRow->instance->name;
             } elseif ($targetRow->workspace !== null) {
                 $targetType = 'workspace';
                 $targetName = $targetRow->workspace->name;

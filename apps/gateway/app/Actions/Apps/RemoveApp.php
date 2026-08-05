@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
+use App\Enums\Apps\InstanceDriver;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
-use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppRuntimeContainerManager;
+use App\Services\Apps\InstancePayloads;
 use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Coordinates destructive cleanup across every concrete instance of one project.
+ * Coordinates destructive cleanup across every concrete instance of one app.
  *
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:kan-defect
@@ -44,7 +44,7 @@ final readonly class RemoveApp
 
     /**
      * @return array{
-     *     project: array<string, mixed>,
+     *     app: array<string, mixed>,
      *     instances: list<array<string, mixed>>,
      *     result: array{action: string},
      *     cleanup: array{
@@ -63,21 +63,21 @@ final readonly class RemoveApp
      *     warnings: list<array{code: string, family: string, message: string, next_command: string}>
      * }
      */
-    public function handle(Project $app): array
+    public function handle(App $app): array
     {
         $app->loadMissing([
             'node',
             'dependencyAuditSummaries',
             'instances.runtimeMounts',
-            'processes.appInstance',
+            'processes.instance',
             'schedules',
-            'workspaces.processes.appInstance',
+            'workspaces.processes.instance',
         ]);
 
         $projectPayload = app(AppResponsePayload::class)->forApp($app);
         $instancePayloads = $app
             ->instances
-            ->map(static fn (AppInstance $instance): array => app(AppInstancePayloads::class)->instance($instance))
+            ->map(static fn (Instance $instance): array => app(InstancePayloads::class)->instance($instance))
             ->values()
             ->all();
         /** @var list<array<string, mixed>> $instancePayloads */
@@ -188,7 +188,7 @@ final readonly class RemoveApp
                 $pathsRemoved++;
             }
 
-            $instanceId = $target['app_instance_id'];
+            $instanceId = $target['instance_id'];
             $cleanupRowIndex = is_int($instanceId) ? $cleanupRowIndexByInstanceId[$instanceId] ?? null : null;
 
             if (is_int($cleanupRowIndex)) {
@@ -210,7 +210,7 @@ final readonly class RemoveApp
         }
 
         return [
-            'project' => $projectPayload,
+            'app' => $projectPayload,
             'instances' => $instancePayloads,
             'result' => ['action' => 'removed'],
             'cleanup' => [
@@ -239,9 +239,9 @@ final readonly class RemoveApp
     }
 
     /**
-     * @return list<array{app: Project, app_instance_id: int|null, adopted: bool, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
+     * @return list<array{app: App, instance_id: int|null, adopted: bool, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
      */
-    private function cleanupTargets(Project $app): array
+    private function cleanupTargets(App $app): array
     {
         $targets = [];
         $instances = $app->instances;
@@ -250,7 +250,7 @@ final readonly class RemoveApp
         $appWorkspaces = $app->workspaces;
 
         foreach ($instances as $instance) {
-            if ($instance->driver !== AppInstanceDriver::Orbit) {
+            if ($instance->driver !== InstanceDriver::Orbit) {
                 continue;
             }
 
@@ -265,7 +265,7 @@ final readonly class RemoveApp
             $workspaces = [];
 
             foreach ($appWorkspaces as $workspace) {
-                if ($workspace->app_instance_id === $instance->id) {
+                if ($workspace->instance_id === $instance->id) {
                     $workspaces[] = $workspace;
                 }
             }
@@ -274,7 +274,7 @@ final readonly class RemoveApp
             $scripts = [];
 
             foreach ($appProcesses as $process) {
-                if ($process->app_instance_id !== $instance->id) {
+                if ($process->instance_id !== $instance->id) {
                     continue;
                 }
 
@@ -289,7 +289,7 @@ final readonly class RemoveApp
                 $workspaceProcesses = $workspace->processes;
 
                 foreach ($workspaceProcesses as $process) {
-                    if ($process->app_instance_id !== $instance->id) {
+                    if ($process->instance_id !== $instance->id) {
                         continue;
                     }
 
@@ -302,7 +302,7 @@ final readonly class RemoveApp
 
             $targets[] = [
                 'app' => $runtimeApp,
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'adopted' => $instance->adopted,
                 'identity' => "{$app->name}.{$instance->name}",
                 'node' => $node,
@@ -317,7 +317,7 @@ final readonly class RemoveApp
 
         return [[
             'app' => $app,
-            'app_instance_id' => null,
+            'instance_id' => null,
             'adopted' => $app->adopted,
             'identity' => $app->name,
             'node' => $app->node,
@@ -329,12 +329,12 @@ final readonly class RemoveApp
     /**
      * @return list<array{code: string, family: string, message: string, next_command: string}>
      */
-    private function unresolvedOrbitCleanupWarnings(Project $app): array
+    private function unresolvedOrbitCleanupWarnings(App $app): array
     {
         $unresolvedIdentities = [];
 
         foreach ($app->instances as $instance) {
-            if ($instance->driver !== AppInstanceDriver::Orbit) {
+            if ($instance->driver !== InstanceDriver::Orbit) {
                 continue;
             }
 
@@ -363,10 +363,10 @@ final readonly class RemoveApp
     /**
      * @return array<string, true>
      */
-    private function occupiedAppPlacements(Project $removedApp): array
+    private function occupiedAppPlacements(App $removedApp): array
     {
         $occupiedPlacements = [];
-        $otherApps = Project::query()
+        $otherApps = App::query()
             ->whereKeyNot($removedApp->id)
             ->with(['node', 'instances'])
             ->get();
@@ -400,7 +400,7 @@ final readonly class RemoveApp
      */
     private function shouldRemoveAppPath(
         bool $adopted,
-        Project $runtimeApp,
+        App $runtimeApp,
         Node $node,
         array $occupiedAppPlacements,
     ): bool {
@@ -415,14 +415,14 @@ final readonly class RemoveApp
      * @param  iterable<ProxyRoute>  $proxyRoutes
      * @return array{list<array<string, int|string|bool|null>>, array<int, int>}
      */
-    private function instanceCleanupInventory(Project $app, iterable $proxyRoutes): array
+    private function instanceCleanupInventory(App $app, iterable $proxyRoutes): array
     {
         $rows = [];
         $rowIndexByInstanceId = [];
 
         foreach ($app->instances as $instance) {
             $node = $this->placement->nodeForInstance($instance);
-            $placement = app(AppInstancePayloads::class)->placement($instance);
+            $placement = app(InstancePayloads::class)->placement($instance);
             $url = is_string($placement['url'] ?? null) ? $placement['url'] : '';
             $host = parse_url($url, PHP_URL_HOST);
             $proxyRoutesRemoved = 0;
@@ -443,7 +443,7 @@ final readonly class RemoveApp
             }
 
             foreach ($app->workspaces as $workspace) {
-                if ($workspace->app_instance_id !== $instance->id) {
+                if ($workspace->instance_id !== $instance->id) {
                     continue;
                 }
 
@@ -452,7 +452,7 @@ final readonly class RemoveApp
             }
 
             foreach ($app->processes as $process) {
-                if ($process->app_instance_id !== $instance->id) {
+                if ($process->instance_id !== $instance->id) {
                     continue;
                 }
 
@@ -464,7 +464,7 @@ final readonly class RemoveApp
                 'instance' => "{$app->name}.{$instance->name}",
                 'serving_node' => $node?->name,
                 'proxy_routes_removed' => $proxyRoutesRemoved,
-                'schedules_removed' => $app->schedules->where('app_instance_id', $instance->id)->count(),
+                'schedules_removed' => $app->schedules->where('instance_id', $instance->id)->count(),
                 'workspaces_removed' => $workspacesRemoved,
                 'processes_removed' => $processesRemoved,
                 'runtime_container_removed' => false,
@@ -487,7 +487,7 @@ final readonly class RemoveApp
      * @param  list<string>  $processCleanupScripts
      */
     private function renderNonRuntimeCleanupScript(
-        Project $app,
+        App $app,
         array $processCleanupScripts,
         bool $removeAppPath,
     ): string {

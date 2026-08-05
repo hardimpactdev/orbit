@@ -902,7 +902,7 @@ describe('managed Orbit Agent service boundary during fleet update install', fun
         $_ENV['PATH'] = $path;
         $_SERVER['PATH'] = $path;
 
-        expect(trim((string) shell_exec('command -v php || true')))->toBe('');
+        expect(trim((string) shell_exec('command -v php || true')))->toBeEmpty();
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [
@@ -977,7 +977,7 @@ describe('managed Orbit Agent service boundary during fleet update install', fun
         $_ENV['PATH'] = $path;
         $_SERVER['PATH'] = $path;
 
-        expect(trim((string) shell_exec('command -v php || true')))->toBe('');
+        expect(trim((string) shell_exec('command -v php || true')))->toBeEmpty();
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [

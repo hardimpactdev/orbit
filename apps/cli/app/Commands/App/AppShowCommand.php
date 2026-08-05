@@ -20,10 +20,10 @@ final class AppShowCommand extends GatewayCommand
     use ResolvesHostContext;
 
     #[\Override]
-    protected $signature = 'project:show {project? : Project name or hostname to inspect} {--json}';
+    protected $signature = 'app:show {app? : App name or hostname to inspect} {--json}';
 
     #[\Override]
-    protected $description = 'Show one project from the gateway registry.';
+    protected $description = 'Show one app from the gateway registry.';
 
     public function handle(): int
     {
@@ -33,10 +33,10 @@ final class AppShowCommand extends GatewayCommand
             return $selector;
         }
 
-        $project = rawurlencode($selector);
+        $app = rawurlencode($selector);
 
         try {
-            $response = $this->gatewayGet("/api/projects/{$project}");
+            $response = $this->gatewayGet("/api/apps/{$app}");
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -45,20 +45,20 @@ final class AppShowCommand extends GatewayCommand
             return $this->renderSuccess($response);
         }
 
-        $project = $this->projectFromGatewayResponse($response);
+        $app = $this->appFromGatewayResponse($response);
 
-        if ($project === null) {
-            return $this->renderFailure('gateway_unavailable', 'Gateway response missing required project data.');
+        if ($app === null) {
+            return $this->renderFailure('gateway_unavailable', 'Gateway response missing required app data.');
         }
 
-        $this->renderProject($project, $this->detailsFromGatewayResponse($response));
+        $this->renderApp($app, $this->detailsFromGatewayResponse($response));
 
         return self::SUCCESS;
     }
 
     private function resolveAppSelector(): string|int
     {
-        $selector = $this->stringArgument('project');
+        $selector = $this->stringArgument('app');
 
         if ($selector !== null) {
             return $selector;
@@ -68,18 +68,18 @@ final class AppShowCommand extends GatewayCommand
             return $this->promptForVisibleProject();
         }
 
-        return $this->renderFailure('validation_failed', 'The project argument is required.', ['field' => 'project']);
+        return $this->renderFailure('validation_failed', 'The app argument is required.', ['field' => 'app']);
     }
 
     /**
      * @param  array<string, mixed>  $response
      * @return array<string, mixed>|null
      */
-    private function projectFromGatewayResponse(array $response): ?array
+    private function appFromGatewayResponse(array $response): ?array
     {
-        $project = $this->registrySuccessData($response)['project'] ?? null;
+        $app = $this->registrySuccessData($response)['app'] ?? null;
 
-        return $this->associativeArray($project);
+        return $this->associativeArray($app);
     }
 
     /**
@@ -94,23 +94,23 @@ final class AppShowCommand extends GatewayCommand
     }
 
     /**
-     * @param  array<string, mixed>  $project
+     * @param  array<string, mixed>  $app
      * @param  array<string, mixed>  $details
      */
-    private function renderProject(array $project, array $details): void
+    private function renderApp(array $app, array $details): void
     {
-        $name = is_scalar($project['name'] ?? null) ? (string) $project['name'] : 'unknown';
+        $name = is_scalar($app['name'] ?? null) ? (string) $app['name'] : 'unknown';
         $placements = app(AppShowPlacementRows::class);
 
-        $this->renderShowDetails("Project: {$name}", [
-            'Repository' => $project['repository'] ?? null,
-            'PHP' => $project['php_version'] ?? null,
+        $this->renderShowDetails("App: {$name}", [
+            'Repository' => $app['repository'] ?? null,
+            'PHP' => $app['php_version'] ?? null,
             'Processes' => $this->nameLabels($details['processes'] ?? []),
             'Routes' => $this->routeLabels($details['routes'] ?? []),
-            'Project deps' => $placements->dependencyLabel($project),
+            'App deps' => $placements->dependencyLabel($app),
         ]);
 
-        $rows = $placements->forApp($project, $details);
+        $rows = $placements->forApp($app, $details);
 
         if ($rows === []) {
             $this->line('No instances found.');

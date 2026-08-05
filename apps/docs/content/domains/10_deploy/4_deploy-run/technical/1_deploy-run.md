@@ -121,7 +121,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 must not create process definitions, schedules, proxy routes, workspace setup
 steps, standalone release records, or global retention policy. It does not
 prove application HTTP readiness; production project health belongs to
-[`instance-doctor.md`](../../../5_project/instance-doctor.md).
+[`instance-doctor.md`](../../../5_app/instance-doctor.md).
 
 ## Renderer Contracts
 
@@ -137,7 +137,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_app_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Instance driver unsupported | The selected instance does not have an Orbit node and source path for Agent execution. | `error.code=deploy.instance_driver_unsupported` |
 | Pipeline empty | The production instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
@@ -162,7 +162,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 Deployment run history is instance-owned gateway state. `deploy:run` does not own a
-doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use latest
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use latest
 deployment status when reporting `instance.latest_deployment_failed` or
 `instance.deployment_run_stuck`.
 

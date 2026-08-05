@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\PhpRuntimeArtifactConverger;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +19,7 @@ const PHP_API_CALLER_WG_IP = '10.6.0.97';
 /** @mago-expect lint:file-name */
 final readonly class PhpApiNoopRuntimeArtifactConverger implements PhpRuntimeArtifactConverger
 {
-    public function forApp(Project $app): array
+    public function forApp(App $app): array
     {
         return [];
     }
@@ -53,11 +53,11 @@ function grantPhpApiAccess(Node $caller, Node $appNode, array $permissions): voi
     ]);
 }
 
-function place_php_api_app(Project $app, Node $node, string $name = 'development'): AppInstance
+function place_php_api_app(App $app, Node $node, string $name = 'development'): Instance
 {
-    return AppInstance::factory()->for($app)->create([
+    return Instance::factory()->for($app)->create([
         'name' => $name,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -83,12 +83,12 @@ describe('PHP runtime API controllers', function (): void {
             ]);
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantPhpApiAccess($caller, $node, ['php:read']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $instance = place_php_api_app($app, $node);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         $response = $this->call(
@@ -117,7 +117,7 @@ describe('PHP runtime API controllers', function (): void {
             ]);
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantPhpApiAccess($caller, $node, ['php:write']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'php_version' => '8.4',
@@ -126,7 +126,7 @@ describe('PHP runtime API controllers', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'php_version' => '8.4',
         ]);
 
@@ -171,7 +171,7 @@ describe('PHP runtime API controllers', function (): void {
                 'cli_version' => '8.5',
             ],
         ]);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'php_version' => '8.4',
@@ -180,7 +180,7 @@ describe('PHP runtime API controllers', function (): void {
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'php_version' => null,
         ]);
 
@@ -219,7 +219,7 @@ describe('PHP runtime API controllers', function (): void {
                 'cli_version' => '8.5',
             ],
         ]);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $productionNode->id,
             'php_version' => '8.4',
@@ -229,7 +229,7 @@ describe('PHP runtime API controllers', function (): void {
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'php_version' => null,
         ]);
 
@@ -263,12 +263,12 @@ describe('PHP runtime API controllers', function (): void {
             'name' => 'php',
             'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $instance = place_php_api_app($app, $node);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         $response = $this->call(
@@ -296,7 +296,7 @@ describe('PHP runtime API controllers', function (): void {
             'name' => 'php',
             'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
 
         $response = $this->call(
@@ -331,7 +331,7 @@ describe('PHP runtime API controllers', function (): void {
                 'cli_version' => '8.5',
             ],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id, 'php_version' => '8.4']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id, 'php_version' => '8.4']);
         place_php_api_app($app, $node);
 
         $response = $this->call(
@@ -382,7 +382,7 @@ describe('PHP runtime API controllers', function (): void {
             'name' => 'php',
             'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         place_php_api_app($app, $node);
 
         $response = $this->call(
@@ -424,7 +424,7 @@ describe('PHP runtime API controllers', function (): void {
         $caller = createPhpApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         grantPhpApiAccess($caller, $node, ['php:read']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         place_php_api_app($app, $node);
 
         $response = $this->call(
@@ -515,7 +515,7 @@ describe('PHP runtime API controllers', function (): void {
             'name' => 'php',
             'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id]);
         place_php_api_app($app, $servingNode, name: 'production');
 
         $response = $this->call(
@@ -542,12 +542,12 @@ describe('PHP runtime API controllers', function (): void {
             'name' => 'php',
             'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
         ]);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id]);
         $instance = place_php_api_app($app, $servingNode);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         $response = $this->call(

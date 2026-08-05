@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -292,7 +292,7 @@ it('streams partial fleet doctor snapshots with completed-node issues on node do
 it('streams fleet per-node completed and total progress while a node is running', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -528,15 +528,15 @@ it('streams node family completed and total for opaque composite checks', functi
 it('streams instance family totals that include instance and runtime-config inventory scans', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
     ]);
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $appNode->id,
             node: $appNode->name,
             path: '/home/orbit/apps/docs',
@@ -593,7 +593,7 @@ it('streams instance family totals that include instance and runtime-config inve
 it('streams per-family completed and total check counts when workspace inventory is knowable', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',

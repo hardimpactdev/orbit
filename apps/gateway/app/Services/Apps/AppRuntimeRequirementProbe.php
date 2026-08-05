@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Data\Doctor\DriftEntry;
-use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class AppRuntimeRequirementProbe
@@ -21,7 +21,7 @@ final readonly class AppRuntimeRequirementProbe
     /**
      * @return list<DriftEntry>
      */
-    public function drift(AppInstance $instance): array
+    public function drift(Instance $instance): array
     {
         $required = $instance->runtimeRequirements()->normalizedPhpExtensions();
 
@@ -32,7 +32,7 @@ final readonly class AppRuntimeRequirementProbe
         $instance->loadMissing('app.node');
         $app = $instance->app;
 
-        if ($instance->driver !== AppInstanceDriver::Orbit || $app->runtimeKind() !== AppRuntimeKind::Php) {
+        if ($instance->driver !== InstanceDriver::Orbit || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 

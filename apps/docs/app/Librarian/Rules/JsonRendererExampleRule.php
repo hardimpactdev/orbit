@@ -198,15 +198,15 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     {
         return [
             [
-                'entity' => 'project',
-                'path' => ['success', 'data', 'project'],
-                'label' => 'success.data.project',
+                'entity' => 'app',
+                'path' => ['success', 'data', 'app'],
+                'label' => 'success.data.app',
                 'list' => false,
             ],
             [
-                'entity' => 'project',
-                'path' => ['success', 'data', 'projects'],
-                'label' => 'success.data.projects',
+                'entity' => 'app',
+                'path' => ['success', 'data', 'apps'],
+                'label' => 'success.data.apps',
                 'list' => true,
             ],
             [
@@ -379,9 +379,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     private function commandSpecificEntitySchema(string $path, string $entity, string $label): ?array
     {
         if (
-            $path === 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md'
-            && $entity === 'project'
-            && str_starts_with($label, 'success.data.projects[')
+            $path === 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
+            && $entity === 'app'
+            && str_starts_with($label, 'success.data.apps[')
         ) {
             return [
                 'required' => [

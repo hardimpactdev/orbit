@@ -166,7 +166,7 @@ return [
             'terms' => ['app:exec', 'workspace:exec'],
             'decision' => '2026-06-03 Orbit has no command-exec surface',
             'replacement' => 'host `php`/`artisan`/`composer` directly on the app node source path',
-            'allow_paths' => ['domains/5_project/README.md'],
+            'allow_paths' => ['domains/5_app/README.md'],
         ],
         [
             'terms' => ['orbit:release-candidate:activate'],
@@ -194,10 +194,24 @@ return [
         ],
         [
             'terms' => [
-                'app:new',
-                'app:list',
-                'app:show',
-                'app:remove',
+                'project:new',
+                'project:list',
+                'project:show',
+                'project:remove',
+                'project:read',
+                'project:write',
+                '/api/projects',
+            ],
+            'decision' => '2026-08-05 public hierarchy is App to Instance to Workspace; Project workload contracts are removed',
+            'replacement' => 'app:* for logical identity, instance:* for concrete instances, /api/apps for HTTP',
+            'allow_paths' => [
+                // Solo extension keeps its own project vocabulary.
+                'domains/21_extension/',
+                'domains/23_solo/',
+            ],
+        ],
+        [
+            'terms' => [
                 'app:register',
                 'app:root',
                 'app:prune',
@@ -211,8 +225,8 @@ return [
                 'app:setup',
                 'app-setup-step:',
             ],
-            'decision' => '2026-07-20 public hierarchy is Project to Instance to Workspace',
-            'replacement' => 'project:* for project identity, instance:* for concrete instances',
+            'decision' => '2026-07-20 concrete instance verbs left the logical app surface; 2026-08-05 keeps that split under App vocabulary',
+            'replacement' => 'instance:* / instance-setup-step:* for concrete instance operations',
             'allow_paths' => [],
         ],
     ],

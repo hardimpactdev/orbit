@@ -74,7 +74,7 @@ recreate both the derived definition and its container.
 
 ### Owning instance and workspace expansion
 
-The owner resolves to one active `AppInstance`. On `app-dev`, expected runtime
+The owner resolves to one active `Instance`. On `app-dev`, expected runtime
 contexts are that instance's main context plus every active workspace belonging
 to the same instance. On `app-prod`, only the main context is eligible. All
 expected units are placed on the instance's serving node; other instances of

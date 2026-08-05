@@ -127,7 +127,7 @@ Requirements on the active `php` binary:
 - `ini_get('pcov.enabled')` is truthy (`1`)
 - `php --ri pcov` succeeds
 
-Orbit does not hardcode `pcov.directory`; Pest and operators choose the project
+Orbit does not hardcode `pcov.directory`; Pest and operators choose the app
 tree. Standard app-prod PHP must not load PCOV.
 
 ## Credentials

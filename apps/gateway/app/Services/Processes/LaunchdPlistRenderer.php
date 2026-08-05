@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Nodes\NodeHostPaths;
@@ -23,7 +23,7 @@ final readonly class LaunchdPlistRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function unitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -65,7 +65,7 @@ final readonly class LaunchdPlistRenderer
         return $this->homeDirectory($node)."/Library/Logs/Orbit/processes/{$runtimeUnit}.err.log";
     }
 
-    public function render(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $label = $this->label($runtimeUnit);
@@ -113,7 +113,7 @@ final readonly class LaunchdPlistRenderer
 
     private function workingDirectory(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
     ): string {
@@ -137,7 +137,7 @@ final readonly class LaunchdPlistRenderer
      */
     private function environmentEntries(
         Process $process,
-        Project $app,
+        App $app,
         Node $node,
         ?Workspace $workspace,
         string $home,

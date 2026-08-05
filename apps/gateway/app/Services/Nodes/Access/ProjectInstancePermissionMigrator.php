@@ -8,6 +8,14 @@ use InvalidArgumentException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ *
+ * Historical migration support for
+ * `2026_07_20_080355_add_project_instance_permissions_to_node_access_grants` only.
+ *
+ * Do not inject this class into runtime grant read/write paths. After the
+ * 2026-08-05 App → Instance cutover, runtime consumes only registry-known
+ * canonical permissions through NodePermissionRegistry / NodePermissionNormalizer.
+ *
  */
 final class ProjectInstancePermissionMigrator
 {
@@ -35,8 +43,6 @@ final class ProjectInstancePermissionMigrator
     ];
 
     /**
-     * Removed permissions and predecessors. Never expand or retain.
-     *
      * @var list<string>
      */
     private const array RemovedPermissions = [
@@ -79,76 +85,7 @@ final class ProjectInstancePermissionMigrator
         }
 
         /** @var list<string> $migrated */
-        $migrated = array_values($migrated);
-
-        return $migrated;
-    }
-
-    /**
-     * Return the canonical permissions understood and exposed by the current runtime.
-     *
-     * @param  list<string>  $permissions
-     * @return list<string>
-     */
-    public function current(array $permissions): array
-    {
-        $containsLegacyPermission = array_any(
-            $permissions,
-            fn (string $permission): bool => (
-                array_key_exists($permission, self::Replacements) || $this->isRemoved($permission)
-            ),
-        );
-        $currentPermissions = array_values(array_filter(
-            $this->migrate($permissions),
-            fn (string $permission): bool => (
-                ! array_key_exists($permission, self::Replacements) && ! $this->isRemoved($permission)
-            ),
-        ));
-
-        if ($containsLegacyPermission) {
-            sort($currentPermissions);
-        }
-
-        return $currentPermissions;
-    }
-
-    /**
-     * Keep rollback tokens only while their replacement permissions remain granted.
-     *
-     * @param  list<string>  $storedPermissions
-     * @param  list<string>  $currentPermissions
-     * @return list<string>
-     */
-    public function forStorage(
-        array $storedPermissions,
-        array $currentPermissions,
-        NodePermissionRegistry $registry,
-    ): array {
-        /** @var list<string> $storagePermissions */
-        $storagePermissions = [];
-
-        foreach ($storedPermissions as $permission) {
-            $replacements = self::Replacements[$permission] ?? null;
-
-            if (
-                $replacements !== null
-                && array_all(
-                    $replacements,
-                    static fn (string $replacement): bool => $registry->allows($currentPermissions, $replacement),
-                )
-            ) {
-                $this->appendUnique($storagePermissions, $permission);
-            }
-        }
-
-        foreach ($currentPermissions as $permission) {
-            $this->appendUnique($storagePermissions, $permission);
-        }
-
-        /** @var list<string> $storagePermissions */
-        $storagePermissions = array_values($storagePermissions);
-
-        return $storagePermissions;
+        return array_values($migrated);
     }
 
     private function isRemoved(string $permission): bool

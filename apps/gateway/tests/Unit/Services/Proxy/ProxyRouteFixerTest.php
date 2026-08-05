@@ -3,16 +3,16 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteEnactment;
@@ -357,7 +357,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -423,7 +423,7 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -487,14 +487,14 @@ describe('ProxyRouteFixer', function (): void {
     it('retries the complete app route enactment before clearing partial state', function (): void {
         $defaultNode = createTestAppHostNode(['name' => 'app-1', 'tld' => 'test']);
         $nmbpNode = createTestAppHostNode(['name' => 'nmbp', 'tld' => 'nmbp']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $defaultNode->id,
             'name' => 'docs',
             'domain' => 'docs.test',
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $defaultNode->id,
                 node: $defaultNode->name,
                 path: '/srv/docs',
@@ -502,9 +502,9 @@ describe('ProxyRouteFixer', function (): void {
                 domain: 'docs.test',
             ),
         ]);
-        $nmbp = AppInstance::factory()->for($app)->create([
+        $nmbp = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $nmbpNode->id,
                 node: $nmbpNode->name,
                 path: '/Users/nckrtl/apps/docs',
@@ -519,7 +519,7 @@ describe('ProxyRouteFixer', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'id' => $nmbp->id,
                     'name' => 'nmbp',
                     'selector' => 'docs.nmbp',
@@ -545,7 +545,7 @@ describe('ProxyRouteFixer', function (): void {
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
-            appRouteEnactor: function (Project $target, ?AppInstance $instance) use ($route, &$reenacted): void {
+            appRouteEnactor: function (App $target, ?Instance $instance) use ($route, &$reenacted): void {
                 $reenacted[] = [
                     'app' => $target->name,
                     'domain' => $target->domain,
@@ -693,7 +693,7 @@ describe('ProxyRouteFixer', function (): void {
         $backend = Node::factory()->create(['name' => 'web-1']);
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -759,7 +759,7 @@ describe('ProxyRouteFixer', function (): void {
             'role' => 'app-prod',
             'status' => 'active',
         ]);
-        $app = Project::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
+        $app = App::factory()->create(['node_id' => $backend->id, 'name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -924,7 +924,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('re-applies app proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'document_root' => 'public',
@@ -984,17 +984,17 @@ describe('ProxyRouteFixer', function (): void {
 
     it('re-applies canonical app instance routes from concrete app instance intent', function (): void {
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = Project::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'happie',
             'domain' => 'happie.test',
             'path' => '/Users/nckrtl/apps/happie',
             'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: 'nmbp',
                 path: '/Users/nckrtl/apps/happie',
@@ -1053,9 +1053,9 @@ describe('ProxyRouteFixer', function (): void {
             ->toContain('tls_server_name happie.nmbp')
             ->not->toContain('reverse_proxy https://orbit-app-happie:8443')
             ->not->toContain('tls_server_name happie.test')->and($config['target'])->toBe([
-                'type' => 'app_instance',
+                'type' => 'instance',
                 'value' => 'happie.nmbp',
-            ])->and($config['app_instance'])->toMatchArray([
+            ])->and($config['instance'])->toMatchArray([
                 'name' => 'nmbp',
                 'selector' => 'happie.nmbp',
                 'domain' => 'happie.nmbp',
@@ -1066,7 +1066,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('repairs app route TLS through the site certificate installer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'document_root' => 'public',
@@ -1129,7 +1129,7 @@ describe('ProxyRouteFixer', function (): void {
         'restores a legacy app route persisted with only php_socket by deriving the FrankenPHP runtime upstream from the app identity (instead of throwing)',
         function (): void {
             $node = createTestAppHostNode(['name' => 'app-1']);
-            $app = Project::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
                 ->for($app, 'app')
@@ -1613,7 +1613,7 @@ describe('ProxyRouteFixer', function (): void {
                 'role' => 'app-prod',
                 'status' => 'active',
             ]);
-            $app = Project::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->for($backend, 'node')->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($edge, 'node')
                 ->for($app, 'app')

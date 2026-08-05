@@ -127,7 +127,7 @@ token signing material.
 
 ## Pest versions
 
-Orbit uses Pest for PHP/Laravel in-memory coverage. Active Composer projects
+Orbit uses Pest for PHP/Laravel in-memory coverage. Active Composer apps
 default to the Pest 5 / PHPUnit 13 line:
 
 | Project | Pest line | Notes |

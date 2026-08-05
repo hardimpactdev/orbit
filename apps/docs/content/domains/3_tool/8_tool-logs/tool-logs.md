@@ -28,7 +28,7 @@ exact process row. `dns` is the gateway-local exception and reads the one
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--instance=<project.instance>` resolves the target node from an instance selector.
+- `--instance=<app.instance>` resolves the target node from an instance selector.
 - `--lines=<number>` selects the positive number of retained lines. The
   default is `100`.
 - `--json` returns a single JSON envelope.

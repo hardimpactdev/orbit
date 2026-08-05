@@ -28,7 +28,7 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
             static fn (mixed $value): bool => $value !== null,
         ));
 
-        $instanceModel = $instance !== null ? $this->resolver->resolveAppInstanceSelector($instance) : null;
+        $instanceModel = $instance !== null ? $this->resolver->resolveInstanceSelector($instance) : null;
 
         try {
             $workspaceModel = $workspace !== null

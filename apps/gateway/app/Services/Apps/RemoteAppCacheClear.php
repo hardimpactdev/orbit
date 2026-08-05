@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class RemoteAppCacheClear
@@ -16,7 +16,7 @@ final readonly class RemoteAppCacheClear
         private AppRuntimeUser $runtimeUser = new AppRuntimeUser,
     ) {}
 
-    public function clear(Node $node, Project $app): RemoteShellResult
+    public function clear(Node $node, App $app): RemoteShellResult
     {
         return $this->clearPath(
             node: $node,

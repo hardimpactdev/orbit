@@ -59,7 +59,7 @@ it('continues restore passes until no restorable genuine drift remains', functio
             ['tool.config_missing'],
         ])
         ->and($result['probe']['issues'] ?? null)
-        ->toBe([]);
+        ->toBeEmpty();
 });
 
 it('stops with no_progress when restorable findings repeat after a pass', function (): void {

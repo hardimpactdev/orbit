@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -72,7 +72,7 @@ fall back to the only visible non-gateway node in non-interactive mode.
 
 ### Scope Boundaries
 
-`tool-remove` must not create projects, instances, workspaces, processes, schedules, custom
+`tool-remove` must not create apps, instances, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
 It may remove a process the tool definition already declared via
 `relatedProcess()`; that is tool-owned lifecycle cleanup, not ad-hoc process

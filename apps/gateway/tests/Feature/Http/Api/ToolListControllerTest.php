@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -107,14 +107,14 @@ describe('ToolListController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolListAccess($caller, $node);
 
-        $project = Project::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => 'docs.example.com',
         ]);
-        AppInstance::factory()->for($project)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
         ]);
         NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 

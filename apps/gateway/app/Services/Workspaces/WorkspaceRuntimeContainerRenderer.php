@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Enums\Apps\AppRuntimeKind;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
@@ -46,7 +46,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             throw new InvalidArgumentException(
                 "Workspace '{$workspace->name}' has no owning app; cannot render runtime container.",
             );
@@ -101,7 +101,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        $workspace->loadMissing('appInstance.runtimeMounts');
+        $workspace->loadMissing('instance.runtimeMounts');
         $instance = $this->placement->instanceForWorkspace($workspace);
 
         foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {
@@ -159,11 +159,11 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function runtimeConfigPath(Workspace $workspace): string
     {
         $this->roleGuard()->ensureWorkspaceSupported($workspace);
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof Project || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
             throw new RuntimeException(
                 "Workspace '{$workspace->name}' has no owning app node; cannot render runtime config path.",
             );
@@ -191,7 +191,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environmentFor(Project $app, Workspace $workspace, string $phpVersion): array
+    private function environmentFor(App $app, Workspace $workspace, string $phpVersion): array
     {
         $documentRoot = $this->placement->documentRootForWorkspace($workspace);
         $environment = [

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:stop <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:stop <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `tool-stop` documentation.](../tool-stop.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:stop <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]
+orbit tool:stop <tool> [--instance=<app.instance>] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -44,7 +44,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-stop` must not create projects, instances, workspaces, processes, schedules, proxy
+`tool-stop` must not create apps, instances, workspaces, processes, schedules, proxy
 routes, firewall rules, node identities, or node grants. It may address the one
 exact matching process row but never creates or repairs that row and never
 falls back to a similarly named process.

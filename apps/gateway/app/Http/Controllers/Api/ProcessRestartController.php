@@ -31,7 +31,7 @@ final class ProcessRestartController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'Restarted process runtime units with durable stop and start events when successful.',
-        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, project: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, events: list<array{id: int, type: string}>}>}, meta: object}}',
+        type: 'array{success: array{data: array{runtimes: list<array{process: string, node: string, app: string|null, instance: string|null, workspace: string|null, runtime_unit: string, state: string, events: list<array{id: int, type: string}>}>}, meta: object}}',
     )]
     public function __invoke(Request $request, ProcessLifecycle $processLifecycle): JsonResponse
     {

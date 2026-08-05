@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:credentials [tool] [--instance=<project.instance>] [--node=<node>] [--json]`
+# Technical Contract: `orbit tool:credentials [tool] [--instance=<app.instance>] [--node=<node>] [--json]`
 
 [Back to public `tool-credentials` documentation.](../tool-credentials.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:credentials [tool] [--instance=<project.instance>] [--node=<node>] [--json]
+orbit tool:credentials [tool] [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -46,7 +46,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-credentials` must not create projects, instances, workspaces, processes, schedules,
+`tool-credentials` must not create apps, instances, workspaces, processes, schedules,
 proxy routes, firewall rules, node identities, node grants, service endpoints,
 or credentials. Related drift belongs to each owning family doctor contract.
 

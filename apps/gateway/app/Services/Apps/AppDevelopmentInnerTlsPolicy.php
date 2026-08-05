@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -28,7 +28,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function appliesToApp(Project $app): bool
+    public function appliesToApp(App $app): bool
     {
         $app->loadMissing('node.roleAssignments');
         $node = $app->node;
@@ -36,7 +36,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         return $node instanceof Node && $this->appliesToAppOnNode($app, $node);
     }
 
-    public function appliesToAppOnNode(Project $app, Node $node): bool
+    public function appliesToAppOnNode(App $app, Node $node): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
@@ -57,11 +57,11 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToWorkspace(Workspace $workspace): bool
     {
-        $workspace->loadMissing(['app.node.roleAssignments', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node.roleAssignments', 'app.instances', 'instance']);
 
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return false;
         }
 
@@ -82,7 +82,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         return $node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
     }
 
-    public function appRouteDomain(Project $app): string
+    public function appRouteDomain(App $app): string
     {
         if (is_string($app->domain) && $app->domain !== '') {
             return $app->domain;
@@ -100,11 +100,11 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function workspaceRouteDomain(Workspace $workspace): string
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
         $app = $workspace->app;
 
-        if (! $app instanceof Project) {
-            throw new RuntimeException('Workspace has no parent project.');
+        if (! $app instanceof App) {
+            throw new RuntimeException('Workspace has no parent app.');
         }
 
         return $this->placement->workspaceDomain($workspace);

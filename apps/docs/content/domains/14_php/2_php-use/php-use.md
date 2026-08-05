@@ -5,7 +5,7 @@ Change the PHP image version used by an instance or workspace runtime container.
 ## Usage
 
 ```bash
-orbit php:use [version] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Examples
@@ -21,7 +21,7 @@ orbit php:use 8.5 --instance=docs --json
 ## Arguments and options
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
-- `--instance=<project.instance>`: Select the concrete instance whose parent
+- `--instance=<app.instance>`: Select the concrete instance whose parent
   project's shared PHP runtime policy is changed. All instances of that project
   consume the shared policy.
 - `--workspace=<workspace>`: Target workspace override.
@@ -32,7 +32,7 @@ orbit php:use 8.5 --instance=docs --json
   version. Source-mounted Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - `--node=<node>`: Target node for `--cli`, or an optional serving-node
-  assertion for a workspace. It is invalid for a project policy write, which
+  assertion for a workspace. It is invalid for an app policy write, which
   selects one concrete instance (dotted selector or unambiguous bare-project
   shorthand) and preflights only that instance's serving node. A mismatched
   workspace node fails with the stable `target_mismatch` reason before any
@@ -49,7 +49,7 @@ Run this command to select the PHP image version for an instance or workspace.
 `php:use` resolves exactly one target scope: project runtime policy for one
 selected instance, workspace runtime override, workspace inheritance, or node
 CLI default. It validates that project and workspace versions are supported by
-Orbit. Before a project-policy write it authorizes `php:write` and verifies the
+Orbit. Before an app-policy write it authorizes `php:write` and verifies the
 image only on the selected instance's serving node; any denial or missing image
 stops before policy mutation. Node CLI selection only accepts PHP 8.5.
 
@@ -67,7 +67,7 @@ mutate Composer constraints.
 ## Output
 
 Output shows the resolved target, selected version, and the reconciliation
-result for that one instance after the project-policy write.
+result for that one instance after the app-policy write.
 
 Human output renders progress and a short result summary. Use `--json` for
 machine-readable output.
@@ -77,7 +77,7 @@ machine-readable output.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity has `php:write` on every affected Orbit instance
-  serving node for a project-policy write, or on the resolved workspace/CLI node.
+  serving node for an app-policy write, or on the resolved workspace/CLI node.
   Gateway identity remains implicit.
 - The requested project PHP version is available on every affected Orbit instance
   serving node; a workspace version is available on that workspace's serving
@@ -90,7 +90,7 @@ machine-readable output.
 Use these commands to list versions or verify runtime health across families.
 
 - [`orbit php:list`](../1_php-list/php-list.md)
-- [`doctor --family=instance`](../../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../../5_app/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [Technical contract](technical/1_php-use.md)

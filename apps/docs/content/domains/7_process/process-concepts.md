@@ -8,8 +8,8 @@ These terms define how process definitions are identified, scoped, and ordered.
 
 - **Process definition:** Gateway-owned configuration for one Orbit-managed
   long-running unit. A process may be scoped to a node, concrete instance,
-  or workspace. An instance-scoped definition is persisted against an `AppInstance`,
-  never only against a project. Instance and workspace processes run
+  or workspace. An instance-scoped definition is persisted against an `Instance`,
+  never only against an app. Instance and workspace processes run
   on that instance's serving node; node-level processes run directly against
   the owning node.
 - **Process identity slug (`key`):** Stable lowercase identity slug stored
@@ -24,16 +24,16 @@ These terms define how process definitions are identified, scoped, and ordered.
 - **Process scope:** Optional target that binds a process to a node, concrete
   instance, or workspace. The scope selects the serving node, working
   context, default environment, and lifecycle authorization boundary.
-- **Instance selector:** Dotted `<project.instance>` identity used by public
-  process commands. A bare project slug is shorthand only when the project has
+- **Instance selector:** Dotted `<app.instance>` identity used by public
+  process commands. A bare app slug is shorthand only when the app has
   exactly one instance. If it has more than one, resolution fails with
   `validation_failed`, `field=instance`, and `reason=instance_required`.
 - **App hostname selector:** Hostname target accepted as the `app` query or body
   key (CLI `--app`) for process list and lifecycle actions. The value is an
   app-instance hostname or workspace hostname resolved against the gateway
   proxy registry with exact registered proxy-route domain precedence so custom domains
-  work. An app-owned route resolves the concrete `AppInstance`; a
-  workspace-owned route resolves that workspace and its `AppInstance`. The
+  work. An app-owned route resolves the concrete `Instance`; a
+  workspace-owned route resolves that workspace and its `Instance`. The
   selector key is `app` only; `url` is never accepted. `app` is mutually
   exclusive with `node`, `instance`, and `workspace` target modes (the existing
   `instance`+`workspace` pairing remains valid only for those two keys).
@@ -52,8 +52,8 @@ These terms define how process definitions are identified, scoped, and ordered.
   `GET /api/processes/stream?app=<hostname>` (app-only). No client polling and
   no Laravel Toolbar PHP/filesystem watcher. See the process stream technical
   contract under `internal/1_process-event-stream`.
-- **Canonical project identity:** Instance and workspace process identities and
-  JSON include both the logical `project` slug and concrete `instance` slug.
+- **Canonical app identity:** Instance and workspace process identities and
+  JSON include both the logical `app` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
   such as `php-cli`, `viteplus`, or `hermes`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
@@ -123,9 +123,9 @@ These terms describe the runtime objects that Orbit derives from process definit
   active workspace belonging to that same instance.
 - **Runtime unit filename:** Backend-safe five-part identity for a rendered
   runtime unit. The canonical form is
-  `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_<app>_<instance>_<workspace|main>_<process>` (for example
   `orbit_docs_development_main_vite` and
-  `orbit_docs_development_feature-docs_vite`). Component order is project,
+  `orbit_docs_development_feature-docs_vite`). Component order is app,
   instance, workspace (or `main` for the instance checkout), then process.
   When that full identity exceeds the shared backend limit (64 characters for
   the strictest consumer, launchd), Orbit deterministically bounds it by

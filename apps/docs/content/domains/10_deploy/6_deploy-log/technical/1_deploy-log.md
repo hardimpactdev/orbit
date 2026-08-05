@@ -59,7 +59,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_app_required` |
 | Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run not found | No visible deployment run matches the run id for the selected instance. | `error.code=deploy.run_not_found` |
 | Step not found | `--step` does not match a step in the selected run. | `error.code=deploy.step_not_found` |
@@ -78,7 +78,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 `deploy:log` explains past deployment behavior. It does not own a doctor family.
-[`instance-doctor.md`](../../../5_project/instance-doctor.md) owns current production project
+[`instance-doctor.md`](../../../5_app/instance-doctor.md) owns current production project
 health checks and may reference latest deployment status through
 `instance.latest_deployment_failed` and `instance.deployment_run_stuck`.
 

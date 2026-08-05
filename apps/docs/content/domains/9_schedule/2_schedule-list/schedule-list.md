@@ -10,7 +10,7 @@ schedules without probing live scheduler state.
 ## Usage
 
 ```bash
-orbit schedule:list [--instance=<project.instance>] [--node=<node>] [--json]
+orbit schedule:list [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples
@@ -23,7 +23,7 @@ orbit schedule:list --node=app-1
 
 ## Arguments and options
 
-- `--instance`: show schedules for one concrete `project.instance`. A bare project name is
+- `--instance`: show schedules for one concrete `app.instance`. A bare app name is
   shorthand only when exactly one eligible instance is visible.
 - `--node`: show schedules for one node.
 - `--json`: Output JSON.

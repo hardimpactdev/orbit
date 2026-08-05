@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Data\Apps\AppWorkerReadinessResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\AppInstance;
-use App\Models\Project;
+use App\Models\App;
+use App\Models\Instance;
 
 final readonly class AppWorkerReadiness
 {
@@ -27,7 +27,7 @@ final readonly class AppWorkerReadiness
         private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
-    public function assess(Project $app, AppInstance $instance): AppWorkerReadinessResult
+    public function assess(App $app, Instance $instance): AppWorkerReadinessResult
     {
         $app = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
         $target = "{$app->name}.{$instance->name}";

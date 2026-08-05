@@ -12,7 +12,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 10,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,
@@ -47,7 +47,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 11,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'teardown',
                     'order' => 1,
@@ -140,7 +140,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 12,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,
@@ -149,7 +149,7 @@ describe('workspace step read commands', function (): void {
                 ],
                 [
                     'id' => 13,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 2,
@@ -187,7 +187,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 18,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'teardown',
                     'order' => 1,
@@ -225,7 +225,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 12,
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,

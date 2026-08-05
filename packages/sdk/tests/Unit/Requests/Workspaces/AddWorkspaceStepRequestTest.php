@@ -40,7 +40,7 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
                     'result' => ['action' => 'added'],
                     'step' => [
                         'id' => 12,
-                        'project' => 'docs',
+                        'app' => 'docs',
                         'instance' => 'development',
                         'phase' => 'setup',
                         'order' => 1,
@@ -67,7 +67,7 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
     expect($dto->result)->toBe(['action' => 'added']);
     expect($dto->step)->toBe([
         'id' => 12,
-        'project' => 'docs',
+        'app' => 'docs',
         'instance' => 'development',
         'phase' => 'setup',
         'order' => 1,

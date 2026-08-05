@@ -21,7 +21,7 @@ function phpRuntimeCommandsSeed(E2ETopologyHarness $topology): void
 
         \Spatie\Activitylog\Models\Activity::query()->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \App\Models\NodeTool::query()->where('name', 'php')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
@@ -31,7 +31,7 @@ function phpRuntimeCommandsSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/home/orbit/apps/docs',
@@ -89,7 +89,7 @@ function phpRuntimeCommandsGatewayState(E2ETopologyHarness $topology): array
             ->first();
 
         echo json_encode([
-            'app_php_version' => \App\Models\Project::query()->where('name', 'docs')->value('php_version'),
+            'app_php_version' => \App\Models\App::query()->where('name', 'docs')->value('php_version'),
             'workspace_php_version' => \App\Models\Workspace::query()->where('name', 'feature-docs')->value('php_version'),
             'php_tool_count' => \App\Models\NodeTool::query()->where('name', 'php')->count(),
             'php_tool_config' => $tool?->config,
@@ -131,13 +131,13 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
                 'node' => 'app-dev-1',
                 'available_images' => ['8.5', '8.4'],
                 'cli' => '8.4',
-                'project' => [
+                'app' => [
                     'name' => 'docs',
                     'php_version' => '8.4',
                 ],
                 'instance' => [
                     'name' => 'development',
-                    'project' => 'docs',
+                    'app' => 'docs',
                 ],
                 'workspace' => [
                     'name' => 'feature-docs',
@@ -185,7 +185,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
             ->and($appUsePayload['success']['data']['result'])
             ->toMatchArray([
                 'target' => 'instance',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'previous' => '8.4',
                 'version' => '8.5',

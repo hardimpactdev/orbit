@@ -23,22 +23,22 @@ trait PromptsForGatewayRegistryEntities
     protected function promptForVisibleProject(): string|int
     {
         try {
-            $response = $this->gatewayGet('/api/projects');
+            $response = $this->gatewayGet('/api/apps');
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
 
-        $rows = $this->projectPromptRows($this->registryPayloads($response, 'projects'));
+        $rows = $this->projectPromptRows($this->registryPayloads($response, 'apps'));
 
         if ($rows === []) {
-            return $this->renderFailure('project.not_found', 'No projects found.', ['field' => 'project']);
+            return $this->renderFailure('app.not_found', 'No apps found.', ['field' => 'app']);
         }
 
         return $this->promptRegistryDataTable(
-            label: 'Select a project',
+            label: 'Select an app',
             headers: ['Project', 'Host', 'Node', 'Repository'],
             rows: $rows,
-            field: 'project',
+            field: 'app',
         );
     }
 
@@ -227,15 +227,15 @@ trait PromptsForGatewayRegistryEntities
     }
 
     /**
-     * @param  list<array<string, mixed>>  $projects
+     * @param  list<array<string, mixed>>  $apps
      * @return array<string, array<int, string>>
      */
-    private function projectPromptRows(array $projects): array
+    private function projectPromptRows(array $apps): array
     {
         $rows = [];
 
-        foreach ($projects as $project) {
-            $name = $this->registryString($project['name'] ?? null);
+        foreach ($apps as $app) {
+            $name = $this->registryString($app['name'] ?? null);
 
             if ($name === null) {
                 continue;
@@ -243,9 +243,9 @@ trait PromptsForGatewayRegistryEntities
 
             $rows[$name] = [
                 $name,
-                $this->projectHostFromRegistryPayload($project),
-                $this->registryString($project['node'] ?? null) ?? '-',
-                $this->registryString($project['repository'] ?? null) ?? '-',
+                $this->projectHostFromRegistryPayload($app),
+                $this->registryString($app['node'] ?? null) ?? '-',
+                $this->registryString($app['repository'] ?? null) ?? '-',
             ];
         }
 
@@ -380,9 +380,9 @@ trait PromptsForGatewayRegistryEntities
                 continue;
             }
 
-            $project = $this->registryString($workspace['project'] ?? null);
+            $app = $this->registryString($workspace['app'] ?? null);
             $instance = $this->registryString($workspace['instance'] ?? null);
-            $selector = $project !== null && $instance !== null ? "{$project}.{$instance}" : $instance;
+            $selector = $app !== null && $instance !== null ? "{$app}.{$instance}" : $instance;
             $rows[$this->workspaceSelectionKey($name, $selector)] = [
                 $name,
                 $selector ?? '-',
@@ -427,20 +427,20 @@ trait PromptsForGatewayRegistryEntities
     }
 
     /**
-     * @param  array<string, mixed>  $project
+     * @param  array<string, mixed>  $app
      */
-    private function projectHostFromRegistryPayload(array $project): string
+    private function projectHostFromRegistryPayload(array $app): string
     {
-        $domain = $this->registryString($project['domain'] ?? null);
+        $domain = $this->registryString($app['domain'] ?? null);
 
         if ($domain !== null) {
             return $domain;
         }
 
-        $url = $this->registryString($project['url'] ?? null);
+        $url = $this->registryString($app['url'] ?? null);
 
         if ($url === null) {
-            return $this->registryString($project['host'] ?? null) ?? '-';
+            return $this->registryString($app['host'] ?? null) ?? '-';
         }
 
         $host = parse_url($url, PHP_URL_HOST);

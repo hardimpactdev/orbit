@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Workspaces\WorkspacePlacement;
 
@@ -18,7 +18,7 @@ final readonly class AppProxyRouteTargetResolver
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function appInstanceForRoute(ProxyRoute $route): ?AppInstance
+    public function instanceForRoute(ProxyRoute $route): ?Instance
     {
         if ($route->owner_type !== 'app' || $route->kind !== 'app') {
             return null;
@@ -27,7 +27,7 @@ final readonly class AppProxyRouteTargetResolver
         $route->loadMissing(['app.instances', 'app.node']);
         $app = $route->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 
@@ -36,11 +36,11 @@ final readonly class AppProxyRouteTargetResolver
         );
     }
 
-    public function nodeForRoute(ProxyRoute $route, ?AppInstance $instance = null): ?Node
+    public function nodeForRoute(ProxyRoute $route, ?Instance $instance = null): ?Node
     {
-        $instance ??= $this->appInstanceForRoute($route);
+        $instance ??= $this->instanceForRoute($route);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $node = $this->placement->nodeForInstance($instance);
 
             if ($node instanceof Node) {
@@ -53,14 +53,14 @@ final readonly class AppProxyRouteTargetResolver
         return $route->node;
     }
 
-    public function selector(Project $app, AppInstance $instance): string
+    public function selector(App $app, Instance $instance): string
     {
         return "{$app->name}.{$instance->name}";
     }
 
-    public function routeDomain(ProxyRoute $route, Project $app, ?AppInstance $instance = null): string
+    public function routeDomain(ProxyRoute $route, App $app, ?Instance $instance = null): string
     {
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $domain = $this->placement->instanceUrlHost($instance, $app);
 
             if ($domain !== '') {

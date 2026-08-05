@@ -401,7 +401,7 @@ probe, drift, restore, and adopt contract.
 `node:new` can create or resolve node-family drift by writing gateway
 configuration before host applying completes, installing gateway/operator/app
 bootstrap artifacts, and creating development TLD readiness artifacts. Drift in
-tools, firewall rules, projects, instances, workspaces, processes, schedules, and proxy
+tools, firewall rules, apps, instances, workspaces, processes, schedules, and proxy
 routes is verified by those family contracts after the node exists.
 
 ## Test Mapping

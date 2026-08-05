@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:remove [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
+orbit process:remove [name] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `node` | `--node` | Required when removing a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:remove`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:remove`. |
-| `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:remove`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:remove`. |
+| `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:remove`; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. It never grants destructive consent. |
 
@@ -80,7 +80,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:DELETE /processes/{name}` |
 | Effect | `destructive` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Subject | Resolved `Node` for node-owned processes or `Instance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node` (string or null), `instance` (string or null), and `workspace` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
 | Description | derived |
 

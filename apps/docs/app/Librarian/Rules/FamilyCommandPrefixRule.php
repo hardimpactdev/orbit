@@ -63,7 +63,7 @@ final readonly class FamilyCommandPrefixRule implements GroupedRule
 
     private function startsWithFamilyPrefix(string $commandSlug, string $familySlug): bool
     {
-        if ($familySlug === 'project' && ($commandSlug === 'instance' || str_starts_with($commandSlug, 'instance-'))) {
+        if ($familySlug === 'app' && ($commandSlug === 'instance' || str_starts_with($commandSlug, 'instance-'))) {
             return true;
         }
 

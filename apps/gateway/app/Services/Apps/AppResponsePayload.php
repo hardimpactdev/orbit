@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\Project;
+use App\Models\App;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 
 final readonly class AppResponsePayload
@@ -17,7 +17,7 @@ final readonly class AppResponsePayload
     /**
      * @return array<string, mixed>
      */
-    public function forApp(Project $app): array
+    public function forApp(App $app): array
     {
         $app->loadMissing('dependencyAuditSummaries');
         $runtime = $app->runtimeKind();

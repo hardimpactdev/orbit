@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
+use App\Models\App;
 use App\Models\AppWebSocketBinding;
-use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -21,7 +21,7 @@ final readonly class WebSocketBindingService
     /**
      * @param  array<int, mixed>  $publicHosts
      */
-    public function enable(Project $app, array $publicHosts): AppWebSocketBinding
+    public function enable(App $app, array $publicHosts): AppWebSocketBinding
     {
         $binding = DB::transaction(function () use ($app, $publicHosts): AppWebSocketBinding {
             $this->routes->syncServiceRoute();
@@ -57,14 +57,14 @@ final readonly class WebSocketBindingService
         return $binding->refresh();
     }
 
-    public function credentials(Project $app): WebSocketCredentials
+    public function credentials(App $app): WebSocketCredentials
     {
         $binding = $this->enabledBinding($app);
 
         return WebSocketCredentials::fromBinding($binding);
     }
 
-    public function disable(Project $app): AppWebSocketBinding
+    public function disable(App $app): AppWebSocketBinding
     {
         $binding = DB::transaction(function () use ($app): AppWebSocketBinding {
             $binding = $this->binding($app);
@@ -86,7 +86,7 @@ final readonly class WebSocketBindingService
         return $binding->refresh();
     }
 
-    private function existingBinding(Project $app): ?AppWebSocketBinding
+    private function existingBinding(App $app): ?AppWebSocketBinding
     {
         $binding = AppWebSocketBinding::query()
             ->where('app_id', $app->id)
@@ -95,23 +95,23 @@ final readonly class WebSocketBindingService
         return $binding instanceof AppWebSocketBinding ? $binding : null;
     }
 
-    private function binding(Project $app): AppWebSocketBinding
+    private function binding(App $app): AppWebSocketBinding
     {
         $binding = $this->existingBinding($app);
 
         if (! $binding instanceof AppWebSocketBinding) {
-            throw new RuntimeException("Project '{$app->name}' does not have a websocket binding.");
+            throw new RuntimeException("App '{$app->name}' does not have a websocket binding.");
         }
 
         return $binding;
     }
 
-    private function enabledBinding(Project $app): AppWebSocketBinding
+    private function enabledBinding(App $app): AppWebSocketBinding
     {
         $binding = $this->binding($app);
 
         if (! $binding->enabled) {
-            throw new RuntimeException("Project '{$app->name}' does not have an enabled websocket binding.");
+            throw new RuntimeException("App '{$app->name}' does not have an enabled websocket binding.");
         }
 
         return $binding;
@@ -120,7 +120,7 @@ final readonly class WebSocketBindingService
     /**
      * @return list<string>
      */
-    private function allowedOrigins(Project $app): array
+    private function allowedOrigins(App $app): array
     {
         $domain = is_string($app->domain) ? trim($app->domain) : '';
 

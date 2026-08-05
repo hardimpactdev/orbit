@@ -59,7 +59,7 @@ $options = [
     '--php-version',
     '--port',
     '--process',
-    '--project',
+    '--app',
     '--protocol',
     '--proxied',
     '--public-ipv4',
@@ -116,7 +116,7 @@ return [
         $options,
         [
             'allowed_contexts' => $contexts,
-            'allowed_command_families' => ['node', 'project', 'instance', 'workspace', 'process'],
+            'allowed_command_families' => ['node', 'app', 'instance', 'workspace', 'process'],
         ],
     ),
 ];

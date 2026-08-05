@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupRunStep;
 use App\Models\AppSetupStep;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class AppSetupStepRunner
@@ -30,7 +30,7 @@ final readonly class AppSetupStepRunner
     public function run(
         AppSetupRun $run,
         array $steps,
-        Project $app,
+        App $app,
         Node $node,
         array $environment,
         ?callable $onProgress = null,

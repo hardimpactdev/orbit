@@ -21,7 +21,7 @@ final class AppWebSocketDisableCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (app.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 

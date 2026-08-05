@@ -111,14 +111,14 @@ This command follows the shared
 
 `node:remove` must not:
 - SSH into the target node.
-- Clean projects, instances, workspaces, tools, processes, schedules, operator-managed
+- Clean apps, instances, workspaces, tools, processes, schedules, operator-managed
   firewall rules, user proxy routes, or deploy artifacts on the server.
 - Block removal because downstream family state exists.
 - Remove local caller settings or local WireGuard configuration when the removed
   node is the local machine.
 
-Operators should remove or migrate projects and instances through their owning commands such as
-[`project:remove`](../../../5_project/6_project-remove/project-remove.md) before removing the app
+Operators should remove or migrate apps and instances through their owning commands such as
+[`app:remove`](../../../5_app/6_app-remove/app-remove.md) before removing the app
 node that owns them. This is operational guidance, not a blocking precondition:
 `node:remove` remains scoped to node identity, grants, and WireGuard peer
 detach.

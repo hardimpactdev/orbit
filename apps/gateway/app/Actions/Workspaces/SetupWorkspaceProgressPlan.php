@@ -7,9 +7,9 @@ namespace App\Actions\Workspaces;
 use App\Contracts\ProgressReporter;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
@@ -55,7 +55,7 @@ final class SetupWorkspaceProgressPlan
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
-        private readonly Project $app,
+        private readonly App $app,
         private readonly Node $node,
         private readonly bool $isAdoption,
         private readonly WorkspaceStepPolicyService $stepPolicy,
@@ -318,7 +318,7 @@ final class SetupWorkspaceProgressPlan
 
     /**
      * @return array{
-     *     project: string,
+     *     app: string,
      *     instance: string,
      *     workspace: string,
      *     node: string,
@@ -333,11 +333,11 @@ final class SetupWorkspaceProgressPlan
      */
     public function result(): array
     {
-        $this->workspace->loadMissing('appInstance');
+        $this->workspace->loadMissing('instance');
 
         return [
-            'project' => $this->app->name,
-            'instance' => $this->workspace->appInstance->name,
+            'app' => $this->app->name,
+            'instance' => $this->workspace->instance->name,
             'workspace' => $this->workspace->name,
             'node' => $this->node->name,
             'path' => $this->workspace->path,
@@ -357,12 +357,12 @@ final class SetupWorkspaceProgressPlan
 
     private function hasSetupSteps(): bool
     {
-        $this->workspace->loadMissing('appInstance');
+        $this->workspace->loadMissing('instance');
 
         return $this->stepPolicy->hasStepsFor(
             $this->app,
             WorkspaceLifecyclePhase::Setup,
-            $this->workspace->appInstance,
+            $this->workspace->instance,
         );
     }
 

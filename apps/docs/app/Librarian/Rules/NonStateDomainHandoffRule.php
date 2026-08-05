@@ -15,7 +15,7 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
      * @var array<string, true>
      */
     private const array STATE_FAMILY_DIRECTORIES = [
-        'project' => true,
+        'app' => true,
         'database' => true,
         'firewall' => true,
         'node' => true,

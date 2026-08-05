@@ -138,20 +138,20 @@ command catalog when command completeness matters.
 | `orbit gateway:trust` | Trust the gateway root CA in the local OS trust store |
 | `orbit gateway:list\|use\|status` | Inspect or switch local gateway entries |
 
-### Projects and instances  -  [`references/app.md`](references/app.md)
+### Apps and instances  -  [`references/app.md`](references/app.md)
 
 | Command | What it does |
 |---|---|
-| `orbit project:new [project]` | Create a project and its first instance on an app-role node |
-| `orbit project:list` | List logical projects |
-| `orbit project:show [project]` | Show project identity with visible instances and workspaces |
-| `orbit project:remove [project]` | Remove a project and all of its owned instances and workspaces |
-| `orbit instance:register [project]` | Adopt or reconverge an existing project path as an Orbit instance |
+| `orbit app:new [app]` | Create an app and its first instance on an app-role node |
+| `orbit app:list` | List logical apps |
+| `orbit app:show [app]` | Show project identity with visible instances and workspaces |
+| `orbit app:remove [app]` | Remove an app and all of its owned instances and workspaces |
+| `orbit instance:register [app]` | Adopt or reconverge an existing project path as an Orbit instance |
 | `orbit instance:list\|show\|add\|remove` | Inspect and manage concrete project placements |
-| `orbit instance:root [project.instance] [root]` | Change one instance's document root |
-| `orbit instance:setup [project.instance]` | Run the selected instance's setup pipeline |
+| `orbit instance:root [app.instance] [root]` | Change one instance's document root |
+| `orbit instance:setup [app.instance]` | Run the selected instance's setup pipeline |
 | `orbit instance-setup-step:add\|list\|remove` | Manage one instance's finite setup pipeline |
-| `orbit instance:worker [project.instance]` | Inspect or change one instance's FrankenPHP worker mode |
+| `orbit instance:worker [app.instance]` | Inspect or change one instance's FrankenPHP worker mode |
 | `orbit instance:mount list\|add\|remove` | Manage one instance's FrankenPHP runtime mounts |
 | `orbit instance:analytics enable\|disable\|show\|verify` | Manage one instance's analytics binding |
 | `orbit instance:websocket enable\|disable\|credentials` | Manage one instance's WebSocket binding and credentials |
@@ -328,7 +328,7 @@ orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --o
 
 ```bash
 orbit node:default beast              # set local default development node (one-time)
-orbit project:new myapp --repo=acme/myapp # creates myapp.development
+orbit app:new myapp --repo=acme/myapp # creates myapp.development
 orbit process:add mysql8 --service=mysql --runtime=docker --version=8.3 --node=beast
 orbit database:add-user myapp --service=mysql8 --node=beast --database=myapp --username=myapp --password='...'
 orbit database:attach myapp --instance=myapp.development --env-prefix=DB
@@ -338,7 +338,7 @@ orbit doctor --instance=myapp.development --family=database_connection --restore
 **Deploy a production instance**
 
 ```bash
-orbit project:new myapp --node=prod-1 --repo=acme/myapp --domain=myapp.com
+orbit app:new myapp --node=prod-1 --repo=acme/myapp --domain=myapp.com
 orbit deploy:step-add myapp.development 'composer install --no-dev' --title='install deps'
 orbit deploy:step-add myapp.development 'php artisan migrate --force' --title='migrate'
 orbit deploy:run myapp.development

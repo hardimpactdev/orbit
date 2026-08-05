@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\AppInstanceRuntimeRequirementsData;
-use App\Models\AppInstance;
+use App\Data\Apps\InstanceRuntimeRequirementsData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -39,10 +39,10 @@ it('reports missing required PHP extensions with stable issue codes', function (
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.51',
         ]);
-    $app = Project::factory()->for($node, 'node')->create(['name' => 'billing']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'runtime_requirements' => new AppInstanceRuntimeRequirementsData(
+        'runtime_requirements' => new InstanceRuntimeRequirementsData(
             php_extensions: ['redis', 'intl'],
         ),
     ]);
@@ -81,10 +81,10 @@ it('reports unverifiable PHP extension state when the runtime cannot be queried'
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.52',
         ]);
-    $app = Project::factory()->for($node, 'node')->create(['name' => 'billing']);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'runtime_requirements' => new AppInstanceRuntimeRequirementsData(
+        'runtime_requirements' => new InstanceRuntimeRequirementsData(
             php_extensions: ['redis'],
         ),
     ]);

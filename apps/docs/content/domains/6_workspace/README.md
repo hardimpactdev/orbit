@@ -61,7 +61,7 @@ These rules govern all workspace family commands.
 - A workspace hostname is workspace-owned: the workspace slug prepended to the
   selected instance's primary hostname. For a development instance this yields
   `{workspace}.{instance-hostname}` (for example
-  `{workspace}.{project}.{instance-tld}` when that is the instance hostname).
+  `{workspace}.{app}.{instance-tld}` when that is the instance hostname).
 - Workspaces inherit the selected instance's process definitions as
   instance runtime units.
   Each inherited runtime unit is owned
@@ -145,7 +145,7 @@ entity does not define.
 ```json
 {
   "name": "feature-docs",
-  "project": "docs",
+  "app": "docs",
   "instance": "development",
   "node": "app-1",
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
@@ -264,5 +264,5 @@ These commands manage the setup and teardown step policy that runs during worksp
 These doctor commands verify the families that workspace commands depend on.
 
 - [`doctor --family=workspace`](workspace-doctor.md)
-- [`doctor --family=instance`](../5_project/instance-doctor.md)
+- [`doctor --family=instance`](../5_app/instance-doctor.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)

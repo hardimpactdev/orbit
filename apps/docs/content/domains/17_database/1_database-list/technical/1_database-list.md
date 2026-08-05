@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract

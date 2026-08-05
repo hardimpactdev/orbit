@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:add [name] [--instance=<project.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]`
+# Technical Contract: `orbit schedule:add [name] [--instance=<app.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]`
 
 [Back to public `schedule-add` documentation.](../schedule-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit schedule:add [name] [--instance=<project.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
+orbit schedule:add [name] [--instance=<app.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected concrete target. |
-| `instance` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `project.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Required when no instance target resolves and no target can be prompted.` | `Forbidden with `instance`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
 | `command` | `--command` | `Required when `script` is absent.` | `Forbidden with `script`.` | `None.` | Non-empty command line accepted by the schedule execution policy for the target scope. |
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
@@ -74,7 +74,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 
 ### Scope Boundaries
 
-`schedule-add` must not create projects, instances, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or any artifacts on the scheduler side that go beyond what gateway configuration tracks. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-add` must not create apps, instances, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or any artifacts on the scheduler side that go beyond what gateway configuration tracks. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -114,7 +114,7 @@ schedule creation attempts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI `schedule:add` POST payload, target and execution-source validation, default node when no target is supplied, and gateway error passthrough. |
-| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit and bare instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php` | Explicit and bare instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
 | `apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php` | Existing app-schedule ownership backfill and ambiguous migration stop. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

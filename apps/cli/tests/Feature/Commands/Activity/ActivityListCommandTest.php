@@ -69,7 +69,7 @@ describe('activity:list', function (): void {
                 [
                     'id' => 42,
                     'effect' => 'destructive',
-                    'subject' => ['type' => 'project', 'name' => 'docs'],
+                    'subject' => ['type' => 'app', 'name' => 'docs'],
                     'summary' => 'Removed app docs.',
                 ],
             ],
@@ -105,7 +105,7 @@ describe('activity:list', function (): void {
             ->and($decoded['success']['data']['activities'][0]['effect'])
             ->toBe('destructive')
             ->and($decoded['success']['data']['activities'][0]['subject'])
-            ->toBe(['type' => 'project', 'name' => 'docs'])
+            ->toBe(['type' => 'app', 'name' => 'docs'])
             ->and($decoded['success']['meta']['filters']['effect'])
             ->toBe('destructive');
     });

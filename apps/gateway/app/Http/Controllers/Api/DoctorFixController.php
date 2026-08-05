@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
-use App\Data\Doctor\DoctorAppInstanceTarget;
+use App\Data\Doctor\DoctorInstanceTarget;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
-use App\Services\Doctor\DoctorAppInstanceTargetResolver;
+use App\Services\Doctor\DoctorInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorPublicVocabulary;
 use App\Services\Doctor\DoctorReportRunner;
@@ -44,7 +44,7 @@ final class DoctorFixController implements Loggable
         DoctorPublicVocabulary $vocabulary,
         NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
-        DoctorAppInstanceTargetResolver $appTargets,
+        DoctorInstanceTargetResolver $appTargets,
         WorkspaceRoleGuard $workspaceRoleGuard,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
@@ -107,7 +107,7 @@ final class DoctorFixController implements Loggable
             ], 422);
         }
 
-        if ($appTarget instanceof DoctorAppInstanceTarget && $target->id !== $appTarget->node->id) {
+        if ($appTarget instanceof DoctorInstanceTarget && $target->id !== $appTarget->node->id) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
@@ -128,7 +128,7 @@ final class DoctorFixController implements Loggable
             return $authorization;
         }
 
-        $scope = $appTarget instanceof DoctorAppInstanceTarget
+        $scope = $appTarget instanceof DoctorInstanceTarget
             ? $appTarget->scope($this->scopeValue($request, 'workspace'))
             : DoctorTargetScope::from(
                 $this->scopeValue($request, 'instance'),
@@ -249,7 +249,7 @@ final class DoctorFixController implements Loggable
                             familyStatuses: $familyStatuses,
                             app: $scope->app,
                             workspace: $scope->workspace,
-                            appInstance: $scope->appInstance,
+                            instance: $scope->instance,
                         )),
                     ],
             );
@@ -285,7 +285,7 @@ final class DoctorFixController implements Loggable
                                 familyStatuses: $familyStatuses,
                                 app: $scope->app,
                                 workspace: $scope->workspace,
-                                appInstance: $scope->appInstance,
+                                instance: $scope->instance,
                             )),
                         ],
                 );
@@ -337,7 +337,7 @@ final class DoctorFixController implements Loggable
                                 familyStatuses: $familyStatuses,
                                 app: $scope->app,
                                 workspace: $scope->workspace,
-                                appInstance: $scope->appInstance,
+                                instance: $scope->instance,
                             )),
                         ],
                 );
@@ -405,7 +405,7 @@ final class DoctorFixController implements Loggable
     private function resolveTarget(
         Request $request,
         Node $caller,
-        ?DoctorAppInstanceTarget $appTarget = null,
+        ?DoctorInstanceTarget $appTarget = null,
     ): ?Node {
         $name = $request->input('node');
 

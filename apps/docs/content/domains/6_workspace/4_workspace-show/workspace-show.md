@@ -18,14 +18,14 @@ nodes.
 ## Usage
 
 ```bash
-orbit workspace:show [name] [--instance=<project.instance>] [--json]
+orbit workspace:show [name] [--instance=<app.instance>] [--json]
 ```
 
 ## Arguments and options
 
 - `name`: The workspace name. Optional when the current working directory
   resolves to a known workspace path.
-- `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: The parent project slug or instance selector. Use dot
   notation such as `happie.nmbp` to select one concrete instance
   explicitly. A bare project slug is shorthand only when it resolves to exactly one
   instance; otherwise resolution fails with `instance_required`. Required
@@ -55,7 +55,7 @@ Does not SSH to nodes, probe filesystems, check live process status, or verify l
 
 ### Show a workspace by name
 
-Use this form when the workspace name is unique across all projects.
+Use this form when the workspace name is unique across all apps.
 
 ```bash
 orbit workspace:show feature-docs

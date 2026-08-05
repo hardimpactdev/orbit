@@ -1,7 +1,7 @@
 # Deploy Concepts
 
 This document defines deploy-command-domain vocabulary and invariants. It
-supports the deploy command contracts and the [app doctor](../5_project/instance-doctor.md);
+supports the deploy command contracts and the [app doctor](../5_app/instance-doctor.md);
 it does not override the [Architecture](../../architecture.md).
 
 ## Domain and ownership
@@ -11,8 +11,8 @@ These terms define the deploy command domain and what it owns.
 - **Deploy command domain:** The `deploy:*` command prefix. It manages
   production instance deployment policy, deployment runs, run history, and captured
   deployment output, but it does not create a separate state family.
-- **Production project deployment:** Operator workflow for one concrete instance of
-  a production project that executes configured deployment steps on the instance's owning node through
+- **Production app deployment:** Operator workflow for one concrete instance of
+  a production app that executes configured deployment steps on the instance's owning node through
   gateway-authenticated Agent push.
 - **Deployment policy:** Instance-owned gateway state that defines the
   ordered deployment steps for one concrete production instance.
@@ -59,7 +59,7 @@ These terms describe the runtime side of deployments — how runs are tracked an
   `release_path` and `live_path` are path helpers inside the instance-owned release
   boundary. Runtime bind mounts and any live, document-root, storage, or
   database symlink targets must resolve inside the app source or release
-  boundary before the production project runtime container is rendered.
+  boundary before the production app runtime container is rendered.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,
@@ -73,14 +73,14 @@ These terms describe the runtime side of deployments — how runs are tracked an
   is captured gateway history, not live streaming output, process manager log
   output, or a node filesystem read.
 - **Latest deployment status:** Gateway state owned by the instance that records the
-  newest deployment outcome. Instance doctor uses it when evaluating production project
+  newest deployment outcome. Instance doctor uses it when evaluating production app
   health.
 
 ## Health and boundaries
 
 These terms define what the deploy family owns and what belongs to other families.
 
-- **Deployment health:** Production project health signal derived from deployment
+- **Deployment health:** Production app health signal derived from deployment
   pipeline validity and latest deployment status. It belongs to
   `doctor --family=instance`, not to a deploy doctor family.
 - **Deploy-domain boundaries:** Deploy commands own deployment policy writes,
@@ -88,7 +88,7 @@ These terms define what the deploy family owns and what belongs to other familie
   for concrete production instances. They do not own a state family, create app records,
   manage development apps, create process definitions or schedules, inspect live
   node state during reads, model releases as standalone state, or prove
-  production project health after a deployment run.
+  production app health after a deployment run.
 - **Cross-family invocation:** Deploy steps may invoke documented commands from
   other families as their step command, such as `process:restart [name]`
   after artifact rotation. Lifecycle semantics still belong to the invoked

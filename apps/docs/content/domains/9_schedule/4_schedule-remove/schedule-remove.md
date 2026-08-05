@@ -9,7 +9,7 @@ Use `schedule:remove` when a recurring task should be removed from Orbit managem
 ## Usage
 
 ```bash
-orbit schedule:remove [name] [--instance=<project.instance>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--instance=<app.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples
@@ -23,7 +23,7 @@ orbit schedule:remove backups --node=app-1 --force
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--instance`: select the owning `project.instance`. A bare project name is shorthand only
+- `--instance`: select the owning `app.instance`. A bare app name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--force`: Skip destructive confirmation.

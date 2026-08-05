@@ -11,7 +11,7 @@
 2. [Gateway](domains/2_gateway/gateway.md)
 3. [Tool](domains/3_tool/tool.md)
 4. [Firewall](domains/4_firewall/firewall.md)
-5. [Project](domains/5_project/project.md)
+5. [App](domains/5_app/app.md)
 6. [Workspace](domains/6_workspace/workspace.md)
 7. [Process](domains/7_process/process.md)
 8. [Proxy](domains/8_proxy/proxy.md)

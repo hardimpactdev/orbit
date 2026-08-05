@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Services\Processes\ProcessEventStreamer;
 use App\Services\Processes\ProcessStreamClock;
 use App\Services\Processes\ProcessStreamConnection;
@@ -31,7 +31,7 @@ it('returns the max durable event id in the app-instance workspace-null node sco
         'process_id' => $setup['process']->id,
         'process_name' => 'vite',
         'app_id' => $setup['app']->id,
-        'app_instance_id' => $setup['instance']->id,
+        'instance_id' => $setup['instance']->id,
         'workspace_id' => null,
         'node_id' => $setup['node']->id,
         'unit_name' => 'orbit_docs_development_main_vite',
@@ -42,7 +42,7 @@ it('returns the max durable event id in the app-instance workspace-null node sco
         'process_id' => $setup['process']->id,
         'process_name' => 'vite',
         'app_id' => $setup['app']->id,
-        'app_instance_id' => $setup['instance']->id,
+        'instance_id' => $setup['instance']->id,
         'workspace_id' => null,
         'node_id' => $setup['node']->id,
         'unit_name' => 'orbit_docs_development_main_vite',
@@ -53,7 +53,7 @@ it('returns the max durable event id in the app-instance workspace-null node sco
         'process_id' => $setup['process']->id,
         'process_name' => 'vite',
         'app_id' => $setup['app']->id,
-        'app_instance_id' => $setup['otherInstance']->id,
+        'instance_id' => $setup['otherInstance']->id,
         'workspace_id' => null,
         'node_id' => $setup['node']->id,
         'unit_name' => 'other',
@@ -72,7 +72,7 @@ it('follows only events after the high-water mark and never replays earlier rows
         'process_id' => $setup['process']->id,
         'process_name' => 'vite',
         'app_id' => $setup['app']->id,
-        'app_instance_id' => $setup['instance']->id,
+        'instance_id' => $setup['instance']->id,
         'workspace_id' => null,
         'node_id' => $setup['node']->id,
         'unit_name' => 'orbit_docs_development_main_vite',
@@ -83,7 +83,7 @@ it('follows only events after the high-water mark and never replays earlier rows
         'process_id' => $setup['process']->id,
         'process_name' => 'vite',
         'app_id' => $setup['app']->id,
-        'app_instance_id' => $setup['instance']->id,
+        'instance_id' => $setup['instance']->id,
         'workspace_id' => null,
         'node_id' => $setup['node']->id,
         'unit_name' => 'orbit_docs_development_main_vite',
@@ -119,7 +119,7 @@ it('emits durable events for a process configured after follow began', function 
     app()->instance(ProcessStreamSleeper::class, new class($setup, $polls, $createdEventId) implements
         ProcessStreamSleeper {
         /**
-         * @param  array{app: Project, instance: AppInstance, node: \App\Models\Node}  $setup
+         * @param  array{app: App, instance: Instance, node: \App\Models\Node}  $setup
          */
         public function __construct(
             private array $setup,
@@ -138,7 +138,7 @@ it('emits durable events for a process configured after follow began', function 
             $process = Process::factory()
                 ->forOwner($this->setup['app'], $this->setup['node'])
                 ->create([
-                    'app_instance_id' => $this->setup['instance']->id,
+                    'instance_id' => $this->setup['instance']->id,
                     'name' => 'queue',
                 ]);
 
@@ -147,7 +147,7 @@ it('emits durable events for a process configured after follow began', function 
                 'process_id' => $process->id,
                 'process_name' => 'queue',
                 'app_id' => $this->setup['app']->id,
-                'app_instance_id' => $this->setup['instance']->id,
+                'instance_id' => $this->setup['instance']->id,
                 'workspace_id' => null,
                 'node_id' => $this->setup['node']->id,
                 'unit_name' => 'orbit_docs_development_main_queue',
@@ -294,9 +294,9 @@ it('stops following without further sleeps after disconnect', function (): void 
 
 /**
  * @return array{
- *     app: Project,
- *     instance: AppInstance,
- *     otherInstance: AppInstance,
+ *     app: App,
+ *     instance: Instance,
+ *     otherInstance: Instance,
  *     node: \App\Models\Node,
  *     process: Process,
  *     scope: ProcessStreamScope
@@ -305,21 +305,21 @@ it('stops following without further sleeps after disconnect', function (): void 
 function processStreamTestFixture(): array
 {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
-    $otherInstance = AppInstance::factory()->create([
+    $otherInstance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
     $process = Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
         ]);
 
@@ -330,7 +330,7 @@ function processStreamTestFixture(): array
         'node' => $node,
         'process' => $process,
         'scope' => new ProcessStreamScope(
-            appInstanceId: $instance->id,
+            instanceId: $instance->id,
             workspaceId: null,
             nodeId: $node->id,
         ),

@@ -9,7 +9,7 @@ Use `schedule:show` when inspecting the durable configuration of a specific recu
 ## Usage
 
 ```bash
-orbit schedule:show [name] [--instance=<project.instance>] [--node=<node>] [--json]
+orbit schedule:show [name] [--instance=<app.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples
@@ -23,7 +23,7 @@ orbit schedule:show backups --node=app-1
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--instance`: select the owning `project.instance`. A bare project name is shorthand only
+- `--instance`: select the owning `app.instance`. A bare app name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--json`: Output JSON.

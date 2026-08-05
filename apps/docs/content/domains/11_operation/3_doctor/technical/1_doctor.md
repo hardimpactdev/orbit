@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -32,7 +32,7 @@ This command follows the shared
 | `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `all` | `--all` | Never. | `--node`, `--self`, `--instance`, `--workspace`, `--fix`, `--restore`, or `--adopt` is present. | `false`. | Selects verify-only fleet mode across eligible active role-bearing nodes. This is the only fleet mode. |
-| `instance` | `--instance` | Never. | A selected family contract forbids instance scoping. | Instances selected by each family contract after authorization and node/workspace filters. | Gateway-known `<project.instance>` selector; a bare project is accepted only when it resolves unambiguously to one concrete instance. |
+| `instance` | `--instance` | Never. | A selected family contract forbids instance scoping. | Instances selected by each family contract after authorization and node/workspace filters. | Gateway-known `<app.instance>` selector; a bare project is accepted only when it resolves unambiguously to one concrete instance. |
 | `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/instance filters. | Gateway-known workspace name, resolved inside instance scope when applicable. |
 | `fix` | `--fix` | Never. | `--restore` or `--adopt` is present. | `false`. | Selects interactive resolution mode. Every attempted action must be declared safe by its family doctor contract. |
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
@@ -206,7 +206,7 @@ Generic issue kinds remain:
 - Invent a state family outside the stable family keys.
 - Treat backend names such as Caddy, systemd, UFW, or package
   managers as public doctor families.
-- Create new fleet membership, projects, instances, workspaces, processes, schedules, tools,
+- Create new fleet membership, apps, instances, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.
 - Hide remaining drift after a restore/adopt action receipt, including when the
@@ -294,7 +294,7 @@ Converted family doctor contracts:
 - [`node-doctor.md`](../../../1_node/node-doctor.md)
 - [`tool-doctor.md`](../../../3_tool/tool-doctor.md)
 - [`firewall-doctor.md`](../../../4_firewall/firewall-doctor.md)
-- [`instance-doctor.md`](../../../5_project/instance-doctor.md)
+- [`instance-doctor.md`](../../../5_app/instance-doctor.md)
 - [`workspace-doctor.md`](../../../6_workspace/workspace-doctor.md)
 - [`process-doctor.md`](../../../7_process/process-doctor.md)
 - [`proxy-doctor.md`](../../../8_proxy/proxy-doctor.md)

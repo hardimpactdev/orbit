@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Models\Project;
+use App\Models\App;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use Illuminate\Database\Eloquent\Collection;
@@ -11,7 +11,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 it('defaults missing legacy app runtime attributes to php in response payloads', function (): void {
-    $app = new Project;
+    $app = new App;
     $app->setRawAttributes([
         'name' => 'docs',
         'repository' => null,

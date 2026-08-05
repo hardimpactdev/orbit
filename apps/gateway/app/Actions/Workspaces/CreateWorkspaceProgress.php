@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 
 final readonly class CreateWorkspaceProgress
 {
@@ -16,12 +16,12 @@ final readonly class CreateWorkspaceProgress
     ) {}
 
     public function for(
-        Project $app,
+        App $app,
         Node $node,
         string $name,
         string $base,
         ?string $phpVersion,
-        AppInstance $instance,
+        Instance $instance,
     ): CreateWorkspaceProgressPlan {
         return new CreateWorkspaceProgressPlan(
             createWorkspace: $this->createWorkspace,

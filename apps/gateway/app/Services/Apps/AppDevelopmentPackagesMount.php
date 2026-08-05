@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Enums\Nodes\NodeRoleName;
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 
 final readonly class AppDevelopmentPackagesMount
@@ -30,7 +30,7 @@ final readonly class AppDevelopmentPackagesMount
     /**
      * @return array{source: string, target: string, read_only: bool}|null
      */
-    public function forApp(Project $app): ?array
+    public function forApp(App $app): ?array
     {
         $app->loadMissing('node.roleAssignments');
 

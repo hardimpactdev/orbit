@@ -32,13 +32,13 @@ The node family owns these facts:
   and installed-Agent expectation must not remain after the last workload role
   is removed unless the roleless node is explicitly managed;
 - node identity and related defaults: every active node has a mandatory valid
-  node-owned TLD; the node family projects a concrete DNS record for every
+  node-owned TLD; the node family apps a concrete DNS record for every
   active node and wildcard records for active development and agent roles,
   alongside `vpn` role settings and WireGuard runtime, local
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
   at the node level.
 
-Tools, firewall rules, projects, instances, workspaces, processes, proxy routes, schedules,
+Tools, firewall rules, apps, instances, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
 node probe facts.
 
@@ -295,7 +295,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
-| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
+| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
@@ -358,7 +358,7 @@ exactly one unambiguous allowed address.
 `doctor --family=node --adopt` does not handle `node.runtime_missing`,
 unselected hosts, unresolved caller identities, unknown WireGuard peers,
 public IPv4/IPv6 metadata, security settings, evidence for SSH host keys, or
-artifacts that belong to tools, firewall rules, projects, instances, workspaces,
+artifacts that belong to tools, firewall rules, apps, instances, workspaces,
 processes, proxy routes, schedules, or deployments.
 
 Node doctor never stores, probes, compares, restores, or adopts SSH host keys.

@@ -52,7 +52,7 @@ final class SetupWorkspaceRequest extends GatewayRequest implements HasBody
         $meta = $this->unwrapMeta($response);
 
         return new SetupWorkspaceResponse(
-            project: is_string($data['project'] ?? null) ? $data['project'] : '',
+            app: is_string($data['app'] ?? null) ? $data['app'] : '',
             instance: is_string($data['instance'] ?? null) ? $data['instance'] : '',
             workspace: is_string($data['workspace'] ?? null) ? $data['workspace'] : '',
             node: is_string($data['node'] ?? null) ? $data['node'] : '',

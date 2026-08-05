@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
-use App\Models\Project;
+use App\Models\App;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareZoneResolver
@@ -78,7 +78,7 @@ final readonly class CloudflareZoneResolver
     }
 
     /**
-     * @return array{project: Project, zone: array{id: string, name: string, status: string}}
+     * @return array{app: App, zone: array{id: string, name: string, status: string}}
      */
     public function resolveProjectZone(string $projectName): array
     {
@@ -86,57 +86,57 @@ final readonly class CloudflareZoneResolver
 
         if ($projectName === '') {
             throw new GatewayApiException(
-                message: 'A project name is required.',
+                message: 'A app name is required.',
                 errorCode: 'validation_failed',
-                errorMeta: ['field' => 'project'],
+                errorMeta: ['field' => 'app'],
             );
         }
 
-        $project = Project::query()->where('name', $projectName)->first();
+        $app = App::query()->where('name', $projectName)->first();
 
-        if (! $project instanceof Project) {
+        if (! $app instanceof App) {
             throw new GatewayApiException(
-                message: 'The selected project was not found.',
+                message: 'The selected app was not found.',
                 errorCode: 'validation_failed',
-                errorMeta: ['field' => 'project', 'project' => $projectName],
+                errorMeta: ['field' => 'app', 'app' => $projectName],
             );
         }
 
-        $domain = is_string($project->domain) ? trim($project->domain) : '';
+        $domain = is_string($app->domain) ? trim($app->domain) : '';
 
         if ($domain === '' || ! str_contains($domain, '.')) {
             throw new GatewayApiException(
-                message: 'The project has no Cloudflare-backed domain.',
+                message: 'The app has no Cloudflare-backed domain.',
                 errorCode: 'validation_failed',
-                errorMeta: ['field' => 'project', 'project' => $projectName],
+                errorMeta: ['field' => 'app', 'app' => $projectName],
             );
         }
 
         return [
-            'project' => $project,
+            'app' => $app,
             'zone' => $this->resolveZoneForRecordName($domain),
         ];
     }
 
     /**
-     * @return array{zone: array{id: string, name: string, status: string}, project: Project|null}
+     * @return array{zone: array{id: string, name: string, status: string}, app: App|null}
      */
     public function resolveZoneOrProject(string $identifier): array
     {
-        $project = Project::query()->where('name', $identifier)->first();
+        $app = App::query()->where('name', $identifier)->first();
 
-        if ($project instanceof Project) {
+        if ($app instanceof App) {
             $resolved = $this->resolveProjectZone($identifier);
 
             return [
                 'zone' => $resolved['zone'],
-                'project' => $resolved['project'],
+                'app' => $resolved['app'],
             ];
         }
 
         return [
             'zone' => $this->resolveZone($identifier),
-            'project' => null,
+            'app' => null,
         ];
     }
 

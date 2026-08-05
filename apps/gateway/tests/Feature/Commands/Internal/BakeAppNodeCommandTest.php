@@ -3,18 +3,18 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
@@ -235,10 +235,10 @@ describe('orbit:internal:bake-app-node', function (): void {
             'host' => '10.6.0.5',
             'wireguard_address' => '10.6.0.5',
         ]);
-        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
-        $instance = AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/srv/docs',
@@ -246,7 +246,7 @@ describe('orbit:internal:bake-app-node', function (): void {
         ]);
         Workspace::factory()->for($app)->create([
             'name' => 'feature-docs',
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         expect(

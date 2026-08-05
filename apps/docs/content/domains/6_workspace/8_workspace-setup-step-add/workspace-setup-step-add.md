@@ -5,7 +5,7 @@ Add a workspace setup step for an app.
 ## Usage
 
 ```bash
-orbit workspace-setup-step:add --command="composer install" [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command="composer install" [--instance=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Description
@@ -23,7 +23,7 @@ instance.
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--instance=<project.instance>`: The instance selector such as `hauser.nmbp`. Bare parent
+- `--instance=<app.instance>`: The instance selector such as `hauser.nmbp`. Bare parent
   project slugs are rejected for writes. When omitted, Orbit attempts the same
   precedence chain as [`workspace:new`](../1_workspace-new/workspace-new.md),
   but the resolved selector must name a concrete instance before the

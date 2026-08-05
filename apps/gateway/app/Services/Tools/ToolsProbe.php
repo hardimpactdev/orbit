@@ -871,7 +871,7 @@ final readonly class ToolsProbe
         $catalog = app(PhpRuntimeCatalog::class);
         $observedImages = array_values(array_filter(
             preg_split('/\R/', trim($result->stdout)) ?: [],
-            fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
+            static fn (string $image): bool => in_array($image, $images, true) && $catalog->isApprovedImage($image),
         ));
         $versions = array_values(array_map(
             $catalog->versionForImage(...),

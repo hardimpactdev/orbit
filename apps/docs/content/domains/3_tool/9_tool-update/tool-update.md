@@ -11,7 +11,7 @@ first install, process runtime migration, or configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--instance=<project.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--instance=<app.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Examples

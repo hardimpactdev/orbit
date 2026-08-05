@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Enums\Apps\AppInstanceDriver;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Workspaces\WorkspaceShowPayload;
@@ -23,16 +23,16 @@ it('renders the effective workspace process set for the selected instance only',
         'host' => '1.2.3.4',
     ]);
 
-    $app = Project::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'domain' => 'docs.test',
         'php_version' => '8.5',
     ]);
 
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/home/orbit/apps/docs',
@@ -43,14 +43,14 @@ it('renders the effective workspace process set for the selected instance only',
 
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-docs',
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
     ]);
 
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'frankenphp-docs',
             'runtime' => ProcessRuntime::Docker,
             'sort_order' => 0,
@@ -58,7 +58,7 @@ it('renders the effective workspace process set for the selected instance only',
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
             'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 10,
@@ -66,7 +66,7 @@ it('renders the effective workspace process set for the selected instance only',
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'queue',
             'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 20,
@@ -74,10 +74,10 @@ it('renders the effective workspace process set for the selected instance only',
 
     app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
 
-    $otherInstance = AppInstance::factory()->for($app)->create([
+    $otherInstance = Instance::factory()->for($app)->create([
         'name' => 'staging',
-        'driver' => AppInstanceDriver::Orbit,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/home/orbit/apps/docs-staging',
@@ -88,7 +88,7 @@ it('renders the effective workspace process set for the selected instance only',
     Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $otherInstance->id,
+            'instance_id' => $otherInstance->id,
             'name' => 'worker',
             'runtime' => ProcessRuntime::Systemd,
             'sort_order' => 10,

@@ -4,13 +4,13 @@ Show workspace setup and lifecycle history.
 
 ## Usage
 
-`orbit workspace:history [name] [--instance=<project.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
+`orbit workspace:history [name] [--instance=<app.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
 
 ## Arguments and options
 
 - `name`: Workspace slug. Optional when the current working directory resolves
   to a known workspace path.
-- `--instance=<project.instance>`: Parent project slug or instance selector. Use dot notation
+- `--instance=<app.instance>`: Parent project slug or instance selector. Use dot notation
   such as `happie.nmbp` to target one concrete instance. Required only
   when `name` matches multiple visible workspaces.
 - `--json`: Output structured JSON.

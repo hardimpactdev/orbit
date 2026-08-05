@@ -13,7 +13,7 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   containers, but it does not install host PHP runtimes or create a `php` state
   family.
 - **PHP runtime selection:** Image version choice tracked by the gateway for
-  one target scope: shared project runtime policy or one workspace runtime
+  one target scope: shared app runtime policy or one workspace runtime
   override/inheritance.
 - **PHP image selection:** PHP image version tracked by the gateway and used to
   create or recreate a FrankenPHP app runtime container for an instance or workspace.
@@ -22,7 +22,7 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   node artifacts are changed.
 - **Available PHP image:** PHP image version available to the Docker runtime on
   one concrete Orbit instance or workspace serving node through the
-  approved FrankenPHP image family. A project-policy write requires the image
+  approved FrankenPHP image family. An app-policy write requires the image
   on the selected instance serving node before policy is changed.
 - **PHP runtime catalog:** Tool catalog knowledge that declares the PHP versions
   Orbit can manage and resolves each supported version to the approved
@@ -51,24 +51,24 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   a failed inspection reports inventory unavailability without treating the
   image as confirmed missing.
 - **PHP runtime view:** Shared PHP JSON entity reporting supported versions,
-  shared project PHP selection, and either one explicitly selected instance or
+  shared app PHP selection, and either one explicitly selected instance or
   workspace serving-node inventory. It never presents one arbitrary instance
-  and node as the inventory for a project.
+  and node as the inventory for an app.
 
 ## Runtime Scopes
 
 These terms define each target scope that a PHP command can read or write.
 
-- **Project PHP runtime policy:** Shared project PHP version stored as gateway
-  project configuration. A write selects one concrete instance, authorizes its
+- **App PHP runtime policy:** Shared app PHP version stored as gateway
+  app configuration. A write selects one concrete instance, authorizes its
   serving node, verifies the approved image, changes the policy, and reconciles
-  the project's Orbit-managed runtime artifacts.
+  the app's Orbit-managed runtime artifacts.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
-  workspace row. It overrides the parent project PHP version for that workspace.
+  workspace row. It overrides the parent app PHP version for that workspace.
 - **Workspace PHP inheritance:** Workspace state where no workspace PHP override
-  is stored and the workspace uses the parent project PHP version.
+  is stored and the workspace uses the parent app PHP version.
 - **Effective workspace PHP version:** Version a workspace actually uses after
-  applying workspace override or parent-project inheritance.
+  applying workspace override or parent-app inheritance.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
   gateway's own runtime. Instance and workspace setup, deploy commands, and ad-hoc
@@ -88,7 +88,7 @@ These terms define what PHP commands apply to nodes and how partial application 
   endpoint, image tag, and service state on the node side, derived from instance or
   workspace PHP runtime configuration. Instance and workspace families own artifact
   convergence.
-- **PHP runtime target:** Resolved project, concrete instance,
+- **PHP runtime target:** Resolved app, concrete instance,
   workspace, or node-CLI scope that a PHP command reads or writes after target
   resolution and authorization.
 - **Partial PHP application warning:** Structured Doctor handoff for a
@@ -102,5 +102,5 @@ These boundaries define what PHP runtime commands own and what they must not tou
   target resolution, runtime reporting, and partial-application warnings for
   `php:*`. They do not install or remove host PHP runtimes, own runtime image
   lifecycle, invent `doctor --family=php`, read `.php-version`, mutate Composer
-  files, or change framework config. They also do not create project, instance, or workspace
+  files, or change framework config. They also do not create app, instance, or workspace
   records, or treat PHP selection as proof that drift has converged.

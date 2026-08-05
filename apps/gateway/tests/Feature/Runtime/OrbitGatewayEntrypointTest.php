@@ -157,7 +157,7 @@ it('fails safely when a host path prefix is set but host ownership cannot be res
         ->and($output)
         ->toContain('Unable to resolve host ownership for gateway config root')
         ->and($chownLog)
-        ->toBe('');
+        ->toBeEmpty();
 
     File::deleteDirectory($state['root']);
 });

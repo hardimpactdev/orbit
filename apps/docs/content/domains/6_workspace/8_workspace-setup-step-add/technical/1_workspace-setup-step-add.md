@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:add --command=<command> [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command=<command> [--instance=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -40,14 +40,14 @@ instance in `workspace_steps`, keyed by `(instance_id, phase, sort_order)`.
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Instance**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--instance=<project.instance>`, which must be a dotted instance
+   - Explicit `--instance=<app.instance>`, which must be a dotted instance
      selector such as `happie.nmbp` for gateway writes. Bare project
      slugs are rejected with `error.meta.reason=instance_required`.
-   - `.orbit/config` marker on the caller filesystem (installed by `project:new` /
+   - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `instance:register` and any workspace-installed marker) that names the owning
      project slug.
    - Gateway path-ownership lookup keyed on `(caller node identity, absolute
-     cwd)` that returns the project slug whose registered app path or any
+     cwd)` that returns the app slug whose registered app path or any
      registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.

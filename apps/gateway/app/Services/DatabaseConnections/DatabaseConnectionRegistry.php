@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -26,15 +26,15 @@ final readonly class DatabaseConnectionRegistry
     /**
      * @return Collection<int, DatabaseConnection>
      */
-    public function list(?AppInstance $instance = null, ?Workspace $workspace = null, ?Node $node = null): Collection
+    public function list(?Instance $instance = null, ?Workspace $workspace = null, ?Node $node = null): Collection
     {
         /** @var Collection<int, DatabaseConnection> $connections */
         $connections = DatabaseConnection::all();
         $connections->load([
             'node',
-            'targets.appInstance.app',
+            'targets.instance.app',
             'targets.workspace.app',
-            'targets.workspace.appInstance',
+            'targets.workspace.instance',
         ]);
         /** @var list<DatabaseConnection> $matchingConnections */
         $matchingConnections = [];
@@ -63,14 +63,14 @@ final readonly class DatabaseConnectionRegistry
 
     private function connectionMatchesFilters(
         DatabaseConnection $connection,
-        ?AppInstance $instance,
+        ?Instance $instance,
         ?Workspace $workspace,
         ?Node $node,
     ): bool {
         if (
-            $instance instanceof AppInstance
+            $instance instanceof Instance
             && ! $connection->targets->contains(
-                fn (DatabaseConnectionTarget $target): bool => $target->app_instance_id === $instance->id,
+                fn (DatabaseConnectionTarget $target): bool => $target->instance_id === $instance->id,
             )
         ) {
             return false;
@@ -95,8 +95,8 @@ final readonly class DatabaseConnectionRegistry
         }
 
         return $connection->targets->contains(function (DatabaseConnectionTarget $target) use ($node): bool {
-            if ($target->appInstance instanceof AppInstance) {
-                return $this->workspacePlacement->nodeForInstance($target->appInstance)?->is($node) === true;
+            if ($target->instance instanceof Instance) {
+                return $this->workspacePlacement->nodeForInstance($target->instance)?->is($node) === true;
             }
 
             if ($target->workspace instanceof Workspace) {
@@ -221,12 +221,12 @@ final readonly class DatabaseConnectionRegistry
         return $this->attach($slug, 'workspace', $workspace->id, $envPrefix);
     }
 
-    public function attachToAppInstance(
+    public function attachToInstance(
         string $slug,
-        AppInstance $instance,
+        Instance $instance,
         string $envPrefix,
     ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->attach($slug, 'app_instance', $instance->id, $envPrefix);
+        return $this->attach($slug, 'instance', $instance->id, $envPrefix);
     }
 
     public function detachFromWorkspace(
@@ -237,12 +237,12 @@ final readonly class DatabaseConnectionRegistry
         return $this->detach($slug, 'workspace', $workspace->id, $envPrefix);
     }
 
-    public function detachFromAppInstance(
+    public function detachFromInstance(
         string $slug,
-        AppInstance $instance,
+        Instance $instance,
         string $envPrefix,
     ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->detach($slug, 'app_instance', $instance->id, $envPrefix);
+        return $this->detach($slug, 'instance', $instance->id, $envPrefix);
     }
 
     private function findConnection(
@@ -252,7 +252,7 @@ final readonly class DatabaseConnectionRegistry
         $query = DatabaseConnection::query();
 
         if ($withRelations) {
-            $query->with(['node', 'targets.appInstance.app', 'targets.workspace.app']);
+            $query->with(['node', 'targets.instance.app', 'targets.workspace.app']);
         }
 
         $connection = $query->where('slug', $slug)->first();
@@ -457,7 +457,7 @@ final readonly class DatabaseConnectionRegistry
 
         return DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
-            'app_instance_id' => $ownerType === 'app_instance' ? $ownerId : null,
+            'instance_id' => $ownerType === 'instance' ? $ownerId : null,
             'workspace_id' => $ownerType === 'workspace' ? $ownerId : null,
             'env_prefix' => $envPrefix,
         ]);

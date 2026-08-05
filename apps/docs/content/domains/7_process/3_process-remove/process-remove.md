@@ -24,7 +24,7 @@ Use this command to remove a process definition and its runtime units.
 
 - **Destructive Consent**: Requires an interactive confirmation prompt or `--force` before side effects.
 - **Gateway Removal**: Removes process configuration from the gateway for the resolved owner scope.
-- **Scope Resolution**: `--node` removes a node-owned process and cannot be combined with `--instance` or `--workspace`; `--workspace` removes a workspace-owned process for that workspace's instance; otherwise `--instance` removes an instance-owned process. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
+- **Scope Resolution**: `--node` removes a node-owned process and cannot be combined with `--instance` or `--workspace`; `--workspace` removes a workspace-owned process for that workspace's instance; otherwise `--instance` removes an instance-owned process. Prefer `<app.instance>`; a bare project slug is accepted only when that project has exactly one instance.
 - **Runtime Unit Cleanup**: Stops and removes runtime units derived from the selected process definition.
 - **Log Preservation**: Retains process logs; they are not removed.
 - **Drift Reporting**: Reports repairable cleanup drift when runtime-unit cleanup does not fully converge.

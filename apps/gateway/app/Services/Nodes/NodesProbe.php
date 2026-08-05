@@ -22,7 +22,6 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionRegistry;
-use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Nodes\Roles\NodeRoleActivator;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -600,7 +599,7 @@ final readonly class NodesProbe
 
         foreach ($grants as $grant) {
             /** @var list<string> $permissions */
-            $permissions = app(ProjectInstancePermissionMigrator::class)->current($grant->permissions ?? []);
+            $permissions = is_array($grant->permissions) ? $grant->permissions : [];
 
             if ($permissions === []) {
                 continue;

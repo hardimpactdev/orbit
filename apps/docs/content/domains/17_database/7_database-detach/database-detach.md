@@ -8,7 +8,7 @@ prefix.
 ## Usage
 
 ```bash
-orbit database:detach {connection} (--instance=<project.instance>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:detach {connection} (--instance=<app.instance>|--workspace=<workspace>) [--env-prefix=DB] [--json]
 ```
 
 ## Technical Contract

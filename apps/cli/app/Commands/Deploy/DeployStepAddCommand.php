@@ -12,7 +12,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-add
-        {instance? : Instance selector (project.instance)}
+        {instance? : Instance selector (app.instance)}
         {deploy_command? : Shell command to run}
         {--title= : Display title}
         {--order= : Positive insertion order}
@@ -65,9 +65,9 @@ final class DeployStepAddCommand extends DeployGatewayCommand
 
         $id = $this->stepString($step, 'id');
         $title = $this->stepString($step, 'title');
-        $project = $this->stepString($step, 'project');
+        $app = $this->stepString($step, 'app');
         $instance = $this->stepString($step, 'instance');
-        $target = $project !== null && $instance !== null ? "{$project}.{$instance}" : $instanceSelector;
+        $target = $app !== null && $instance !== null ? "{$app}.{$instance}" : $instanceSelector;
 
         $this->line("Added deployment step #{$id} '{$title}' to instance '{$target}'.");
 

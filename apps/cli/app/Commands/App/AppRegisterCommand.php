@@ -14,24 +14,24 @@ final class AppRegisterCommand extends AppGatewayCommand
 
     #[\Override]
     protected $signature = 'instance:register
-        {project? : Project name}
+        {app? : App name}
         {--node= : Target instance node}
-        {--path= : Existing project path on the target node}
-        {--root=public : Document root relative to project path}
+        {--path= : Existing app path on the target node}
+        {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
         {--runtime-proxy-transport= : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Register or re-apply Orbit management for a project instance.';
+    protected $description = 'Register or re-apply Orbit management for an app instance.';
 
     public function handle(): int
     {
-        $name = $this->stringArgument('project');
+        $name = $this->stringArgument('app');
 
         if ($name === null) {
-            return $this->failValidation('project', 'Project name is required.');
+            return $this->failValidation('app', 'App name is required.');
         }
 
         if ($this->wantsJson()) {
@@ -54,10 +54,10 @@ final class AppRegisterCommand extends AppGatewayCommand
         $outcome = $this->runStepOperation(
             'Registering Instance',
             [
-                ['label' => 'Resolve project configuration', 'doneLabel' => 'Resolved project configuration'],
+                ['label' => 'Resolve app configuration', 'doneLabel' => 'Resolved app configuration'],
                 [
-                    'label' => 'Register project and instance or adopt project path',
-                    'doneLabel' => 'Registered project and instance or adopted project path',
+                    'label' => 'Register app and instance or adopt app path',
+                    'doneLabel' => 'Registered app and instance or adopted app path',
                 ],
                 [
                     'label' => 'Apply and verify instance runtime',
@@ -92,10 +92,10 @@ final class AppRegisterCommand extends AppGatewayCommand
     private function footerFor(string $name, array $response): string
     {
         return match ($this->action($response)) {
-            'adopted' => "Instance for project '{$name}' adopted",
-            'converged' => "Instance for project '{$name}' converged",
-            'partial' => "Instance for project '{$name}' partially enacted",
-            default => "Instance for project '{$name}' registered",
+            'adopted' => "Instance for app '{$name}' adopted",
+            'converged' => "Instance for app '{$name}' converged",
+            'partial' => "Instance for app '{$name}' partially enacted",
+            default => "Instance for app '{$name}' registered",
         };
     }
 
@@ -128,19 +128,18 @@ final class AppRegisterCommand extends AppGatewayCommand
      */
     private function successLine(array $response): string
     {
-        $project = $this->projectData($response);
-        $name = (string) ($project['name'] ?? '');
+        $app = $this->appData($response);
+        $name = (string) ($app['name'] ?? '');
         $instance = $this->instanceData($response);
         $node = (string) ($instance['node'] ?? '');
         $path = (string) ($instance['path'] ?? '');
 
         return match ($this->action($response)) {
-            'adopted' => "Instance for project '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
-            'converged'
-                => "Instance for project '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            'adopted' => "Instance for app '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'converged' => "Instance for app '{$name}' is already converged on node '{$node}'. No changes were needed.",
             'partial'
-                => "Instance for project '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
-            default => "Instance for project '{$name}' successfully registered on node '{$node}'.",
+                => "Instance for app '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
+            default => "Instance for app '{$name}' successfully registered on node '{$node}'.",
         };
     }
 
@@ -204,11 +203,11 @@ final class AppRegisterCommand extends AppGatewayCommand
      * @param  array<string, mixed>  $response
      * @return array<string, mixed>
      */
-    private function projectData(array $response): array
+    private function appData(array $response): array
     {
-        $project = $this->successData($response)['project'] ?? null;
+        $app = $this->successData($response)['app'] ?? null;
 
-        return $this->associativeArray($project) ?? [];
+        return $this->associativeArray($app) ?? [];
     }
 
     /**

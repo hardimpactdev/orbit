@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Models\Project;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Activitylog\Models\Activity;
@@ -113,7 +113,7 @@ describe('ActivityListController', function (): void {
     it('lists destructive activity newest first with normalized metadata', function (): void {
         $caller = createActivityListCallerNode();
         $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createActivityEntry('node.listed', 'read', $caller);
         $olderDestructive = createActivityEntry(
@@ -156,7 +156,7 @@ describe('ActivityListController', function (): void {
         expect(array_column($activities, 'id'))->toBe([$newerDestructive->id, $olderDestructive->id]);
         expect($activities[0]['type'])->toBe('app.removed');
         expect($activities[0]['effect'])->toBe('destructive');
-        expect($activities[0]['subject'])->toBe(['type' => 'project', 'name' => 'docs']);
+        expect($activities[0]['subject'])->toBe(['type' => 'app', 'name' => 'docs']);
         expect($activities[0]['actor'])->toBe(['node' => 'caller']);
         expect($activities[0]['command'])->toBe('app:removed');
         expect($activities[0]['description'])->toBe('Recorded app.removed');

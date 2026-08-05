@@ -18,7 +18,7 @@ connection intent and data-plane operations.
 ## Registry
 
 ```bash
-orbit database:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 orbit database:show [<connection>] [--json]
 ```
 
@@ -60,10 +60,10 @@ processes; service lifecycle remains process-owned.
 ## Instance / Workspace Targets
 
 ```bash
-orbit database:attach [<connection>] [--instance=<project.instance>|--workspace=<workspace>]
+orbit database:attach [<connection>] [--instance=<app.instance>|--workspace=<workspace>]
                        [--env-prefix=DB] [--json]
 
-orbit database:detach [<connection>] [--instance=<project.instance>|--workspace=<workspace>]
+orbit database:detach [<connection>] [--instance=<app.instance>|--workspace=<workspace>]
                        [--env-prefix=DB] [--json]
 ```
 
@@ -71,7 +71,7 @@ orbit database:detach [<connection>] [--instance=<project.instance>|--workspace=
 `DB_USERNAME`, and `DB_PASSWORD`. Custom prefixes such as `ANALYTICS_DB` are
 uppercase underscore tokens.
 
-Use `--instance=<project.instance>` to attach the connection to one concrete
+Use `--instance=<app.instance>` to attach the connection to one concrete
 instance. Instance env rendering then injects the database keys for that
 instance.
 

@@ -22,7 +22,7 @@ gateway-owned workspace configuration and its derived node artifacts.
 ## Signature
 
 ```bash
-orbit workspace:remove [name] [--instance=<project.instance>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--instance=<app.instance>] [--keep-files] [--force] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--instance` for cross-app disambiguation). |
-| `instance` | `--instance=<project.instance>` | When `name` resolves to more than one workspace across projects. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
+| `instance` | `--instance=<app.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -67,7 +67,7 @@ This command follows the shared
 
 `workspace:remove` is a destructive-write command with cross-family cleanup
 across `proxy`, `process`, and the workspace's own node-side
-artifacts. The contract follows the resolved `project:remove` atomicity boundary:
+artifacts. The contract follows the resolved `app:remove` atomicity boundary:
 gateway configuration removal is the point of no return, and any node-side
 residue afterwards is non-fatal drift.
 
@@ -206,7 +206,7 @@ and `next_command` (typically `doctor --family=<family> --restore`). The exit co
 remains `0`; the warnings are the machine-readable signal.
 
 This atomicity boundary matches the resolved
-[`project:remove`](../../../5_project/6_project-remove/technical/1_project-remove.md) and
+[`app:remove`](../../../5_app/6_app-remove/technical/1_app-remove.md) and
 [`node:remove`](../../../1_node/8_node-remove/technical/1_node-remove.md)
 exemplars: gateway-owned configuration removal is the point of no return, and
 leftover node-side artifacts are convergence drift owned by the affected

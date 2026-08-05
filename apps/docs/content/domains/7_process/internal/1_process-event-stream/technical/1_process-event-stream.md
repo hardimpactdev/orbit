@@ -68,7 +68,7 @@ stuck at starting/stopping/restarting and must not fabricate crashed/running/sto
 1. Resolve `app` hostname to concrete app instance (and optional workspace) plus
    serving node; authorize `process:read`.
 2. In one DB transaction, capture high-water for scope
-   (`app_instance_id`, `workspace_id` or null, `node_id`) and build the process
+   (`instance_id`, `workspace_id` or null, `node_id`) and build the process
    list snapshot for that app context.
 3. Emit `snapshot` with SSE id = high-water.
 4. Tail durable `process_events` after high-water by the same scope filters

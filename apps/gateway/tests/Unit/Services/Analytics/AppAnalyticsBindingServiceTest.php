@@ -6,9 +6,9 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\AnalyticsDomainRequired;
 use App\Exceptions\AnalyticsMutationBusy;
+use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsPublicHostNormalizer;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
@@ -264,7 +264,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, []))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "Project 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
             );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
@@ -280,7 +280,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "Project 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
             );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
@@ -378,13 +378,13 @@ final class AnalyticsBindingRecordingRegistrar extends AnalyticsRouteRegistrar
     }
 
     /** @param list<string> $hosts */
-    public function assertPublicHostsAvailable(Project $app, array $hosts): void
+    public function assertPublicHostsAvailable(App $app, array $hosts): void
     {
         $this->calls[] = 'assert-public-hosts:'.implode(',', $hosts);
     }
 
     /** @param list<string> $desiredHosts */
-    public function removeObsoletePublicHosts(Project $app, array $desiredHosts): void
+    public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
     {
         $this->calls[] = 'remove-obsolete-public-hosts:'.implode(',', $desiredHosts);
 
@@ -425,7 +425,7 @@ function createAnalyticsRoutePrerequisites(bool $createServiceRoute = true): voi
     }
 }
 
-function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): Project
+function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -450,7 +450,7 @@ function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = t
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return Project::factory()->create([
+    return App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\AppInstance;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeUnitName;
 use Database\Factories\ProcessFactory;
@@ -57,7 +57,7 @@ it('deterministically bounds long identities so launchd labels stay valid', func
 });
 
 /**
- * @return array{0: Project, 1: OrbitProcess, 2?: Workspace}
+ * @return array{0: App, 1: OrbitProcess, 2?: Workspace}
  */
 function runtime_unit_name_fixture(
     string $appName,
@@ -71,10 +71,10 @@ function runtime_unit_name_fixture(
             'platform' => 'macos_14',
             'status' => 'active',
         ]);
-    $app = Project::factory()->for($node, 'node')->create(['name' => $appName]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $app = App::factory()->for($node, 'node')->create(['name' => $appName]);
+    $instance = Instance::factory()->for($app)->create([
         'name' => $instanceName,
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/Users/orbit/apps/'.$appName,
@@ -89,7 +89,7 @@ function runtime_unit_name_fixture(
         ->forOwner($app)
         ->create([
             'name' => $processName,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'node_id' => $node->id,
         ]);
 
@@ -99,7 +99,7 @@ function runtime_unit_name_fixture(
 
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => $workspaceName,
         'path' => '/Users/orbit/apps/'.$appName.'/'.$workspaceName,
     ]);

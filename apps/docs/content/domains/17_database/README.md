@@ -127,7 +127,7 @@ The database command domain owns the `database_connection` state family.
 
 - [`doctor --family=database_connection`](database-doctor.md) owns connection
   drift, restore, and adopt behavior for instance and workspace `.env` mappings.
-- [`doctor --family=instance`](../5_project/instance-doctor.md) owns instance runtime health and
+- [`doctor --family=instance`](../5_app/instance-doctor.md) owns instance runtime health and
   instance runtime artifacts that are not part of database env mapping.
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
   workspace runtime artifacts and workspace path drift.
@@ -156,14 +156,14 @@ target data beside the connection entity. Instance targets use
   "targets": [
     {
       "type": "instance",
-      "project": "acme",
+      "app": "acme",
       "instance": "development",
       "env_prefix": "DB"
     },
     {
       "type": "workspace",
       "name": "feature-acme",
-      "project": "acme",
+      "app": "acme",
       "env_prefix": "REPORTING_DB"
     }
   ]
@@ -236,6 +236,6 @@ These hidden commands support gateway orchestration and are not public workflow 
 ## Related
 
 - [`doctor --family=database_connection`](database-doctor.md)
-- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
+- [`orbit app:*` and `orbit instance:*`](../5_app/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)

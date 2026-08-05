@@ -141,8 +141,8 @@ final readonly class WorkspaceShowController implements Loggable
                     'meta' => [
                         'name' => $name,
                         'instances' => $matches
-                            ->map(fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\Project
-                                ? "{$workspace->app->name}.{$workspace->appInstance->name}"
+                            ->map(fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\App
+                                ? "{$workspace->app->name}.{$workspace->instance->name}"
                                 : null)
                             ->filter()
                             ->values()
@@ -295,7 +295,7 @@ final readonly class WorkspaceShowController implements Loggable
     ): Collection {
         /** @var Collection<int, Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance', 'app.processes'])
+            ->with(['app.node', 'app.instances', 'instance', 'app.processes'])
             ->where('name', $name)
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',
@@ -332,7 +332,7 @@ final readonly class WorkspaceShowController implements Loggable
         $normalizedPath = rtrim($path, '/');
 
         return Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance', 'app.processes'])
+            ->with(['app.node', 'app.instances', 'instance', 'app.processes'])
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',
                 $selection?->app->id,
@@ -399,7 +399,7 @@ final readonly class WorkspaceShowController implements Loggable
         array $notFoundMeta,
     ): JsonResponse {
         return match ($exception->meta['reason'] ?? null) {
-            'instance_required' => $this->appInstanceRequired($exception),
+            'instance_required' => $this->instanceRequired($exception),
             default => response()->json([
                 'error' => [
                     'code' => 'workspace.not_found',
@@ -410,7 +410,7 @@ final readonly class WorkspaceShowController implements Loggable
         };
     }
 
-    private function appInstanceRequired(AppSelectionResolutionFailed $exception): JsonResponse
+    private function instanceRequired(AppSelectionResolutionFailed $exception): JsonResponse
     {
         $meta = $exception->meta;
         unset($meta['instances']);

@@ -35,7 +35,7 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 - `name`: workspace slug; lowercase letters, digits, and hyphens only, up to
   63 characters. The reserved name `main` is rejected. Must be unique within
   the parent project. Prompted in interactive mode when omitted.
-- `--instance=<project.instance>`: instance selector or bare parent-project shorthand.
+- `--instance=<app.instance>`: instance selector or bare parent-project shorthand.
   - Dot notation such as `happie.nmbp` selects one concrete instance
     directly.
   - A bare project slug, parent-project marker, or parent project path succeeds only when it
@@ -64,7 +64,7 @@ on (caller node identity, absolute CWD) accepts registered instance and
 workspace paths directly. An instance's main path or parent-project marker is only
 shorthand: it must map to exactly one registered instance. Zero or multiple
 matches fail with `validation_failed` and
-the `instance_required` reason. Orbit never falls back to a project-level
+the `instance_required` reason. Orbit never falls back to an app-level
 node or creates a parent-project-only workspace. See the
 [JSON renderer contract](technical/6.2_workspace-new_output-render_json.md)
 for the exact envelope.

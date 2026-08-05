@@ -10,7 +10,7 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'project' => 'docs',
+                'app' => 'docs',
                 'url' => 'https://feature-docs.docs.test',
             ],
         ], ['registry_only' => true]));
@@ -47,7 +47,7 @@ describe('workspace:show', function (): void {
 
         try {
             fakeGateway(fakeSuccessEnvelope([
-                'workspace' => ['name' => 'feature-docs', 'project' => 'docs'],
+                'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
             ]));
 
             [$exitCode, $output] = runCommand($this, 'workspace:show', [
@@ -78,7 +78,7 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'project' => 'docs',
+                'app' => 'docs',
                 'node' => 'app-1',
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
                 'url' => 'https://feature-docs.docs.test',

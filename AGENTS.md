@@ -121,7 +121,7 @@ product authority and are not linted as product docs.
   `apps/docs/content/testing/README.md#pest-versions`.
 - Style, linting, and static analysis use Mago.
 - Refactoring uses Rector.
-- Follow the project-local Boost and Spatie skills in `.agents/skills/`.
+- Follow the app-local Boost and Spatie skills in `.agents/skills/`.
 
 ## Verification
 
@@ -332,12 +332,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Librarian
 
-Librarian gives Laravel projects a strict documentation structure for keeping
+Librarian gives Laravel apps a strict documentation structure for keeping
 product intent, code, and tests aligned.
 
 ## Documentation Spine
 
-Projects using Librarian should maintain this docs structure:
+Apps using Librarian should maintain this docs structure:
 
 ```text
 docs/
@@ -376,7 +376,7 @@ Use `librarian:build` after changing docs that affect generated indexes. Use
   tests.
 - Use lowercase kebab-case domain slugs.
 - Prefer local markdown links that resolve inside the docs tree.
-- Remove scaffold prompt text once the project has real content.
+- Remove scaffold prompt text once the app has real content.
 
 === spatie/guidelines-skills rules ===
 

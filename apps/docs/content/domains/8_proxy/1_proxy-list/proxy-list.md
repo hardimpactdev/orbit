@@ -38,9 +38,9 @@ Use `--filter` to narrow the list:
 `proxy:list` reads gateway configuration only. It does not probe node proxy backends or verify TLS files. Use `doctor --family=proxy` for drift verification.
 
 Every instance-owned primary route reports a concrete instance target. A route
-such as `happie.nmbp` keeps the project slug `happie` in `owner.name`,
+such as `happie.nmbp` keeps the app slug `happie` in `owner.name`,
 reports `target.type=instance` and `target.value=happie.nmbp`, and reports
-the selected instance's serving node in `node`. Projects are not route
+the selected instance's serving node in `node`. Apps are not route
 targets.
 
 ## Examples

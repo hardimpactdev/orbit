@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
+# Technical Contract: `orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -9,13 +9,13 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `php:write` on the selected instance serving
-  node for a project write, or on the resolved workspace
+  node for an app write, or on the resolved workspace
   or node-CLI target. Gateway identity remains implicit.
 
 ## Signature
 
 ```bash
-orbit php:use [version] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
-| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<project.instance>` selector. A bare project is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent project's shared PHP policy. |
+| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare project is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent project's shared PHP policy. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved project and instance. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
@@ -119,7 +119,7 @@ inventory unavailability and does not claim that the image is missing.
 ## Doctor Relationship
 
 `php:use` writes runtime configuration owned by other state families. Instance runtime drift
-is verified and repaired by [`doctor --family=instance`](../../../5_project/instance-doctor.md).
+is verified and repaired by [`doctor --family=instance`](../../../5_app/instance-doctor.md).
 Workspace runtime drift is verified and repaired by
 [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md). PHP
 image availability is verified by the runtime/image catalog and node runtime

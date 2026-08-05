@@ -26,13 +26,13 @@ final readonly class AppProxyRouteConfiguredInstanceSelector
     {
         $config = is_array($route->config) ? $route->config : [];
         $target = is_array($config['target'] ?? null) ? $config['target'] : [];
-        $appInstance = is_array($config['app_instance'] ?? null) ? $config['app_instance'] : [];
+        $instance = is_array($config['instance'] ?? null) ? $config['instance'] : [];
 
         return [
-            $this->stringOrNull($appInstance['selector'] ?? null),
-            $this->stringOrNull($appInstance['name'] ?? null),
-            $this->stringOrNull($appInstance['domain'] ?? null),
-            ($target['type'] ?? null) === 'app_instance' ? $this->stringOrNull($target['value'] ?? null) : null,
+            $this->stringOrNull($instance['selector'] ?? null),
+            $this->stringOrNull($instance['name'] ?? null),
+            $this->stringOrNull($instance['domain'] ?? null),
+            ($target['type'] ?? null) === 'instance' ? $this->stringOrNull($target['value'] ?? null) : null,
         ];
     }
 

@@ -23,7 +23,7 @@ final readonly class AppNewSourcePrompter
     public function prompt(): array
     {
         $source = (string) select(
-            label: 'How should the project source be created?',
+            label: 'How should the app source be created?',
             options: [
                 'new' => 'New repository from template',
                 'clone' => 'Clone existing repository',

@@ -11,7 +11,7 @@ describe('workspace:list', function (): void {
             'workspaces' => [
                 [
                     'name' => 'feature-docs',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://feature-docs.docs.test',
                     'lifecycle_status' => 'expected',
@@ -46,21 +46,21 @@ describe('workspace:list', function (): void {
             'workspaces' => [
                 [
                     'name' => 'feature-docs',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://feature-docs.docs.test',
                     'lifecycle_status' => 'expected',
                 ],
                 [
                     'name' => 'main',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://docs.test',
                     'lifecycle_status' => 'expected',
                 ],
                 [
                     'name' => 'main',
-                    'project' => 'orbit',
+                    'app' => 'orbit',
                     'node' => 'app-2',
                     'url' => 'https://main.orbit.test',
                     'lifecycle_status' => 'setup-pending',
@@ -75,11 +75,11 @@ describe('workspace:list', function (): void {
             ->and($output)
             ->toContain('Node: app-1')
             ->and($output)
-            ->toContain('Project: docs')
+            ->toContain('App: docs')
             ->and($output)
             ->toContain('Node: app-2')
             ->and($output)
-            ->toContain('Project: orbit')
+            ->toContain('App: orbit')
             ->and($output)
             ->toContain('WORKSPACE')
             ->and($output)
@@ -100,7 +100,7 @@ describe('workspace:list', function (): void {
     it('renders missing workspace cells as an em dash', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspaces' => [
-                ['name' => 'feature-docs', 'project' => 'docs', 'node' => 'app-1'],
+                ['name' => 'feature-docs', 'app' => 'docs', 'node' => 'app-1'],
             ],
         ]));
 

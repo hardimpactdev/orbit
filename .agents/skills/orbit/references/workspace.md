@@ -17,7 +17,7 @@ orbit workspace:new [<name>] [--instance=<name>] [--base=main] [--php-version=<v
 | Option | Default | Notes |
 |---|---|---|
 | `name` |  -  | Workspace slug (<=63 chars, independent of parent app). |
-| `--instance` |  -  | Parent `project.instance` selector. |
+| `--instance` |  -  | Parent `app.instance` selector. |
 | `--base` | `main` | Base git ref to branch from. |
 | `--php-version` | inherit | Optional PHP version override (otherwise inherits the app's PHP version). |
 | `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
@@ -51,7 +51,7 @@ Use `--stream-json` for JSONL setup progress when an agent needs incremental
 frames; use `--json` for the final result envelope only.
 
 Workspace setup runs the steps configured for the workspace's app instance via
-`workspace-setup-step:add --instance=<project.instance>`. There is no logical-project row or
+`workspace-setup-step:add --instance=<app.instance>`. There is no logical-project row or
 read fallback.
 Setup steps receive `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,
 `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` for the workspace URL.
@@ -95,7 +95,7 @@ App-instance-scoped, ordered list of shell commands that run during
 ### `orbit workspace-setup-step:add`
 
 ```bash
-orbit workspace-setup-step:add --command='<shell>' --instance=<project.instance>
+orbit workspace-setup-step:add --command='<shell>' --instance=<app.instance>
                                [--before=<step-id>] [--after=<step-id>]
                                [--timeout=600] [--json]
 ```
@@ -105,7 +105,7 @@ Without `--before` / `--after`, the step is appended.
 ### `orbit workspace-setup-step:list`
 
 ```bash
-orbit workspace-setup-step:list [--instance=<project.instance>] [--json]
+orbit workspace-setup-step:list [--instance=<app.instance>] [--json]
 ```
 
 The selector resolves exactly one app instance. Ambiguous bare app slugs fail
@@ -114,7 +114,7 @@ for explicit instance selection; there are no app-level fallback rows.
 ### `orbit workspace-setup-step:remove`
 
 ```bash
-orbit workspace-setup-step:remove --step=<id> --instance=<project.instance> [--force] [--json]
+orbit workspace-setup-step:remove --step=<id> --instance=<app.instance> [--force] [--json]
 ```
 
 Removes require a dotted app-instance selector and only delete
@@ -126,11 +126,11 @@ App-instance-scoped ordered commands that run during `workspace:remove`.
 Mirrors the setup pipeline.
 
 ```bash
-orbit workspace-teardown-step:add --command='<shell>' --instance=<project.instance>
+orbit workspace-teardown-step:add --command='<shell>' --instance=<app.instance>
                                   [--before=<step-id>] [--after=<step-id>]
                                   [--timeout=600] [--json]
-orbit workspace-teardown-step:list [--instance=<project.instance>] [--json]
-orbit workspace-teardown-step:remove --step=<id> --instance=<project.instance> [--force] [--json]
+orbit workspace-teardown-step:list [--instance=<app.instance>] [--json]
+orbit workspace-teardown-step:remove --step=<id> --instance=<app.instance> [--force] [--json]
 ```
 
 ## Examples

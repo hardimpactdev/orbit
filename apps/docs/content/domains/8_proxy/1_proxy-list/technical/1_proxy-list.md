@@ -37,9 +37,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Does not synchronously SSH to nodes, probe proxy reality, or verify TLS
   material.
 - Project-owned primary routes always report a concrete instance target.
-  `owner.name` remains the project slug, `target.type` is `instance`,
+  `owner.name` remains the app slug, `target.type` is `instance`,
   `target.value` is the dotted instance selector, and `node` is that
-  instance's serving node. A project target is invalid.
+  instance's serving node. An app target is invalid.
 
 ### Filter Rules
 

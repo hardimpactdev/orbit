@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
@@ -66,8 +66,8 @@ final readonly class DatabaseConnectionTargetEndpointResolver
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->appInstance instanceof AppInstance) {
-            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+        if ($target->instance instanceof Instance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->instance);
 
             if ($node instanceof Node) {
                 return $node;

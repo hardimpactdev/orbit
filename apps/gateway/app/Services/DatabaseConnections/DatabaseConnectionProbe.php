@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
@@ -88,7 +88,7 @@ final readonly class DatabaseConnectionProbe
             }
         }
 
-        foreach ($this->appInstancesForNode($node, $scope) as $scopedInstance) {
+        foreach ($this->instancesForNode($node, $scope) as $scopedInstance) {
             $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedInstance, $scannedTargets)];
         }
 
@@ -195,7 +195,7 @@ final readonly class DatabaseConnectionProbe
         }
 
         foreach ($query
-            ->with(['connection.node', 'appInstance.app', 'workspace.app', 'workspace.appInstance'])
+            ->with(['connection.node', 'instance.app', 'workspace.app', 'workspace.instance'])
             ->get() as $target) {
             if (! $this->targetNode($target)->is($node)) {
                 continue;
@@ -213,7 +213,7 @@ final readonly class DatabaseConnectionProbe
             if (
                 $scope->workspace === null
                 && $scope->app !== null
-                && $target->appInstance?->app?->name !== $scope->app
+                && $target->instance?->app?->name !== $scope->app
                 && $target->workspace?->app?->name !== $scope->app
             ) {
                 continue;
@@ -227,8 +227,8 @@ final readonly class DatabaseConnectionProbe
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->appInstance instanceof AppInstance) {
-            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+        if ($target->instance instanceof Instance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->instance);
 
             if ($node instanceof Node) {
                 return $node;
@@ -290,12 +290,12 @@ final readonly class DatabaseConnectionProbe
      */
     private function targetDetail(DatabaseConnectionTarget $target): array
     {
-        if ($target->appInstance instanceof AppInstance) {
+        if ($target->instance instanceof Instance) {
             return [
-                'target_type' => 'app_instance',
-                'target_id' => $target->appInstance->id,
-                'app' => $target->appInstance->app->name,
-                'app_instance' => $target->appInstance->name,
+                'target_type' => 'instance',
+                'target_id' => $target->instance->id,
+                'app' => $target->instance->app->name,
+                'instance' => $target->instance->name,
                 'env_prefix' => $target->env_prefix,
             ];
         }
@@ -313,8 +313,8 @@ final readonly class DatabaseConnectionProbe
 
     private function envPath(DatabaseConnectionTarget $target): ?string
     {
-        if ($target->appInstance instanceof AppInstance) {
-            return $this->appInstancePath($target->appInstance);
+        if ($target->instance instanceof Instance) {
+            return $this->instancePath($target->instance);
         }
 
         if ($target->workspace instanceof Workspace) {
@@ -330,11 +330,11 @@ final readonly class DatabaseConnectionProbe
      */
     private function extraIssuesForObservedPrefixes(
         Node $node,
-        AppInstance|Workspace $target,
+        Instance|Workspace $target,
         array $scannedTargets,
     ): array {
-        $path = $target instanceof AppInstance
-            ? $this->appInstancePath($target)
+        $path = $target instanceof Instance
+            ? $this->instancePath($target)
             : rtrim($target->path, '/').'/.env';
 
         if ($path === null) {
@@ -352,12 +352,12 @@ final readonly class DatabaseConnectionProbe
         $issues = [];
 
         foreach ($this->observedPrefixes($values) as $prefix) {
-            $detail = $target instanceof AppInstance
+            $detail = $target instanceof Instance
                 ? [
-                    'target_type' => 'app_instance',
+                    'target_type' => 'instance',
                     'target_id' => $target->id,
                     'app' => $target->app->name,
-                    'app_instance' => $target->name,
+                    'instance' => $target->name,
                     'env_prefix' => $prefix,
                 ]
                 : [
@@ -573,9 +573,9 @@ final readonly class DatabaseConnectionProbe
     }
 
     /**
-     * @return list<AppInstance>
+     * @return list<Instance>
      */
-    private function appInstancesForNode(Node $node, DoctorTargetScope $scope): array
+    private function instancesForNode(Node $node, DoctorTargetScope $scope): array
     {
         if ($scope->workspace !== null) {
             return [];
@@ -583,8 +583,8 @@ final readonly class DatabaseConnectionProbe
 
         $instances = [];
 
-        foreach (AppInstance::query()->with('app')->get() as $instance) {
-            if (! $instance instanceof AppInstance) {
+        foreach (Instance::query()->with('app')->get() as $instance) {
+            if (! $instance instanceof Instance) {
                 continue;
             }
 
@@ -616,7 +616,7 @@ final readonly class DatabaseConnectionProbe
         }
 
         $query = Workspace::query()
-            ->with(['app', 'appInstance']);
+            ->with(['app', 'instance']);
 
         if ($scope->workspace !== null) {
             $query->where('name', $scope->workspace);
@@ -643,11 +643,11 @@ final readonly class DatabaseConnectionProbe
         return $node->hasActiveRole(NodeRoleName::AppProduction->value);
     }
 
-    private function appInstancePath(AppInstance $instance): ?string
+    private function instancePath(Instance $instance): ?string
     {
         $config = $instance->driver_config;
 
-        if (! $config instanceof OrbitAppInstanceDriverConfigData || ! is_string($config->path)) {
+        if (! $config instanceof OrbitInstanceDriverConfigData || ! is_string($config->path)) {
             return null;
         }
 

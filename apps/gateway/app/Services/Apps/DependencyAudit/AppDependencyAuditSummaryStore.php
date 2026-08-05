@@ -7,14 +7,14 @@ namespace App\Services\Apps\DependencyAudit;
 use App\Data\Apps\DependencyAuditParsedResult;
 use App\Enums\Apps\DependencyAuditManager;
 use App\Enums\Apps\DependencyAuditStatus;
+use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
-use App\Models\Project;
 use Illuminate\Support\Carbon;
 
 final readonly class AppDependencyAuditSummaryStore
 {
     public function recordParsed(
-        Project $app,
+        App $app,
         DependencyAuditManager $manager,
         DependencyAuditParsedResult $parsed,
         ?Carbon $auditedAt = null,
@@ -33,7 +33,7 @@ final readonly class AppDependencyAuditSummaryStore
         ]);
     }
 
-    public function recordNotApplicable(Project $app, DependencyAuditManager $manager): AppDependencyAuditSummary
+    public function recordNotApplicable(App $app, DependencyAuditManager $manager): AppDependencyAuditSummary
     {
         return $this->upsert($app, $manager, [
             'status' => DependencyAuditStatus::NotApplicable,
@@ -50,7 +50,7 @@ final readonly class AppDependencyAuditSummaryStore
     }
 
     public function recordUnsupported(
-        Project $app,
+        App $app,
         DependencyAuditManager $manager,
         string $errorCode,
         string $message,
@@ -71,7 +71,7 @@ final readonly class AppDependencyAuditSummaryStore
     }
 
     public function recordFailed(
-        Project $app,
+        App $app,
         DependencyAuditManager $manager,
         string $errorCode,
         string $message,
@@ -94,7 +94,7 @@ final readonly class AppDependencyAuditSummaryStore
     /**
      * @param  array<string, mixed>  $attributes
      */
-    private function upsert(Project $app, DependencyAuditManager $manager, array $attributes): AppDependencyAuditSummary
+    private function upsert(App $app, DependencyAuditManager $manager, array $attributes): AppDependencyAuditSummary
     {
         /** @var AppDependencyAuditSummary $summary */
         $summary = AppDependencyAuditSummary::query()->updateOrCreate(

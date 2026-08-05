@@ -1,6 +1,6 @@
 # `orbit cf-cache-rule:remove`
 
-Remove the Cloudflare cache rule that Orbit manages for a project's Cloudflare-backed domain.
+Remove the Cloudflare cache rule that Orbit manages for an app's Cloudflare-backed domain.
 
 ## Usage
 
@@ -17,8 +17,8 @@ orbit cf-cache-rule:remove docs --force --json
 
 ## Arguments and options
 
-- `project`: Bare project name. Current gateway resolution uses
-  `Project.domain` to find the Cloudflare zone. Dotted `project.instance`
+- `project`: Bare app name. Current gateway resolution uses
+  `Project.domain` to find the Cloudflare zone. Dotted `app.instance`
   selectors are not implemented.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the JSON output.
@@ -26,10 +26,10 @@ orbit cf-cache-rule:remove docs --force --json
 ## What Happens
 
 Run `orbit cf-cache-rule:remove <project>` to remove the Cloudflare cache rule
-that Orbit manages for the project's Cloudflare zone.
+that Orbit manages for the app's Cloudflare zone.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
-cache rule for the zone resolved from the project's domain. It does not remove
+cache rule for the zone resolved from the app's domain. It does not remove
 project domains, DNS records, proxy routes, or deployment policy. Direction
 (pending): zone resolution from instance-owned domains.
 

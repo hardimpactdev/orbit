@@ -23,7 +23,7 @@ use Override;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Node $node
- * @property-read Project|null $app
+ * @property-read App|null $app
  * @property-read Workspace|null $workspace
  */
 class ProxyRoute extends Model
@@ -59,19 +59,11 @@ class ProxyRoute extends Model
     }
 
     /**
-     * @return BelongsTo<Project, $this>
-     */
-    public function project(): BelongsTo
-    {
-        return $this->belongsTo(Project::class, 'app_id');
-    }
-
-    /**
-     * @return BelongsTo<Project, $this>
+     * @return BelongsTo<App, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->project();
+        return $this->belongsTo(App::class, 'app_id');
     }
 
     /**

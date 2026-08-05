@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -67,14 +67,14 @@ function createAppSetupTarget(): array
             'name' => 'app-1',
             'user' => 'orbit',
         ]);
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
     ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: '/home/orbit/apps/docs',
@@ -92,7 +92,7 @@ describe('AppSetupController', function (): void {
         $caller = createAppSetupCallerNode();
         grantAppSetupAccess($caller, $node, ['instance:write']);
         AppSetupStep::factory()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'command' => 'npm install',
             'sort_order' => 1,
         ]);
@@ -113,7 +113,7 @@ describe('AppSetupController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.project', 'docs')
+            ->assertJsonPath('success.data.app', 'docs')
             ->assertJsonPath('success.data.instance', 'development')
             ->assertJsonPath('success.data.setup_steps.status', 'completed')
             ->assertJsonPath('success.data.setup_steps.count', 1)
@@ -122,7 +122,7 @@ describe('AppSetupController', function (): void {
 
         expect($shell->runs)
             ->toHaveCount(1)
-            ->and(AppSetupRun::query()->where('app_instance_id', $instance->id)->where('status', 'completed')->exists())
+            ->and(AppSetupRun::query()->where('instance_id', $instance->id)->where('status', 'completed')->exists())
             ->toBeTrue();
 
         $activity = Activity::query()->first();
@@ -131,10 +131,10 @@ describe('AppSetupController', function (): void {
             ->not
             ->toBeNull()
             ->and($activity->subject_type)
-            ->toBe(AppInstance::class)
+            ->toBe(Instance::class)
             ->and($activity->subject_id)
             ->toBe($instance->id)
-            ->and($activity->properties->get('project'))
+            ->and($activity->properties->get('app'))
             ->toBe('docs')
             ->and($activity->properties->get('instance'))
             ->toBe('development')
@@ -168,9 +168,9 @@ describe('AppSetupController', function (): void {
 
     it('requires a concrete instance when a bare project selector is ambiguous', function (): void {
         [$node, $app] = createAppSetupTarget();
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
                 path: '/srv/docs',
@@ -203,9 +203,9 @@ describe('AppSetupController', function (): void {
     it('requires a concrete selector without exposing a hidden sibling', function (): void {
         [$visibleNode, $app] = createAppSetupTarget();
         $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $hiddenNode->id,
                 node: $hiddenNode->name,
                 path: '/srv/docs',
@@ -242,9 +242,9 @@ describe('AppSetupController', function (): void {
     it('does not reveal whether an unauthorized explicit sibling exists', function (): void {
         [$visibleNode, $app] = createAppSetupTarget();
         $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
-        AppInstance::factory()->for($app)->create([
+        Instance::factory()->for($app)->create([
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $hiddenNode->id,
                 node: $hiddenNode->name,
                 path: '/srv/docs',

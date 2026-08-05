@@ -34,9 +34,9 @@ owning family concept document.
 - **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active Ubuntu workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
 - **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/20_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own project files, FrankenPHP instance runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
-- **Instance WebSocket binding** — gateway-owned instance configuration that enables one instance to use the fleet websocket service, including Reverb app credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Reverb app credentials** — Reverb application id, key, and secret material owned by an instance WebSocket binding. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP instance runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Instance WebSocket binding** — gateway-owned instance configuration that enables one instance to use the fleet websocket service, including Reverb app credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Reverb app credentials** — Reverb application id, key, and secret material owned by an instance WebSocket binding. See [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/18_s3/s3-concepts.md).
 - **SeaweedFS backend** — the SeaweedFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/18_s3/s3-concepts.md).
@@ -57,10 +57,10 @@ owning family concept document.
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
-- **App runtime container** — dedicated Docker container for one PHP project instance or workspace runtime, represented as a process-backed runtime unit. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **FrankenPHP app runtime** — the PHP web runtime used by instance and workspace containers. Classic mode is the default; worker mode is opt-in. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel project in memory. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
-- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP app instance or workspace runtime, represented as a process-backed runtime unit. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **FrankenPHP app runtime** — the PHP web runtime used by instance and workspace containers. Classic mode is the default; worker mode is opt-in. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel project in memory. See [App and Instance Concepts](domains/5_app/app-concepts.md).
+- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **Process runtime** — backend selection for process units scoped to a node, instance, or workspace; supported runtime families are `systemd`, `launchd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, instances, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -202,24 +202,24 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Gateway-domain boundaries**
 <!-- /concept-index -->
 
-## Project and Instance Concepts
+## App and Instance Concepts
 
-Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
+Source: [App and Instance Concepts](domains/5_app/app-concepts.md).
 
-<!-- concept-index:domains/5_project/project-concepts.md -->
-- **Project**
+<!-- concept-index:domains/5_app/app-concepts.md -->
+- **App**
 - **Instance**
 - **Instance driver**
 - **Driver config**
 - **Initial instance**
-- **Project identity slug**
-- **Project name argument**
+- **App identity slug**
+- **App name argument**
 - **Instance selector argument**
 - **Orbit instance serving node**
 - **Development instance**
 - **Production instance**
-- **Project PHP version**
-- **Project runtime kind**
+- **App PHP version**
+- **App runtime kind**
 - **App runtime container**
 - **Development packages mount**
 - **Instance runtime mount**
@@ -235,7 +235,7 @@ Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
 - **Instance WebSocket binding**
 - **Instance analytics binding**
 - **Reverb app credentials**
-- **Project dependency audit posture**
+- **App dependency audit posture**
 - **Dependency audit manager**
 - **Dependency audit status**
 - **Dependency audit severity bands**
@@ -245,7 +245,7 @@ Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
 - **Instance setup pipeline**
 - **Instance setup run**
 - **Instance-owned route**
-- **Project and instance boundaries**
+- **App and instance boundaries**
 - **Setup boundary**
 <!-- /concept-index -->
 
@@ -289,7 +289,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **App hostname selector**
 - **Browser process CORS admission**
 - **Browser process SSE**
-- **Canonical project identity**
+- **Canonical app identity**
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**
@@ -324,14 +324,14 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Proxy route**
 - **Route owner**
 - **Route kind**
-- **Project route**
+- **App route**
 - **Workspace route**
 - **Internal route**
 - **Custom route**
 - **Redirect route**
 - **Tool-owned route**
 - **Instance WebSocket route**
-- **Project analytics route**
+- **App analytics route**
 - **Analytics service route**
 - **WebSocket service route**
 - **Public S3 route**
@@ -354,7 +354,7 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Intermediate CA certificate**
 - **TLS authority boundary**
 - **Hostname compatibility material**
-- **Project ingress baseline**
+- **App ingress baseline**
 - **Document-root policy**
 - **Development runtime wake gate**
 - **Development runtime activity**
@@ -441,7 +441,6 @@ Source: [Metrics Concepts](domains/19_metrics/metrics-concepts.md).
 - **Grafana admin credentials**
 - **Metrics-domain boundaries**
 - **Metrics-domain exclusions**
-
 <!-- /concept-index -->
 
 ## Analytics Concepts
@@ -464,7 +463,7 @@ Source: [Deploy Concepts](domains/10_deploy/deploy-concepts.md).
 
 <!-- concept-index:domains/10_deploy/deploy-concepts.md -->
 - **Deploy command domain**
-- **Production project deployment**
+- **Production app deployment**
 - **Deployment policy**
 - **Deployment pipeline**
 - **Deployment step definition**
@@ -598,7 +597,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
-- **Project PHP runtime policy**
+- **App PHP runtime policy**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
@@ -667,13 +666,6 @@ Source: [Firewall Concepts](domains/4_firewall/firewall-concepts.md).
 - **Bootstrap policy**
 - **Operator preset firewall boundary**
 - **Firewall-family boundaries**
-<!-- /concept-index -->
-
-
-
-- **Workspace discovery capability**
-- **Workspace path resolution capability**
-- **Registry boundary**
 <!-- /concept-index -->
 
 ## DNS Concepts

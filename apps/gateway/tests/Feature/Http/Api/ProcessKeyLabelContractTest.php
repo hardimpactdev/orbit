@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Processes\ProcessStreamRuntimeConfig;
 use App\Services\Processes\ProcessStreamSleeper;
@@ -28,7 +28,7 @@ beforeEach(function (): void {
 const PROCESS_KEY_LABEL_WG_IP = '10.6.0.93';
 
 /**
- * @return array{caller: Node, appNode: Node, app: Project, instance: AppInstance, process: Process}
+ * @return array{caller: Node, appNode: Node, app: App, instance: Instance, process: Process}
  */
 function processKeyLabelFixture(array $processAttributes = []): array
 {
@@ -46,16 +46,16 @@ function processKeyLabelFixture(array $processAttributes = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
     $process = Process::factory()
         ->forOwner($app, $appNode)
         ->create(array_merge([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
             'command' => 'npm run dev',
         ], $processAttributes));
@@ -237,7 +237,7 @@ describe('process key and label contract', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
-                'app_instance' => [
+                'instance' => [
                     'name' => 'development',
                     'selector' => 'docs.development',
                 ],
@@ -249,7 +249,7 @@ describe('process key and label contract', function (): void {
             'process_id' => $fixture['process']->id,
             'process_name' => 'vite',
             'app_id' => $fixture['app']->id,
-            'app_instance_id' => $fixture['instance']->id,
+            'instance_id' => $fixture['instance']->id,
             'workspace_id' => null,
             'node_id' => $fixture['appNode']->id,
             'unit_name' => 'orbit_docs_development_main_vite',
@@ -258,7 +258,7 @@ describe('process key and label contract', function (): void {
         $createdIds = [];
         app()->instance(ProcessStreamSleeper::class, new class($fixture, $createdIds) implements ProcessStreamSleeper {
             /**
-             * @param  array{process: Process, app: Project, instance: AppInstance, appNode: Node}  $fixture
+             * @param  array{process: Process, app: App, instance: Instance, appNode: Node}  $fixture
              * @param  list<int>  $createdIds
              */
             public function __construct(
@@ -275,7 +275,7 @@ describe('process key and label contract', function (): void {
                         'process_id' => $this->fixture['process']->id,
                         'process_name' => 'vite',
                         'app_id' => $this->fixture['app']->id,
-                        'app_instance_id' => $this->fixture['instance']->id,
+                        'instance_id' => $this->fixture['instance']->id,
                         'workspace_id' => null,
                         'node_id' => $this->fixture['appNode']->id,
                         'unit_name' => 'orbit_docs_development_main_vite',
@@ -297,7 +297,7 @@ describe('process key and label contract', function (): void {
                         'process_id' => $this->fixture['process']->id,
                         'process_name' => 'vite',
                         'app_id' => $this->fixture['app']->id,
-                        'app_instance_id' => $this->fixture['instance']->id,
+                        'instance_id' => $this->fixture['instance']->id,
                         'workspace_id' => null,
                         'node_id' => $this->fixture['appNode']->id,
                         'unit_name' => 'orbit_docs_development_main_vite',
@@ -378,7 +378,7 @@ describe('process key and label contract', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
             )
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'label');
 
@@ -394,7 +394,7 @@ describe('process key and label contract', function (): void {
                 [],
                 ['REMOTE_ADDR' => PROCESS_KEY_LABEL_WG_IP],
             )
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'label');
     });

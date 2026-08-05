@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reconfigure [tool] [--instance=<project.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:reconfigure [tool] [--instance=<app.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]`
 
 [Back to public `tool-reconfigure` documentation.](../tool-reconfigure.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:reconfigure [tool] [--instance=<project.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]
+orbit tool:reconfigure [tool] [--instance=<app.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -73,7 +73,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-reconfigure` must not create projects, instances, workspaces, processes, schedules,
+`tool-reconfigure` must not create apps, instances, workspaces, processes, schedules,
 custom proxy routes, non-tool firewall rules, node identities, or node grants.
 Tool-owned endpoint updates are allowed only when declared by the selected tool
 definition. Related drift belongs to each owning family doctor contract.

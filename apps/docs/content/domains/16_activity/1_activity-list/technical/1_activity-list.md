@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit activity:list [--node=<node>] [--project=<project>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
+orbit activity:list [--node=<node>] [--app<project>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | `--project` | Optional. | Never. | `null`. | Non-empty project key matched against recorded activity relationships. |
+| `project` | `--app` | Optional. | Never. | `null`. | Non-empty project key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
@@ -118,7 +118,7 @@ Emitted through the cross-cutting Loggable contract. See
 | Type | `activity.listed` |
 | Effect | `read` |
 | Subject | `null`. The command returns a filtered set, not a single record. |
-| Properties | `filter_project` (string\|null), `filter_node` (string\|null), `filter_effect` (`read`\|`write`\|`destructive`\|null), `filter_correlation` (uuid\|null), `filter_include_internal` (bool), `filter_limit` (int), `result_count` (int). No secrets, no raw argv. |
+| Properties | `filter_app` (string\|null), `filter_node` (string\|null), `filter_effect` (`read`\|`write`\|`destructive`\|null), `filter_correlation` (uuid\|null), `filter_include_internal` (bool), `filter_limit` (int), `result_count` (int). No secrets, no raw argv. |
 | Description | `derived` from filter set. Renderers may show `"listed N activity entries"` and the applied filters. |
 
 A successful read produces one entry. Authorization or validation failures

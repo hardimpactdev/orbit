@@ -10,14 +10,14 @@ Choose one action and identify the workspace by name or run the command from
 inside its registered path.
 
 ```bash
-orbit workspace:env list [name] [--instance=<project.instance>] [--json]
-orbit workspace:env set [name] [--instance=<project.instance>] --key=<KEY> --value=<value> [--apply] [--json]
-orbit workspace:env render [name] [--instance=<project.instance>] [--json]
+orbit workspace:env list [name] [--instance=<app.instance>] [--json]
+orbit workspace:env set [name] [--instance=<app.instance>] --key=<KEY> --value=<value> [--apply] [--json]
+orbit workspace:env render [name] [--instance=<app.instance>] [--json]
 ```
 
 When `[name]` is omitted, Orbit resolves a registered workspace from the
 caller's absolute current directory. `--instance` disambiguates workspace names that
-exist under more than one project or instance.
+exist under more than one app or instance.
 
 ## What Happens
 

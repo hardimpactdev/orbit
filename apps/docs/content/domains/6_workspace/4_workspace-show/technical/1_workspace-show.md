@@ -19,7 +19,7 @@
 ## Signature
 
 ```bash
-orbit workspace:show [name] [--instance=<project.instance>] [--json]
+orbit workspace:show [name] [--instance=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared
 | `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent project and required selected instance of the uniquely resolved workspace. | Must match a visible app or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-Workspace slugs are unique within a project but not globally unique. Two projects may
+Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--instance` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
 A bare project slug must resolve to exactly one concrete instance or fail with

@@ -261,7 +261,7 @@ describe('NodeGrantController', function (): void {
         DB::table('node_access')->insert([
             'consumer_node_id' => $consumingId,
             'serving_node_id' => $servingId,
-            'permissions' => json_encode(['app:read', 'project:read', 'instance:read']),
+            'permissions' => json_encode(['app:read', 'instance:read']),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -276,7 +276,7 @@ describe('NodeGrantController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', true)
-            ->assertJsonPath('success.data.permissions', ['instance:read', 'project:read']);
+            ->assertJsonPath('success.data.permissions', ['app:read', 'instance:read']);
 
         expect(
             DB::table('node_access')
@@ -628,12 +628,12 @@ describe('NodeGrantController', function (): void {
 
         expect($grant)->not->toBeNull();
         expect($grant->permissions)->toBe([
+            'app:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
             'instance:read',
             'node:read',
-            'project:read',
             'tool:read',
         ]);
     });

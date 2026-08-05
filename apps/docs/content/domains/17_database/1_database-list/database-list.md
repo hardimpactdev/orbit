@@ -7,7 +7,7 @@ List stored database connections and their instance or workspace mappings.
 ## Usage
 
 ```bash
-orbit database:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## What Happens

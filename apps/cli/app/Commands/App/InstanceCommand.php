@@ -11,7 +11,7 @@ abstract class InstanceCommand extends AppGatewayCommand
     use RendersShowDetails;
 
     /**
-     * @return array{project: string, instance: string}|int
+     * @return array{app: string, instance: string}|int
      */
     protected function resolveInstanceSelector(): array|int
     {
@@ -26,12 +26,12 @@ abstract class InstanceCommand extends AppGatewayCommand
         if ($separator === false || $separator === 0 || $separator === (strlen($selector) - 1)) {
             return $this->failValidation(
                 'instance',
-                'Use a project.instance selector, for example billing.production.',
+                'Use a app.instance selector, for example billing.production.',
             );
         }
 
         return [
-            'project' => substr($selector, 0, $separator),
+            'app' => substr($selector, 0, $separator),
             'instance' => substr($selector, $separator + 1),
         ];
     }
@@ -83,7 +83,7 @@ abstract class InstanceCommand extends AppGatewayCommand
         $runtime = is_array($instance['runtime'] ?? null) ? $instance['runtime'] : [];
 
         $this->renderShowDetails("Instance: {$name}", [
-            'Project' => $instance['project'] ?? null,
+            'App' => $instance['app'] ?? null,
             'Driver' => $instance['driver'] ?? null,
             'Mode' => $runtime['mode'] ?? null,
             'PHP' => $runtime['php_version'] ?? null,

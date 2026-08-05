@@ -15,16 +15,16 @@ final readonly class ActivityLoggingContractRule implements GroupedRule
      * @var list<string>
      */
     private const array ENFORCED_COMMANDS = [
-        'project-list',
-        'project-new',
+        'app-list',
+        'app-new',
         'instance-register',
         'instance-root',
-        'project-remove',
+        'app-remove',
         'instance-list',
         'instance-show',
         'instance-add',
         'instance-remove',
-        'project-show',
+        'app-show',
         'activity-list',
         'activity-show',
         'gateway-add',

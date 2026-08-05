@@ -23,7 +23,7 @@ function processListSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('process_events')->delete();
         \Illuminate\Support\Facades\DB::table('processes')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\Project::query()->delete();
+        \App\Models\App::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             [
@@ -69,7 +69,7 @@ function processListSeed(E2ETopologyHarness $topology): void
             'sort_order' => 1,
         ]);
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -189,7 +189,7 @@ it('lists app processes from a operator caller through the gateway api', functio
             ->and($context)
             ->toBe([
                 'node' => 'app-dev-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => null,
             ])
@@ -198,7 +198,7 @@ it('lists app processes from a operator caller through the gateway api', functio
             ->and($processes[0])
             ->toHaveKeys([
                 'node',
-                'project',
+                'app',
                 'instance',
                 'workspace',
                 'name',
@@ -234,7 +234,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         expect($workspacePayload['success']['data']['context'])
             ->toBe([
                 'node' => 'app-dev-1',
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
@@ -259,11 +259,11 @@ it('lists app processes from a operator caller through the gateway api', functio
         expect($gatewayResult->successful())
             ->toBeTrue($gatewayResult->output().$gatewayResult->errorOutput())
             ->and($gatewayPayload['success']['data']['context'])
-            ->toBe(['node' => 'gateway', 'project' => null, 'instance' => null, 'workspace' => null])
+            ->toBe(['node' => 'gateway', 'app' => null, 'instance' => null, 'workspace' => null])
             ->and($gatewayPayload['success']['data']['processes'][0])
             ->toMatchArray([
                 'node' => 'gateway',
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
                 'name' => 'prometheus',
@@ -289,7 +289,7 @@ it('lists app processes from a operator caller through the gateway api', functio
             ->toBeTrue()
             ->and($emptyPayload['success']['data']['processes'])
             ->toBe([])
-            ->and($emptyPayload['success']['data']['context']['project'])
+            ->and($emptyPayload['success']['data']['context']['app'])
             ->toBe('docs');
     } finally {
         $topology->cleanup();

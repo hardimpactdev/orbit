@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
@@ -20,14 +20,14 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         private ProcessDockerRuntimeManager $manager,
     ) {}
 
-    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->containerName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -87,7 +87,7 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     }
 
     public function logScript(
-        Project $app,
+        App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

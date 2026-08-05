@@ -13,7 +13,7 @@ final readonly class CommandCatalogGatewayPermissionIndex
         [
             'class' => 'AppListController',
             'action' => '->visibleAppNodeIds(',
-            'permission' => 'project:read',
+            'permission' => 'app:read',
         ],
         [
             'class' => 'ScheduleLogsPayload',

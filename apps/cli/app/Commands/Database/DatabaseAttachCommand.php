@@ -11,7 +11,7 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
     #[\Override]
     protected $signature = 'database:attach
         {connection? : Database connection slug}
-        {--instance= : Instance selector (project.instance)}
+        {--instance= : Instance selector (app.instance)}
         {--workspace= : Workspace selector}
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';

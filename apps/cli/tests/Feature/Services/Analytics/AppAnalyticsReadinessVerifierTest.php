@@ -211,7 +211,7 @@ function readinessContext(): array
 {
     return [
         'binding' => [
-            'project' => 'docs',
+            'app' => 'docs',
             'instance' => 'production',
             'enabled' => true,
             'site_domain' => 'docs.test',

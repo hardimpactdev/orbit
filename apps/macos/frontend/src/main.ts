@@ -104,7 +104,7 @@ async function fetchDashboardSummary(baseUrl: string): Promise<DashboardSummary>
     if (result.status.status === 'loaded') {
         return createDashboardSummary({
             nodes: result.payload,
-            projects: result.payload,
+            apps: result.payload,
             processes: result.payload,
             tools: result.payload,
             apiStatuses: [result.status],
@@ -118,16 +118,16 @@ async function fetchLegacyDashboardSummary(
     client: ReturnType<typeof createOrbitGatewayClient>,
     runtimeInventoryStatus: ReturnType<typeof createEndpointStatus>,
 ): Promise<DashboardSummary> {
-    const [nodesResult, projectsResult, processesResult, toolsResult] = await Promise.all([
+    const [nodesResult, appsResult, processesResult, toolsResult] = await Promise.all([
         gatewayRequest('nodes', () => client.GET('/nodes')),
-        gatewayRequest('projects', () => client.GET('/projects')),
+        gatewayRequest('apps', () => client.GET('/apps')),
         gatewayRequest('processes', () => client.GET('/processes')),
         gatewayRequest('tools', () => client.GET('/tools')),
     ]);
     const results = [
         runtimeInventoryStatus,
         nodesResult.status,
-        projectsResult.status,
+        appsResult.status,
         processesResult.status,
         toolsResult.status,
     ];
@@ -139,7 +139,7 @@ async function fetchLegacyDashboardSummary(
 
     return createDashboardSummary({
         nodes: nodesResult.payload,
-        projects: projectsResult.payload,
+        apps: appsResult.payload,
         processes: processesResult.payload,
         tools: toolsResult.payload,
         apiStatuses: results,
@@ -290,7 +290,7 @@ function dashboardTemplate(summary: DashboardSummary): string {
     return `
         <section class="metric-strip is-compact" aria-label="Fleet summary">
             ${metricTemplate('Nodes', summary.totals.nodes)}
-            ${metricTemplate('Projects', summary.totals.projects)}
+            ${metricTemplate('Apps', summary.totals.apps)}
             ${metricTemplate('Databases', summary.totals.databases)}
         </section>
         <section class="dashboard-lists">
@@ -300,10 +300,10 @@ function dashboardTemplate(summary: DashboardSummary): string {
                 value: `${group.instances.length} instances`,
                 action: `data-node="${escapeAttribute(group.node.name)}"`,
             })))}
-            ${summaryList('Projects', summary.projects.map(project => listRow({
-                title: project.name,
-                meta: `${project.instances.length} instances`,
-                value: project.status,
+            ${summaryList('Apps', summary.apps.map(app => listRow({
+                title: app.name,
+                meta: `${app.instances.length} instances`,
+                value: app.status,
             })))}
             ${summaryList('Databases', summary.databases.map(database => listRow({
                 title: database.name,
@@ -337,7 +337,7 @@ function nodesTemplate(summary: DashboardSummary): string {
         <section class="table-panel">
             <header>
                 <h2>Nodes</h2>
-                <p>${summary.totals.nodes} nodes across ${summary.totals.projects} projects, ${summary.totals.instances} instances, and ${summary.totals.databases} databases.</p>
+                <p>${summary.totals.nodes} nodes across ${summary.totals.apps} apps, ${summary.totals.instances} instances, and ${summary.totals.databases} databases.</p>
             </header>
             ${tableTemplate(['Node', 'Roles', 'Instances', 'Databases', 'Tools', 'Processes', 'Status'], rows)}
         </section>
@@ -419,7 +419,7 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
             group.processes.map(process => `
                 <tr>
                     <td>${escapeHtml(process.name)}</td>
-                    <td>${escapeHtml(process.project)}</td>
+                    <td>${escapeHtml(process.app)}</td>
                     <td>${escapeHtml(process.runtime)}</td>
                     <td>${escapeHtml(process.status)}</td>
                 </tr>
@@ -444,7 +444,7 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
         ['Project', 'Instance', 'Environment', 'Status'],
         group.instances.map(instance => `
             <tr>
-                <td>${escapeHtml(instance.project)}</td>
+                <td>${escapeHtml(instance.app)}</td>
                 <td>${escapeHtml(instance.name)}</td>
                 <td>${escapeHtml(instance.environment)}</td>
                 <td>${escapeHtml(instance.status)}</td>

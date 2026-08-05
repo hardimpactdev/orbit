@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Processes;
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -14,16 +14,14 @@ use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\AppInstance;
-use App\Models\LocalGatewaySettings;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\NodeRuntimeContainersProbe;
-use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessRuntimeUnitName;
@@ -536,29 +534,29 @@ describe('systemd unit reality', function (): void {
     it('probes inherited runtime units only for workspaces on the process app instance', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
         $productionNode = createTestAppHostNode(['name' => 'app-production']);
-        $app = Project::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
-        $development = AppInstance::factory()->create([
+        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $development = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $developmentNode->id),
         ]);
-        $production = AppInstance::factory()->create([
+        $production = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $productionNode->id),
         ]);
         Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $development->id,
+            'instance_id' => $development->id,
             'name' => 'feature-dev',
         ]);
         Workspace::factory()->for($app, 'app')->create([
-            'app_instance_id' => $production->id,
+            'instance_id' => $production->id,
             'name' => 'feature-prod',
         ]);
         $process = Process::factory()
             ->forOwner($app, $developmentNode)
             ->create([
-                'app_instance_id' => $development->id,
+                'instance_id' => $development->id,
                 'name' => 'vite',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
@@ -742,7 +740,7 @@ describe('systemd unit restart and environment reality', function (): void {
             ]);
 
         $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
-        $surrogateApp = new Project([
+        $surrogateApp = new App([
             'name' => $node->name,
             'path' => '/home/orbit',
             'node_id' => $node->id,
@@ -856,7 +854,7 @@ describe('registry intent', function (): void {
             'node_id' => $app->node_id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
-            'app_instance_id' => $app->instances()->value('id'),
+            'instance_id' => $app->instances()->value('id'),
             'name' => 'vite',
             'command' => '',
             'restart_policy' => ProcessRestartPolicy::Never->value,
@@ -926,7 +924,7 @@ describe('registry intent', function (): void {
 describe('owner app eligibility', function (): void {
     it('requires an owner app on an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = Project::factory()->for($node, 'node')->create();
+        $app = App::factory()->for($node, 'node')->create();
         $process = processFor($app, ['name' => 'vite']);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
@@ -992,7 +990,7 @@ describe('docker runtime probe scope', function (): void {
                 exitCode: 0,
                 stdout: processesProbeSuccessData([
                     'states' => [[
-                        'key' => "app-instance-{$process->app_instance_id}",
+                        'key' => "app-instance-{$process->instance_id}",
                         'awake' => false,
                         'hibernated' => true,
                         'last_activity_at' => 1_767_268_799,
@@ -1317,7 +1315,7 @@ describe('docker runtime probe scope', function (): void {
                 ],
             ]);
         $containerHash = app(ProcessDockerContainerRenderer::class)
-            ->render(new Project(['name' => 'runtime']), $process)
+            ->render(new App(['name' => 'runtime']), $process)
             ->specHash();
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
@@ -1750,10 +1748,10 @@ describe('process placement after instance move', function (): void {
     it('probes moved app processes on the current placement node and not the stale node_id', function (): void {
         $oldNode = createTestAppHostNode(['name' => 'beast']);
         $newNode = createTestAppHostNode(['name' => 'nmbp']);
-        $app = Project::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
-        $instance = AppInstance::factory()->for($app)->create([
+        $app = App::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $oldNode->id,
                 node: $oldNode->name,
                 path: $app->path,
@@ -1764,7 +1762,7 @@ describe('process placement after instance move', function (): void {
         $process = Process::factory()
             ->forOwner($app)
             ->create([
-                'app_instance_id' => $instance->id,
+                'instance_id' => $instance->id,
                 'name' => 'dev',
                 'command' => 'php artisan serve',
                 'runtime' => ProcessRuntime::Docker,
@@ -1772,7 +1770,7 @@ describe('process placement after instance move', function (): void {
 
         // Instance placement moved; denormalized process.node_id is intentionally stale.
         $instance->forceFill([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $newNode->id,
                 node: $newNode->name,
                 path: $app->path,
@@ -1796,17 +1794,17 @@ function issue(array $drift, string $key): ?DriftEntry
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
 }
 
-function processableApp(array $overrides = []): Project
+function processableApp(array $overrides = []): App
 {
     $node = createTestAppHostNode();
 
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
 
-    AppInstance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -1818,7 +1816,7 @@ function processableApp(array $overrides = []): Project
     return $app;
 }
 
-function processFor(Project $app, array $overrides = []): Process
+function processFor(App $app, array $overrides = []): Process
 {
     return Process::factory()
         ->forOwner($app)
@@ -2034,7 +2032,7 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'platform' => 'macos_26-5-1',
         'user' => 'orbit',
     ]);
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'docs',
@@ -2097,15 +2095,15 @@ it('reports launchd processes on linux placement as unrenderable instead of inve
         'platform' => 'ubuntu_24-04',
         'user' => 'nckrtl',
     ]);
-    $app = Project::factory()
+    $app = App::factory()
         ->for($linux, 'node')
         ->create([
             'name' => 'mealou',
             'path' => '/home/nckrtl/apps/mealou',
         ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $linux->id,
             node: $linux->name,
             path: $app->path,
@@ -2116,7 +2114,7 @@ it('reports launchd processes on linux placement as unrenderable instead of inve
     $process = Process::factory()
         ->forOwner($app)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'node_id' => $linux->id,
             'name' => 'dev',
             'command' => 'npm run dev',
@@ -2142,15 +2140,15 @@ it('bounds long launchd unit names so they remain renderable', function (): void
         'platform' => 'macos_26-5-1',
         'user' => 'nckrtl',
     ]);
-    $app = Project::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'laravel-toolbar',
             'path' => '/Users/nckrtl/apps/laravel-toolbar',
         ]);
-    $instance = AppInstance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $app->path,
@@ -2160,14 +2158,14 @@ it('bounds long launchd unit names so they remain renderable', function (): void
     ]);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'name' => 'filament-pages-og-images',
         'path' => $app->path.'/filament-pages-og-images',
     ]);
     $process = Process::factory()
         ->forOwner($workspace)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'node_id' => $node->id,
             'name' => 'inertia-ssr',
             'command' => 'npm run ssr',
@@ -2201,6 +2199,8 @@ it('bounds long launchd unit names so they remain renderable', function (): void
         ->and(strlen($unit))
         ->toBeLessThanOrEqual(ProcessRuntimeUnitName::MaxLength)
         ->and($snapshot->get('inertia-ssr')['runtime_unit_renderable'] ?? true)
-        ->not->toBeFalse()->and($shell->scripts[1] ?? '')->toContain($unit)
+        ->toBeTrue()
+        ->and($shell->scripts[1] ?? '')
+        ->toContain($unit)
         ->not->toContain('orbit_laravel-toolbar_development_filament-pages-og-images_inertia-ssr');
 });

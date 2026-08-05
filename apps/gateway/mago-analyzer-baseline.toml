@@ -27,7 +27,7 @@ count = 1
 [[issues]]
 file = "app/Actions/Apps/EnactAppRuntime.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 1
 
 [[issues]]
@@ -1129,31 +1129,31 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "avoid-catching-error"
 message = "Avoid catching 'Error' class instances."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Http\Controllers\Api\AppInstanceController::phpExtensions`: expected `list<string>`, but found `list<lowercase-string|null>`.'
+message = 'Invalid return type for function `App\Http\Controllers\Api\InstanceController::phpExtensions`: expected `list<string>`, but found `list<lowercase-string|null>`.'
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceController.php"
+file = "app/Http/Controllers/Api/InstanceController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 6
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppInstanceEnvController.php"
+file = "app/Http/Controllers/Api/InstanceEnvController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -2317,9 +2317,9 @@ message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 1
 
 [[issues]]
-file = "app/Models/AppInstance.php"
+file = "app/Models/Instance.php"
 code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\AppInstance::envVariables`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppInstanceEnvVariable, app\models\appinstance&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
+message = 'Invalid return type for function `App\Models\Instance::envVariables`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\InstanceEnvVariable, app\models\instance&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
 count = 1
 
 [[issues]]
@@ -2491,7 +2491,7 @@ message = 'Too few template arguments for `Illuminate\Database\Eloquent\Factorie
 count = 1
 
 [[issues]]
-file = "app/Models/Project.php"
+file = "app/Models/App.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -2721,7 +2721,7 @@ count = 2
 [[issues]]
 file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
 count = 3
 
 [[issues]]
@@ -2737,63 +2737,63 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "invalid-iterator"
 message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
 count = 2
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "less-specific-return-statement"
-message = '''Returned type `array<array-key, array{'secret': bool, 'source': string, 'value': mixed}>` is less specific than the declared return type `array<string, array{'secret': bool, 'source': string, 'value': null|string}>` for function `App\Services\Apps\AppInstanceEnvRenderer::render`.'''
+message = '''Returned type `array<array-key, array{'secret': bool, 'source': string, 'value': mixed}>` is less specific than the declared return type `array<string, array{'secret': bool, 'source': string, 'value': null|string}>` for function `App\Services\Apps\InstanceEnvRenderer::render`.'''
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Apps\AppInstanceEnvRenderer::databaseVariables`: expected `string`, but found `mixed`.'
+message = 'Invalid argument type for argument #2 of `App\Services\Apps\InstanceEnvRenderer::databaseVariables`: expected `string`, but found `mixed`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 4
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 3
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-operand"
 message = "Casting `mixed` to `bool`."
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-property-access"
 message = "Attempting to access a property on a non-object type (`mixed`)."
 count = 5
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Services\Apps\AppInstanceEnvRenderer::variables`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Services\Apps\InstanceEnvRenderer::variables`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $databaseConnectionTargets on class `App\Models\AppInstance`.'
+message = 'Ambiguous property access: $databaseConnectionTargets on class `App\Models\Instance`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Apps/AppInstanceEnvRenderer.php"
+file = "app/Services/Apps/InstanceEnvRenderer.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $envVariables on class `App\Models\AppInstance`.'
+message = 'Ambiguous property access: $envVariables on class `App\Models\Instance`.'
 count = 2
 
 [[issues]]
@@ -3579,7 +3579,7 @@ count = 1
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionTargetResolver.php"
 code = "less-specific-return-statement"
-message = '''Returned type `('TRelatedModel.illuminate\database\eloquent\relations\relation extends Illuminate\Database\Eloquent\Model)|null|stdClass` is less specific than the declared return type `App\Models\AppInstance|null` for function `App\Services\DatabaseConnections\DatabaseConnectionTargetResolver::resolveAppInstance`.'''
+message = '''Returned type `('TRelatedModel.illuminate\database\eloquent\relations\relation extends Illuminate\Database\Eloquent\Model)|null|stdClass` is less specific than the declared return type `App\Models\Instance|null` for function `App\Services\DatabaseConnections\DatabaseConnectionTargetResolver::resolveInstance`.'''
 count = 1
 
 [[issues]]
@@ -3727,13 +3727,13 @@ message = "Redundant null coalesce: left-hand side is always `null`."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
 count = 1
 
 [[issues]]
-file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+file = "app/Services/Doctor/DoctorInstanceTargetResolver.php"
 code = "unused-property"
 message = "Property `$authorizer` is never used."
 count = 1
@@ -3891,7 +3891,7 @@ count = 1
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$process->owner->appInstance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$process->owner->instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 2
 
 [[issues]]
@@ -6855,7 +6855,7 @@ count = 2
 [[issues]]
 file = "app/Services/WebSockets/WebSocketRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
 count = 2
 
 [[issues]]
@@ -7089,7 +7089,7 @@ count = 1
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+message = 'Redundant condition: variable `$instance` (type `App\Models\Instance`) is already known to be `App\Models\Instance`.'
 count = 1
 
 [[issues]]

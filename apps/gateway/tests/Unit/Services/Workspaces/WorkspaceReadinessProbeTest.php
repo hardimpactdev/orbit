@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\App;
 use App\Models\Node;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -122,7 +122,7 @@ function workspaceForReadinessProbe(): Workspace
         'status' => 'active',
     ]);
 
-    $app = Project::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
     ]);

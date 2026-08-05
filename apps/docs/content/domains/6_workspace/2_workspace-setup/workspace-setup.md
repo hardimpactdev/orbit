@@ -38,7 +38,7 @@ orbit workspace:setup feature-a --instance=my-app --stream-json
 - `name`: The workspace identity slug. Required unless local workspace context
   or structured Codex Git-worktree metadata for an explicit `--path` can
   resolve it; can be prompted in interactive mode.
-- `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: The parent project slug or instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
   A bare project slug is shorthand only when it resolves to exactly one concrete
   instance; zero or multiple instances fail with `instance_required`.

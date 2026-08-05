@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 describe('process:list', function (): void {
     it('returns a canonical success envelope in JSON mode and forwards filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'vite',
@@ -44,14 +44,14 @@ describe('process:list', function (): void {
     it('forwards an app-instance selector and preserves concrete context in JSON', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'context' => [
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'production',
                 'workspace' => null,
             ],
             'processes' => [
                 [
                     'name' => 'vite',
-                    'project' => 'docs',
+                    'app' => 'docs',
                     'instance' => 'production',
                 ],
             ],
@@ -80,7 +80,7 @@ describe('process:list', function (): void {
     it('forwards the app hostname selector and rejects combining it with instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'context' => [
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => null,
             ],
@@ -132,7 +132,7 @@ describe('process:list', function (): void {
 
     it('renders human output as a table with uppercase headers and derived status', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'instance' => 'production', 'workspace' => null],
+            'context' => ['app' => 'docs', 'instance' => 'production', 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'vite',
@@ -190,7 +190,7 @@ describe('process:list', function (): void {
 
     it('renders each PostgreSQL service version and published endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['node' => 'database1', 'project' => null, 'workspace' => null],
+            'context' => ['node' => 'database1', 'app' => null, 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'postgres',
@@ -238,7 +238,7 @@ describe('process:list', function (): void {
 
     it('renders the missing-tool cell as an em dash', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [
                 ['name' => 'worker', 'command' => 'php worker', 'tool' => null, 'last_event' => null],
             ],
@@ -251,7 +251,7 @@ describe('process:list', function (): void {
 
     it('renders the documented empty state when no processes exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['project' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'workspace' => null],
             'processes' => [],
         ]));
 

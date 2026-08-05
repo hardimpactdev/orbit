@@ -206,7 +206,7 @@ it('redacts complete PEM blocks without requiring a secret-shaped key', function
     $marker = SecretSummaryRedactor::REDACTED;
     // Assemble PEM boundaries at runtime so the repository does not store a
     // contiguous private-key header that trips worktree secret scanning.
-    $privateKeyLabel = 'PRIVATE'.' KEY';
+    $privateKeyLabel = 'PRIVATE KEY';
     $pemBody = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7';
     $pem = '-----BEGIN '.$privateKeyLabel."-----\n{$pemBody}\n-----END {$privateKeyLabel}-----";
     $certificate = <<<'PEM'

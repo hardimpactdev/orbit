@@ -19,7 +19,7 @@ it('removes Orbit-managed OpenCode home/process residue and exits 0 only when ta
     expect($result['exit'])
         ->toBe(0, $result['stderr'])
         ->and(trim((string) file_get_contents($root.'/state/processes')))
-        ->toBe('')
+        ->toBeEmpty()
         ->and(is_dir($root.'/home/.opencode'))
         ->toBeFalse()
         ->and(is_file($root.'/etc/systemd/system/opencode-server.service'))
@@ -37,7 +37,7 @@ it('fails nonzero when a simulated OpenCode process cannot be reaped', function 
         ->not->toBe(0)->and($result['stderr'])->toContain(
             'opencode process still running',
         )->and(trim((string) file_get_contents($root.'/state/processes')))
-        ->not->toBe('');
+        ->not->toBeEmpty();
 });
 
 it('fails nonzero when Orbit-managed OpenCode home cannot be removed', function (): void {

@@ -119,7 +119,7 @@ it('builds a gateway registry prune script that removes stale topology rows', fu
         ->toContain('whereNotIn')
         ->toContain('FirewallRule::query()')
         ->toContain('ProxyRoute::query()')
-        ->toContain('Project::query()')
+        ->toContain('App::query()')
         ->toContain('Node::query()')
         ->not->toContain('OPERATOR_STORAGE_ROLE');
 });

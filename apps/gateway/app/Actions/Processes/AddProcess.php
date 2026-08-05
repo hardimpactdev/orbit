@@ -9,9 +9,9 @@ use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
@@ -167,7 +167,7 @@ final readonly class AddProcess
                 ->ownerProcesses()
                 ->create([
                     'node_id' => $context->node->id,
-                    'app_instance_id' => $context->appInstance?->id,
+                    'instance_id' => $context->instance?->id,
                     'name' => $name,
                     'label' => $resolvedLabel,
                     'command' => $command,
@@ -196,8 +196,8 @@ final readonly class AddProcess
         );
         $startableRuntimeUnits = $runtimeUnits;
 
-        if ($context->app instanceof Project && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance, $consumer);
+        if ($context->app instanceof App && $context->workspace === null) {
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->instance, $consumer);
         } else {
             $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
             $warnings = $applyResult['warnings'];
@@ -319,7 +319,7 @@ final readonly class AddProcess
      */
     private function applyRuntimeUnits(
         ProcessOwnerContext $context,
-        Project $app,
+        App $app,
         Process $process,
         array $runtimeUnits,
     ): array {
@@ -440,7 +440,7 @@ final readonly class AddProcess
 
         $app = $context->app;
 
-        if (! $app instanceof Project) {
+        if (! $app instanceof App) {
             return null;
         }
 

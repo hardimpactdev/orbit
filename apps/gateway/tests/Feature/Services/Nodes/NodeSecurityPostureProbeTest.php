@@ -419,7 +419,7 @@ it('never scans target SSH while snapshotting or adopting node security posture'
     $results = $probe->adopt($node, $snapshot);
 
     expect($snapshot->items)
-        ->toBe([])
+        ->toBeEmpty()
         ->and($results)
         ->toBe([]);
     Process::assertNothingRan();

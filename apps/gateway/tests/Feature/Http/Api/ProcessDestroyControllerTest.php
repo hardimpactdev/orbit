@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
-use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,7 +53,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -76,7 +76,7 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'vite',
                 'node' => $appNode->name,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => null,
             ])
@@ -118,7 +118,7 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'opencode-server',
                 'node' => 'app-1',
-                'project' => null,
+                'app' => null,
                 'instance' => null,
                 'workspace' => null,
             ])
@@ -131,7 +131,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()
             ->forOwner($workspace)
@@ -161,7 +161,7 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'worker',
                 'node' => $appNode->name,
-                'project' => 'docs',
+                'app' => 'docs',
                 'instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
@@ -174,7 +174,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create([
             'name' => 'feature-docs',
             'path' => '/srv/docs-feature',
@@ -227,7 +227,7 @@ describe('ProcessDestroyController', function (): void {
         if ($grantAccess) {
             grantProcessDestroyAccess($caller, $appNode);
         }
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -251,7 +251,7 @@ describe('ProcessDestroyController', function (): void {
 
     it('denies app callers without a process remove grant before deleting intent', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -277,8 +277,8 @@ describe('ProcessDestroyController', function (): void {
     it('lets app-dev self grants remove app-owned process intent on their own node only', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
         $otherNode = createTestAppHostNode(['name' => 'app-2']);
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        $hiddenApp = Project::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
         grantProcessDestroyAccess(
@@ -333,9 +333,9 @@ describe('ProcessDestroyController', function (): void {
     it('returns process not found without cleanup', function (): void {
         createProcessDestroyCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 

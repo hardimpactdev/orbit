@@ -23,7 +23,7 @@ final readonly class ScheduleDispatcher
     public function __construct(
         private RunsInternalCommands $localExecutor,
         private NodeRoleAssignments $nodeRoleAssignments,
-        private ScheduleAppInstanceResolver $appInstances,
+        private ScheduleInstanceResolver $instances,
     ) {}
 
     public function run(Schedule $schedule): ScheduleDispatchResult
@@ -43,7 +43,7 @@ final readonly class ScheduleDispatcher
 
         $resultsByIndex = [];
         foreach (array_values($schedules) as $index => $schedule) {
-            $schedule->loadMissing(['app', 'appInstance', 'node']);
+            $schedule->loadMissing(['app', 'instance', 'node']);
 
             $targetNode = $this->targetNode($schedule);
 
@@ -232,7 +232,7 @@ final readonly class ScheduleDispatcher
     private function targetNode(Schedule $schedule): ?Node
     {
         if ($schedule->scope === 'app') {
-            return $this->appInstances->targetNode($schedule);
+            return $this->instances->targetNode($schedule);
         }
 
         if ($schedule->scope === 'node') {
@@ -286,7 +286,7 @@ final readonly class ScheduleDispatcher
     {
         $options = ['timeout' => $this->executionTimeout($schedule)];
 
-        $path = $schedule->scope === 'app' ? $this->appInstances->executionPath($schedule) : null;
+        $path = $schedule->scope === 'app' ? $this->instances->executionPath($schedule) : null;
 
         if (is_string($path) && $path !== '') {
             $options['cwd'] = $path;

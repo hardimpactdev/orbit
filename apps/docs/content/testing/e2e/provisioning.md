@@ -63,7 +63,7 @@ The Incus provision gate has one supported shape:
    inside the isolated provision-test namespace for validation and failure
    inspection.
 
-Serving assertions are feature behavior, not provision-gate behavior. `project:new`,
+Serving assertions are feature behavior, not provision-gate behavior. `app:new`,
 Caddy/FrankenPHP serving, and `composer install` run on the host from prepared
 Incus feature coverage against `operator_gateway_app-dev`, which boots only
 operator, gateway, and app-dev while the Incus provider uses the source

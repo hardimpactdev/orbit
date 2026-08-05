@@ -227,11 +227,11 @@ function websocketIngressRouteSnapshot(
         \App\Models\ProxyRoute::query()
             ->where('domain', $publicHost)
             ->delete();
-        \App\Models\Project::query()
+        \App\Models\App::query()
             ->where('name', $appName)
             ->delete();
 
-        $app = \App\Models\Project::query()->create([
+        $app = \App\Models\App::query()->create([
             'name' => $appName,
             'node_id' => $prodNode->id,
             'environment' => 'production',
@@ -843,7 +843,7 @@ function websocketIngressRouteCleanup(E2ETopologyHarness $topology, string $appN
         \App\Models\ProxyRoute::query()
             ->where('domain', $publicHost)
             ->delete();
-        \App\Models\Project::query()
+        \App\Models\App::query()
             ->where('name', $appName)
             ->delete();
         PHP;

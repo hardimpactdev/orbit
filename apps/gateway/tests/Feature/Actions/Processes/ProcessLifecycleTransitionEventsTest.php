@@ -6,15 +6,15 @@ use App\Actions\Processes\RestartProcesses;
 use App\Actions\Processes\StartProcesses;
 use App\Actions\Processes\StopProcesses;
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntimeStatus;
 use App\Enums\ProcessEventType;
-use App\Models\AppInstance;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
-use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -26,16 +26,16 @@ uses(RefreshDatabase::class);
 function lifecycleTransitionFixture(): array
 {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-    $instance = AppInstance::factory()->create([
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
-        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
     $process = Process::factory()
         ->forOwner($app, $node)
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'name' => 'vite',
         ]);
 
@@ -45,7 +45,7 @@ function lifecycleTransitionFixture(): array
             app: $app,
             workspace: null,
             owner: $app,
-            appInstance: $instance,
+            instance: $instance,
         ),
         'process' => $process,
     ];

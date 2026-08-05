@@ -75,8 +75,8 @@ final readonly class StopProcesses
             $runtimes[] = [
                 'process' => $process->name,
                 'node' => $context->node->name,
-                'project' => $context->app?->name,
-                'instance' => $context->appInstance?->name,
+                'app' => $context->app?->name,
+                'instance' => $context->instance?->name,
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'stopped' : 'failed',

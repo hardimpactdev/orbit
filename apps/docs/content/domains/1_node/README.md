@@ -514,7 +514,7 @@ Orbit CLI binary artifact and link the host `bin/orbit` launcher as `orbit`.
 Source-mounted Docker and Incus topologies are development and E2E lanes; in
 those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`.
 The `orbit-gateway` and `orbit-scheduler` Swarm services remain gateway-role
-concerns, not blanket client prerequisites. The project README owns those
+concerns, not blanket client prerequisites. The app README owns those
 installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
