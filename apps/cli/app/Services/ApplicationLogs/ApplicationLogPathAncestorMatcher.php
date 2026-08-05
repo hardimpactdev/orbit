@@ -65,7 +65,7 @@ final readonly class ApplicationLogPathAncestorMatcher
         if ($count === 1) {
             return [
                 'ok' => true,
-                'selector' => array_values($matches)[0],
+                'selector' => array_first($matches),
             ];
         }
 
