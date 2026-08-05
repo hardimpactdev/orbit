@@ -1,0 +1,20 @@
+{
+  "captured_at": "2026-08-05T20:08:51Z",
+  "command": "./apps/cli/orbit app:log servauto-app.nmbp --lines=1 --json",
+  "error_code": null,
+  "error_message": null,
+  "exit_code": 0,
+  "file_exists": true,
+  "line_count": 1,
+  "lines_requested": 1,
+  "node": "NMBP",
+  "parse_ok": true,
+  "path": "storage/logs/laravel.log",
+  "target": {
+    "app": "servauto-app",
+    "instance": "nmbp",
+    "selector": "servauto-app.nmbp",
+    "type": "instance",
+    "workspace": null
+  }
+}

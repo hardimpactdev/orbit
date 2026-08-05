@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T20:23:50+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-app-log-bare-hostname/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-222350-codex-fix-app-log-bare-hostname",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/app-log-servauto-app-nmbp-live-structural.json",
+        "feedback.jsonl",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/app-log-servauto-app-nmbp-live-structural.json": "7d078b517ac1d02410d12aa175b6a674634f95561a9ee2b514580a4d83f24797",
+        "feedback.jsonl": "d52b7c6235fd62c1b5b1b74075575b75de6aaba061ace5875a1f9d4e4fddcabf",
+        "loop.md": "a4e0c1845e1cc9bc42d2e6234375176f817d6bc933f423fd5ce32051f32a06d7"
+    },
+    "slug": "codex-fix-app-log-bare-hostname",
+    "requested_slug": "codex-fix-app-log-bare-hostname",
+    "compatible_slugs": [
+        "codex-fix-app-log-bare-hostname"
+    ],
+    "branch": "codex/fix-app-log-bare-hostname",
+    "candidate_commit": "6e337f0e51d8789e3c858e4e00733ed9a5b8cdd3",
+    "accepted_feature_tip": "6e337f0e51d8789e3c858e4e00733ed9a5b8cdd3",
+    "accepted_main_tip": "be0e1d269a8b3b855e782077c1a6b6cda2f90804",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
