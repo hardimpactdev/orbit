@@ -1727,6 +1727,12 @@ function compact_loop_problems(string $contents): array
         }
     }
 
+    $scopeFramingProblem = orbitLoopScopeFramingProblem($contents);
+
+    if ($scopeFramingProblem !== null) {
+        $problems[] = $scopeFramingProblem;
+    }
+
     if (preg_match('/<[^>\n]+>/', $contents, $placeholder) === 1) {
         $problems[] = 'contains an unexpanded template placeholder: '.$placeholder[0];
     }

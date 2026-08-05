@@ -37,7 +37,15 @@ result.
 3. Resolve the outcome, owned paths, constraints, and out-of-scope work. Check
    `PRODUCT_DECISIONS.md` and the relevant `apps/docs/content/` authority.
 4. Fill or update the seeded `.orbit/loop.md` Goal and Scope. Keep the anchor
-   compact; raw feedback belongs in `.orbit/feedback.jsonl`.
+   compact; raw feedback belongs in `.orbit/feedback.jsonl`. For stateful,
+   lifecycle, or concrete UX features, append one optional compact clause on the
+   existing Scope `Owned` row:
+   `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+   Omit the clause for ordinary/local changes. When the markers are present,
+   deterministic lint checks only syntax and field presence (both markers, the
+   five known transition keys, no duplicates/empties/placeholders); it does not
+   decide statefulness or grade prose. Do not invent a new Scope row, lane, or
+   semantic grader for this framing.
 5. Retrieve relevant prior feedback by exact or parent surface when a stable
    scope exists. The command searches the primary archive corpus by default and
    returns matched records plus linked promotions and waivers:
