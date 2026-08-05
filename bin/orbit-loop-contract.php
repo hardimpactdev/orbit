@@ -448,20 +448,22 @@ const ORBIT_LOOP_SCOPE_TRANSITION_KEYS = [
 /**
  * Optional compact Scope framing for stateful, lifecycle, or concrete UX work.
  *
- * When neither marker appears, ordinary and legacy loops stay valid. When
- * primitive= or transitions= appears in Scope, require the compact syntax only:
- * exact primitive plus the five known transition keys. Values may be n/a. Do
- * not decide whether a feature is stateful or whether prose is correct.
+ * Parse only the Scope Owned row. Other Scope rows may mention the marker text
+ * without enabling framing. When neither marker appears on Owned, ordinary and
+ * legacy loops stay valid. When primitive= or transitions= appears on Owned,
+ * require the compact syntax only: exact primitive plus the five known
+ * transition keys. Values may be n/a. Do not decide whether a feature is
+ * stateful or whether prose is correct.
  */
 function orbitLoopScopeFramingProblem(string $markdown): ?string
 {
-    $scope = orbitLoopSection($markdown, 'Scope');
+    $owned = orbitLoopLabel($markdown, 'Scope', 'Owned');
 
-    if ($scope === null) {
+    if ($owned === null || $owned === '') {
         return null;
     }
 
-    if (preg_match_all('/\b(primitive|transitions)\s*=/i', $scope, $markerMatches, PREG_SET_ORDER) === 0) {
+    if (preg_match_all('/\b(primitive|transitions)\s*=/i', $owned, $markerMatches, PREG_SET_ORDER) === 0) {
         return null;
     }
 
@@ -492,7 +494,7 @@ function orbitLoopScopeFramingProblem(string $markdown): ?string
         return 'Scope framing is incomplete: missing transitions=; when framing is used require primitive=<exact> and transitions=success:...|failure:...|retry:...|stop-restart:...|stale:...';
     }
 
-    if (preg_match('/\bprimitive\s*=\s*([^;\r\n]*)/i', $scope, $primitiveMatch) !== 1) {
+    if (preg_match('/\bprimitive\s*=\s*([^;\r\n]*)/i', $owned, $primitiveMatch) !== 1) {
         return 'Scope framing primitive= is missing a value; use primitive=<exact requested primitive>';
     }
 
@@ -506,7 +508,7 @@ function orbitLoopScopeFramingProblem(string $markdown): ?string
         return 'Scope framing contains a template placeholder in primitive=; replace placeholders with concrete values';
     }
 
-    if (preg_match('/\btransitions\s*=\s*([^\r\n]+)/i', $scope, $transitionsMatch) !== 1) {
+    if (preg_match('/\btransitions\s*=\s*(.*)$/is', $owned, $transitionsMatch) !== 1) {
         return 'Scope framing transitions= is missing a value; require success|failure|retry|stop-restart|stale keys';
     }
 

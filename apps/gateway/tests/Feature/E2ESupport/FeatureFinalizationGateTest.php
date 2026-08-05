@@ -173,6 +173,50 @@ it('validates optional Scope framing only when the compact markers are present',
     ],
 ]);
 
+it('parses optional Scope framing only from the Owned row', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $ordinaryWithMarkerProse = compact_feature_loop_packet(owned: 'loop tooling');
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: docs may mention primitive= and transitions= as format tokens only',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+    $ordinaryWithMarkerProse =
+        preg_replace(
+            '/^- Out of scope: .+$/m',
+            '- Out of scope: do not invent a permanent Framing row; leave primitive= off ordinary Owned values',
+            $ordinaryWithMarkerProse,
+        ) ?? $ordinaryWithMarkerProse;
+
+    expect(orbitLoopScopeFramingProblem($ordinaryWithMarkerProse))->toBeNull();
+
+    $splitAcrossRows = compact_feature_loop_packet(owned: 'apps/cli; primitive=progress-tree');
+    $splitAcrossRows =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+            $splitAcrossRows,
+        ) ?? $splitAcrossRows;
+
+    expect(orbitLoopScopeFramingProblem($splitAcrossRows))
+        ->toBeString()
+        ->toContain('missing transitions=');
+
+    $completeOnOwnedWithProseElsewhere = compact_feature_loop_packet(
+        owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad|retry:again|stop-restart:n/a|stale:n/a',
+    );
+    $completeOnOwnedWithProseElsewhere =
+        preg_replace(
+            '/^- Constraints: .+$/m',
+            '- Constraints: other Scope rows may still mention primitive= without becoming the clause source',
+            $completeOnOwnedWithProseElsewhere,
+        ) ?? $completeOnOwnedWithProseElsewhere;
+
+    expect(orbitLoopScopeFramingProblem($completeOnOwnedWithProseElsewhere))->toBeNull();
+});
+
 it('blocks compact finalization lint when optional Scope framing is malformed', function (): void {
     $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(
         owned: 'apps/cli; primitive=progress-tree; transitions=success:ok|failure:bad',
