@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-feedback-events.php';
+require_once __DIR__.'/orbit-finalization-solo-land.php';
 
 const BLOCK_EXIT_CODE = 2;
 
@@ -92,7 +93,7 @@ $action = classify_command($command);
 
 if ($action === null) {
     exit(unclassifiable_exit(
-        "could not classify command as a merge, worktree-remove, or branch-delete boundary: {$command}",
+        'could not classify command as a merge, worktree-remove, branch-delete, solo-process-stop, or solo-project-delete boundary: '.$command,
     ));
 }
 
@@ -106,6 +107,8 @@ $check = match ($action['type']) {
     'merge' => check_merge($root, $action['targets']),
     'worktree-remove' => check_worktree_remove($root, $action['path']),
     'branch-delete' => check_branch_delete($root, $action['branch']),
+    'solo-process-stop' => check_solo_process_stop($root, $action),
+    'solo-project-delete' => check_solo_project_delete($root, $action),
     'invalid' => block_result($action['subject'], $action['reason']),
 };
 
@@ -140,7 +143,7 @@ function unclassifiable_exit(string $message): int
 }
 
 /**
- * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'invalid', subject: string, reason: string}  $action
+ * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, argv: list<string>}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, argv: list<string>, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}  $action
  */
 function action_summary(array $action): string
 {
@@ -148,6 +151,8 @@ function action_summary(array $action): string
         'merge' => 'git merge '.($action['targets'] === [] ? '(missing)' : implode(' ', $action['targets'])),
         'worktree-remove' => "git worktree remove {$action['path']}",
         'branch-delete' => "git branch delete {$action['branch']}",
+        'solo-process-stop' => "solo processes stop {$action['process_id']}",
+        'solo-project-delete' => "solo projects delete {$action['project_id']}",
         'invalid' => $action['subject'],
     };
 }
@@ -220,7 +225,7 @@ function find_command_value(array $value): ?string
 }
 
 /**
- * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, argv: list<string>}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, argv: list<string>, confirm_stop_running: bool}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_command(string $command): ?array
 {
@@ -231,10 +236,12 @@ function classify_command(string $command): ?array
             ! isset($arguments[0]) || ! in_array($arguments[0], ['--abort', '--continue', '--quit', '--skip'], true)
         ),
     ));
+    $soloActions = solo_boundary_actions($command);
     $destructiveActionCount =
         count($actionableMergeCommands)
         + worktree_remove_command_count($command)
-        + branch_delete_command_count($command);
+        + branch_delete_command_count($command)
+        + count($soloActions);
 
     if ($destructiveActionCount > 1) {
         return [
@@ -307,10 +314,13 @@ function classify_command(string $command): ?array
         return ['type' => 'branch-delete', 'branch' => $targets[0]];
     }
 
+    if (count($soloActions) === 1) {
+        return $soloActions[0];
+    }
+
     return null;
 }
 
-/** @param list<string> $arguments */
 function unsafe_merge_option_problem(array $arguments): ?string
 {
     foreach ($arguments as $argument) {
@@ -760,6 +770,12 @@ function check_worktree_remove(string $root, string $path): array
         return block_result($branch, $archiveProblem, $check['warnings']);
     }
 
+    $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+    if ($trackedProblem !== null) {
+        return block_result($branch, $trackedProblem, $check['warnings']);
+    }
+
     return $check;
 }
 
@@ -789,7 +805,13 @@ function check_branch_delete(string $root, string $branch): array
 
         $archiveProblem = session_archive_problem($root, $branch);
 
-        return $archiveProblem === null ? ok() : block_result($branch, $archiveProblem);
+        if ($archiveProblem !== null) {
+            return block_result($branch, $archiveProblem);
+        }
+
+        $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+        return $trackedProblem === null ? ok() : block_result($branch, $trackedProblem);
     }
 
     $cleanlinessProblem = worktree_cleanliness_problem($worktree);
@@ -814,6 +836,12 @@ function check_branch_delete(string $root, string $branch): array
 
     if ($archiveProblem !== null) {
         return block_result($branch, $archiveProblem, $check['warnings']);
+    }
+
+    $trackedProblem = session_archive_tracked_problem($root, $branch);
+
+    if ($trackedProblem !== null) {
+        return block_result($branch, $trackedProblem, $check['warnings']);
     }
 
     return $check;
@@ -903,6 +931,147 @@ function session_archive_problem(string $root, string $branch): ?string
     }
 
     return "session archive for `{$slug}` under {$sessionsDirectory} needs loop.md plus a valid compact receipt or legacy/full agent session manifests; re-{$hint}";
+}
+
+/**
+ * Cleanup also requires the matching archive directory and sessions index to be
+ * tracked and committed on the primary checkout — presence alone is not enough.
+ */
+function session_archive_tracked_problem(string $root, string $branch): ?string
+{
+    $candidates = matching_session_archive_dirs($root, $branch);
+
+    if ($candidates === []) {
+        return 'no session archive matching slug `'.archive_slug($branch).'` is tracked for cleanup; commit the archive directory and .orbit/sessions/index.json on main first';
+    }
+
+    $archiveDir = null;
+
+    foreach (array_reverse($candidates) as $candidate) {
+        $receiptMode = archive_receipt_mode($candidate);
+
+        if ($receiptMode === 'compact' && compact_archive_receipt_is_valid($candidate, $root, $branch)) {
+            $archiveDir = $candidate;
+
+            break;
+        }
+
+        if (
+            is_file($candidate.'/loop.md')
+            && ! is_link($candidate.'/loop.md')
+            && agent_session_manifest_paths($candidate.'/agent-sessions') !== []
+        ) {
+            $archiveDir = $candidate;
+
+            break;
+        }
+    }
+
+    if ($archiveDir === null) {
+        return 'matching session archive bytes are not ready to commit for cleanup; re-run bin/orbit-session-archive then commit the archive and index';
+    }
+
+    $relativeArchive = relative_repo_path($root, $archiveDir);
+
+    if ($relativeArchive === null) {
+        return "session archive {$archiveDir} is outside the primary checkout and cannot be committed for cleanup";
+    }
+
+    $trackedFiles = tracked_files_under($root, $relativeArchive);
+
+    if ($trackedFiles === []) {
+        return "session archive `{$relativeArchive}` exists on disk but is not tracked/committed; commit the exact archive directory plus .orbit/sessions/index.json before cleanup";
+    }
+
+    foreach ($trackedFiles as $trackedFile) {
+        $dirty = path_has_uncommitted_changes($root, $trackedFile);
+
+        if ($dirty !== null) {
+            return $dirty;
+        }
+    }
+
+    $indexRelative = '.orbit/sessions/index.json';
+    $indexPath = $root.'/'.$indexRelative;
+
+    if (! is_file($indexPath) || is_link($indexPath)) {
+        return 'cleanup requires tracked/committed `.orbit/sessions/index.json` matching the archive set; run `bin/orbit-session-index --write` and commit it';
+    }
+
+    $indexTracked = run_git($root, ['ls-files', '--error-unmatch', $indexRelative]);
+
+    if ($indexTracked['exit_code'] !== 0) {
+        return '`.orbit/sessions/index.json` exists but is not tracked/committed; commit it with the archive before cleanup';
+    }
+
+    $indexDirty = path_has_uncommitted_changes($root, $indexRelative);
+
+    if ($indexDirty !== null) {
+        return $indexDirty;
+    }
+
+    $archiveBasename = basename($archiveDir);
+    $indexContents = (string) file_get_contents($indexPath);
+
+    if (! str_contains($indexContents, $archiveBasename)) {
+        return "`.orbit/sessions/index.json` does not reference archive `{$archiveBasename}`; regenerate with `bin/orbit-session-index --write` and commit before cleanup";
+    }
+
+    return null;
+}
+
+function relative_repo_path(string $root, string $absolutePath): ?string
+{
+    $rootReal = realpath($root) ?: $root;
+    $pathReal = realpath($absolutePath) ?: $absolutePath;
+    $prefix = rtrim($rootReal, '/').'/';
+
+    if ($pathReal === $rootReal) {
+        return '.';
+    }
+
+    if (! str_starts_with($pathReal, $prefix)) {
+        return null;
+    }
+
+    return substr($pathReal, strlen($prefix));
+}
+
+/**
+ * @return list<string>
+ */
+function tracked_files_under(string $root, string $relativeDirectory): array
+{
+    $result = run_git($root, ['ls-files', '-z', '--', $relativeDirectory]);
+
+    if ($result['exit_code'] !== 0 || $result['stdout'] === '') {
+        return [];
+    }
+
+    $files = array_values(array_filter(explode("\0", $result['stdout']), static fn (string $path): bool => $path !== ''));
+
+    sort($files);
+
+    return $files;
+}
+
+function path_has_uncommitted_changes(string $root, string $relativePath): ?string
+{
+    $status = run_git($root, ['status', '--porcelain', '--untracked-files=all', '--', $relativePath]);
+
+    if ($status['exit_code'] !== 0) {
+        return "unable to inspect commit state for `{$relativePath}` before cleanup";
+    }
+
+    $porcelain = trim($status['stdout']);
+
+    if ($porcelain === '') {
+        return null;
+    }
+
+    $first = trim((string) strtok($porcelain, "\n"));
+
+    return "cleanup requires committed archive/index bytes; `{$relativePath}` still has uncommitted changes ({$first})";
 }
 
 function archive_receipt_mode(string $archiveDir): ?string
