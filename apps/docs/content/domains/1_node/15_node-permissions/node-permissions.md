@@ -40,7 +40,9 @@ orbit node:permissions agent-1 app-1 --remove=tool:update --json
 Namespace wildcards such as `process:*` are product-authoritative permission
 strings. With the supported Orbit zsh integration installed by `bin/install-orbit`
 and refreshed by `orbit update`, a zsh operator can type the unquoted
-`--add=process:*` form above and zsh passes the literal value to Orbit.
+`--add=process:*` form above and zsh passes the literal value to Orbit. The
+managed alias takes effect only in a newly started or freshly sourced zsh
+session; install and update cannot mutate the parent shell that ran them.
 
 ## Arguments and options
 

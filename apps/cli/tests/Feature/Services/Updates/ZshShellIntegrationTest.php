@@ -108,6 +108,22 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse();
     });
 
+    it('requires an exact shell basename of zsh and rejects suffix lookalikes', function (): void {
+        $integration = new ZshShellIntegration;
+
+        expect($integration->isZsh('/bin/zsh'))->toBeTrue()
+            ->and($integration->isZsh('/usr/local/bin/zsh'))->toBeTrue()
+            ->and($integration->isZsh('/bin/bash'))->toBeFalse()
+            ->and($integration->isZsh('/bin/not-zsh'))->toBeFalse()
+            ->and($integration->isZsh('/bin/zsh-5.9'))->toBeFalse();
+
+        $result = $integration->ensure(home: $this->home, shell: '/bin/not-zsh');
+
+        expect($result['status'])->toBe(ZshShellIntegration::STATUS_SKIPPED_NOT_ZSH)
+            ->and(file_exists($this->home.'/.zshrc'))->toBeFalse()
+            ->and(file_exists($this->home.'/.config/orbit/shell/zsh-noglob.zsh'))->toBeFalse();
+    });
+
     it('is idempotent and rewrites only the managed snippet on upgrade', function (): void {
         $integration = new ZshShellIntegration;
         $first = $integration->ensure(home: $this->home, shell: '/bin/zsh');

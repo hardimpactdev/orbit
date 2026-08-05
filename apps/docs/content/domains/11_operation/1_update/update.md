@@ -58,7 +58,8 @@ orbit update --json
    unquoted namespace wildcards such as `process:*` reach Orbit literally.
    Failure to ensure that integration is reported as an update failure rather
    than silent success. Bash-only hosts skip this step without creating
-   `~/.zshrc`.
+   `~/.zshrc`. The managed alias takes effect only in a newly started or
+   freshly sourced zsh session; `orbit update` cannot mutate the parent shell.
 6. Run `orbit doctor` in verify mode for the local node and report the issue
    count without failing an otherwise completed binary update.
 7. Report the local update result.

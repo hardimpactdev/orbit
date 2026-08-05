@@ -93,7 +93,9 @@ fields and does not prompt.
   absent. The integration is command-scoped only; it must not set global
   `NONOMATCH` / `nonomatch`. Bash-only hosts skip without creating `~/.zshrc`.
   A failed ensure is a failed update step (not silent success), even when the
-  binary swap already completed.
+  binary swap already completed. The managed alias takes effect only in a newly
+  started or freshly sourced zsh session; `orbit update` cannot mutate the
+  parent shell that invoked it.
 
 ### Version check and the gateway-first gate
 

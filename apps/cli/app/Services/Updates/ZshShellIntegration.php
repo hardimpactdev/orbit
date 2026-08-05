@@ -140,7 +140,8 @@ final class ZshShellIntegration
             return false;
         }
 
-        return str_ends_with(strtolower(basename($shell)), 'zsh');
+        // Match bin/install-orbit: exact basename `zsh` only (not `not-zsh`, `zsh-5.9`, …).
+        return strtolower(basename($shell)) === 'zsh';
     }
 
     private function resolveShell(?string $shell): string
