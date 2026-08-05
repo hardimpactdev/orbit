@@ -40,7 +40,7 @@ final readonly class LocalProcessLogsAction
         $input = LocalProcessLogsPayload::from($payload);
         $result = $this->run($this->command($input));
 
-        if (!$result->isSuccessful()) {
+        if (! $result->isSuccessful()) {
             throw new LocalProcessLogsFailure(
                 errorCode: 'process_logs_failed',
                 message: 'Process logs could not be read.',
@@ -57,7 +57,7 @@ final readonly class LocalProcessLogsAction
             'data' => [
                 'backend' => $input->backend,
                 'runtime_unit' => $input->runtimeUnit,
-                'output' => $result->getOutput() . $result->getErrorOutput(),
+                'output' => $result->getOutput().$result->getErrorOutput(),
             ],
             'meta' => [],
         ];
@@ -123,7 +123,7 @@ final readonly class LocalProcessLogsAction
         $deadline = microtime(true) + (self::INITIAL_SUBSCRIBER_GRACE_MICROSECONDS / 1_000_000);
 
         while (microtime(true) < $deadline) {
-            if (!$this->shouldStop($input)) {
+            if (! $this->shouldStop($input)) {
                 return;
             }
 

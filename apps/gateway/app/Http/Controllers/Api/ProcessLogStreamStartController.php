@@ -39,7 +39,7 @@ final class ProcessLogStreamStartController implements Loggable
         /** @var mixed $caller */
         $caller = $request->user();
 
-        if (!$caller instanceof Node) {
+        if (! $caller instanceof Node) {
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
@@ -60,7 +60,7 @@ final class ProcessLogStreamStartController implements Loggable
 
         $authorization = $this->authorizer->authorize($caller, $context->node, 'process:logs');
 
-        if (!$authorization->allowed) {
+        if (! $authorization->allowed) {
             return $this->error(
                 'authorization_failed',
                 "This node is not authorized for 'process:logs' on '{$context->node->name}'.",
@@ -127,7 +127,7 @@ final class ProcessLogStreamStartController implements Loggable
      */
     private function operationRunId(array $target): string
     {
-        if (!is_array($target['operation_stream'] ?? null)) {
+        if (! is_array($target['operation_stream'] ?? null)) {
             throw new GatewayApiException(
                 'The process log stream operation descriptor is malformed.',
                 'process.log_stream_malformed',
@@ -153,7 +153,7 @@ final class ProcessLogStreamStartController implements Loggable
 
     private function optionalTrimmedString(mixed $value): ?string
     {
-        if (!is_string($value) || trim($value) === '') {
+        if (! is_string($value) || trim($value) === '') {
             return null;
         }
 
@@ -179,7 +179,7 @@ final class ProcessLogStreamStartController implements Loggable
 
     private function normalizedUrl(mixed $value): ?string
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             return null;
         }
 
