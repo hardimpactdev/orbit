@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit activity:list [--node=<node>] [--app<project>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
+orbit activity:list [--node=<node>] [--app=<app>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | `--app` | Optional. | Never. | `null`. | Non-empty project key matched against recorded activity relationships. |
+| `app` | `--app` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
@@ -40,7 +40,7 @@ This command follows the shared
 3. Validate field-local input.
    - `correlation` must be a UUID when present.
    - `limit` must be an integer from `1` through `200`.
-   - `project` and `node` must be non-empty when present.
+   - `app` and `node` must be non-empty when present.
    - `effect` must be one of `read`, `write`, `destructive` when present.
 4. Request visible activity history from the gateway.
 
@@ -53,8 +53,8 @@ command does not prompt.
 
 - Read durable activity history recorded by the gateway database.
 - Return entries newest first.
-- Apply `project`, `node`, `effect`, and `correlation` filters against recorded
-  activity relationships, not live node or project probes.
+- Apply `app`, `node`, `effect`, and `correlation` filters against recorded
+  activity relationships, not live node or app probes.
 - Exclude internal backend transport activity by default. Current internal
   rows use channel `api` and `properties.lane = internal`:
   - `RemoteLocalExecutor` `{transport}.dispatching` / `{transport}.completed`

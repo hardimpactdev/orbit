@@ -70,7 +70,7 @@ and `workspace:list`.
 JSON output returns a flat machine-readable step list. Each step record uses the
 shared step shape published by
 [`workspace-teardown-step:add`](../11_workspace-teardown-step-add/workspace-teardown-step-add.md):
-`{ id, project, instance, phase, order, command, timeout_seconds }`. See the
+`{ id, app, instance, phase, order, command, timeout_seconds }`. See the
 [JSON renderer contract](technical/6.2_workspace-teardown-step-list_output-render_json.md)
 for the exact payload shape.
 

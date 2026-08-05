@@ -39,7 +39,7 @@ consent.
 ## State Model
 
 Deletion removes one `Instance` and cascades only its instance-owned
-relationships. The parent `Project` and sibling instances remain.
+relationships. The parent `App` and sibling instances remain.
 
 ## API Surface
 
@@ -81,12 +81,12 @@ does not infer deletion of a registered instance.
 | --- | --- |
 | Type | `api:DELETE /apps/{app}/instances/{instance}` |
 | Effect | `destructive` |
-| Subject | Target `Project`. |
+| Subject | Target `App`. |
 | Properties | The API path identifies the removed instance. |
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php` | Required `--force`, forwarding, and human output. |
+| `apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php` | Required `--force`, forwarding, and human output. |
 | `apps/gateway/tests/Feature/InstanceControllerTest.php` | Authorization, consent, deletion scope, and response shape. |

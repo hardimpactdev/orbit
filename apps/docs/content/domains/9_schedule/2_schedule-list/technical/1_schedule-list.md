@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -33,7 +33,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Reads gateway schedule configuration visible to the caller.
 - Resolves an optional app filter to one concrete instance before querying;
-  it never aggregates multiple instances for a bare project selector.
+  it never aggregates multiple instances for a bare app selector.
 - Applies the concrete instance or node filter at the gateway.
 - Returns instance-scoped, node-scoped, and Orbit-scoped schedules when no filter is supplied.
 - Limits the result to schedules the caller is authorized to see.
@@ -54,7 +54,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Doctor Relationship
 

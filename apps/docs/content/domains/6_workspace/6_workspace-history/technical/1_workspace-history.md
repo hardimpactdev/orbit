@@ -28,7 +28,7 @@ through the current working directory when omitted.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Never; resolvable through CWD or fails. | Never. | Current workspace if the CWD is inside a known workspace path. | Must match an existing workspace record visible to the caller. |
-| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent project of the uniquely resolved workspace. | Must match an existing app record or instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only. |
+| `instance` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent app of the uniquely resolved workspace. | Must match an existing app record or instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 | `limit` | `--limit` | Optional. | Never. | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `since` | `--since` | Optional. | Never. | None. | ISO 8601 datetime. Returns runs with `started_at >= since`. |

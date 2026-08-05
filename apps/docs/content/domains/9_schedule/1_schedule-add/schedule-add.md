@@ -43,7 +43,7 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 Use `schedule:add` when you need to define a new recurring task for one app
 instance or node. `schedule:add` resolves concrete ownership before writing,
 validates the target, execution source, interval, and timeout, and writes gateway
-schedule configuration. Ambiguous bare project selectors fail before the schedule
+schedule configuration. Ambiguous bare app selectors fail before the schedule
 row is created. The Orbit Scheduler (gateway-only) reads the gateway database
 every tick and dispatches due schedules to the resolved target through
 agent-push; target node agent-push reachability is verified at dispatch time,

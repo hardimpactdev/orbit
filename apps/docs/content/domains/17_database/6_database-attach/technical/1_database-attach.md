@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Stored on the target mapping, not on the connection record. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--instance` or `--workspace` is required. A bare project selector
+Exactly one of `--instance` or `--workspace` is required. A bare app selector
 is shorthand only when it resolves to exactly one instance. `--env-prefix` defaults to
 `DB` and is stored on the target mapping,
 not on the connection record.

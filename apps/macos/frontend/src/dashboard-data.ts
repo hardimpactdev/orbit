@@ -179,7 +179,7 @@ export function normalizeNodes(payload: unknown): NodeSummary[] {
 export function normalizeApps(payload: unknown): AppSummary[] {
     return extractArray(payload, 'apps').map(item => {
         const app = objectRecord(item);
-        const appName = stringValue(appItem.name ?? appItem.app, 'unknown');
+        const appName = stringValue(app.name ?? app.app, 'unknown');
         const instances = arrayValues(app.instances).map(item => {
             const instance = objectRecord(item);
             const node = objectRecord(instance.node);
@@ -196,7 +196,7 @@ export function normalizeApps(payload: unknown): AppSummary[] {
         return {
             name: appName,
             instances,
-            status: stringValue(appItem.status ?? appItem.state, 'registered'),
+            status: stringValue(app.status ?? app.state, 'registered'),
         };
     });
 }
@@ -240,7 +240,7 @@ export function normalizeProcesses(payload: unknown): ProcessSummary[] {
         return {
             name: stringValue(process.name, 'unknown'),
             node: stringValue(node.name ?? process.node_name ?? process.node, 'unknown'),
-            app: stringValue(appRecord.name ?? process.app_name ?? process.app ?? process.owner, 'none'),
+            app: stringValue(app.name ?? process.app_name ?? process.app ?? process.owner, 'none'),
             runtime: stringValue(process.runtime ?? process.runtime_backend, 'unknown'),
             status: stringValue(process.status ?? process.state, 'unknown'),
         };

@@ -1,23 +1,23 @@
-# Project and Instance Commands
+# App and Instance Commands
 
-Orbit models application state as `Project -> Instance -> Workspace`.
+Orbit models application state as `App → Instance → Workspace`.
 
-- A project is the global logical identity: its canonical name, repository, and
+- An app is the global logical identity: its canonical name, repository, and
   shared runtime policy.
-- An instance is one concrete placement of that project. It owns its driver,
+- An instance is one concrete placement of that app. It owns its driver,
   node or cloud environment, path, document root, domain, runtime requirements,
   environment values, and database targets.
 - A workspace belongs to one instance.
 
 Use dotted `app.instance` selectors for instance-scoped commands, for
-example `hauser.development` or `hauser.production-cloud`. A project can have
+example `hauser.development` or `hauser.production-cloud`. An app can have
 many instances, including Orbit placements on `app-dev` or `app-prod` role
 nodes and externally driven placements such as Laravel Cloud. The `app-*` terms
 remain valid for infrastructure roles and runtime containers; they are not
-public project command families.
+public app command families.
 
-All project and instance commands flow through the gateway. Product contract:
-[`apps/docs/content/domains/5_project/`](../../../apps/docs/content/domains/5_project/).
+All app and instance commands flow through the gateway. Product contract:
+[`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
 
 ## Create or adopt
 
@@ -57,12 +57,12 @@ orbit instance:register [<app>] [--node=<name>] [--path=<path>]
 Use it after moving an app under Orbit management or to retry instance
 convergence after DNS or runtime prerequisites change.
 
-## Inspect projects and instances
+## Inspect apps and instances
 
 ```bash
 orbit app:list [--json]
 orbit app:show [<app>] [--json]
-orbit instance:list [--project=<app>] [--json]
+orbit instance:list [--app=<app>] [--json]
 orbit instance:show [<app.instance>] [--json]
 ```
 
@@ -103,7 +103,7 @@ Remove an app and all of its owned instances and workspaces:
 orbit app:remove [<app>] --force [--json]
 ```
 
-Project removal preauthorizes every affected Orbit instance before performing
+App removal preauthorizes every affected Orbit instance before performing
 destructive work.
 
 ## Configure one instance

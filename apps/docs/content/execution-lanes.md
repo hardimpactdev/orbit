@@ -39,7 +39,7 @@ host Python, host SQLite, or host database client binaries. The
 CLI/local-executor artifact runs in the binary's embedded PHP in production
 installs. Source-mounted Docker/Incus development and E2E nodes invoke
 `<source>/apps/cli/orbit`. Host PHP/PHP-FPM is not the app/workspace *web*
-runtime — FrankenPHP containers serve applications. Project-source CLI (`php`, `composer`,
+runtime — FrankenPHP containers serve applications. App-source CLI (`php`, `composer`,
 `artisan`, the Laravel installer) runs on the app node's host PHP toolchain
 through an Agent-pushed allowlisted executor.
 
@@ -380,7 +380,7 @@ Use these rules for every new or migrated gateway-to-node execution path.
   but it must validate the gateway-issued operation token before side effects
   and must not become a public authority path.
 - Running **Orbit's own framework** PHP/Composer/Artisan on the host is not
-  valid on managed nodes. Project-source CLI on instance-role nodes runs on the host
+  valid on managed nodes. App-source CLI on instance-role nodes runs on the host
   PHP toolchain through an Agent-pushed executor.
 
 ## Orbit Caddy Isolation

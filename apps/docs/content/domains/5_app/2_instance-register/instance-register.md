@@ -1,6 +1,6 @@
 # `orbit instance:register [app]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Create, adopt, move, or re-apply Orbit management for one concrete app
 instance.
@@ -30,7 +30,7 @@ orbit instance:register my-app.production --domain=example.com
 
 The following arguments and options shape an `instance:register` invocation.
 
-- `project`: A dotted instance selector. A bare project slug creates the
+- `app`: A dotted instance selector. A bare app slug creates the
   deterministic first instance for an unregistered app or resolves exactly one
   visible existing instance; otherwise it fails with
   `validation_failed`, `meta.reason=instance_required`.
@@ -54,7 +54,7 @@ it uses the local default node or an interactive prompt.
 ### `--php-version` defaults
 
 When `--php-version` is omitted, existing apps keep their shared runtime
-value. A newly adopted project uses Orbit's app runtime default (`8.5`),
+value. A newly adopted app uses Orbit's app runtime default (`8.5`),
 not any host PHP default.
 
 `--repo` is not accepted. In the current converted app and instance command surface,
@@ -65,7 +65,7 @@ repository metadata. Re-registering an existing app preserves its stored
 repository value. Explicitly supplying both `--node` and `--path` for a
 selected instance moves only that instance to the pre-existing path on another
 eligible app node. Adopting the first unmanaged path atomically creates the
-project with `repository=null` and its first instance. That instance is
+app with `repository=null` and its first instance. That instance is
 named `development` without `--domain` or `production` with `--domain`.
 
 ## What Happens
@@ -119,7 +119,7 @@ Progress showing each phase, followed by a success line keyed to the result (`re
 
 ### JSON
 
-A machine-readable result with separate canonical `project` and `instance`
+A machine-readable result with separate canonical `app` and `instance`
 entities. The durable `adopted` flag is on `instance`.
 
 ## Requirements

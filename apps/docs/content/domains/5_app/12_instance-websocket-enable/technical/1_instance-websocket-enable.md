@@ -28,13 +28,13 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `[instance]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare project is shorthand only when exactly one eligible visible instance exists; otherwise fail with `error.meta.reason=instance_required`. |
+| `instance` | `[instance]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare app is shorthand only when exactly one eligible visible instance exists; otherwise fail with `error.meta.reason=instance_required`. |
 | `host` | `--host` | Optional. | Never. | `[]`. | Repeatable. Plain hostnames only (no scheme). Duplicates and empty values are discarded. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
-1. Resolve exactly one instance. A dotted selector is explicit; a bare project
+1. Resolve exactly one instance. A dotted selector is explicit; a bare app
    auto-resolves only a sole eligible visible instance.
 2. Resolve its serving node, domain, and authorization before any binding or
    route write. Logical-app placement is never consulted.
@@ -91,13 +91,13 @@ denials.
 
 ## Response Payload
 
-The gateway response returns the canonical logical `project`, selected
+The gateway response returns the canonical logical `app`, selected
 `instance`, `serving_node`, and resulting `binding` as separate fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `project` | object | Canonical project entity with no placement fields. |
-| `instance` | string | Selected instance name within `project`. |
+| `app` | object | Canonical app entity with no placement fields. |
+| `instance` | string | Selected instance name within `app`. |
 | `serving_node` | string | Selected instance's authorization and placement node. |
 | `internal_host` | string | WireGuard-internal service hostname (`websocket.orbit`). Fixed. |
 | `public_hosts` | array | Ordered list of public WebSocket hostnames bound to this app. |

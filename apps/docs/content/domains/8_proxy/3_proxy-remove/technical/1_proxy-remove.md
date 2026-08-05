@@ -39,12 +39,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Removes a route when the owner is `custom`.
 - With destructive consent, also removes a non-custom route only when the
   recorded owner reference is proven missing in gateway configuration (orphan
-  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `project`,
+  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `app`,
   `instance`, `analytics`, and `websocket` owners require the corresponding
-  living project, instance, or binding row; `workspace` owners require a living
+  living app, instance, or binding row; `workspace` owners require a living
   workspace row. Missing proof means the relation does not resolve (including a
   null foreign key after cascade null).
-- `--force` never becomes a general ownership bypass. A living project,
+- `--force` never becomes a general ownership bypass. A living app,
   instance, WebSocket, workspace, gateway, S3, or tool owner still denies
   removal with `proxy.owned_route_denied`.
 - Cleans backend route artifacts and Orbit-managed route-scoped TLS material
@@ -70,9 +70,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`proxy-remove` must not remove project, instance, WebSocket, workspace, gateway,
+`proxy-remove` must not remove app, instance, WebSocket, workspace, gateway,
 S3, or tool-owned routes while those owners still exist. It must not delete
-project or instance files, WebSocket bindings, workspaces, tools, S3 route
+app or instance files, WebSocket bindings, workspaces, tools, S3 route
 publication records, DNS records, firewall rules, or service processes.
 Living-owner route removal belongs to the owner domain. Orphan-owner rows that
 doctor reports as `proxy.owner_invalid` are the narrow repair exception for

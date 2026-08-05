@@ -1,6 +1,6 @@
 # `orbit instance:setup [instance]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Run the recorded setup pipeline for one concrete instance.
 
@@ -18,7 +18,7 @@ source path.
 
 | Input | Meaning |
 | --- | --- |
-| `instance` | Dotted instance selector. A bare project slug or hostname is shorthand only when exactly one instance exists. |
+| `instance` | Dotted instance selector. A bare app slug or hostname is shorthand only when exactly one instance exists. |
 | `--json` | Render one final JSON response. |
 | `--stream-json` | Render progress events as JSON lines. |
 
@@ -38,7 +38,7 @@ Setup skips when the latest completed setup run used the same ordered step set.
 ## Requirements
 
 The instance must exist and must resolve an Orbit serving node. Running
-setup requires `instance:write` on that node. A bare project selector with zero
+setup requires `instance:write` on that node. A bare app selector with zero
 or multiple instances fails before authorization or setup with
 a validation error that requires a concrete instance selector.
 

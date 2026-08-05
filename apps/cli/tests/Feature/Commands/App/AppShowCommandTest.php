@@ -99,7 +99,7 @@ describe('app:show', function (): void {
             ->and($output)
             ->toContain('URL')
             ->and($output)
-            ->toContain('PROJECT DEPS')
+            ->toContain('APP DEPS')
             ->and($output)
             ->toContain('development')
             ->and($output)

@@ -46,7 +46,7 @@ Each activity entry carries the following fields.
   `node:revoke`, `vpn-client:remove`, and deploy retention prune are
   `destructive`.
 - **Subject:** Product-family entity the action targets, when there is one.
-  Examples: the `Node` granted, the `Project` deployed, the `Instance` configured, the `Workspace` created,
+  Examples: the `Node` granted, the `App` deployed, the `Instance` configured, the `Workspace` created,
   the `ProxyRoute` stored. `null` when the action has no single domain
   target.
 - **Causer (actor):** Node identity that initiated the action, resolved from

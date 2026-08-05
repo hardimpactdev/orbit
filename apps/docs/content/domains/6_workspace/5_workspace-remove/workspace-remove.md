@@ -60,7 +60,7 @@ orbit workspace:remove feature-api --force
 
 - `name`: workspace name. Optional when running from inside a registered
   workspace directory.
-- `--instance=<app.instance>`: the parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: the parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to target one concrete instance.
   Required only when the workspace name is ambiguous across visible targets.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy

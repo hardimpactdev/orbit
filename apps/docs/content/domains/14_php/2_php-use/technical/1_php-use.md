@@ -25,11 +25,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
-| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare project is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent project's shared PHP policy. |
-| `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved project and instance. |
+| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent app's shared PHP policy. |
+| `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
-| `node` | `--node` | Optional. | Project policy target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `node` | `--node` | Optional. | App policy target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -37,7 +37,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve target scope:
    - `--cli` selects node CLI runtime intent.
    - `--workspace` or cwd workspace context selects workspace runtime.
-   - `--instance` or cwd instance context selects the parent project runtime policy.
+   - `--instance` or cwd instance context selects the parent app runtime policy.
    - With no resolved target, interactive mode prompts from authorized instance,
      workspace choices; non-interactive mode fails.
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
@@ -45,7 +45,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 4. For an instance target, authorize `php:write` on its serving node and verify
    the approved image there. Refresh stale inventory before rejecting. Any
    denial, unavailable inventory, or missing image stops before the shared
-   project-policy write.
+   app-policy write.
 5. For a workspace target, authorize and verify only its concrete serving node.
    For CLI scope, accept only PHP 8.5 and use the host toolchain boundary.
 6. Begin side effects only after the complete target-specific preflight passes.
@@ -59,11 +59,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Instance Runtime Selection
 
-- Writes the shared project PHP version after the selected instance has passed
+- Writes the shared app PHP version after the selected instance has passed
   authorization and image preflight.
 - Reconciles app runtime-container and affected proxy-backend artifacts for the
-  parent project after changing its shared policy.
-- Returns the selected `project`, `instance`, `node`, `version`, `image`, and
+  parent app after changing its shared policy.
+- Returns the selected `app`, `instance`, `node`, `version`, `image`, and
   `changed` result facts.
 
 ### Workspace Runtime Selection
@@ -101,7 +101,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `php:use` must not install missing host PHP versions, build images, remove PHP
 runtimes, mutate Composer constraints, edit project files, read `.php-version`,
-change framework cache state, or create project/instance/workspace records.
+change framework cache state, or create app/instance/workspace records.
 
 ## Renderer Contracts
 
@@ -133,4 +133,4 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts instance/workspace selections, inherit semantics, mutual exclusion validation, result rendering, and gateway error pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Serving-node authorization, image preflight before mutation, concrete workspace placement, wrong-permission denial, and gateway implicit authority. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Shared project-policy selection, concrete instance results, and workspace selection/inheritance behavior. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Shared app-policy selection, concrete instance results, and workspace selection/inheritance behavior. |

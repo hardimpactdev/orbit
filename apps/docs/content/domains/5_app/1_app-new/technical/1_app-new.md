@@ -65,7 +65,7 @@ This command follows the shared
    GitHub `owner/repo` identities. Repository credentials remain target-node
    state and are never prompted for or forwarded.
 4. **Collision Check:** Fail if `name` is already taken in the gateway app
-   registry. Project slugs are globally unique across all nodes; there is no
+   registry. App slugs are globally unique across all nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.
    Path collisions are evaluated against concrete Orbit instances and identify
    each conflicting dotted instance selector and serving node.
@@ -133,7 +133,7 @@ Apply the source branch resolved before the gateway request:
   template identity, or with public visibility, fails rather than being
   silently adopted.
 - Source creation happens before the gateway app record is written. If source
-  creation fails, `app:new` fails with `project.source_creation_failed`, does not
+  creation fails, `app:new` fails with `app.source_creation_failed`, does not
   create app configuration, and the retry path is to fix the node-side source problem
   and rerun `app:new`.
 
@@ -141,7 +141,7 @@ Apply the source branch resolved before the gateway request:
 
 In one gateway database transaction, write:
 
-- project identity and shared runtime policy: `name`, repository,
+- app identity and shared runtime policy: `name`, repository,
   `runtime`, `runtime_config`, and `php_version`; and
 - one `orbit` instance named `production` when `--domain` is supplied or
   `development` otherwise. Its driver configuration owns `environment`,
@@ -181,7 +181,7 @@ If `--domain` is supplied:
   certificate not yet issued), the command still completes successfully:
   app and production-instance configuration persist, and the inactive domain is
   reported as a non-fatal warning. Operators retry with
-  `instance:register <project>.production --domain=<host>`, which is safe to call repeatedly.
+  `instance:register <app>.production --domain=<host>`, which is safe to call repeatedly.
   Hard activation failures unrelated to propagation (malformed domain,
   registry conflict, internal proxy route registry write failure) fail
   validation up front before any side effects and use the `error` envelope.
@@ -201,7 +201,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   source creation or app writes when the caller lacks `app:new` on the target
   app node. The CLI may resolve its complete interactive input before the
   gateway evaluates that request.
-- **Node Ineligible:** Fails if the resolved node is not an `project` node.
+- **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Logical collision:** Fails if the app name is already registered in the
   gateway app registry (`error.code=app.collision`, `error.meta.name`).
@@ -213,7 +213,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   selected execution transport.
 - **Source Creation Failure:** Template generation or clone failures occur before
   gateway app configuration is written. They use
-  `error.code=project.source_creation_failed` with `error.meta.reason` and
+  `error.code=app.source_creation_failed` with `error.meta.reason` and
   `error.meta.transport=github|ssh|https` so operators can address
   node-side credentials directly. No app row is preserved for this failure.
 - **Apply Drift:** If configuration is written but registration (runtime
@@ -245,7 +245,7 @@ path lands. API activity emission remains part of the operator-forwarding slice.
 | --- | --- |
 | Type | `api:POST /apps` |
 | Effect | `write` |
-| Subject | Created `Project` plus first `Instance` when the atomic registry write completes; `none` for failures before both rows exist. |
+| Subject | Created `App` plus first `Instance` when the atomic registry write completes; `none` for failures before both rows exist. |
 | Properties | `name` (string or null), `instance` (string or null), `serving_node` (string or null), `environment` (`development`, `production`, or null), `domain` (string or null), `repository` (boolean), `source_created` (boolean). No secrets, raw repository credentials, SSH command text, or node-side command output. |
 | Description | `derived`, for example `"Created app docs and instance docs.development on app-1."` |
 
@@ -257,7 +257,7 @@ path lands. API activity emission remains part of the operator-forwarding slice.
 | `apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php` | Exact zero-argument prompt order, both source branches, and slug validation with `--json`. |
 | `apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php` | Human progress rendering and final JSON terminal-frame behavior. |
 | `apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php` | Token-gated clone and private template-repository creation, source-shape validation, provenance verification, and retry reuse. |
-| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation: source-plan validation, authorized POST creates source and registry, `project.source_creation_failed`, and warning payloads. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation: source-plan validation, authorized POST creates source and registry, `app.source_creation_failed`, and warning payloads. |
 | `apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php` | Gateway-authored progress tree and clone/template target-command options. |
 | `packages/core/tests/SourceControl/GitCloneReferenceTest.php` | Shared safe clone-reference forms and rejection of credentials, query strings, fragments, whitespace, and control characters. |
 

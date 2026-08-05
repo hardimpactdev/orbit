@@ -1,6 +1,6 @@
 # `orbit app:remove [app]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Remove one app and its complete instance cascade.
 
@@ -12,12 +12,12 @@ placement while keeping the app, use
 ## Usage
 
 ```bash
-orbit app:remove <project> [--force] [--json]
+orbit app:remove <app> [--force] [--json]
 ```
 
 ## Arguments and options
 
-- `project`: Exact project slug. Required.
+- `app`: Exact app slug. Required.
 - `--force`: Approve removal of the app, every instance, and every
   dependent artifact without an interactive prompt.
 - `--json`: Output JSON and use non-interactive input. JSON never implies
@@ -37,7 +37,7 @@ owns as one confirmed cascade.
 
 Before prompting or changing state, Orbit:
 
-1. Resolves the exact project slug.
+1. Resolves the exact app slug.
 2. Enumerates every instance, serving node, and dependent proxy route,
    schedule, workspace, process, runtime, and eligible managed path.
 3. Authorizes `app:remove` across the complete set of serving nodes. One denial

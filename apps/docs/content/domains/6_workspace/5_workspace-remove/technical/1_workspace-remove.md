@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
-- The current node identity is authorized to manage the resolved workspace or its parent project.
+- The current node identity is authorized to manage the resolved workspace or its parent app.
 - Runtime, process, teardown-step, and worktree cleanup use Agent push to the
   concrete instance node. Cleanup reachability is not a
   pre-configuration prerequisite; failures become structured warnings.
@@ -33,7 +33,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--instance` for cross-app disambiguation). |
-| `instance` | `--instance=<app.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
+| `instance` | `--instance=<app.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -75,7 +75,7 @@ residue afterwards is non-fatal drift.
 
 - Resolve target workspace per [Input Resolution](#input-resolution).
 - Check authorization for the resolved workspace on its effective workspace
-  node (or its parent project).
+  node (or its parent app).
 - If self-targeting (caller is inside the resolved workspace's worktree), warn
   the operator that their shell's working directory will be invalidated unless
   `--keep-files` is also set.
@@ -151,7 +151,7 @@ runs.
    any Phase B node-side cleanup begins.
 2. **Parent Instance Integrity:** Removing a workspace must not remove or modify
    process definitions, runtime container configuration, or proxy routes owned by the
-   parent project.
+   parent app.
 3. **Worktree Cleanup:**
    - If `--keep-files` is `false`, Step 7 deletes the workspace directory on
      the node.

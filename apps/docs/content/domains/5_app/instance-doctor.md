@@ -1,6 +1,6 @@
 # Instance Doctor
 
-[Back to Project and instance commands.](README.md)
+[Back to App and instance commands.](README.md)
 
 The instance family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
@@ -32,7 +32,7 @@ Selection resolves instance doctor to concrete placements before any probe begin
 
 The instance family owns these facts:
 
-- project identity and shared product configuration only; every observed
+- app identity and shared product configuration only; every observed
   placement, runtime, adoption, and binding fact below is scoped to a selected
   instance;
 - instance records owned by the gateway: instance name, driver, driver
@@ -65,7 +65,7 @@ and firewall policy belong to `tool` and `firewall_rule`.
 The instance probe reads gateway app and instance records and checks these layers:
 
 1. **Registry configuration:** every selected instance belongs to a valid
-   project, has one supported driver, and has complete driver placement.
+   app, has one supported driver, and has complete driver placement.
 2. **Serving node eligibility:** an Orbit instance's configured node resolves
    to an active app-host node. Node runtime reachability is not diagnosed here;
    unreachable nodes are reported by the node family.
@@ -92,7 +92,7 @@ The instance probe reads gateway app and instance records and checks these layer
    `~/.config/orbit/apps/hauser-nmbp.ini`, and instance-scoped app policy.
 10. **Stale instance configuration:** Managed runtime config whose encoded
    dotted instance identity is absent from active instance records is
-   reported as instance drift. Ambiguous or project-only identities are not
+   reported as instance drift. Ambiguous or app-only identities are not
    adopted or bound automatically. Stale containers are process-family drift.
 
 The instance probe may mention related family drift only as a handoff. It must not

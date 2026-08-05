@@ -30,7 +30,7 @@ This command follows the shared
 
 ## Input Resolution
 
-1. Resolve `project` by exact logical slug.
+1. Resolve `app` by exact logical slug.
 2. Enumerate every instance and its driver, serving node, and dependent
    artifacts. Freeze this inventory for authorization, consent, execution, and
    output.
@@ -94,8 +94,8 @@ Standard [Common Failures](../../../README.md#common-failures) apply.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid selector | `project` is a hostname or dotted instance selector. | `validation_failed` with `meta.field=app` and `meta.reason=logical_slug_required`. |
-| Instance not found | No project matches the exact slug. | `app.not_found`. |
+| Invalid selector | `app` is a hostname or dotted instance selector. | `validation_failed` with `meta.field=app` and `meta.reason=logical_slug_required`. |
+| Instance not found | No app matches the exact slug. | `app.not_found`. |
 | Authorization denied | Any serving node denies `app:remove`. | `authorization_failed` with complete serving-node and unauthorized-node metadata; no consent or effects. |
 | Consent missing | Non-interactive mode lacks `--force`. | `validation_failed` with `meta.field=force` and `meta.reason=destructive_consent_required`. |
 | Confirmation declined | The operator declines `app_remove.confirm`. | `validation_failed` with `meta.field=force` and `meta.reason=cancelled`; no effects. |
@@ -118,7 +118,7 @@ other family artifacts remain owned by their respective family doctors.
 | --- | --- |
 | Type | `api:DELETE /apps/{app}` |
 | Effect | `destructive` |
-| Subject | Resolved logical `Project`, or `none` when resolution/authorization fails before a subject is available. |
+| Subject | Resolved logical `App`, or `none` when resolution/authorization fails before a subject is available. |
 | Properties | Logical `app`, `instance_names`, `instance_count`, `serving_nodes`, and aggregate dependent counts. Never raw node output or secrets. |
 | Description | derived |
 

@@ -23,7 +23,7 @@ used for future executions.
 - `--step=<id>`: The ID of the setup step to remove. Required.
 - `--instance=<app.instance>`: Concrete dotted instance selector, such as
   `my-app.development`. A caller context may supply the same concrete instance,
-  but a bare project slug is rejected with an instance-required
+  but a bare app slug is rejected with an instance-required
   validation error before side effects. The exact error shape is defined by the
   [JSON renderer contract](technical/6.2_workspace-setup-step-remove_output-render_json.md).
 - `--force`: Skip interactive confirmation.

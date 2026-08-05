@@ -1,6 +1,6 @@
 # `orbit instance:worker show|enable|disable [instance]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Inspect or change FrankenPHP worker mode for one concrete instance.
 
@@ -11,7 +11,7 @@ Octane's FrankenPHP integration, and `instance:worker` is the only command that
 owns that state transition.
 
 Worker mode lives on the instance entity. Different instances of one
-project may use different worker settings. There is no workspace worker
+app may use different worker settings. There is no workspace worker
 mode in the current command surface; supported `app-dev` workspaces always use
 the classic runtime, and production workspaces are rejected.
 
@@ -35,8 +35,8 @@ orbit instance:worker disable docs.development --json
 ## Arguments and options
 
 - `action`: one of `show`, `enable`, `disable`. Required.
-- `instance`: dotted instance selector such as `docs.development`. A bare project
-  name or hostname is shorthand only when that project has exactly one instance.
+- `instance`: dotted instance selector such as `docs.development`. A bare app
+  name or hostname is shorthand only when that app has exactly one instance.
 - `--json`: Output JSON.
 
 ## What Happens
@@ -112,7 +112,7 @@ the exact payload shape, success and error codes, and field meanings.
 
 ## Related Commands
 
-Use these commands alongside `instance:worker` to inspect the canonical project entity
+Use these commands alongside `instance:worker` to inspect the canonical app entity
 or repair runtime drift.
 
 - [`instance:show`](../26_instance-show/instance-show.md) — show the concrete instance

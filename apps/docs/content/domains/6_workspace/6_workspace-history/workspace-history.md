@@ -10,7 +10,7 @@ Show workspace setup and lifecycle history.
 
 - `name`: Workspace slug. Optional when the current working directory resolves
   to a known workspace path.
-- `--instance=<app.instance>`: Parent project slug or instance selector. Use dot notation
+- `--instance=<app.instance>`: Parent app slug or instance selector. Use dot notation
   such as `happie.nmbp` to target one concrete instance. Required only
   when `name` matches multiple visible workspaces.
 - `--json`: Output structured JSON.

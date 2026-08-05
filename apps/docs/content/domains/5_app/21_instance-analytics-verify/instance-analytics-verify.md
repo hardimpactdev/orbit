@@ -1,6 +1,6 @@
 # `orbit instance:analytics verify`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Verify the public readiness of one instance's stored analytics tracking hosts.
 

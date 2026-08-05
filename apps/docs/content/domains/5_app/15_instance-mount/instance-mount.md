@@ -1,13 +1,13 @@
 # `orbit instance:mount list|add|remove [instance]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 List or change additional Docker runtime mounts for an instance.
 
 Configurable runtime mounts belong to instances, not apps. A
 configured mount is rendered into the PHP app runtime container for the
 selected instance and inherited by workspace runtime containers that use that
-instance. Different instances of the same project may use different host source
+instance. Different instances of the same app may use different host source
 paths — for example, `hauser.development` on Linux may mount
 `/home/nckrtl/apps` while `hauser.nmbp` on macOS mounts
 `/Users/nckrtl/apps` at the same container target.
@@ -17,9 +17,9 @@ Every action requires a dotted instance selector such as `hauser.nmbp`.
 ## Usage
 
 ```bash
-orbit instance:mount list <project>.<instance> [--json]
-orbit instance:mount add <project>.<instance> <source> <target> [--read-only|--read-write] [--json]
-orbit instance:mount remove <project>.<instance> <target> [--json]
+orbit instance:mount list <app>.<instance> [--json]
+orbit instance:mount add <app>.<instance> <source> <target> [--read-only|--read-write] [--json]
+orbit instance:mount remove <app>.<instance> <target> [--json]
 ```
 
 ## Examples
@@ -96,7 +96,7 @@ boundary.
 
 ## Output
 
-You see the logical `project` entity and concrete `instance` entity separately,
+You see the logical `app` entity and concrete `instance` entity separately,
 followed by configured mounts and whether they are inherited by workspaces
 that use the selected instance. Node, URL, path, root, domain, and `adopted`
 appear only on `instance`, never on the app.
@@ -118,7 +118,7 @@ payload shape is documented in the
 Use these commands when you need to inspect the app, manage related runtime
 settings, or repair runtime drift.
 
-- [`app:show`](../4_app-show/app-show.md) - inspect the canonical project entity.
+- [`app:show`](../4_app-show/app-show.md) - inspect the canonical app entity.
 - [`instance:show`](../26_instance-show/instance-show.md) - inspect an instance.
 - [`instance:worker`](../11_instance-worker/instance-worker.md) - manage FrankenPHP worker mode.
 - [`doctor --family=instance`](../instance-doctor.md) - verify and repair app runtime drift.

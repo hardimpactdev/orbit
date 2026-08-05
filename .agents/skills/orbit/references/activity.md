@@ -9,14 +9,14 @@ Activity is **history**, not metrics and not live state. Use `doctor` for live s
 List activity entries (most recent first).
 
 ```bash
-orbit activity:list [--project=<name>] [--node=<name>]
+orbit activity:list [--app=<name>] [--node=<name>]
                     [--effect=read|write|destructive]
                     [--correlation=<uuid>] [--limit=25] [--json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--project` |  -  | Filter by project subject. |
+| `--app` |  -  | Filter by app subject. |
 | `--node` |  -  | Filter by node subject. |
 | `--effect` |  -  | Filter by effect category. |
 | `--correlation` |  -  | Filter by correlation UUID  -  useful when one CLI call fans out to multiple gateway operations and you want the whole chain. |
@@ -25,7 +25,7 @@ orbit activity:list [--project=<name>] [--node=<name>]
 Examples:
 
 ```bash
-orbit activity:list --project=myapp --effect=destructive
+orbit activity:list --app=myapp --effect=destructive
 orbit activity:list --node=prod-1 --limit=100 --json
 orbit activity:list --correlation=2b1a3c4d-... --json
 ```

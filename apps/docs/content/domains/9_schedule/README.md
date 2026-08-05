@@ -47,7 +47,7 @@ the gateway always dispatches.
   another serving node explicitly.
 - A Laravel scheduler is a normal instance-scoped schedule that runs `php artisan schedule:run` every minute.
 
-Instance selectors use `app.instance`, such as `docs.production`. A bare project
+Instance selectors use `app.instance`, such as `docs.production`. A bare app
 name is shorthand only when exactly one eligible instance is visible to the
 caller for the requested schedule permission. Ambiguity fails before reads,
 writes, dispatch, or destructive side effects. Schedule names are unique within

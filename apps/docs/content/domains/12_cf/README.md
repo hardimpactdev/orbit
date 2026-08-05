@@ -44,7 +44,7 @@ These rules constrain all Cloudflare commands.
 - Cloudflare DNS writes are limited to `A` and `AAAA` records. CNAME, TXT, MX,
   CAA, SRV, and general DNS administration are outside Orbit's current scope.
 - [`proxy`](../8_proxy/README.md) is the canonical Orbit ingress registry for Orbit-owned hostnames. Cloudflare DNS records and cache rules are provider-side application, not durable Orbit route configuration.
-- `app:new --domain=<host>` and project-owned ingress flows are the normal path for
+- `app:new --domain=<host>` and app-owned ingress flows are the normal path for
   Orbit-managed hostname ingress.
 - Cache rules created by Orbit tell Cloudflare to respect origin
   `Cache-Control` headers. Routes with `Cache-Control: public` may be cached at
@@ -97,8 +97,8 @@ These are the commands in the Cloudflare domain.
 **Cache:**
 
 5. [`orbit cf-cache:flush [--zone=<zone>]`](5_cf-cache-flush/cf-cache-flush.md)
-6. [`orbit cf-cache-rule:add <project>`](6_cf-cache-rule-add/cf-cache-rule-add.md)
-7. [`orbit cf-cache-rule:remove <project>`](7_cf-cache-rule-remove/cf-cache-rule-remove.md)
+6. [`orbit cf-cache-rule:add <app>`](6_cf-cache-rule-add/cf-cache-rule-add.md)
+7. [`orbit cf-cache-rule:remove <app>`](7_cf-cache-rule-remove/cf-cache-rule-remove.md)
 
 **SSL:**
 

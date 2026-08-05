@@ -36,7 +36,7 @@ filter over connection ownership; it does not trigger live node inspection.
 
 - Reads gateway-owned `database_connection` records and their target mappings.
 - Returns every visible connection when no scope filter is supplied.
-- `--instance` returns connections attached to any instance of the selected project.
+- `--instance` returns connections attached to any instance of the selected app.
 - `--workspace` returns connections attached to the selected workspace.
 - `--node` returns connections whose `node` matches the selected node and
   connections attached to targets owned by that node.

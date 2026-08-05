@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
-| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may run schedules for. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
-| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
 | Run timed out | The scheduled command or script exceeds its stored execution timeout. | `error.code=schedule.run_failed`; the timeout result is retained in run history. |
 | Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |

@@ -30,7 +30,7 @@ orbit workspace:list --json
 
 ## Arguments and options
 
-- `--instance`: filter by parent project slug or instance selector. Use dot
+- `--instance`: filter by parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to target one concrete instance.
 - `--node`: filter by owning node slug.
 - `--json`: Output JSON.
@@ -66,7 +66,7 @@ Both renderers use the same deterministic ordering: workspaces are sorted by
 owning node name, then by parent app name, then by workspace name (alphabetical,
 case-insensitive).
 
-Human output presents that ordering as tables grouped by parent project within node.
+Human output presents that ordering as tables grouped by parent app within node.
 
 JSON output returns a flat list of workspaces in the same order under the
 machine-readable output. See the

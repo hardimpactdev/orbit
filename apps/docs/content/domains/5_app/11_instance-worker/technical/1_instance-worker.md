@@ -39,12 +39,12 @@ This command follows the shared
    instance the caller can see; non-interactive callers without an `[instance]`
    argument fail with `validation_failed`.
 3. Require one concrete instance. A dotted selector is explicit. A bare
-   project selector auto-resolves only a sole instance; zero or multiple instances
+   app selector auto-resolves only a sole instance; zero or multiple instances
    fail before authorization or side effects with `validation_failed`,
    `error.meta.field=instance`, and
    `error.meta.reason=instance_required`.
 4. Resolve authorization, readiness, and runtime placement from that instance's
-   serving node and driver configuration. Project defaults never replace
+   serving node and driver configuration. App defaults never replace
    the selected placement.
 
 ## State Model
@@ -171,7 +171,7 @@ failures below.
 | Validation failed (action) | `action` is missing or not one of `show`, `enable`, `disable`. | Failure |
 | Validation failed (instance) | `instance` is missing in non-interactive mode. | Failure |
 | Instance not found | No concrete instance matches `instance`. | Failure |
-| Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
+| Instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Unsupported runtime | `enable` was called for an app with `runtime != php`. State unchanged. | Failure |
 | Serving node missing | `enable` was called for an instance whose `driver_config.node` is missing. State unchanged. | Failure |
 | Source path missing | `enable` was called for an instance whose `driver_config.path` is empty. State unchanged. | Failure |
@@ -215,7 +215,7 @@ These settings tune FrankenPHP's request-thread pool and keep idle development
 capacity warm. They do not enable Laravel Octane worker mode.
 
 When `worker_enabled=true`, the app runtime container is rendered with the
-same project-dev thread-pool settings when applicable, plus two worker-mode env
+same app-dev thread-pool settings when applicable, plus two worker-mode env
 vars that the runtime actually consumes:
 
 | Env var | Consumer | Source |

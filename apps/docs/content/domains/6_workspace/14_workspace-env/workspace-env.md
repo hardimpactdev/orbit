@@ -36,7 +36,7 @@ that workspace runtime when it uses PHP—even when the container is already
 matching and running. It never writes the parent instance or a sibling
 workspace.
 
-Every response identifies `scope=workspace`, `project`, `instance`, `workspace`,
+Every response identifies `scope=workspace`, `app`, `instance`, `workspace`,
 the concrete `.env` `path`, and `stored`, `applied`, and
 `runtime_restarted` outcomes. Apply failures distinguish registry-only storage
 from post-write runtime failures.

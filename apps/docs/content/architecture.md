@@ -565,7 +565,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the instances it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own project and instance registry rows through `app:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant project or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node project, instance, or process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app and instance registry rows through `app:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant app or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node app, instance, or process visibility.
 
 Workspace permission policy applies to both endpoints of every grant. A
 permission set containing `*` or `workspace:*` is rejected when its consuming
@@ -671,7 +671,7 @@ Orbit has nine state families:
 | Family | Owns | Concept doc |
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
-| `instance` | Project and instance config, runtime policy, deploy steps, instance health | [App and Instance Concepts](domains/5_app/app-concepts.md) |
+| `instance` | App and instance config, runtime policy, deploy steps, instance health | [App and Instance Concepts](domains/5_app/app-concepts.md) |
 | `workspace` | Workspace config, URL, runtime policy, setup/teardown policy | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
 | `process` | Lifecycle-managed long-running units scoped to nodes, instances, or workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
@@ -747,18 +747,18 @@ A slug must match:
 
 Length limits:
 
-- project slug: up to 40 characters
+- app slug: up to 40 characters
 - instance slug: up to 40 characters
 - node slug: up to 63 characters
 - workspace slug: up to 63 characters (independent of the parent instance slug)
 - process slug: up to 64 characters
 
-**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). Project identity does not own hostname composition.
+**Workspace hostnames** are owned by the workspace. They prepend the workspace slug to the parent instance's hostname (for example `{workspace}.{instance-hostname}` on a development instance). App identity does not own hostname composition.
 
 **Process names** use a five-part runtime-unit key:
 
 ```text
-orbit_<project>_<instance>_<workspace|main>_<process>
+orbit_<app>_<instance>_<workspace|main>_<process>
 ```
 
 Examples:
@@ -768,7 +768,7 @@ orbit_docs_development_main_vite
 orbit_docs_development_feature-docs_vite
 ```
 
-`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is project, instance, workspace (or `main` for the instance checkout), then process.
+`orbit_` marks the name as Orbit-owned. `_` separates segments and is not allowed inside a slug. The component order is app, instance, workspace (or `main` for the instance checkout), then process.
 
 ### Next
 

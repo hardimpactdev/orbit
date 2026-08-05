@@ -3734,16 +3734,16 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                 "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
@@ -4107,17 +4107,17 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
                 "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
@@ -4365,16 +4365,16 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                 "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",
@@ -4551,16 +4551,16 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                 "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppInstanceCommandTest.php"
+                    "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",

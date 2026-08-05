@@ -26,7 +26,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `[instance]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare project is shorthand only when exactly one eligible visible instance exists for `instance:credentials`; otherwise fail with `error.meta.reason=instance_required`. |
+| `instance` | `[instance]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare app is shorthand only when exactly one eligible visible instance exists for `instance:credentials`; otherwise fail with `error.meta.reason=instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -40,7 +40,7 @@ This command follows the shared
 
 ### Credentials Retrieval Rules
 
-1. **Instance resolution.** Resolve one concrete instance; project
+1. **Instance resolution.** Resolve one concrete instance; app
    placement fields are never consulted.
 2. **Binding required and enabled.** Require an existing binding with
    `enabled=true`. Return `websocket.binding_missing` when no binding exists or

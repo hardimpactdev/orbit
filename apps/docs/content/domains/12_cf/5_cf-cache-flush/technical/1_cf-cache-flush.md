@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, or bare app name with a Cloudflare-backed `Project.domain`. |
+| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, or bare app name with a Cloudflare-backed `App.domain`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -31,7 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve `zone` from `--zone`, or from prompt `cf_cache_flush_zone` in
    interactive input mode.
 2. Current gateway behavior: if the value matches a app name, resolve the
-   zone from that project's `Project.domain` field (`CloudflareZoneResolver`).
+   zone from that app's `App.domain` field (`CloudflareZoneResolver`).
 3. Otherwise resolve the value as a Cloudflare zone ID or exact zone domain
    name.
 4. Fail before provider mutation when the zone cannot be resolved.

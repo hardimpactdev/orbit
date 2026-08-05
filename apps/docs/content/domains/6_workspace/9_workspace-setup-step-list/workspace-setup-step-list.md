@@ -70,7 +70,7 @@ and `workspace:list`.
 JSON output returns a flat machine-readable step list. Each step record uses the
 shared step shape published by
 [`workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md):
-`{ id, project, instance, phase, order, command, timeout_seconds }`. See the
+`{ id, app, instance, phase, order, command, timeout_seconds }`. See the
 [JSON renderer contract](technical/6.2_workspace-setup-step-list_output-render_json.md)
 for the exact payload shape.
 

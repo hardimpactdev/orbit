@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named project exists and has a Cloudflare-backed `App.domain`.
+- The named app exists and has a Cloudflare-backed `App.domain`.
 
 ## Signature
 

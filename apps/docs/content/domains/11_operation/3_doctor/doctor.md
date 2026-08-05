@@ -194,7 +194,7 @@ own concrete issue codes and action maps:
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)
 - [`doctor --family=firewall_rule`](../../4_firewall/firewall-doctor.md)
 
-**Project runtime families:**
+**App runtime families:**
 
 - [`doctor --family=instance`](../../5_app/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)

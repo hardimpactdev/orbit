@@ -49,7 +49,7 @@ It does not execute the command.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
-| Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
+| Instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Invalid position | `--before` and `--after` are both supplied. | `error.code=instance_setup.invalid_position` |
 
 ## Doctor Relationship
@@ -65,7 +65,7 @@ setup steps.
 | Type | `api:POST /instances/{instance}/setup-steps` |
 | Effect | `write` |
 | Subject | `AppSetupStep` on success; `none` on validation or authorization failure. |
-| Properties | `project`, `instance`, setup step command, order, and timeout. |
+| Properties | `app`, `instance`, setup step command, order, and timeout. |
 | Description | derived |
 
 ## Test Mapping

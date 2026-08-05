@@ -69,7 +69,7 @@ or from the `latest_setup_run.run_id` field returned by
    defined in
    [`6_workspace/README.md`](../../README.md#lifecycle-step-environment)
    are **not** captured into per-step metadata. They are derivable from
-   gateway-tracked workspace configuration (workspace path, parent project,
+   gateway-tracked workspace configuration (workspace path, parent app,
    effective PHP version, derived URL) and from
    [`workspace:history`](../../6_workspace-history/workspace-history.md)
    lifecycle actions such as `php_update`. Snapshotting them on every step

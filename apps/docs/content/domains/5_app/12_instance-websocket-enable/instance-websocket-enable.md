@@ -1,6 +1,6 @@
 # `orbit instance:websocket enable`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Enable WebSocket support for one concrete instance.
 
@@ -28,7 +28,7 @@ orbit instance:websocket enable docs.production --json
 
 ## Arguments and options
 
-- `app.instance`: dotted instance selector. A bare project slug is shorthand
+- `app.instance`: dotted instance selector. A bare app slug is shorthand
   only when exactly one eligible visible instance exists.
 - `--host`: public WebSocket hostname to bind. Repeatable. Values must be plain
   hostnames, not URLs. Duplicate values and empty values are silently discarded.
@@ -88,7 +88,7 @@ and inspect app configuration.
 
 - [`instance:websocket disable`](../13_instance-websocket-disable/instance-websocket-disable.md) — disable WebSocket support for an app
 - [`instance:websocket credentials`](../14_instance-websocket-credentials/instance-websocket-credentials.md) — show Reverb credentials for a WebSocket-enabled app
-- [`app:show`](../4_app-show/app-show.md) — inspect the full project entity
+- [`app:show`](../4_app-show/app-show.md) — inspect the full app entity
 
 ## Technical Contract
 

@@ -180,6 +180,26 @@ describe('instance commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('registers instance:list --app as a value-taking option in the command signature', function (): void {
+        $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()['instance:list'] ?? null;
+
+        expect($command)->not->toBeNull();
+
+        $option = $command->getDefinition()->getOption('app');
+
+        // Prove value-taking optional option (not a bare boolean flag).
+        expect($option->acceptValue())
+            ->toBeTrue()
+            ->and($option->isValueRequired())
+            ->toBeFalse()
+            ->and($option->isValueOptional())
+            ->toBeTrue()
+            ->and($option->getDescription())
+            ->toBe('Limit results to one app')
+            ->and($command->getDefinition()->hasOption('project'))
+            ->toBeFalse();
+    });
+
     it('renders human list output as a table of instances', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instances' => [
@@ -215,7 +235,9 @@ describe('instance commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('PROJECT')
+            ->toContain('APP')
+            ->and($output)
+            ->not->toContain('PROJECT')
             ->and($output)
             ->toContain('NAME')
             ->and($output)

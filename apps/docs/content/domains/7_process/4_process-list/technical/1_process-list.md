@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `app` | `--app` | Optional alternate target mode for app-instance or workspace hostnames. | `node`, `instance`, or `workspace` is present. | None. | Strict hostname only (exact registered proxy-route domain; no scheme, path, or port). App-owned routes resolve the concrete `Instance`; workspace-owned routes resolve that workspace and its instance. The selector key is `app` only. |
 | `node` | `--node` | Required when listing node-owned processes. | `app`, `instance`, or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
-| `instance` | `--instance` or instance context | Required unless `node` or `app` is supplied or `workspace` resolves the instance. | `node` or `app` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:read`. |
+| `instance` | `--instance` or instance context | Required unless `node` or `app` is supplied or `workspace` resolves the instance. | `node` or `app` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:read`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` or `app` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:read`; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve a target node, concrete instance, workspace, or `app` hostname context from supplied input or local context.
 2. Reject combining `app` with `node`, `instance`, or `workspace`.
-3. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+3. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 4. Resolve `app` through exact registered proxy-route domain precedence.
 5. Send the request to the gateway (`GET /api/processes` with the selected query keys).
 6. The gateway authenticates the caller from the actual WireGuard peer source IP.
@@ -82,7 +82,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Invalid context | `--app` is combined with `--node`, `--instance`, or `--workspace`; `--node` is combined with `--instance` or `--workspace`; or no node/instance/workspace/`app` context resolves. | Failure (`error.code=validation_failed`). |
 | App hostname not found | `--app` does not match an exact registered proxy-route domain. | Failure (`error.code=validation_failed`; `error.meta.field=app`). |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
+| Instance required | A bare app selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 
 Instance serving-node reachability is not part of the default list path and does not cause this command to fail.
 

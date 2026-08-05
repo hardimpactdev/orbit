@@ -14,7 +14,7 @@
   instance's serving node. Gateway callers have implicit global visibility.
 
 **Post-input path eligibility:**
-- The resolved project must match an existing app record visible to the caller.
+- The resolved app must match an existing app record visible to the caller.
 
 ## Signature
 
@@ -29,10 +29,10 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | When no default can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or project-owned hostname visible to the caller. Name match wins when a string matches both a app name and a different app's hostname. |
+| `app` | `[app]` | When no default can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or app-owned hostname visible to the caller. Name match wins when a string matches both a app name and a different app's hostname. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-`app:show` does not accept a `--node` flag. Project slugs are globally unique in
+`app:show` does not accept a `--node` flag. App slugs are globally unique in
 the gateway app registry, so the positional already addresses an app uniquely.
 Supplying an unknown option fails with `error.code=validation_failed`.
 
@@ -61,7 +61,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 
 ## Behavior Contract
 
-### Project Registry Read Rules
+### App Registry Read Rules
 
 1. **Lookup.** Read the app record from gateway-owned app configuration by the
    resolved name. If no visible app record matches, fail before side effects.
@@ -89,7 +89,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    visible; app and instance details remain readable.
 
    The response has no flat `details.workspaces`, `details.processes`,
-   `details.bindings` fallback and no project
+   `details.bindings` fallback and no app
    `node`, `path`, `root`, `url`, `domain`, or `environment` field.
 
    Default `app:show` is a registry read, not a live readiness command.
@@ -137,14 +137,14 @@ drift, fix, and adopt contract.
 
 ## Activity Logging
 
-The gateway API endpoint emits an activity entry for successful and failed project
+The gateway API endpoint emits an activity entry for successful and failed app
 registry reads.
 
 | Field | Value |
 | --- | --- |
 | Type | `api:GET /apps/{app}` |
 | Effect | `read` |
-| Subject | `Project` when the app is visible and resolved; `none` for not-found or hidden project responses. |
+| Subject | `App` when the app is visible and resolved; `none` for not-found or hidden app responses. |
 | Properties | No command-specific properties. The API activity middleware adds transport context such as method, path, client, and serving gateway node. |
 | Description | derived |
 

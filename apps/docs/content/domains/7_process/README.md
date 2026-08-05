@@ -24,10 +24,10 @@ These rules cover who owns process configuration and how process definitions are
   to the app. A workspace-scoped definition belongs to a workspace
   that already identifies its instance. The scope selects the serving node
   and default runtime context.
-- Canonical instance identity stores and returns both the logical `project` slug
+- Canonical instance identity stores and returns both the logical `app` slug
   and the concrete `instance` slug. Public commands prefer
-  `--instance=<app.instance>`. A bare project slug is shorthand only when that
-  project has exactly one instance; otherwise commands fail with
+  `--instance=<app.instance>`. A bare app slug is shorthand only when that
+  app has exactly one instance; otherwise commands fail with
   `error.code=validation_failed`, `error.meta.field=instance`, and
   `error.meta.reason=instance_required`.
 - Process definitions have a stable order inside their owning scope.
@@ -64,12 +64,12 @@ These rules describe how runtime units are derived from process definitions.
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
-  rendering context supplies per-instance fields such as node/project/instance/workspace
+  rendering context supplies per-instance fields such as node/app/instance/workspace
   identity, path, URL, environment, ports, and volumes.
 - Runtime unit names for instance and workspace units use the five-part form
-  `orbit_<project>_<instance>_<workspace|main>_<process>` (for example
+  `orbit_<app>_<instance>_<workspace|main>_<process>` (for example
   `orbit_docs_development_main_vite`). Node-owned units use the bare process
-  slug as the unit name. Including both project and instance slugs prevents two
+  slug as the unit name. Including both app and instance slugs prevents two
   instances of one app from colliding. When process identity is renamed,
   Orbit replaces derived runtime units and removes names from the previous
   identity instead of leaving
@@ -267,7 +267,7 @@ units do not receive `ORBIT_*` lifecycle variables by contract.
 | `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path visible to the process | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
 
 Laravel Vite's `detectTls` option probes Herd/Valet certificate locations. Orbit
-does not require per-project cert copies in those layouts. Instead, Orbit
+does not require per-app cert copies in those layouts. Instead, Orbit
 exposes canonical `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, and
 `VITE_DEV_SERVER_KEY` / `VITE_DEV_SERVER_CERT` so standard Laravel Vite config
 can use the env-provided certificate bridge while remaining compatible with

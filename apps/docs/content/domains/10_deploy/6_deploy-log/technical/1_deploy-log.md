@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `run` | `argument` | `Required.` | `Never.` | `None.` | Positive integer deployment run id owned by the selected instance. |
 | `step` | `--step` | `Optional.` | `Never.` | `None.` | Existing step id inside the selected run. |
 | `lines` | `--lines` | `Optional.` | `Never.` | `500`. | Positive integer output line limit per stream. |
@@ -34,7 +34,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Deployment Log Visibility Rules
 
 - Resolves one concrete production instance through gateway configuration.
-- Fails before reading logs unless the selected instance belongs to a production project.
+- Fails before reading logs unless the selected instance belongs to a production app.
 - Resolves the run id against deployment history for the selected instance.
 - Reads stored per-step stdout, stderr, process status, and timing from gateway
   deployment history.
@@ -59,8 +59,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_app_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run not found | No visible deployment run matches the run id for the selected instance. | `error.code=deploy.run_not_found` |
 | Step not found | `--step` does not match a step in the selected run. | `error.code=deploy.step_not_found` |
 | Log read failed | The gateway cannot read stored deployment output. | `error.code=deploy.log_read_failed` |
@@ -72,13 +72,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:GET /deploy/log/{run}` |
 | Effect | `read` |
 | Subject | `DeploymentRun` when resolved; `none` otherwise. |
-| Properties | `project`, `instance`, `run_id`, optional `step_id`. No raw secrets. |
+| Properties | `app`, `instance`, `run_id`, optional `step_id`. No raw secrets. |
 | Description | derived |
 
 ## Doctor Relationship
 
 `deploy:log` explains past deployment behavior. It does not own a doctor family.
-[`instance-doctor.md`](../../../5_app/instance-doctor.md) owns current production project
+[`instance-doctor.md`](../../../5_app/instance-doctor.md) owns current production app
 health checks and may reference latest deployment status through
 `instance.latest_deployment_failed` and `instance.deployment_run_stuck`.
 

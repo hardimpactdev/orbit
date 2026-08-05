@@ -47,7 +47,7 @@ This command follows the shared
 
 ## Input Resolution
 
-1. **Resolve Project Instance**: Resolve `name` from argument or interactive prompt.
+1. **Resolve App Instance**: Resolve `name` from argument or interactive prompt.
    A dotted selector resolves that instance. A bare existing logical slug is
    accepted only when exactly one eligible visible instance exists; otherwise
    fail with `validation_failed`, `error.meta.reason=instance_required`.
@@ -201,8 +201,8 @@ registration attempts.
 | --- | --- |
 | Type | `api:POST /instances/register` |
 | Effect | `write` |
-| Subject | Selected `Instance`, plus its parent `Project` when first adoption creates both; `none` before target resolution. |
-| Properties | `project` (string or null), `instance` (string or null), and `serving_node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
+| Subject | Selected `Instance`, plus its parent `App` when first adoption creates both; `none` before target resolution. |
+| Properties | `app` (string or null), `instance` (string or null), and `serving_node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
 | Description | derived |
 
 ## Test Mapping

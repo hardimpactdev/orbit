@@ -20,7 +20,7 @@ trait PromptsForGatewayRegistryEntities
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    protected function promptForVisibleProject(): string|int
+    protected function promptForVisibleApp(): string|int
     {
         try {
             $response = $this->gatewayGet('/api/apps');
@@ -28,7 +28,7 @@ trait PromptsForGatewayRegistryEntities
             return $this->renderGatewayFailure($exception);
         }
 
-        $rows = $this->projectPromptRows($this->registryPayloads($response, 'apps'));
+        $rows = $this->appPromptRows($this->registryPayloads($response, 'apps'));
 
         if ($rows === []) {
             return $this->renderFailure('app.not_found', 'No apps found.', ['field' => 'app']);
@@ -36,7 +36,7 @@ trait PromptsForGatewayRegistryEntities
 
         return $this->promptRegistryDataTable(
             label: 'Select an app',
-            headers: ['Project', 'Host', 'Node', 'Repository'],
+            headers: ['App', 'Host', 'Node', 'Repository'],
             rows: $rows,
             field: 'app',
         );
@@ -230,7 +230,7 @@ trait PromptsForGatewayRegistryEntities
      * @param  list<array<string, mixed>>  $apps
      * @return array<string, array<int, string>>
      */
-    private function projectPromptRows(array $apps): array
+    private function appPromptRows(array $apps): array
     {
         $rows = [];
 
@@ -243,7 +243,7 @@ trait PromptsForGatewayRegistryEntities
 
             $rows[$name] = [
                 $name,
-                $this->projectHostFromRegistryPayload($app),
+                $this->appHostFromRegistryPayload($app),
                 $this->registryString($app['node'] ?? null) ?? '-',
                 $this->registryString($app['repository'] ?? null) ?? '-',
             ];
@@ -429,7 +429,7 @@ trait PromptsForGatewayRegistryEntities
     /**
      * @param  array<string, mixed>  $app
      */
-    private function projectHostFromRegistryPayload(array $app): string
+    private function appHostFromRegistryPayload(array $app): string
     {
         $domain = $this->registryString($app['domain'] ?? null);
 

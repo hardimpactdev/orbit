@@ -38,16 +38,16 @@ orbit workspace:setup feature-a --instance=my-app --stream-json
 - `name`: The workspace identity slug. Required unless local workspace context
   or structured Codex Git-worktree metadata for an explicit `--path` can
   resolve it; can be prompted in interactive mode.
-- `--instance=<app.instance>`: The parent project slug or instance selector. Use dot
+- `--instance=<app.instance>`: The parent app slug or instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
-  A bare project slug is shorthand only when it resolves to exactly one concrete
+  A bare app slug is shorthand only when it resolves to exactly one concrete
   instance; zero or multiple instances fail with `instance_required`.
   Defaults to the existing workspace's selected instance, the local app
   context when it resolves one instance, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
-  that node. The path may live outside the parent project path, including external
-  agent worktrees such as Codex or Claude worktree directories. The parent project
+  that node. The path may live outside the parent app path, including external
+  agent worktrees such as Codex or Claude worktree directories. The parent app
   root itself is not a valid workspace path. A relative or non-absolute value
   fails before side effects.
 - `--json`: Output JSON.
@@ -61,17 +61,17 @@ when explicit input is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) returns one of:
 
 - **A registered workspace path** — the workspace identity (`name` and
-  parent `project`, required selected instance, and `path` are resolved
+  parent `app`, required selected instance, and `path` are resolved
   from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
-- **A registered app's own root path** — the CWD is the parent project's own
+- **A registered app's own root path** — the CWD is the parent app's own
   path, not a workspace path under it. The command fails before side effects
   with a hint to run
   [`workspace:new`](../1_workspace-new/workspace-new.md) instead. Use
   `workspace:setup` only when the CWD is (or will be adopted as) a workspace
   path; the app root is never itself a workspace.
 - **A path inside a registered app** — the CWD is under a known app's path
-  but not a registered workspace. The parent project is resolved from the lookup.
+  but not a registered workspace. The parent app is resolved from the lookup.
   The lookup must also resolve exactly one concrete instance or fail with
   `instance_required`. The workspace identity is filled in through local Codex
   Git-worktree metadata when available, or falls through to prompts / explicit
@@ -112,7 +112,7 @@ The following steps describe what the command does during a successful run.
   selected instance's node, base path, document root, and domain.
 - **Environment Initialization**: Preserves an existing workspace `.env`.
   When missing, initializes it from the workspace's own `.env.example` when
-  present, then overlays the effective `workspace:env` values. The parent project
+  present, then overlays the effective `workspace:env` values. The parent app
   `.env` is never copied.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
@@ -128,7 +128,7 @@ operators and agents can see what changed.
 
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
-  parent project.
+  parent app.
 - The gateway can reach the owning node through Agent push.
 
 ## Output Summary

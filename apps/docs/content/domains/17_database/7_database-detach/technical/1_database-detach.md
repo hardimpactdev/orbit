@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Selects the mapping row to remove. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--instance` or `--workspace` is required. A bare project selector
+Exactly one of `--instance` or `--workspace` is required. A bare app selector
 is shorthand only when it resolves to exactly one instance.
 `--env-prefix` defaults to `DB` and selects the mapping row to remove.
 

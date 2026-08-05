@@ -1,6 +1,6 @@
 # `orbit instance:analytics show`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Show analytics tracking proxy configuration for one concrete instance.
 

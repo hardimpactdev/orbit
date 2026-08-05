@@ -71,7 +71,7 @@ $selected = datatable(
 
 These commands use `datatable` and are good models to follow.
 
-- `orbit app:list` — project selection datatable (`Select an app`).
+- `orbit app:list` — app selection datatable (`Select an app`).
 - Other registry list commands that call `Laravel\Prompts\datatable` through
   shared helpers. Do not cite `s3:credentials` (no prompt), or unbacked
   `app:remove` / `process:update` rows as datatable references.

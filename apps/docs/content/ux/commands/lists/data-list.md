@@ -67,7 +67,7 @@ $selected = datatable(
 ## Reference Implementation
 
 - `orbit app:list` — renders the Name, Repository, Instances, and Workspaces
-  columns and opens the selected project's `app:show` drill-down. The
+  columns and opens the selected app's `app:show` drill-down. The
   prompt label is `Select an app`.
 
 ## Cross References

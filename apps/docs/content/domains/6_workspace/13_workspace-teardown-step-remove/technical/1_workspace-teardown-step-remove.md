@@ -31,7 +31,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved instance and `phase=teardown`. |
-| `instance` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare project slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
+| `instance` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare app slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
@@ -133,7 +133,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
-| Instance required | Bare project slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
+| Instance required | Bare app slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
 | Step not found | No teardown-step record matches `(step_id, instance, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=instance.not_found`, `error.meta.instance`). |
 | Instance unresolved | A concrete instance cannot be resolved from `--instance`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=instance`). |

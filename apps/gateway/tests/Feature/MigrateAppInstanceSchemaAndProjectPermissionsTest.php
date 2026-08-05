@@ -135,8 +135,15 @@ it('rewrites pre-cutover project tokens only inside the one-way migration', func
     $grantId = DB::table('node_access')->insertGetId([
         'consumer_node_id' => $consumer->id,
         'serving_node_id' => $serving->id,
-        'permissions' => json_encode(['app:read', 'instance:read', 'node:read'], JSON_THROW_ON_ERROR),
-        'custom_permissions' => json_encode(['app:write', 'app:new'], JSON_THROW_ON_ERROR),
+        // Pre-cutover grant: seed multiple project:* tokens that the cutover must map.
+        'permissions' => json_encode(
+            ['project:read', 'project:write', 'project:list', 'instance:read', 'node:read'],
+            JSON_THROW_ON_ERROR,
+        ),
+        'custom_permissions' => json_encode(
+            ['project:new', 'project:remove', 'project:*'],
+            JSON_THROW_ON_ERROR,
+        ),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -154,9 +161,9 @@ it('rewrites pre-cutover project tokens only inside the one-way migration', func
     $custom = json_decode($grant->custom_permissions, true, flags: JSON_THROW_ON_ERROR);
 
     expect($permissions)
-        ->toBe(['app:read', 'instance:read', 'node:read'])
+        ->toBe(['app:read', 'app:write', 'app:list', 'instance:read', 'node:read'])
         ->and($custom)
-        ->toBe(['app:write', 'app:new'])
+        ->toBe(['app:new', 'app:remove', 'app:*'])
         ->and(array_values(array_filter($permissions, fn (string $p): bool => str_starts_with($p, 'project:'))))
         ->toBeEmpty()
         ->and(array_values(array_filter($custom, fn (string $p): bool => str_starts_with($p, 'project:'))))
@@ -171,9 +178,14 @@ it('rewrites pre-cutover project tokens only inside the one-way migration', func
         ->toContain('project:read', 'project:write', 'project:*')
         ->toContain('app:read', 'app:write', 'solo:project:list')
         ->and(fn () => $normalizer->normalize(['project:read']))
-        ->toThrow(InvalidArgumentException::class, 'Unknown permission [project:read].')
-        ->and($normalizer->normalize($permissions)->permissions)
-        ->toBe($permissions);
+        ->toThrow(InvalidArgumentException::class, 'Unknown permission [project:read].');
+
+    // Normalizer may collapse implied app:list under app:read; residual project:* must stay empty.
+    $normalized = $normalizer->normalize($permissions)->permissions;
+    expect($normalized)
+        ->toContain('app:read', 'app:write', 'instance:read', 'node:read')
+        ->and(array_values(array_filter($normalized, fn (string $p): bool => str_starts_with($p, 'project:'))))
+        ->toBeEmpty();
 });
 
 it('proves post-migration grants surface only registry-known tokens without a runtime filter', function (): void {

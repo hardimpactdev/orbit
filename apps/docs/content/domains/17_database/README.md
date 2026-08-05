@@ -141,7 +141,7 @@ Database-family JSON renderers that return one connection entity embed this
 shape under `success.data.connection`, or under
 `success.data.connections[]` for list items. Target-specific renderers may add
 target data beside the connection entity. Instance targets use
-`type=instance` and carry both `project` and `instance`.
+`type=instance` and carry both `app` and `instance`.
 
 ```json
 {

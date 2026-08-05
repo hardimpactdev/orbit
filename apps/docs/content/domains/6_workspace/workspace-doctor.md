@@ -16,7 +16,7 @@ records.
 
 The workspace family owns these facts:
 
-- gateway-owned workspace records: name, parent project, selected instance,
+- gateway-owned workspace records: name, parent app, selected instance,
   workspace path, derived hostname, PHP version override or inheritance, and
   lifecycle status;
 - workspace source location: the managed workspace path exists on the
@@ -33,14 +33,14 @@ The workspace family owns these facts:
 - stale workspace artifacts owned by Orbit with identities absent from
   active gateway workspace records.
 
-A workspace record that points at a missing parent project is a parent-project issue.
+A workspace record that points at a missing parent app is a parent-app issue.
 A missing or mismatched selected instance, or an instance that does not
 resolve to an active `app-dev` node, is an instance issue because the
 workspace has no valid apply target. A persisted row owned by an `app-prod`
 instance is invalid gateway configuration, but an `app-prod` node or instance
 cannot be selected as a workspace-doctor target to inspect or report it.
 
-Parent project runtime health belongs to the instance family. Node reachability belongs
+Parent app runtime health belongs to the instance family. Node reachability belongs
 to the node family. Workspace-owned proxy routes belong to `proxy`.
 Workspace FrankenPHP runtime units, containers, lifecycle, and logs belong to
 `process`. Tool installation and
@@ -52,10 +52,10 @@ metadata from `workspace:setup`, not doctor issue codes for the workspace family
 The workspaces probe reads gateway workspace records and checks these layers:
 
 1. **Registry configuration:** every selected workspace record has a valid name,
-   parent project reference, non-null instance reference, workspace path,
+   parent app reference, non-null instance reference, workspace path,
    derived hostname, effective PHP version, and lifecycle fields required by
    the workspace model.
-2. **Parent project eligibility:** the parent project reference resolves to an app
+2. **Parent app eligibility:** the parent app reference resolves to an app
    record that can own workspaces. App runtime health is not diagnosed here;
    app drift is reported by the instance family.
 3. **Instance eligibility:** the selected instance belongs to the parent
@@ -65,7 +65,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
    never uses that issue as permission to target an `app-prod` node.
 4. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
-   project root. Workspace sources may live outside the parent project path,
+   app root. Workspace sources may live outside the parent app path,
    including external agent worktree directories.
 5. **PHP runtime:** active workspaces have an effective PHP image that can serve
    the workspace runtime on the owning node. Concrete FrankenPHP unit presence
@@ -104,13 +104,13 @@ Each code below corresponds to a specific layer in the workspaces probe.
 
 | Code | Detected when |
 | --- | --- |
-| `workspace.record_incomplete` | A selected workspace record lacks name, parent project identity, selected instance identity, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
-| `workspace.parent_project_invalid` | The workspace record points at a missing parent project. |
+| `workspace.record_incomplete` | A selected workspace record lacks name, parent app identity, selected instance identity, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
+| `workspace.parent_project_invalid` | The workspace record points at a missing parent app. |
 | `workspace.instance_invalid` | The selected instance is missing, belongs to another app, or does not resolve to an active `app-dev` node for a reason other than production placement. |
 | `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | The workspace path equals the parent project root instead of a distinct workspace path. |
+| `workspace.path_outside_policy` | The workspace path equals the parent app root instead of a distinct workspace path. |
 | `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
@@ -132,7 +132,7 @@ manual path/registry correction after reading the probe findings.
 Failed setup and teardown runs are visible through `workspace:history` and
 `workspace:log`; doctor verifies current workspace reality and does not rewrite
 past runs. Workspace doctor never creates parent apps, changes workspace
-names, moves a workspace to another project, edits setup or teardown step
+names, moves a workspace to another app, edits setup or teardown step
 definitions, edits workspace-owned proxy routes, edits inherited runtime units,
 or changes node reachability.
 
@@ -169,7 +169,7 @@ Required test files:
 
 No current E2E test is mapped for workspace-family fix or adopt coverage.
 
-`WorkspacesProbeTest.php` covers registry configuration, parent project and selected
+`WorkspacesProbeTest.php` covers registry configuration, parent app and selected
 instance eligibility, source path, workspace path policy, PHP runtime, managed runtime configuration,
 stale Orbit-owned workspace artifacts, adoption hints, and handoff of concrete
 runtime-unit drift to process. It also covers

@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `instance_required`. |
+| `app` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `instance_required`. |
 | `host` | `--host` | Optional. | Never. | `analytics.<instance-domain>`. | Repeatable up to ten unique multi-label DNS hostnames. An explicit host does not bypass the instance-domain prerequisite. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
@@ -96,7 +96,7 @@ The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `project` | object | Canonical project entity without placement fields. |
+| `app` | object | Canonical app entity without placement fields. |
 | `instance` | string | Selected instance name. |
 | `serving_node` | string | Selected instance's serving and authorization node. |
 | `binding.enabled` | boolean | Whether the binding is enabled. |

@@ -1,9 +1,9 @@
 # `orbit app:new [name]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Create a new Orbit-managed app on a node with an active `app-dev` or `app-prod`
-role. Orbit has no generic `project` node role.
+role. Orbit has no generic `app` node role.
 
 ## Usage
 
@@ -33,7 +33,7 @@ service instance in Orbit.
 The steps below describe what the command does during a successful run.
 
 - **Source Resolution:** Before it starts creating anything, interactive
-  `app:new` resolves the target node, project slug, and whether to create a new
+  `app:new` resolves the target node, app slug, and whether to create a new
   repository from a template or clone an existing repository. There is no
   implicit empty-directory path. Use [`instance:register`](../2_instance-register/instance-register.md)
   to adopt source that already exists on a node.
@@ -48,7 +48,7 @@ The steps below describe what the command does during a successful run.
   embedded credentials, query strings, or fragments are rejected. `app:new`
   never asks for, stores, or forwards git credentials, SSH keys, or access
   tokens.
-- **Registry Write:** Atomically writes authoritative logical-project identity and
+- **Registry Write:** Atomically writes authoritative logical-app identity and
   shared runtime policy plus one concrete instance. Node, path, root, URL,
   domain, environment, and `adopted=false` are instance-owned. App names are
   identity slugs and must be globally unique in the gateway app registry.
@@ -92,7 +92,7 @@ You will receive one of the following output formats depending on the flags you 
 
 - **Human:** Progress covering operation state, source creation, registry write,
   and runtime application.
-- **JSON:** A machine-readable result containing separate canonical `project` and
+- **JSON:** A machine-readable result containing separate canonical `app` and
   `instance` entities, or a machine-readable failure with diagnostic metadata.
 - **Stream JSON:** `--stream-json` emits newline-delimited progress JSON and is
   mutually exclusive with `--json`.

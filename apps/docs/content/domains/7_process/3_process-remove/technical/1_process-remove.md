@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `node` | `--node` | Required when removing a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:remove`. |
-| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:remove`. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:remove`. |
 | `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:remove`; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. It never grants destructive consent. |
@@ -41,7 +41,7 @@ Destructive consent is required before side effects. In interactive input mode, 
 
 ### Process Removal Rules
 
-1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
+1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Resolve destructive consent.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
 4. Stop and remove runtime units on the resolved node or instance serving node. Node-owned and workspace-owned processes normally derive one unit; instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance.
@@ -65,7 +65,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
 | Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
+| Instance required | A bare app selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Cancelled | The operator declines the interactive confirmation prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 
 ## Doctor Relationship

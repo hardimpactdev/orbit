@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
-| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may manage. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the schedule by name and optional concrete instance or node
   disambiguation from gateway schedule configuration.
-- Rejects ambiguous bare project selectors before destructive consent is forwarded
+- Rejects ambiguous bare app selectors before destructive consent is forwarded
   and before deletion.
 - Fails before side effects when no visible schedule matches.
 - Deletes the schedule row from the gateway database. Subsequent scheduler
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
-| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
 ## Doctor Relationship

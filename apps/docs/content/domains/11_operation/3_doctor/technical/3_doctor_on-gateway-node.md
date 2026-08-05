@@ -61,7 +61,7 @@ reality checks scoped to its current target:
 | --- | --- |
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and node-owned `10-node-records.conf` projection. |
 | `instance` | Check instance configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and health probes declared by the instance family. |
-| `workspace` | Check workspace configuration and the target node's workspace reality, using project-suffixed workspace identifiers in human output. |
+| `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `database_connection` | Check gateway connection records and target mappings, then inspect selected instance and workspace environment facts through the database family's documented gateway-local or Agent-push path. |
 | `process` | Check process configuration and process runtime reality on the target node. |
 | `proxy` | Check proxy route configuration, `orbit-caddy` backend reality, and the proxy-owned `20-proxy-records.conf` projection on the active router. |

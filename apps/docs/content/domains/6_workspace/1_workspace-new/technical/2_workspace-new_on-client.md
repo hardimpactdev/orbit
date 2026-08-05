@@ -10,7 +10,7 @@ When run from a client with an operator identity, `workspace:new` acts as a gate
 
 - **Input Resolution:** Gathers all arguments and options. Resolves the
   concrete instance from `--instance`, the `.orbit/config` marker, or the
-  gateway path-ownership lookup. Context that identifies only the parent project
+  gateway path-ownership lookup. Context that identifies only the parent app
   succeeds when it resolves uniquely; zero or multiple instances fail with
   `instance_required`. Performs local static validation (slug regex,
   length, reserved name) before calling the gateway.

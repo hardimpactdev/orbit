@@ -71,7 +71,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets. Every app primary route must keep
-   its project owner while targeting one concrete instance, that
+   its app owner while targeting one concrete instance, that
    instance's serving node, runtime upstream, and inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
@@ -149,7 +149,7 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
-For an instance primary route, restoring a mismatch also persists its project
+For an instance primary route, restoring a mismatch also persists its app
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.
 
@@ -189,9 +189,9 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `proxy.route_extra` | Create a custom gateway proxy route row when: the operator selected a specific node and backend route; the domain is unowned; and the observed route maps to `--upstream` or `--redirect`. |
-| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing project, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
+| `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, instance, WebSocket, workspace, gateway, router, S3, or tool ownership. |
 
-`doctor --adopt` does not scan arbitrary hosts, adopt project/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer project ownership from upstream paths, or adopt service health into the proxy family.
+`doctor --adopt` does not scan arbitrary hosts, adopt app/instance/WebSocket/workspace/gateway/router/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
 `proxy.dns_mapping_mismatch` is derived projection drift and is never adoptable.
 
 ## Test Mapping

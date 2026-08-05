@@ -213,8 +213,15 @@ it('renames pre-cutover instance storage and rewrites project grants while prese
             'id' => 1,
             'consumer_node_id' => 2,
             'serving_node_id' => 1,
-            'permissions' => json_encode(['app:read', 'instance:read', 'node:read'], JSON_THROW_ON_ERROR),
-            'custom_permissions' => json_encode(['app:write', 'app:new', 'instance:register'], JSON_THROW_ON_ERROR),
+            // Pre-cutover project workload tokens — cutover maps these to app:*.
+            'permissions' => json_encode(
+                ['project:read', 'project:write', 'project:list', 'instance:read', 'node:read'],
+                JSON_THROW_ON_ERROR,
+            ),
+            'custom_permissions' => json_encode(
+                ['project:new', 'project:remove', 'project:*', 'instance:register'],
+                JSON_THROW_ON_ERROR,
+            ),
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -354,9 +361,9 @@ it('renames pre-cutover instance storage and rewrites project grants while prese
         $custom = json_decode((string) $grant->custom_permissions, true, flags: JSON_THROW_ON_ERROR);
 
         expect($permissions)
-            ->toBe(['app:read', 'instance:read', 'node:read'])
+            ->toBe(['app:read', 'app:write', 'app:list', 'instance:read', 'node:read'])
             ->and($custom)
-            ->toBe(['app:write', 'app:new', 'instance:register'])
+            ->toBe(['app:new', 'app:remove', 'app:*', 'instance:register'])
             ->and(array_values(array_filter($permissions, fn (string $p): bool => str_starts_with($p, 'project:'))))
             ->toBeEmpty()
             ->and(array_values(array_filter($custom, fn (string $p): bool => str_starts_with($p, 'project:'))))

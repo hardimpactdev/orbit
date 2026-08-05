@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | Local `node:default` when no instance or workspace context resolves a node. | Visible node slug. |
-| `instance` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<app.instance>` selector. A bare project slug is valid only when that project has exactly one visible instance; zero or multiple instances fail with `error.meta.reason=instance_required`. |
-| `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent project when the workspace name is ambiguous. |
+| `instance` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<app.instance>` selector. A bare app slug is valid only when that app has exactly one visible instance; zero or multiple instances fail with `error.meta.reason=instance_required`. |
+| `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent app when the workspace name is ambiguous. |
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live image inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
@@ -71,7 +71,7 @@ read `.php-version`, mutate Composer constraints, or use SSH.
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-A supplied bare project fails before reads with
+A supplied bare app fails before reads with
 `error.code=validation_failed`, `error.meta.field=instance`, and
 `error.meta.reason=instance_required`.
 
@@ -88,5 +88,5 @@ own PHP runtime health for instance and workspace artifacts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | Concrete instance target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete instance/workspace placement, bare-project denial, runtime view reads, and structured success/error envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete instance/workspace placement, bare-app denial, runtime view reads, and structured success/error envelopes. |
 | `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Inherited workspace view mapping and PHP runtime view DTO shape. |

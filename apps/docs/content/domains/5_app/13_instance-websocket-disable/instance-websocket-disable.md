@@ -1,6 +1,6 @@
 # `orbit instance:websocket disable`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Disable WebSocket support for one concrete instance.
 
@@ -24,7 +24,7 @@ orbit instance:websocket disable docs.production --json
 
 ## Arguments and options
 
-- `app.instance`: dotted instance selector. A bare project slug is shorthand
+- `app.instance`: dotted instance selector. A bare app slug is shorthand
   only when exactly one eligible visible instance exists.
 - `--json`: Select JSON output and non-interactive input. It does not select a
   target or imply consent.
@@ -43,7 +43,7 @@ Run `instance:websocket disable` to detach an app from the fleet WebSocket servi
 
 `instance:websocket disable` does not:
 - Delete the binding record or the stored Reverb credentials. Credentials are
-  kept so re-enabling restores the same project identity on the Reverb node.
+  kept so re-enabling restores the same app identity on the Reverb node.
 - Require an active router or WebSocket backend node; route cleanup proceeds
   against the registered router.
 
@@ -71,7 +71,7 @@ and inspect app configuration.
 
 - [`instance:websocket enable`](../12_instance-websocket-enable/instance-websocket-enable.md) — enable WebSocket support for an app
 - [`instance:websocket credentials`](../14_instance-websocket-credentials/instance-websocket-credentials.md) — show Reverb credentials for a WebSocket-enabled app
-- [`app:show`](../4_app-show/app-show.md) — inspect the full project entity
+- [`app:show`](../4_app-show/app-show.md) — inspect the full app entity
 
 ## Technical Contract
 

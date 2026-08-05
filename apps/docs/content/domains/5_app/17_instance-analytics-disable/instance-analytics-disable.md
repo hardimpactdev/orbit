@@ -1,6 +1,6 @@
 # `orbit instance:analytics disable`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Disable analytics tracking proxy support for one concrete instance.
 

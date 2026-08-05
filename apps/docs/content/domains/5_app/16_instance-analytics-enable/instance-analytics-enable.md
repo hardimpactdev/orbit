@@ -1,6 +1,6 @@
 # `orbit instance:analytics enable`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Enable analytics tracking proxy support for one concrete instance.
 
@@ -12,7 +12,7 @@ orbit instance:analytics enable [app.instance] [--host=<host>] [--json]
 
 ## Arguments and options
 
-- `app.instance`: dotted instance selector. A bare project slug is shorthand
+- `app.instance`: dotted instance selector. A bare app slug is shorthand
   only when exactly one eligible visible instance exists.
 - `--host`: public analytics tracking hostname to bind. Repeatable up to ten
   unique hosts. Values must be multi-label DNS hostnames, not URLs, IP
@@ -41,7 +41,7 @@ provider DNS is configured.
 The Plausible dashboard and admin UI remain private at `analytics.orbit`. V1
 does not inject tracking scripts, create Plausible sites, or manage Plausible
 credentials. This command consumes the private service route created by role
-deployment; it does not create that route. Project owners add the Plausible script
+deployment; it does not create that route. App owners add the Plausible script
 manually.
 
 ## Requirements

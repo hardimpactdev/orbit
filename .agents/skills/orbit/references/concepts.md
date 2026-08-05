@@ -71,7 +71,7 @@ Standing configuration is tracked as **state families**. Each family is a gatewa
 | Family key | Tracks |
 |---|---|
 | `node` | Fleet membership, roles, gateway identity, node reachability |
-| `instance` | Concrete project-instance placement and runtime intent |
+| `instance` | Concrete app-instance placement and runtime intent |
 | `workspace` | Per-workspace route, setup policy, PHP override, and runtime intent |
 | `process` | Runtime units for instances, workspaces, and node processes |
 | `proxy` | HTTP ingress for instances, workspaces, custom routes, tool routes, redirects, gateway API |
@@ -112,13 +112,13 @@ they do not own gateway state.
 ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$
 ```
 
-Length limits: project <=40, instance <=63, node <=63, workspace <=63,
+Length limits: app <=40, instance <=63, node <=63, workspace <=63,
 process <=64.
 
 Hostnames:
 
-- Development instance: `{project}.{node-tld}` (e.g. `myapp.beast`).
-- Workspace: `{workspace}.{project}.{tld}` (e.g. `feature.myapp.beast`).
+- Development instance: `{app}.{node-tld}` (e.g. `myapp.beast`).
+- Workspace: `{workspace}.{app}.{tld}` (e.g. `feature.myapp.beast`).
 - Production instance: the value of `--domain` (globally unique across the fleet).
 
 Process runtime unit name:

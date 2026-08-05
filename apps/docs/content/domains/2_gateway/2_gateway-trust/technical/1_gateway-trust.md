@@ -73,7 +73,7 @@ same root.
 
 The gateway remains the only node that owns root CA private material and route
 certificate issuance. Serving nodes may hold only the route-scoped certificate
-and key material required to serve HTTPS for routes applied on that node. Project, instance,
+and key material required to serve HTTPS for routes applied on that node. App, instance,
 workspace, proxy, gateway, and tool route applying owns leaf certificate
 creation, upload, renewal, cleanup, and backend TLS drift repair.
 `gateway:trust` owns only caller-local installation of the public root.

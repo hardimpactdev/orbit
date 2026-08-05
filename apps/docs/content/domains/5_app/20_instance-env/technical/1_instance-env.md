@@ -58,7 +58,7 @@ serving node. These defaults are not stored as explicit instance env rows.
 ### Env Rules
 
 1. **Instance ownership.** Env values belong to an instance, not the logical
-   project.
+   app.
 2. **Non-secret only.** Explicit secret values are rejected until secret storage
    is designed.
 3. **Orbit defaults.** Rendered env includes non-secret Orbit-derived
@@ -83,7 +83,7 @@ serving node. These defaults are not stored as explicit instance env rows.
    selected instance's FrankenPHP runtime container through
    `AppRuntimeContainerManager`.
 8. **Explicit scope output.** Every success response carries
-   `scope=instance`, `project`, `instance`, `workspace=null`, the concrete
+   `scope=instance`, `app`, `instance`, `workspace=null`, the concrete
    `.env` `path`, and `stored`, `applied`, and `runtime_restarted` booleans.
 
 ## Renderer Contracts

@@ -58,7 +58,7 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 
 - **Human Output:** Summarizes the changed runtime configuration and the
   status of re-applied artifacts on the node.
-- **JSON Output:** Returns separate canonical logical `project` and updated
+- **JSON Output:** Returns separate canonical logical `app` and updated
   `instance` entities. Drift during a successful run is reported as instance-family
   warning metadata.
 

@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare app is valid only when it has exactly one instance. |
 | `step` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing step id or exact title for the selected instance. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
@@ -38,7 +38,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Deployment Policy Removal Rules
 
 - Resolves one concrete production instance through gateway configuration.
-- Fails before side effects unless the selected instance belongs to a production project.
+- Fails before side effects unless the selected instance belongs to a production app.
 - Resolves one deployment step by id or exact title.
 - Requires destructive consent before removing gateway policy.
 - Removes the step definition from the instance's deployment pipeline.
@@ -61,8 +61,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
-| Production project required | The app exists but is not a production project. | `error.code=deploy.production_app_required` |
-| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Step not found | No step matches the supplied id or title. | `error.code=deploy.step_not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Type | `api:DELETE /deploy/steps/{step}` |
 | Effect | `destructive` |
 | Subject | `DeployStep` when resolved; `none` otherwise. |
-| Properties | `project`, `instance`, `step_id`, `title`. History is preserved. |
+| Properties | `app`, `instance`, `step_id`, `title`. History is preserved. |
 | Description | derived |
 
 ## Doctor Relationship

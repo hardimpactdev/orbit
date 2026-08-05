@@ -1,6 +1,6 @@
 # `orbit app:show [app]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Show one app's gateway registry details.
 
@@ -17,7 +17,7 @@ runtime drift, readiness, and repair belong to
 orbit app:show [app] [--json]
 ```
 
-Run without the `project` argument to let the command resolve the target app from
+Run without the `app` argument to let the command resolve the target app from
 the current local directory context.
 
 ## Examples
@@ -31,7 +31,7 @@ orbit app:show docs --json
 
 ## Arguments and options
 
-- `project`: app name or app hostname to inspect. Optional. Defaults to the app
+- `app`: app name or app hostname to inspect. Optional. Defaults to the app
   resolved from the current working directory context. See
   [Default resolution](technical/5.1_app-show_input-mode_interactive.md#default-resolution)
   for interactive behavior and
@@ -39,14 +39,14 @@ orbit app:show docs --json
   for non-interactive behavior.
 - `--json`: Output JSON.
 
-Project slugs are globally unique in the gateway app registry. The positional
+App slugs are globally unique in the gateway app registry. The positional
 already addresses an app uniquely; `app:show` does not accept a `--node` flag.
 
 ## What Happens
 
 Run `app:show` to inspect a single app's gateway configuration without triggering any writes.
 
-`app:show` performs a read-only registry inspection of a single project:
+`app:show` performs a read-only registry inspection of a single app:
 
 1. Resolves the target app from input, current directory context, or
    interactive prompt.

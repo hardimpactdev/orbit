@@ -76,8 +76,67 @@ it('keeps agent-facing Orbit skill references on app and instance vocabulary', f
 
     expect($content)
         ->toContain('app:new', 'app:list', 'instance:list', 'instance:setup')
+        ->toContain('--app=')
+        ->toContain('domains/5_app')
+        ->and(
+            str_contains($content, 'App → Instance → Workspace')
+            || str_contains($content, 'App -> Instance -> Workspace'),
+        )->toBeTrue()
+        ->and($content)
         ->not->toMatch('/\bproject:(?:new|list|show|remove|read|write)\b/')
-        ->not->toContain('/api/projects');
+        ->not->toContain('/api/projects')
+        ->not->toContain('domains/5_project')
+        ->not->toMatch('/Project\s*->\s*Instance\s*->\s*Workspace/')
+        ->not->toContain('[--project=');
+});
+
+/**
+ * Active CLI human headers and value-taking filters must use App vocabulary.
+ * Solo/Codex external project contracts are guarded separately.
+ */
+it('keeps active CLI app and instance command surfaces on App vocabulary', function (): void {
+    $cliRoot = dirname(base_path()).'/cli';
+    if (! is_dir($cliRoot)) {
+        $cliRoot = base_path().'/../cli';
+    }
+    $cliRoot = realpath($cliRoot) ?: $cliRoot;
+
+    $instanceList = (string) file_get_contents($cliRoot.'/app/Commands/App/InstanceListCommand.php');
+    $appShow = (string) file_get_contents($cliRoot.'/app/Commands/App/AppShowCommand.php');
+    $prompts = (string) file_get_contents($cliRoot.'/app/Commands/Concerns/PromptsForGatewayRegistryEntities.php');
+
+    expect($instanceList)
+        ->toContain('{--app= : Limit results to one app}')
+        ->toContain("'APP'")
+        ->not->toContain('{--app : Limit results to one app}')
+        ->not->toContain("'PROJECT'")
+        ->not->toContain('{--project');
+
+    expect($appShow)
+        ->toContain("'APP DEPS'")
+        ->toContain('promptForVisibleApp')
+        ->not->toContain("'PROJECT DEPS'")
+        ->not->toContain('promptForVisibleProject');
+
+    expect($prompts)
+        ->toContain('function promptForVisibleApp')
+        ->toContain("headers: ['App', 'Host', 'Node', 'Repository']")
+        ->not->toContain('function promptForVisibleProject')
+        ->not->toContain("headers: ['Project', 'Host', 'Node', 'Repository']");
+});
+
+/**
+ * macOS node-detail workload tables must use App headers, not Project.
+ */
+it('keeps macOS node detail workload table headers on App vocabulary', function (): void {
+    $macosMain = repo_path('apps/macos/frontend/src/main.ts');
+    $source = (string) file_get_contents($macosMain);
+
+    expect($source)
+        ->toContain("['Process', 'App', 'Runtime', 'Status']")
+        ->toContain("['App', 'Instance', 'Environment', 'Status']")
+        ->not->toContain("['Process', 'Project', 'Runtime', 'Status']")
+        ->not->toContain("['Project', 'Instance', 'Environment', 'Status']");
 });
 
 it('rejects active AppInstance model class and app_instances schema names in runtime models', function (): void {

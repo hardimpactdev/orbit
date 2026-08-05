@@ -48,7 +48,7 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
       `app:new` / `instance:register` and any workspace-installed marker) that
-      names the owning project slug.
+      names the owning app slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.
    4. Resolution failure: in non-interactive mode, fail with
@@ -79,8 +79,8 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
    mutate that field directly. Every output renderer uses this single ordering,
    so callers reading any output form see the same steps in the same relative
    order.
-3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, project, instance, phase, order, command, timeout_seconds }` already
+3. **Step record shape.** Every returned record uses the shared
+   step shape `{ id, app, instance, phase, order, command, timeout_seconds }` already
    published by `workspace-setup-step:add`. `phase` is always `"setup"`.
    There is no `name`, no per-step `working_directory`, no `env_overrides`,
    and no per-step `on_failure` field.

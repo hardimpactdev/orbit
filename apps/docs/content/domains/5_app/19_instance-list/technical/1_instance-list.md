@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit instance:list [--app<project>] [--json]
+orbit instance:list [--app=<app>] [--json]
 ```
 
 ## Input Contract
@@ -24,20 +24,20 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `project` | `--app` | Optional. | Never. | All visible apps. | Existing project slug. |
+| `app` | `--app` | Optional. | Never. | All visible apps. | Existing app slug. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## State Model
 
-Each returned `Instance` belongs to one `Project`. Private storage retains
-its rollback-safe legacy foreign key; the public entity fields are `project`
+Each returned `Instance` belongs to one `App`. Private storage retains
+its rollback-safe legacy foreign key; the public entity fields are `app`
 and `name`.
 
 ## API Surface
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `GET` | `/api/instances` | `instance:read` | List visible instances, optionally filtered by `project`. |
+| `GET` | `/api/instances` | `instance:read` | List visible instances, optionally filtered by `app`. |
 
 ## Behavior Contract
 
@@ -56,7 +56,7 @@ and `name`.
 
 ## Failure Semantics
 
-Unknown project filters return `app.not_found`. An authorized caller
+Unknown app filters return `app.not_found`. An authorized caller
 receives an empty successful list when no instance rows are visible. A
 non-gateway caller with no `instance:read` grant on any active app-role serving
 node receives `authorization_failed` with
@@ -73,12 +73,12 @@ owns live runtime verification and drift convergence.
 | --- | --- |
 | Type | `api:GET /instances` |
 | Effect | `read` |
-| Subject | Selected `Project`, or none without an app filter. |
+| Subject | Selected `App`, or none without an app filter. |
 | Properties | No command-specific properties beyond transport context. |
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php` | CLI list filtering, human rows, and JSON forwarding. |
-| `apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php` | Global instance visibility, authorized empty lists, project filtering, and payload shape. |
+| `apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php` | CLI list filtering, human rows, and JSON forwarding. |
+| `apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php` | Global instance visibility, authorized empty lists, app filtering, and payload shape. |

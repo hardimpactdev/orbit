@@ -49,7 +49,7 @@ to read.
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
       `app:new` / `instance:register` and any workspace-installed marker) that
-      names the owning project slug.
+      names the owning app slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.
    4. Resolution failure: in non-interactive mode, fail with
@@ -85,8 +85,8 @@ to read.
    names the first teardown step that runs during
    [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), not
    a symmetric inverse of any setup ordering.
-3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, project, instance, phase, order, command, timeout_seconds }` already
+3. **Step record shape.** Every returned record uses the shared
+   step shape `{ id, app, instance, phase, order, command, timeout_seconds }` already
    published by `workspace-teardown-step:add`. `phase` is always
    `"teardown"`. There is no `name`, no per-step `working_directory`, no
    `env_overrides`, and no per-step `on_failure` field.

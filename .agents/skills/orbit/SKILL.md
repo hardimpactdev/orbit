@@ -144,10 +144,10 @@ command catalog when command completeness matters.
 |---|---|
 | `orbit app:new [app]` | Create an app and its first instance on an app-role node |
 | `orbit app:list` | List logical apps |
-| `orbit app:show [app]` | Show project identity with visible instances and workspaces |
+| `orbit app:show [app]` | Show app identity with visible instances and workspaces |
 | `orbit app:remove [app]` | Remove an app and all of its owned instances and workspaces |
-| `orbit instance:register [app]` | Adopt or reconverge an existing project path as an Orbit instance |
-| `orbit instance:list\|show\|add\|remove` | Inspect and manage concrete project placements |
+| `orbit instance:register [app]` | Adopt or reconverge an existing app path as an Orbit instance |
+| `orbit instance:list\|show\|add\|remove` | Inspect and manage concrete app placements |
 | `orbit instance:root [app.instance] [root]` | Change one instance's document root |
 | `orbit instance:setup [app.instance]` | Run the selected instance's setup pipeline |
 | `orbit instance-setup-step:add\|list\|remove` | Manage one instance's finite setup pipeline |
@@ -297,7 +297,7 @@ that tool definition.
 
 | Command | What it does |
 |---|---|
-| `orbit activity:list` | List gateway activity history (filter by `--project` / `--node` / `--effect` / `--correlation`) |
+| `orbit activity:list` | List gateway activity history (filter by `--app` / `--node` / `--effect` / `--correlation`) |
 | `orbit activity:show [id]` | Show one activity entry |
 
 ### VPN  -  [`references/vpn.md`](references/vpn.md)
@@ -324,7 +324,7 @@ orbit gateway:add 10.6.0.1
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=my-mac --operator-tld=my-mac
 ```
 
-**Create a development project + database**
+**Create a development app + database**
 
 ```bash
 orbit node:default beast              # set local default development node (one-time)

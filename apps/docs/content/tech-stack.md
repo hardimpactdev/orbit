@@ -494,7 +494,7 @@ Caddy configuration is split by exposure boundary, not by who happens to write t
 
 Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. Gateway API proxy routes belong here only when the gateway is in `router-colocated` mode, where router-owned `orbit-caddy` forwards to `orbit-gateway` over `orbit-network`. In `gateway-direct` mode, `orbit-gateway` publishes gateway HTTPS directly and no gateway API Caddy route is required. Gateway API exposure must not create a broad public virtual host.
 
-Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. Project, instance, workspace, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
+Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App, instance, workspace, and custom proxy routes write here because they may be served on public or app domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist in the `orbit-caddy` mount or managed volume, but never replace unrelated site blocks or remove existing imports.
 

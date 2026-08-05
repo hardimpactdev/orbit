@@ -28,7 +28,7 @@ Use this command to inspect process configuration and last known state without l
   `name`) plus durable human `label`.
 - **Context Resolution**: Resolves a node, instance, workspace, or `app`
   hostname context. Prefer `<app.instance>` for instance mode; a bare
-  project slug is accepted only when that project has exactly one instance. A
+  app slug is accepted only when that app has exactly one instance. A
   workspace context includes workspace-owned definitions and instance-owned
   definitions inherited by that workspace. `--app` accepts an app-instance or
   workspace hostname resolved through exact registered proxy-route domain precedence

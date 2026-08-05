@@ -1,6 +1,6 @@
 # `orbit instance:env list|set|render [instance]`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 List, set, or render non-secret env values for one instance.
 
@@ -60,7 +60,7 @@ env map for the instance, including Orbit-derived `APP_URL`, `VITE_APP_URL`,
 `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, `VITE_DEV_SERVER_CERT`, and
 database-derived keys.
 
-Every response identifies the concrete target with `scope`, `project`, `instance`,
+Every response identifies the concrete target with `scope`, `app`, `instance`,
 `workspace`, and `path`, plus `stored`, `applied`, and `runtime_restarted`
 outcome booleans.
 

@@ -7,14 +7,14 @@ List concrete instances across apps, optionally filtered to one app.
 ## Usage
 
 ```bash
-orbit instance:list [--app<project>] [--json]
+orbit instance:list [--app=<app>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit instance:list
-orbit instance:list --appbilling --json
+orbit instance:list --app=billing --json
 ```
 
 ## Arguments and options
@@ -31,7 +31,7 @@ path.
 
 ## Output
 
-Human output is a table with project, instance, driver, runtime mode, PHP
+Human output is a table with app, instance, driver, runtime mode, PHP
 version, extensions, and deployment status. The
 [JSON renderer contract](technical/6.2_instance-list_output-render_json.md)
 defines the machine-readable inventory.

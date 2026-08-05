@@ -22,18 +22,18 @@ orbit php:use 8.5 --instance=docs --json
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
 - `--instance=<app.instance>`: Select the concrete instance whose parent
-  project's shared PHP runtime policy is changed. All instances of that project
+  app's shared PHP runtime policy is changed. All instances of that app
   consume the shared policy.
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
-  project PHP version.
+  app PHP version.
 - `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported,
   matching the production native Orbit CLI binary artifact's embedded PHP
   version. Source-mounted Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - `--node=<node>`: Target node for `--cli`, or an optional serving-node
   assertion for a workspace. It is invalid for an app policy write, which
-  selects one concrete instance (dotted selector or unambiguous bare-project
+  selects one concrete instance (dotted selector or unambiguous bare-app
   shorthand) and preflights only that instance's serving node. A mismatched
   workspace node fails with the stable `target_mismatch` reason before any
   gateway configuration is written. See the
@@ -46,14 +46,14 @@ orbit php:use 8.5 --instance=docs --json
 
 Run this command to select the PHP image version for an instance or workspace.
 
-`php:use` resolves exactly one target scope: project runtime policy for one
+`php:use` resolves exactly one target scope: app runtime policy for one
 selected instance, workspace runtime override, workspace inheritance, or node
-CLI default. It validates that project and workspace versions are supported by
+CLI default. It validates that app and workspace versions are supported by
 Orbit. Before an app-policy write it authorizes `php:write` and verifies the
 image only on the selected instance's serving node; any denial or missing image
 stops before policy mutation. Node CLI selection only accepts PHP 8.5.
 
-For an instance target, the command writes the parent project's shared policy
+For an instance target, the command writes the parent app's shared policy
 only after that selected-instance preflight, then reconciles the selected
 instance's runtime container and proxy backend. Fan-out reconciliation for
 sibling Orbit instances is reported as non-fatal warnings when applicable; the
@@ -79,7 +79,7 @@ machine-readable output.
 - The current node identity has `php:write` on every affected Orbit instance
   serving node for an app-policy write, or on the resolved workspace/CLI node.
   Gateway identity remains implicit.
-- The requested project PHP version is available on every affected Orbit instance
+- The requested app PHP version is available on every affected Orbit instance
   serving node; a workspace version is available on that workspace's serving
   node. Node CLI selection requires PHP 8.5.
 - The concrete instance-serving node is Agent-eligible and reachable when

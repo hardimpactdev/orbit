@@ -5,7 +5,7 @@
 Unregister and detach a node from the Orbit fleet.
 
 Use `node:remove` when decommissioning servers or moving a host to a different
-Orbit project. The command removes the node from gateway-owned node configuration,
+Orbit app. The command removes the node from gateway-owned node configuration,
 deletes node access grants, tears down the node's WireGuard peer identity, and
 rematerializes private DNS projections without the removed node. It
 does not clean up apps, instances, workspaces, processes, schedules, tools, firewall rules,

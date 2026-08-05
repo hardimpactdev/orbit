@@ -67,7 +67,7 @@ $template = select(
 These commands use `select` and are good models to follow.
 
 - Prefer commands that call `Laravel\Prompts\select` for single-choice picks
-  (for example project/node selection helpers that use select prompts). Do not
+  (for example app/node selection helpers that use select prompts). Do not
   cite `node:new` here; its interactive path uses text prompts, not `select`.
 
 ## Cross References

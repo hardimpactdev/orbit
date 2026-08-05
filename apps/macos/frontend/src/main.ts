@@ -415,7 +415,7 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
 
     if (viewState.detailTab === 'processes') {
         return tableTemplate(
-            ['Process', 'Project', 'Runtime', 'Status'],
+            ['Process', 'App', 'Runtime', 'Status'],
             group.processes.map(process => `
                 <tr>
                     <td>${escapeHtml(process.name)}</td>
@@ -441,7 +441,7 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
     }
 
     return tableTemplate(
-        ['Project', 'Instance', 'Environment', 'Status'],
+        ['App', 'Instance', 'Environment', 'Status'],
         group.instances.map(instance => `
             <tr>
                 <td>${escapeHtml(instance.app)}</td>

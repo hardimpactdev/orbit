@@ -33,7 +33,7 @@ This command follows the shared
 
 ### Setup run rules
 
-1. Resolves one concrete instance and its serving node. Project
+1. Resolves one concrete instance and its serving node. App
    node/path/root/domain defaults are never runtime placement.
 2. Loads that instance's setup steps ordered by `sort_order`.
 3. Returns a skipped result when no setup steps exist.
@@ -53,7 +53,7 @@ TLS fields.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `ORBIT_APP` | Project slug | Lets scripts identify the app being set up. |
+| `ORBIT_APP` | App slug | Lets scripts identify the app being set up. |
 | `ORBIT_APP_INSTANCE` | Instance name | Lets scripts distinguish placements for one app. |
 | `ORBIT_APP_PATH` | Selected instance root path | Lets scripts use the concrete path without recomputing it. |
 | `ORBIT_URL` | Selected instance HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |
@@ -74,7 +74,7 @@ TLS fields.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
-| Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
+| Instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Setup step failed | A setup command exits non-zero. | `error.code=instance.setup_failed` |
 
 ## Doctor Relationship
@@ -89,7 +89,7 @@ runs. Instance runtime drift remains owned by [`doctor --family=instance`](../..
 | Type | `api:POST /instances/{instance}/setup` |
 | Effect | `write` |
 | Subject | `Instance` on success; `none` on validation or authorization failure. |
-| Properties | `project`, `instance`, and setup run status. |
+| Properties | `app`, `instance`, and setup run status. |
 | Description | derived |
 
 ## Test Mapping

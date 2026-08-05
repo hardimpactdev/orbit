@@ -185,7 +185,7 @@ document-root updates.
 | Type | `api:POST /instances/{instance}/root` |
 | Effect | `write` |
 | Subject | Selected `Instance`; `none` before instance resolution. |
-| Properties | `project` (string or null), `instance` (string or null), `serving_node` (string or null), and `root` (string or null). No raw shell command text, node-side output, or secrets. |
+| Properties | `app` (string or null), `instance` (string or null), `serving_node` (string or null), and `root` (string or null). No raw shell command text, node-side output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

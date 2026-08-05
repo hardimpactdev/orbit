@@ -1,6 +1,6 @@
 # `orbit instance:websocket credentials`
 
-[Back to Project and instance commands.](../README.md)
+[Back to App and instance commands.](../README.md)
 
 Show WebSocket credentials for one concrete instance.
 
@@ -24,7 +24,7 @@ orbit instance:websocket credentials docs.production --json
 
 ## Arguments and options
 
-- `app.instance`: dotted instance selector. A bare project slug is shorthand
+- `app.instance`: dotted instance selector. A bare app slug is shorthand
   only when exactly one eligible visible instance exists.
 - `--json`: Select JSON output and non-interactive input only.
 

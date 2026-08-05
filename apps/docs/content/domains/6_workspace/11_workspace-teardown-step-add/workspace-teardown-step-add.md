@@ -30,7 +30,7 @@ artifact removal.
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
   lookup keyed on `(caller node identity, absolute cwd)` → interactive
-  prompt or non-interactive failure. Bare project slugs return an
+  prompt or non-interactive failure. Bare app slugs return an
   instance-required validation error. The exact error shape is defined by
   the [JSON renderer contract](technical/6.2_workspace-teardown-step-add_output-render_json.md).
   Project files such as `composer.json`, `package.json`, and `.php-version` are

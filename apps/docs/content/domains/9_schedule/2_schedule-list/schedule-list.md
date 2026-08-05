@@ -34,7 +34,7 @@ orbit schedule:list --node=app-1
 
 Run `schedule:list` when you need to audit what recurring work is configured
 for an instance or node. An app filter resolves one concrete instance;
-ambiguous bare project filters fail rather than aggregating instance-owned
+ambiguous bare app filters fail rather than aggregating instance-owned
 schedules. `schedule:list` reads schedule configuration and latest durable run
 history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler
 state, repair drift, or adopt scheduler-side state.

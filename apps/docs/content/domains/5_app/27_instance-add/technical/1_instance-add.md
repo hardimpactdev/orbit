@@ -35,7 +35,7 @@ This command follows the shared
 
 ## State Model
 
-The new `Instance` belongs to one `Project` and stores its driver, typed
+The new `Instance` belongs to one `App` and stores its driver, typed
 driver configuration, runtime requirements, and instance-owned defaults.
 
 ## API Surface
@@ -77,12 +77,12 @@ placement and required runtime extensions.
 | --- | --- |
 | Type | `api:POST /apps/{app}/instances` |
 | Effect | `write` |
-| Subject | Target `Project`. |
+| Subject | Target `App`. |
 | Properties | The request and API path identify the created instance and driver. |
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php` | CLI add validation and forwarding. |
+| `apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php` | CLI add validation and forwarding. |
 | `apps/gateway/tests/Feature/InstanceControllerTest.php` | Driver validation, authorization, creation, and payload shape. |

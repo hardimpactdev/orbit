@@ -65,7 +65,7 @@ final class AppShowCommand extends GatewayCommand
         }
 
         if ($this->canPromptForRegistrySelection()) {
-            return $this->promptForVisibleProject();
+            return $this->promptForVisibleApp();
         }
 
         return $this->renderFailure('validation_failed', 'The app argument is required.', ['field' => 'app']);
@@ -118,7 +118,7 @@ final class AppShowCommand extends GatewayCommand
             return;
         }
 
-        table(headers: ['NAME', 'DRIVER', 'NODE', 'URL', 'PROJECT DEPS'], rows: $rows);
+        table(headers: ['NAME', 'DRIVER', 'NODE', 'URL', 'APP DEPS'], rows: $rows);
     }
 
     /**

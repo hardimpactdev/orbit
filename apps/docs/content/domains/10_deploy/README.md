@@ -6,7 +6,7 @@ instances. The command family owns the `deploy:*` command prefix.
 Deployments are an operator workflow, not a standalone state family. Deployment
 step definitions, warmup paths, deployment runs, run logs, and latest deployment
 status are instance-owned gateway state. Instance doctor may use the selected
-instance's deployment policy and latest run state when evaluating production project
+instance's deployment policy and latest run state when evaluating production app
 health.
 
 ## State Ownership
@@ -26,7 +26,7 @@ These rules define what the deploy command family owns and how it behaves.
 
 - The deploy command family owns the `deploy:*` command prefix.
 - Deployment policy and history belong to one concrete production instance.
-- A dotted selector such as `docs.production` selects that instance. A bare project
+- A dotted selector such as `docs.production` selects that instance. A bare app
   selector is shorthand only when the app has exactly one instance; otherwise
   the command fails with `error.meta.reason=instance_required`.
 - The gateway is the source of truth for deployment step definitions, step
@@ -55,7 +55,7 @@ These rules define what the deploy command family owns and how it behaves.
   node through the gateway.
 - Deployment reads use gateway policy and durable history. They do not inspect
   live node state.
-- Deployment health is part of production project health and belongs to
+- Deployment health is part of production app health and belongs to
   `doctor --family=instance`.
 - Orbit Agent execution currently supports Orbit-driver instances with a
   concrete node and source path. Unsupported instance drivers fail explicitly.
@@ -81,7 +81,7 @@ Deploy JSON renderers that return one step entity embed this shape under
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment step identifier. |
-| `project` | string | Owning project slug. |
+| `app` | string | Owning app slug. |
 | `instance` | string | Concrete production instance that owns the step. |
 | `title` | string | Human label for the step. |
 | `command` | string | Shell command executed during deployment. |
@@ -118,7 +118,7 @@ Deploy JSON renderers that return one run entity embed this shape under
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment run identifier. |
-| `project` | string | Owning project slug. |
+| `app` | string | Owning app slug. |
 | `instance` | string | Concrete production instance that owns the run. |
 | `status` | string | `running`, `completed`, `failed`, or `cancelled`. |
 | `exit_code` | integer \| null | Final process exit code when the run has finished. |

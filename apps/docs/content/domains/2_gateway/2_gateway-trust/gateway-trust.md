@@ -49,7 +49,7 @@ orbit gateway:trust --json
 The command is idempotent. If the same gateway CA is already trusted locally, it
 reports success without changing gateway configuration.
 
-`gateway:trust` does not create or distribute route certificates. Project, instance,
+`gateway:trust` does not create or distribute route certificates. App, instance,
 workspace, proxy, gateway, and tool route applying owns the gateway-issued
 leaf certificates and the serving-node TLS files they require.
 

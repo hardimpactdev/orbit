@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected concrete target. |
-| `instance` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `instance` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Required when no instance target resolves and no target can be prompted.` | `Forbidden with `instance`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
 | `command` | `--command` | `Required when `script` is absent.` | `Forbidden with `script`.` | `None.` | Non-empty command line accepted by the schedule execution policy for the target scope. |
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
@@ -46,7 +46,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 
 - Resolves exactly one target scope: instance or node.
 - Resolves instance scope to exactly one concrete instance before writing. A
-  dotted selector addresses that instance; a bare project selector succeeds only
+  dotted selector addresses that instance; a bare app selector succeeds only
   when exactly one eligible instance is visible for `schedule:add`.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
 - Stores the schedule name, scope, concrete `instance_id` when applicable,
@@ -87,7 +87,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Name collision | A schedule with the same name already exists in the selected concrete target. | `error.code=schedule.name_collision` |
-| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
+| Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Timeout invalid | The timeout is outside `1..86400` seconds. | `error.code=validation_failed`, `error.meta.field=timeout` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |

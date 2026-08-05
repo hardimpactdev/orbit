@@ -29,7 +29,7 @@ This command follows the shared
 ## State Model
 
 The selected `Instance` owns placement and instance-specific configuration;
-its `Project` owns shared logical identity and runtime defaults.
+its `App` owns shared logical identity and runtime defaults.
 
 ## API Surface
 
@@ -67,12 +67,12 @@ selected placement.
 | --- | --- |
 | Type | `api:GET /apps/{app}/instances/{instance}` |
 | Effect | `read` |
-| Subject | Selected `Project`. |
+| Subject | Selected `App`. |
 | Properties | The API path carries the concrete instance identity. |
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php` | Verifies dotted selector validation and human and JSON rendering. |
+| `apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php` | Verifies dotted selector validation and human and JSON rendering. |
 | `apps/gateway/tests/Feature/InstanceControllerTest.php` | Show authorization and payload shape. |

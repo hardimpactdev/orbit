@@ -52,9 +52,9 @@ These rules define what PHP runtime commands own and how they operate.
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted
   Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`.
-- Project PHP version is gateway-tracked project configuration.
+- App PHP version is gateway-tracked app configuration.
 - Workspace PHP version is gateway-tracked workspace configuration. A workspace
-  inherits the parent project PHP version unless it stores an override.
+  inherits the parent app PHP version unless it stores an override.
 - Workspace PHP reads and writes are available only when the workspace resolves
   to an active `app-dev` serving node and the caller is not an `app-prod` node.
   Explicit workspace targets fail with

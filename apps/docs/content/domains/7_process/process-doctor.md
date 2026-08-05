@@ -17,7 +17,7 @@ The process family owns these facts:
   runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for one concrete instance and, on
   `app-dev` only, its workspaces:
-  `orbit_<project>_<instance>_<workspace|main>_<process>`, deterministically
+  `orbit_<app>_<instance>_<workspace|main>_<process>`, deterministically
   bounded with a stable hash when the full name exceeds the shared 64-character
   backend limit so launchd labels remain valid;
 - systemd process runtime units rendered from process, app, workspace, and node
@@ -46,7 +46,7 @@ The process family owns these facts:
   back at the owning node's own WireGuard service address.
 
 Node reachability and WireGuard route mutation belong to `node` provisioning
-and topology work. Project source policy, PHP runtime, and instance runtime configuration
+and topology work. App source policy, PHP runtime, and instance runtime configuration
 belong to `instance`. Workspace source directories and setup state belong to
 `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside
 the process family.
@@ -62,7 +62,7 @@ Main instance and node-owned process drift remains visible.
 
 ### Registry configuration
 
-Every selected instance/workspace process definition has valid project and
+Every selected instance/workspace process definition has valid app and
 concrete instance references, plus a process name, command, restart policy,
 and crash-notification policy. Node-owned service process definitions have a
 valid active node owner instead of an instance owner.
@@ -78,7 +78,7 @@ The owner resolves to one active `Instance`. On `app-dev`, expected runtime
 contexts are that instance's main context plus every active workspace belonging
 to the same instance. On `app-prod`, only the main context is eligible. All
 expected units are placed on the instance's serving node; other instances of
-the same project are outside this definition's expansion.
+the same app are outside this definition's expansion.
 
 ### Process manager availability
 
@@ -125,7 +125,7 @@ to their ordinary checks regardless of hibernation state.
 ### Runtime-unit identity
 
 Each instance/workspace runtime context maps to exactly one runtime unit name that
-Orbit owns, using `orbit_<project>_<instance>_<workspace|main>_<process>`. Node-owned services
+Orbit owns, using `orbit_<app>_<instance>_<workspace|main>_<process>`. Node-owned services
 may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 `seaweedfs` process row.
 
@@ -201,8 +201,8 @@ Each code below identifies a specific process-family drift condition that the pr
 
 | Code | Detected when |
 | --- | --- |
-| `process.record_incomplete` | A selected instance/workspace process definition lacks project, concrete instance, name, command, restart policy, or crash-notification policy. |
-| `process.owner_app_invalid` | The process definition points at a missing project, missing instance, or instance whose serving node is not active. |
+| `process.record_incomplete` | A selected instance/workspace process definition lacks app, concrete instance, name, command, restart policy, or crash-notification policy. |
+| `process.owner_app_invalid` | The process definition points at a missing app, missing instance, or instance whose serving node is not active. |
 | `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
 | `process.runtime_context_unresolved` | The expected main instance or same-instance workspace runtime context cannot be derived from gateway configuration. |
 | `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but supported Linux self-route diagnostics are missing or unhealthy. Unsupported platforms are not applicable and emit no issue. |
