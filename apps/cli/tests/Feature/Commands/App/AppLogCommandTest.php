@@ -65,14 +65,14 @@ describe('app:log host resolution', function (): void {
             ->toBe('storage/logs/laravel.log');
     });
 
-    it('rejects a bare registered app.instance token before proxy matching', function (): void {
+    it('accepts a bare hostname that collides with a registered app.instance selector when it is an exact proxy domain', function (): void {
         Http::fake(function (Request $request) {
             $url = urldecode($request->url());
 
-            if (str_contains($url, '/api/instances') && ! str_contains($url, '/log')) {
+            if (str_contains($url, '/api/instances') && $request->method() === 'GET' && ! str_contains($url, '/log')) {
                 return Http::response(fakeSuccessEnvelope([
                     'instances' => [
-                        ['app' => 'mealou', 'name' => 'development'],
+                        ['app' => 'servauto-app', 'name' => 'nmbp'],
                     ],
                 ]));
             }
@@ -81,10 +81,22 @@ describe('app:log host resolution', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'routes' => [
                         [
-                            'domain' => 'mealou.development',
-                            'owner' => ['type' => 'instance', 'name' => 'mealou.development'],
-                            'target' => ['type' => 'instance', 'value' => 'mealou.development'],
+                            'domain' => 'servauto-app.nmbp',
+                            'owner' => ['type' => 'instance', 'name' => 'servauto-app.nmbp'],
+                            'target' => ['type' => 'instance', 'value' => 'servauto-app.nmbp'],
                         ],
+                    ],
+                ]));
+            }
+
+            if (str_contains($url, '/api/instances/servauto-app.nmbp/log')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'path' => 'storage/logs/laravel.log',
+                    'file_exists' => true,
+                    'lines' => ['collision-ok'],
+                    'target' => [
+                        'type' => 'instance',
+                        'selector' => 'servauto-app.nmbp',
                     ],
                 ]));
             }
@@ -93,20 +105,23 @@ describe('app:log host resolution', function (): void {
         });
 
         [$exitCode, $output] = runCommand($this, 'app:log', [
-            'target' => 'mealou.development',
+            'target' => 'servauto-app.nmbp',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('validation_failed')
-            ->and($decoded['error']['message'])
-            ->toContain('instance:log');
+            ->toBe(0)
+            ->and($decoded['success']['data']['path'])
+            ->toBe('storage/logs/laravel.log')
+            ->and($decoded['success']['data']['lines'])
+            ->toBe(['collision-ok']);
 
-        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/log'));
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            urldecode($request->url()),
+            '/api/instances/servauto-app.nmbp/log',
+        ));
     });
 
     it('allows an explicit URL even when the host spelling matches a canonical instance selector', function (): void {

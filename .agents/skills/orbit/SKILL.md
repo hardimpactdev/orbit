@@ -170,7 +170,7 @@ command catalog when command completeness matters.
 | `orbit workspace:log [workspace]` | Read/follow fixed Laravel application log (`storage/logs/laravel.log`) |
 | `orbit workspace:run:log [run]` | Show captured stdout/stderr for a lifecycle run |
 | `orbit instance:log [instance]` | Read/follow fixed Laravel application log for an Instance |
-| `orbit app:log [url]` | Read/follow Laravel application log resolved from proxy URL/hostname |
+| `orbit app:log [url or hostname]` | Read/follow Laravel application log from an exact registered proxy URL or bare hostname (no https required; proxy domain wins over app.instance spelling collisions) |
 | `orbit workspace-setup-step:add\|list\|remove` | Manage an instance-scoped workspace setup pipeline |
 | `orbit workspace-teardown-step:add\|list\|remove` | Manage an instance-scoped workspace teardown pipeline |
 

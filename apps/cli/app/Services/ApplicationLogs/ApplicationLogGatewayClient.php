@@ -6,32 +6,14 @@ namespace App\Services\ApplicationLogs;
 
 /**
  * Pure helpers over gateway JSON envelopes used by application-log commands.
- * Network I/O stays in the command; this class only shapes/inventory-checks payloads.
+ * Network I/O stays in the command; this class only shapes inventory/route payloads.
  */
 final readonly class ApplicationLogGatewayClient
 {
     public function __construct(
-        private ApplicationLogInstanceInventory $inventory = new ApplicationLogInstanceInventory,
         private ApplicationLogWorkspaceInventory $workspaces = new ApplicationLogWorkspaceInventory,
         private ApplicationLogProxyRouteMatcher $routes = new ApplicationLogProxyRouteMatcher,
     ) {}
-
-    /**
-     * @param  array<string, mixed>  $instancesData  success.data from GET /api/instances
-     */
-    public function isRegisteredInstanceSelector(string $selector, array $instancesData): bool
-    {
-        return $this->inventory->contains($selector, $this->inventory->selectors($instancesData));
-    }
-
-    /**
-     * @param  array<string, mixed>  $instancesData
-     * @return list<array{selector: string, path: string}>
-     */
-    public function instancePathEntries(array $instancesData): array
-    {
-        return $this->inventory->pathEntries($instancesData);
-    }
 
     /**
      * @param  array<string, mixed>  $workspacesData  success.data from GET /api/workspaces
