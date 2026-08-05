@@ -64,10 +64,14 @@ finalization share that contract for every non-`automated` venue: the existing
 `Verification.runtime` row must carry a candidate-bound structured receipt
 (`candidate=`, `venue=`, `environment=`, `target=` or `command=`, `expected=`,
 `observed=`, `result=passed`, and one exact `evidence=` path under
-`.orbit/evidence/` or `.orbit/quality-gates/`). Free-form wording cannot turn a
-failed or post-LAND/post-merge deferred hop into a pass; remain in PROVE and
-re-prove the final hop. Historical archive reading stays compatible; the
-strict receipt applies when new acceptance or finalization is attempted.
+`.orbit/evidence/` or `.orbit/quality-gates/`). The cited evidence path must be
+an existing regular file in the worktree `.orbit` tree; reject traversal,
+dot-segments, and symlink hops. Scan deferred or incomplete final-hop language
+only in free-form detail or structured `observed=`, not in target/command/
+environment/evidence field values. Free-form wording cannot turn a failed or
+post-LAND/post-merge deferred hop into a pass; remain in PROVE and re-prove the
+final hop. Historical archive reading stays compatible; the strict receipt
+applies when new acceptance or finalization is attempted.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those

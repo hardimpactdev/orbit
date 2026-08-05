@@ -422,8 +422,12 @@ function orbitLoopVenueSatisfies(string $actual, string $required): bool
         && ($actual === $required || $required === 'automated');
 }
 
-function orbitLoopRuntimeProofProblem(string $markdown, string $venue, ?string $candidateCommit = null): ?string
-{
+function orbitLoopRuntimeProofProblem(
+    string $markdown,
+    string $venue,
+    string $candidateCommit,
+    string $worktree,
+): ?string {
     if ($venue === 'automated') {
         return null;
     }
@@ -434,43 +438,75 @@ function orbitLoopRuntimeProofProblem(string $markdown, string $venue, ?string $
         return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
     }
 
-    $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem((string) $runtime);
+    $runtime = (string) $runtime;
 
-    if ($deferredProblem !== null) {
-        return $deferredProblem;
+    if (preg_match('/^passed\s+-\s+(.+)$/is', $runtime, $match) !== 1) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
     }
 
-    $receiptProblem = orbitLoopRuntimeProofReceiptProblem((string) $runtime, $venue, $candidateCommit);
+    $detail = trim($match[1]);
+    $fields = orbitLoopRuntimeProofParseFields($detail);
+
+    if ($fields === null) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($detail);
+
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+
+    $receiptProblem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree);
 
     if ($receiptProblem !== null) {
         return $receiptProblem;
     }
 
-    return null;
+    return orbitLoopRuntimeProofDeferredFinalHopProblem($fields['observed']);
 }
 
-function orbitLoopRuntimeProofDeferredFinalHopProblem(string $runtime): ?string
+function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
 {
-    $normalized = strtolower($runtime);
+    $normalized = strtolower($narrative);
     $normalized = preg_replace('/\bno\s+failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bwithout\s+failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bfailure\s+modes?\s+absent\b/', ' ', $normalized) ?? $normalized;
     $normalized = preg_replace('/\bprevious\s+failures?\b/', ' ', $normalized) ?? $normalized;
     $normalized = preg_replace('/\bexpected\s+failures?\b/', ' ', $normalized) ?? $normalized;
     $normalized = preg_replace('/\bfailures?\s+repaired\b/', ' ', $normalized) ?? $normalized;
     $normalized = preg_replace('/\brepaired\s+(?:the\s+)?(?:previous\s+)?failures?\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\b0\s+pending\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bno\s+pending\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bnone\s+pending\b/', ' ', $normalized) ?? $normalized;
+    $normalized = preg_replace('/\bcompleted\b/', ' ', $normalized) ?? $normalized;
 
     $blockedPatterns = [
         '/\bpost-land\b/',
         '/\bafter\s+land\b/',
+        '/\bafter\s+landing\b/',
         '/\bpost-merge\b/',
+        '/\bpost\s+merge\b/',
         '/\bdeferred\b/',
+        '/\bwe\s+defer\b/',
+        '/\bdefer(?:s|ring)?\b/',
         '/\bremains\s+required\b/',
+        '/\bstill\s+required\b/',
         '/\bfollow-up\s+closure\s+proof\b/',
         '/\bclosure\s+proof\b/',
         '/\bwas\s+excluded\b/',
+        '/\bexcluded\s+from\s+this\s+run\b/',
+        '/\bfinal\s+hop\s+excluded\b/',
+        '/\bfinal\s+hop\s+skipped\b/',
+        '/\bfinal\s+hop\s+not\s+reached\b/',
         '/\bre-proof\s+follows\b/',
         '/\bproof\s+follows\b/',
+        '/\bre-proof\s+after\s+landing\b/',
+        '/\bwill\s+confirm\b/',
         '/\bfailed\b/',
         '/\bfailure\b/',
+        '/\bpending\b/',
+        '/\bskipped\b/',
     ];
 
     foreach ($blockedPatterns as $pattern) {
@@ -482,21 +518,15 @@ function orbitLoopRuntimeProofDeferredFinalHopProblem(string $runtime): ?string
     return null;
 }
 
+/**
+ * @param  array<string, string>  $fields
+ */
 function orbitLoopRuntimeProofReceiptProblem(
-    string $runtime,
+    array $fields,
     string $venue,
-    ?string $candidateCommit,
+    string $candidateCommit,
+    string $worktree,
 ): ?string {
-    if (preg_match('/^passed\s+-\s+(.+)$/is', $runtime, $match) !== 1) {
-        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
-    }
-
-    $fields = orbitLoopRuntimeProofParseFields(trim($match[1]));
-
-    if ($fields === null) {
-        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
-    }
-
     $required = ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
 
     foreach ($required as $key) {
@@ -516,7 +546,7 @@ function orbitLoopRuntimeProofReceiptProblem(
         return 'Verification runtime structured receipt candidate= must be the exact 40-character candidate commit; remain in PROVE and re-prove the final hop';
     }
 
-    if ($candidateCommit !== null && ! hash_equals($candidateCommit, $fields['candidate'])) {
+    if (! hash_equals($candidateCommit, $fields['candidate'])) {
         return 'Verification runtime structured receipt candidate= must equal the candidate commit; remain in PROVE and re-prove the final hop';
     }
 
@@ -528,11 +558,57 @@ function orbitLoopRuntimeProofReceiptProblem(
         return 'Verification runtime structured receipt result= must be passed; remain in PROVE and re-prove the final hop';
     }
 
+    return orbitLoopRuntimeProofEvidenceProblem($worktree, $fields['evidence']);
+}
+
+function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidenceField): ?string
+{
     if (preg_match(
         '/^`(\.orbit\/(?:evidence|quality-gates)\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]*[A-Za-z0-9_-])`$/',
-        $fields['evidence'],
+        $evidenceField,
+        $match,
     ) !== 1) {
         return 'Verification runtime structured receipt evidence= must be one exact inline-code path under .orbit/evidence/ or .orbit/quality-gates/; remain in PROVE and re-prove the final hop';
+    }
+
+    $reference = $match[1];
+    $relative = substr($reference, strlen('.orbit/'));
+    $segments = explode('/', $relative);
+
+    if (
+        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates'], true)
+        || count($segments) < 2
+        || in_array('', $segments, true)
+        || in_array('.', $segments, true)
+        || in_array('..', $segments, true)
+    ) {
+        return 'Verification runtime structured receipt evidence= path is unsafe; remain in PROVE and re-prove the final hop';
+    }
+
+    $orbitDir = rtrim($worktree, '/').'/.orbit';
+    $current = $orbitDir;
+
+    foreach ($segments as $segment) {
+        $current .= '/'.$segment;
+
+        if (is_link($current)) {
+            return 'Verification runtime structured receipt evidence= must not traverse a symlink; remain in PROVE and re-prove the final hop';
+        }
+    }
+
+    if (! is_file($current) || is_link($current)) {
+        return 'Verification runtime structured receipt evidence= must name an existing regular file under the worktree; remain in PROVE and re-prove the final hop';
+    }
+
+    $canonicalRoot = realpath($orbitDir);
+    $canonicalSource = realpath($current);
+
+    if (
+        $canonicalRoot === false
+        || $canonicalSource === false
+        || ! str_starts_with($canonicalSource, rtrim($canonicalRoot, '/').'/')
+    ) {
+        return 'Verification runtime structured receipt evidence= escapes the active .orbit directory; remain in PROVE and re-prove the final hop';
     }
 
     return null;

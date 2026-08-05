@@ -86,9 +86,11 @@ substitutes. A failed, excluded, still-required, or deferred final hop means
 venues, record the structured runtime receipt on the existing
 `Verification.runtime` row (candidate-bound `candidate=`, `venue=`,
 `environment=`, `target=` or `command=`, `expected=`, `observed=`,
-`result=passed`, exact `evidence=` path). Do not invent a parallel receipt,
-artifact, or lane. If the final hop is incomplete or deferred, remain in
-PROVE and re-prove it before ACCEPT or LAND.
+`result=passed`, exact existing `evidence=` file under `.orbit/evidence/` or
+`.orbit/quality-gates/`). Scan incomplete final-hop language in free-form
+detail or `observed=` only. Do not invent a parallel receipt, artifact, or
+lane. If the final hop is incomplete or deferred, remain in PROVE and re-prove
+it before ACCEPT or LAND.
 
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.

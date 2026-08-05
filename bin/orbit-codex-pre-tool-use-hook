@@ -1587,7 +1587,7 @@ function compact_acceptance_provenance_problem(
         return "acceptance venue {$venue} does not satisfy the diff-routed {$minimumVenue} venue";
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue, $featureTip);
+    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue, $featureTip, $worktree);
 
     if ($runtimeProblem !== null) {
         return $runtimeProblem;
