@@ -2514,6 +2514,8 @@ it('allows cleanup when a valid compact receipt is discoverable under a differen
         json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
+    commit_finalization_session_archive($repo, $archive);
+
     try {
         $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
 
@@ -2685,6 +2687,8 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
         json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
+    commit_finalization_session_archive($repo, $archive);
+
     try {
         $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
 
@@ -2739,6 +2743,8 @@ it('allows cleanup for historical schema-v2 compact receipts that cite release-e
     expect($receipt['copied_entries'])
         ->not->toContain('release-evidence/2026-08-04-live-candidate/proof.txt')->and("{$archive}/release-evidence")
         ->not->toBeDirectory();
+
+    commit_finalization_session_archive($repo, $archive);
 
     try {
         $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
@@ -3767,7 +3773,10 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
 
     file_put_contents(filename: "{$repo}/HARNESS.md", data: "# Harness\n");
     file_put_contents(filename: "{$repo}/AGENTS.md", data: "# Agents\n");
-    file_put_contents(filename: "{$repo}/.gitignore", data: ".orbit/\n");
+    file_put_contents(
+        filename: "{$repo}/.gitignore",
+        data: "/.orbit/*\n!/.orbit/sessions/\n!/.orbit/sessions/**\n",
+    );
 
     mkdir("{$repo}/apps/cli", recursive: true);
     file_put_contents(filename: "{$repo}/apps/cli/runtime.php", data: "<?php\n");
@@ -4195,8 +4204,12 @@ function remove_finalization_lint_dir(string $packetDir): void
     new Process(['rm', '-rf', $packetDir])->run();
 }
 
-function write_finalization_gate_session_archive(string $repo, string $slug, bool $timestamped = true): string
-{
+function write_finalization_gate_session_archive(
+    string $repo,
+    string $slug,
+    bool $timestamped = true,
+    bool $commit = true,
+): string {
     $archiveName = $timestamped ? "2026-07-02-101500-{$slug}" : $slug;
     $archiveDir = "{$repo}/.orbit/sessions/{$archiveName}";
 
@@ -4207,6 +4220,10 @@ function write_finalization_gate_session_archive(string $repo, string $slug, boo
         data: json_encode(['schema_version' => 1, 'sessions' => []], JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
+    if ($commit) {
+        commit_finalization_session_archive($repo, $archiveDir);
+    }
+
     return $archiveDir;
 }
 
@@ -4215,6 +4232,7 @@ function write_compact_finalization_gate_session_archive(
     string $worktree,
     string $slug,
     bool $includeFeedback = false,
+    bool $commit = true,
 ): string {
     $archiveDir = "{$repo}/.orbit/sessions/2026-07-10-180000-{$slug}";
     mkdir($archiveDir, recursive: true);
@@ -4254,7 +4272,56 @@ function write_compact_finalization_gate_session_archive(
             .PHP_EOL,
     );
 
+    if ($commit) {
+        commit_finalization_session_archive($repo, $archiveDir);
+    }
+
     return $archiveDir;
+}
+
+function commit_finalization_session_archive(string $repo, string $archiveDir): void
+{
+    if (! is_dir("{$repo}/.git") && ! is_file("{$repo}/.git")) {
+        return;
+    }
+
+    $relativeArchive = ltrim(str_replace($repo, '', $archiveDir), '/');
+    $sessionsDir = "{$repo}/.orbit/sessions";
+    $indexPath = "{$sessionsDir}/index.json";
+    $basename = basename($archiveDir);
+
+    $records = [];
+
+    if (is_file($indexPath)) {
+        $existing = json_decode((string) file_get_contents($indexPath), true);
+        if (is_array($existing) && isset($existing['records']) && is_array($existing['records'])) {
+            $records = $existing['records'];
+        }
+    }
+
+    $records = array_values(array_filter(
+        $records,
+        static fn (mixed $record): bool => ! is_array($record) || ($record['archive'] ?? null) !== $basename,
+    ));
+    $records[] = [
+        'archive' => $basename,
+        'slug' => preg_replace('/^\d{4}-\d{2}-\d{2}-\d{6}-/', '', $basename) ?: $basename,
+        'timestamp' => preg_match('/^(\d{4}-\d{2}-\d{2}-\d{6})-/', $basename, $m) === 1 ? $m[1] : '2026-07-10-180000',
+    ];
+
+    file_put_contents(
+        $indexPath,
+        json_encode([
+            'schema_version' => 2,
+            'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
+            'record_count' => count($records),
+            'records' => $records,
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
+            .PHP_EOL,
+    );
+
+    run_fixture_command($repo, ['git', 'add', '--', $relativeArchive, '.orbit/sessions/index.json']);
+    run_fixture_command($repo, ['git', 'commit', '-m', "Archive session {$basename}"]);
 }
 
 function land_finalization_gate_feature(string $repo): void

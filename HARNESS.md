@@ -255,6 +255,25 @@ passes.
 
 ## LAND
 
+Prefer the resumable coordinator on primary `main`:
+
+```bash
+bin/orbit-feature-land \
+  --branch=<feature> \
+  --worktree=<exact-feature-worktree> \
+  --solo-project-id=<session-owned-numeric-id>
+```
+
+Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
+only the next incomplete boundary. The same invocation is safe to resume: it
+derives progress from Git, the committed session archive/index, and Solo state,
+skips completed mutations, and stops with a phase plus next action on failure.
+Solo ownership is exact project path equals the feature worktree path; refuse
+primary/root projects, self-cwd, matching `SOLO_PROJECT_ID`, and
+`--confirm-stop-running` project deletion.
+
+Manual LAND remains validate-then-execute for each destructive mutation:
+
 1. Run `bin/orbit-feature-finalization-check --lint .orbit/loop.md`.
 2. Confirm the worktree has no tracked dirt or nonignored untracked files.
 3. Confirm exact successful diff-routed artifacts, reviewer PASS, accepted
@@ -274,10 +293,16 @@ passes.
    `.orbit/evidence/` or `.orbit/quality-gates/` only.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
-7. Update the session index and commit the archive/index.
+7. Update the session index and commit the archive/index. Cleanup requires
+   those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
+   - Cleanup in this order so each gated Solo ownership check remains
+     satisfiable: stop session-owned running/starting processes; delete the
+     session-owned Solo project (exact path == feature worktree); remove the
+     exact clean merged worktree; delete the exact merged feature branch.
+     Solo project deletion must complete before worktree removal.
    - Validate each cleanup mutation with
-     `bin/orbit-feature-finalization-check <exact git command>`.
+     `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.

@@ -198,7 +198,7 @@ git init -b main >/dev/null
 git config user.name 'Orbit Hook Test'
 git config user.email 'orbit-hook-test@example.invalid'
 
-printf '/.worktrees/\n/.orbit/\n' >.gitignore
+printf '/.worktrees/\n/.orbit/*\n!/.orbit/sessions/\n!/.orbit/sessions/**\n' >.gitignore
 touch HARNESS.md AGENTS.md README.md
 git add .gitignore HARNESS.md AGENTS.md README.md
 git commit -m 'Initial test repo' >/dev/null
@@ -258,6 +258,14 @@ mkdir -p "$REPO/.orbit/sessions/2026-07-10-180000-finalized/agent-sessions"
 cp "$REPO/.worktrees/finalized/.orbit/loop.md" "$REPO/.orbit/sessions/2026-07-10-180000-finalized/loop.md"
 printf '{"schema_version":1,"sessions":[]}\n' \
     >"$REPO/.orbit/sessions/2026-07-10-180000-finalized/agent-sessions/manifest.json"
+printf '%s\n' '{
+  "schema_version": 2,
+  "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
+  "record_count": 1,
+  "records": [{"archive":"2026-07-10-180000-finalized","slug":"finalized","timestamp":"2026-07-10-180000"}]
+}' >"$REPO/.orbit/sessions/index.json"
+git -C "$REPO" add .orbit/sessions/2026-07-10-180000-finalized .orbit/sessions/index.json
+git -C "$REPO" commit -m 'Archive finalized session' >/dev/null
 expect_pass "$REPO" 'git branch -d finalized'
 
 printf 'orbit-codex-pre-tool-use-hook tests passed\n'
