@@ -150,6 +150,53 @@ it('denies publisher credentials to callers that are not the trusted target agen
         ->assertJsonPath('error.code', 'authorization_failed');
 });
 
+it('allows the trusted target agent to read stop-decision without a grant', function (): void {
+    get_operation_stream_stop_decision_json($this->run->id)
+        ->assertOk()
+        ->assertJsonPath('success.data.operation.uuid', $this->run->id)
+        ->assertJsonPath('success.data.channel.name', "private-operations.{$this->run->id}")
+        ->assertJsonPath('success.data.active_subscribers', 0)
+        ->assertJsonPath('success.data.should_stop_tail', true);
+});
+
+it('denies stop-decision to the gateway peer and to unrelated nodes', function (): void {
+    $unrelated = Node::factory()->create([
+        'name' => 'other-agent',
+        'host' => 'other-agent',
+        'wireguard_address' => '10.6.0.99',
+    ]);
+
+    $this
+        ->call(
+            'GET',
+            "/api/operations/{$this->run->id}/stream/stop-decision",
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+                'REMOTE_ADDR' => OPERATION_STREAM_GATEWAY_WG_IP,
+            ],
+        )
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed');
+
+    $this
+        ->call(
+            'GET',
+            "/api/operations/{$this->run->id}/stream/stop-decision",
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+                'REMOTE_ADDR' => $unrelated->wireguard_address,
+            ],
+        )
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed');
+});
+
 it('authorizes only the matching private operation channel and records subscriber leases', function (): void {
     $descriptor = get_operation_stream_descriptor_json($this->run->id);
     $authToken = $descriptor->json('success.data.auth.token');
@@ -301,12 +348,13 @@ it('keeps a renewed subscriber active past the original lease ttl', function ():
         ->assertJsonPath('success.data.should_stop_tail', false);
 });
 
-it('registers operation stream control plane routes on the gateway grant middleware group', function (): void {
+it('registers operation stream control plane routes for descriptor, publisher, and stop-decision surfaces', function (): void {
     expect(Route::getRoutes()->getByName('api.operations.stream.descriptor'))
         ->not->toBeNull()->and(Route::getRoutes()->getByName('api.operations.stream.auth'))
         ->not->toBeNull()->and(Route::getRoutes()->getByName('api.operations.stream.publisherCredentials'))
         ->not->toBeNull()->and(Route::getRoutes()->getByName('api.operations.stream.leave'))
         ->not->toBeNull()->and(Route::getRoutes()->getByName('api.operations.stream.stopDecision'))
+        ->not->toBeNull()->and(Route::getRoutes()->getByName('api.operations.stream.publish'))
         ->not->toBeNull();
 });
 
@@ -407,7 +455,8 @@ function get_operation_stream_stop_decision_json(string $operationRunId): TestRe
         [],
         [
             'HTTP_ACCEPT' => 'application/json',
-            'REMOTE_ADDR' => OPERATION_STREAM_GATEWAY_WG_IP,
+            // Stop-decision is a target-agent surface (same peer as publish/publisher credentials).
+            'REMOTE_ADDR' => OPERATION_STREAM_AGENT_WG_IP,
         ],
     );
 }
