@@ -364,6 +364,76 @@ describe('ZshShellIntegration shell boundary', function (): void {
             ->toBe(2);
     });
 
+    it('rejects same-line prefix+BEGIN and END+suffix as incomplete and appends a canonical block', function (): void {
+        $zshrc = $this->home.'/.zshrc';
+        $snippet = $this->home.'/.config/orbit/shell/zsh-noglob.zsh';
+        $source = ZshShellIntegration::sourceLine($snippet);
+
+        // Prefix glued to BEGIN on one line — must not count as a complete block.
+        $malformedPrefix =
+            'export KEEP_PREFIX=1 '
+            .ZshShellIntegration::BEGIN_MARKER
+            ."\n"
+            .$source
+            ."\n"
+            .ZshShellIntegration::END_MARKER
+            ."\n";
+
+        expect(ZshShellIntegration::hasCompleteManagedBlock($malformedPrefix, $snippet))->toBeFalse();
+
+        file_put_contents($zshrc, $malformedPrefix);
+        $first = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        $afterPrefix = file_get_contents($zshrc);
+
+        expect($first['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(str_starts_with($afterPrefix, $malformedPrefix))
+            ->toBeTrue()
+            ->and($afterPrefix)
+            ->toContain('export KEEP_PREFIX=1')
+            ->and(ZshShellIntegration::hasCompleteManagedBlock($afterPrefix, $snippet))
+            ->toBeTrue();
+
+        $second = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        expect($second['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(file_get_contents($zshrc))
+            ->toBe($afterPrefix);
+
+        // END glued to suffix on one line — must not count as complete either.
+        $malformedEnd =
+            ZshShellIntegration::BEGIN_MARKER
+            ."\n"
+            .$source
+            ."\n"
+            .ZshShellIntegration::END_MARKER
+            ." trailing-garbage\n"
+            ."export KEEP_END=1\n";
+
+        expect(ZshShellIntegration::hasCompleteManagedBlock($malformedEnd, $snippet))->toBeFalse();
+
+        file_put_contents($zshrc, $malformedEnd);
+        $third = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        $afterEnd = file_get_contents($zshrc);
+
+        expect($third['status'])
+            ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(str_starts_with($afterEnd, $malformedEnd))
+            ->toBeTrue()
+            ->and($afterEnd)
+            ->toContain('export KEEP_END=1')
+            ->and($afterEnd)
+            ->toContain(' trailing-garbage')
+            ->and(ZshShellIntegration::hasCompleteManagedBlock($afterEnd, $snippet))
+            ->toBeTrue();
+
+        $fourth = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        expect($fourth['status'])
+            ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
+            ->and(file_get_contents($zshrc))
+            ->toBe($afterEnd);
+    });
+
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {
         // Explicit empty home is distinguishable from null (process HOME fallback).
         $result = new ZshShellIntegration()->ensure(home: '', shell: '/bin/zsh');

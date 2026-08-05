@@ -182,14 +182,42 @@ final class ZshShellIntegration
     }
 
     /**
-     * True when contents already contain the exact adjacent canonical managed block:
-     * BEGIN newline, exact expected source line newline, END (optional trailing newline).
+     * True when contents already contain the exact adjacent canonical managed block
+     * with line boundaries matching installer semantics:
+     * - BEGIN is a full line (BOF or after a newline; never a same-line prefix embed)
+     * - the exact expected source line is the immediately next full line
+     * - END is the immediately next full line and is followed by newline or EOF
+     *   (never END+suffix on the same line)
      */
     public static function hasCompleteManagedBlock(string $contents, string $snippetPath): bool
     {
-        $block = self::zshrcBlock($snippetPath);
+        $source = self::sourceLine($snippetPath);
+        $lines = preg_split("/\r\n|\n|\r/", $contents) ?: [];
 
-        return str_contains($contents, $block) || str_contains($contents, rtrim($block, "\n"));
+        // Trailing empty element from a final newline is EOF after the last line.
+        $count = count($lines);
+
+        for ($index = 0; $index < $count; $index++) {
+            if ($lines[$index] !== self::BEGIN_MARKER) {
+                continue;
+            }
+
+            if (($lines[$index + 1] ?? null) !== $source) {
+                continue;
+            }
+
+            if (($lines[$index + 2] ?? null) !== self::END_MARKER) {
+                continue;
+            }
+
+            // END is a full line; the next slot is either absent (EOF without
+            // trailing newline after END), an empty trailing element (END\n at
+            // EOF), or any later full line (END\n then more content). Same-line
+            // ENDgarbage cannot appear because split already bounded the line.
+            return true;
+        }
+
+        return false;
     }
 
     private function resolveShell(?string $shell): string

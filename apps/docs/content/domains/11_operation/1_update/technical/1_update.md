@@ -89,15 +89,22 @@ fields and does not prompt.
   current, ensure the supported zsh shell integration when the active login
   shell is zsh: rewrite the Orbit-owned snippet at
   `~/.config/orbit/shell/zsh-noglob.zsh` (`alias orbit='noglob orbit'`) and
-  append a managed source block only when the begin marker is absent. The
-  block is written to `$ZDOTDIR/.zshrc` when `ZDOTDIR` is a non-empty export,
-  otherwise `$HOME/.zshrc`, matching zsh startup. The integration is
-  command-scoped only; it must not set global `NONOMATCH` / `nonomatch`.
-  Bash-only hosts skip without creating a new `.zshrc`. A failed ensure is a
-  failed update step (not silent success), even when the binary swap already
-  completed. The managed alias takes effect only in a newly started or freshly
-  sourced zsh session; `orbit update` cannot mutate the parent shell that
-  invoked it.
+  append-only ensure of the exact adjacent canonical managed block in the
+  active zsh rc (BEGIN line, exact snippet source line, END line, each as full
+  lines). The block is written to `$ZDOTDIR/.zshrc` when `ZDOTDIR` is a
+  non-empty export, otherwise `$HOME/.zshrc`, matching zsh startup. If that
+  exact block is already present, leave the rc file untouched. If it is
+  absent—including marker-only or other partial/orphan managed text—append one
+  complete canonical block and leave all existing orphan markers, partial
+  lines, and arbitrary user bytes unchanged (never rewrite or truncate the rc).
+  A second ensure is idempotent once the canonical block exists. Healthy
+  installs keep a single managed block; partial recovery may retain orphan
+  text plus one valid block. The integration is command-scoped only; it must
+  not set global `NONOMATCH` / `nonomatch`. Bash-only hosts skip without
+  creating a new `.zshrc`. A failed ensure is a failed update step (not silent
+  success), even when the binary swap already completed. The managed alias
+  takes effect only in a newly started or freshly sourced zsh session; `orbit
+  update` cannot mutate the parent shell that invoked it.
 - First upgrade from a pre-feature binary still installs the integration on
   that first update: post-replace verify already runs the candidate binary as
   `orbit --version --local --json`, and the candidate `version --local` path

@@ -131,6 +131,73 @@ describe('install-orbit always-cli launcher contract', function (): void {
         }
     });
 
+    it('rejects same-line prefix+BEGIN and END+suffix and appends a canonical block leaving malformed bytes', function (): void {
+        $root = sys_get_temp_dir().'/orbit-install-zsh-malformed-'.bin2hex(random_bytes(4));
+        $home = $root.'/home';
+        $zshrc = $home.'/.zshrc';
+        $snippet = $home.'/.config/orbit/shell/zsh-noglob.zsh';
+        // Match installer printf %q / escapeshellarg for plain paths.
+        $source = '[ -f '.escapeshellarg($snippet).' ] && . '.escapeshellarg($snippet);
+
+        try {
+            File::ensureDirectoryExists($home);
+
+            $malformedPrefix =
+                'export KEEP_PREFIX=1 # >>> orbit zsh integration >>>'
+                ."\n"
+                .$source
+                ."\n"
+                ."# <<< orbit zsh integration <<<\n";
+            File::put($zshrc, $malformedPrefix);
+
+            $first = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $first->run();
+            $afterPrefix = File::get($zshrc);
+
+            expect($first->isSuccessful())
+                ->toBeTrue($first->getErrorOutput().$first->getOutput())
+                ->and(str_starts_with($afterPrefix, $malformedPrefix))
+                ->toBeTrue()
+                ->and($afterPrefix)
+                ->toContain('export KEEP_PREFIX=1')
+                ->and(substr_count($afterPrefix, '# >>> orbit zsh integration >>>'))
+                ->toBeGreaterThan(1);
+
+            $second = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $second->run();
+            expect($second->isSuccessful())->toBeTrue()->and(File::get($zshrc))->toBe($afterPrefix);
+
+            $malformedEnd =
+                "# >>> orbit zsh integration >>>\n"
+                .$source
+                ."\n"
+                ."# <<< orbit zsh integration <<< trailing-garbage\n"
+                ."export KEEP_END=1\n";
+            File::put($zshrc, $malformedEnd);
+
+            $third = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $third->run();
+            $afterEnd = File::get($zshrc);
+
+            expect($third->isSuccessful())
+                ->toBeTrue($third->getErrorOutput().$third->getOutput())
+                ->and(str_starts_with($afterEnd, $malformedEnd))
+                ->toBeTrue()
+                ->and($afterEnd)
+                ->toContain('export KEEP_END=1')
+                ->and($afterEnd)
+                ->toContain(' trailing-garbage');
+
+            $fourth = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
+            $fourth->run();
+            expect($fourth->isSuccessful())->toBeTrue()->and(File::get($zshrc))->toBe($afterEnd);
+        } finally {
+            if (is_dir($root)) {
+                File::deleteDirectory($root);
+            }
+        }
+    });
+
     it('resolves installer root HOME and ZDOTDIR paths without writing real root', function (): void {
         $installer = File::get(repo_path('bin/install-orbit'));
 
