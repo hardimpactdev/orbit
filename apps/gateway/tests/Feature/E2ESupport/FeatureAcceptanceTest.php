@@ -158,7 +158,7 @@ it('does not require retained runtime proof for repository tooling', function ()
             "{$fixture}/.orbit/loop.md",
             preg_replace(
                 '/^(\s*)- runtime: .+$/m',
-                '$1- runtime: not applicable - repository tooling',
+                '${1}- runtime: not applicable - repository tooling',
                 $loop,
                 1,
             ) ?? $loop,
@@ -459,7 +459,7 @@ it('requires the diff-derived runtime proof before any retained acceptance', fun
             "{$fixture}/.orbit/loop.md",
             preg_replace(
                 '/^(\s*)- runtime: .+$/m',
-                '$1- runtime: not applicable - skipped',
+                '${1}- runtime: not applicable - skipped',
                 $loop,
                 1,
             ) ?? $loop,
@@ -486,13 +486,18 @@ it('keeps LOOP.md.example free of malformed compact proof path markers', functio
 
     $content = (string) file_get_contents(repo_path('LOOP.md.example'));
 
-    expect(fn () => orbitLoopProofReferences($content))
-        ->not->toThrow(Throwable::class)->and($content)
+    // Directory-root markers such as `.orbit/evidence/` are malformed compact
+    // refs; only the deliberate exact file example may be cited.
+    expect(orbitLoopProofReferences($content))
+        ->toBe(['.orbit/evidence/runtime-proof.txt'])
+        ->and($content)
         ->not->toContain('evidence=\`')
         ->not->toContain('.orbit/evidence/...')
-        ->not->toContain('target=<target>|command=<cmd>')->toContain('exactly one of target= or command=')->toContain(
-            '`.orbit/evidence/runtime-proof.txt`',
-        );
+        ->not->toContain('target=<target>|command=<cmd>')
+        ->not->toContain('`.orbit/evidence/`')
+        ->not->toContain('`.orbit/quality-gates/`')
+        ->toContain('exactly one of target= or command=')
+        ->toContain('`.orbit/evidence/runtime-proof.txt`');
 });
 
 it('rejects deferred or failed final-hop runtime claims and accepts structured completed proof', function (
@@ -519,7 +524,12 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
         file_put_contents(
             "{$fixture}/.orbit/loop.md",
-            preg_replace('/^(\s*)- runtime: .+$/m', '$1- runtime: '.$runtime, $loop, 1) ?? $loop,
+            preg_replace(
+                '/^(\s*)- runtime: .+$/m',
+                '${1}- runtime: '.$runtime,
+                $loop,
+                1,
+            ) ?? $loop,
         );
 
         if ($seedEvidence) {
@@ -610,6 +620,46 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         false,
         'final hop',
     ],
+    'observed closure is a deferral' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=closure is a deferral; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed will re-run post land' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=will re-run post land; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed re-proof after merge' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=re-proof after merge; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed final hop not completed' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=final hop not completed; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed final hop incomplete' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=final hop incomplete; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed to be run later' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=to be run later; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed live verification outstanding' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=live verification outstanding; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'observed we excluded the decisive hop' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=we excluded the decisive hop; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
     'free-form without receipt' => [
         'passed - retained fixture',
         false,
@@ -632,6 +682,26 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
     ],
     'valid failure modes absent narrative' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=failure modes absent; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid count narrative 0 failed' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=44 passed, 0 failed; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid count narrative 3 skipped' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=44 passed, 3 skipped; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid queue drained nothing pending' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=queue drained, nothing pending; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        true,
+        null,
+    ],
+    'valid no failed hops' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=no failed hops; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         true,
         null,
     ],
@@ -663,6 +733,21 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=expected failure observed then repaired; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         true,
         null,
+    ],
+    'deferral parked in note field' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; note=post-LAND re-proof follows; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'structured runtime receipt',
+    ],
+    'deferral parked in expected field' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=live hop deferred to post-merge; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
+    ],
+    'deferral parked in environment field' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=deferred to post-merge; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'final hop',
     ],
     'missing evidence file' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
@@ -722,18 +807,16 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         false,
         'structured runtime receipt',
     ],
-    'unknown extra field allowed' => [
+    'unknown extra field rejected' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; note=forward-compat; evidence=`.orbit/evidence/runtime-proof.txt`',
-        true,
-        null,
+        false,
+        'structured runtime receipt',
     ],
-    'semicolon pseudo-field in value rejected' => [
+    'unknown injected key rejected as closed schema' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; injected=1; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
-        true,
-        null,
+        false,
+        'structured runtime receipt',
     ],
-    // Semicolon-delimited values cannot embed raw pseudo-fields; the injected=
-    // row above stays valid only when ignored as unknown. Explicit raw split:
     'raw semicolon in observed rejected as structure' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; not valid; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         false,
@@ -798,6 +881,94 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         },
     ],
 ]);
+
+it('rejects runtime evidence when the worktree .orbit root is a symlink', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $fixture = acceptance_test_workspace(
+        'runtime-orbit-root-symlink',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+    $outside = sys_get_temp_dir().'/orbit-orbit-root-'.bin2hex(random_bytes(6));
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        $runtime = acceptance_test_structured_runtime($tip);
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        $loop = preg_replace(
+            '/^(\s*)- runtime: .+$/m',
+            '${1}- runtime: '.$runtime,
+            $loop,
+            1,
+        ) ?? $loop;
+        file_put_contents("{$fixture}/.orbit/loop.md", $loop);
+
+        mkdir("{$outside}/evidence", recursive: true);
+        file_put_contents("{$outside}/evidence/runtime-proof.txt", "escaped orbit root\n");
+        file_put_contents("{$outside}/loop.md", $loop);
+
+        $knownOrbitFiles = [
+            "{$fixture}/.orbit/evidence/runtime-proof.txt",
+            "{$fixture}/.orbit/loop.md",
+        ];
+
+        foreach ($knownOrbitFiles as $path) {
+            if (is_file($path) || is_link($path)) {
+                unlink($path);
+            }
+        }
+
+        $evidenceDir = "{$fixture}/.orbit/evidence";
+
+        if (is_dir($evidenceDir) && ! is_link($evidenceDir)) {
+            acceptance_test_remove_empty_dir($evidenceDir);
+        }
+
+        $orbitDir = "{$fixture}/.orbit";
+
+        if (is_dir($orbitDir) && ! is_link($orbitDir)) {
+            acceptance_test_remove_empty_dir($orbitDir);
+        }
+
+        symlink($outside, $orbitDir);
+
+        $markdown = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        $problem = orbitLoopRuntimeProofProblem($markdown, 'retained-incus', $tip, $fixture);
+
+        expect($problem)
+            ->not->toBeNull()
+            ->toContain('symlink')
+            ->toContain('remain in PROVE');
+    } finally {
+        if (is_link("{$fixture}/.orbit")) {
+            unlink("{$fixture}/.orbit");
+        }
+
+        if (is_file("{$outside}/evidence/runtime-proof.txt") || is_link("{$outside}/evidence/runtime-proof.txt")) {
+            unlink("{$outside}/evidence/runtime-proof.txt");
+        }
+
+        if (is_file("{$outside}/loop.md") || is_link("{$outside}/loop.md")) {
+            unlink("{$outside}/loop.md");
+        }
+
+        if (is_dir("{$outside}/evidence") && ! is_link("{$outside}/evidence")) {
+            acceptance_test_remove_empty_dir("{$outside}/evidence");
+        }
+
+        if (is_dir($outside) && ! is_link($outside)) {
+            acceptance_test_remove_empty_dir($outside);
+        }
+
+        acceptance_test_remove($fixture);
+    }
+});
 
 it('requires a human-judgment decision on reviewer PASS', function (): void {
     $fixture = acceptance_test_workspace('missing-human-judgment', 'bin/orbit-example');

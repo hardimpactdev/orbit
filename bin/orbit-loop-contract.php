@@ -310,14 +310,15 @@ function orbitLoopProofReferences(string $markdown): array
             ? substr($markdown, $markerOffset - 2, 1)
             : '';
 
-        $openingDelimiterIsExact = $markerOffset > 0
+        $openingDelimiterIsExact =
+            $markerOffset > 0
             && substr($markdown, $markerOffset - 1, 1) === '`'
             && ! in_array($beforeOpeningDelimiter, ['`', '\\'], true);
 
         if (! $openingDelimiterIsExact) {
             throw new RuntimeException(
                 'Compact cited proof must be one exact inline-code path: '
-                .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
+                    .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
             );
         }
 
@@ -418,9 +419,23 @@ function orbitLoopTopLabel(string $markdown, string $label): ?string
 
 function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
-    return in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
-        && ($actual === $required || $required === 'automated');
+    return (
+        in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
+        && ($actual === $required || $required === 'automated')
+    );
 }
+
+const ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS = [
+    'candidate',
+    'venue',
+    'environment',
+    'expected',
+    'observed',
+    'result',
+    'evidence',
+    'target',
+    'command',
+];
 
 function orbitLoopRuntimeProofProblem(
     string $markdown,
@@ -463,50 +478,71 @@ function orbitLoopRuntimeProofProblem(
         return $receiptProblem;
     }
 
-    return orbitLoopRuntimeProofDeferredFinalHopProblem($fields['observed']);
+    foreach (['environment', 'expected', 'observed'] as $narrativeField) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($fields[$narrativeField]);
+
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+    }
+
+    return null;
 }
 
 function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
 {
     $normalized = strtolower($narrative);
-    $normalized = preg_replace('/\bno\s+failures?\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bwithout\s+failures?\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bfailure\s+modes?\s+absent\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bprevious\s+failures?\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bexpected\s+failures?\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bfailures?\s+repaired\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\brepaired\s+(?:the\s+)?(?:previous\s+)?failures?\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\b0\s+pending\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bno\s+pending\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bnone\s+pending\b/', ' ', $normalized) ?? $normalized;
-    $normalized = preg_replace('/\bcompleted\b/', ' ', $normalized) ?? $normalized;
+
+    // Zero / negated outcomes are truthful completed counts, not open final hops.
+    $allowPatterns = [
+        '/\bno\s+failures?\b/',
+        '/\bwithout\s+failures?\b/',
+        '/\bno\s+failed(?:\s+hops?)?\b/',
+        '/\bfailure\s+modes?\s+absent\b/',
+        '/\bprevious\s+failures?\b/',
+        '/\bexpected\s+failures?\b/',
+        '/\bfailures?\s+repaired\b/',
+        '/\brepaired\s+(?:the\s+)?(?:previous\s+)?failures?\b/',
+        '/\b(?:0|zero|no|none|nothing)\s+(?:failed|failures|skipped|pending|outstanding)\b/',
+        '/\b(?:no|none|nothing)\s+outstanding\b/',
+        '/\b\d+\s+skipped\b/',
+        '/\bcompleted\s+without\s+failures?\b/',
+    ];
+
+    foreach ($allowPatterns as $pattern) {
+        $normalized = preg_replace($pattern, ' ', $normalized) ?? $normalized;
+    }
 
     $blockedPatterns = [
-        '/\bpost-land\b/',
-        '/\bafter\s+land\b/',
-        '/\bafter\s+landing\b/',
-        '/\bpost-merge\b/',
-        '/\bpost\s+merge\b/',
         '/\bdeferred\b/',
-        '/\bwe\s+defer\b/',
+        '/\bdeferral\b/',
         '/\bdefer(?:s|ring)?\b/',
+        '/\bpost-land\b(?![\w-])/',
+        '/\bpost\s+land(?:ing)?\b/',
+        '/\bafter\s+land(?:ing)?\b/',
+        '/\bpost-merge\b(?![\w-])/',
+        '/\bpost\s+merge\b/',
+        '/\bafter\s+merge\b/',
         '/\bremains\s+required\b/',
         '/\bstill\s+required\b/',
         '/\bfollow-up\s+closure\s+proof\b/',
         '/\bclosure\s+proof\b/',
-        '/\bwas\s+excluded\b/',
-        '/\bexcluded\s+from\s+this\s+run\b/',
-        '/\bfinal\s+hop\s+excluded\b/',
-        '/\bfinal\s+hop\s+skipped\b/',
-        '/\bfinal\s+hop\s+not\s+reached\b/',
+        '/\bclosure\s+is\s+a\s+deferral\b/',
+        '/\bexclud(?:e|es|ed|ing)\b/',
+        '/\bfinal\s+hop\s+(?:excluded|skipped|not\s+reached|not\s+completed|incomplete)\b/',
+        '/\bincomplete\b/',
+        '/\bnot\s+completed\b/',
+        '/\bnot\s+reached\b/',
         '/\bre-proof\s+follows\b/',
         '/\bproof\s+follows\b/',
-        '/\bre-proof\s+after\s+landing\b/',
-        '/\bwill\s+confirm\b/',
+        '/\bre-proof\s+after\b/',
+        '/\bwill\s+(?:confirm|re-run)\b/',
+        '/\bto\s+be\s+run\s+later\b/',
+        '/\blater\b/',
+        '/\boutstanding\b/',
         '/\bfailed\b/',
         '/\bfailure\b/',
         '/\bpending\b/',
-        '/\bskipped\b/',
     ];
 
     foreach ($blockedPatterns as $pattern) {
@@ -527,6 +563,12 @@ function orbitLoopRuntimeProofReceiptProblem(
     string $candidateCommit,
     string $worktree,
 ): ?string {
+    foreach (array_keys($fields) as $key) {
+        if (! in_array($key, ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS, true)) {
+            return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+        }
+    }
+
     $required = ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
 
     foreach ($required as $key) {
@@ -563,11 +605,13 @@ function orbitLoopRuntimeProofReceiptProblem(
 
 function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidenceField): ?string
 {
-    if (preg_match(
-        '/^`(\.orbit\/(?:evidence|quality-gates)\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]*[A-Za-z0-9_-])`$/',
-        $evidenceField,
-        $match,
-    ) !== 1) {
+    if (
+        preg_match(
+            '/^`(\.orbit\/(?:evidence|quality-gates)\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]*[A-Za-z0-9_-])`$/',
+            $evidenceField,
+            $match,
+        ) !== 1
+    ) {
         return 'Verification runtime structured receipt evidence= must be one exact inline-code path under .orbit/evidence/ or .orbit/quality-gates/; remain in PROVE and re-prove the final hop';
     }
 
@@ -586,6 +630,22 @@ function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidence
     }
 
     $orbitDir = rtrim($worktree, '/').'/.orbit';
+
+    if (is_link($orbitDir)) {
+        return 'Verification runtime structured receipt evidence= must not traverse a symlink; remain in PROVE and re-prove the final hop';
+    }
+
+    $canonicalWorktree = realpath($worktree);
+    $canonicalOrbit = realpath($orbitDir);
+
+    if (
+        $canonicalWorktree === false
+        || $canonicalOrbit === false
+        || $canonicalOrbit !== rtrim($canonicalWorktree, '/').'/.orbit'
+    ) {
+        return 'Verification runtime structured receipt evidence= escapes the active .orbit directory; remain in PROVE and re-prove the final hop';
+    }
+
     $current = $orbitDir;
 
     foreach ($segments as $segment) {
@@ -600,13 +660,11 @@ function orbitLoopRuntimeProofEvidenceProblem(string $worktree, string $evidence
         return 'Verification runtime structured receipt evidence= must name an existing regular file under the worktree; remain in PROVE and re-prove the final hop';
     }
 
-    $canonicalRoot = realpath($orbitDir);
     $canonicalSource = realpath($current);
 
     if (
-        $canonicalRoot === false
-        || $canonicalSource === false
-        || ! str_starts_with($canonicalSource, rtrim($canonicalRoot, '/').'/')
+        $canonicalSource === false
+        || ! str_starts_with($canonicalSource, rtrim($canonicalOrbit, '/').'/')
     ) {
         return 'Verification runtime structured receipt evidence= escapes the active .orbit directory; remain in PROVE and re-prove the final hop';
     }

@@ -66,9 +66,9 @@ finalization share that contract for every non-`automated` venue: the existing
 `observed=`, `result=passed`, and one exact `evidence=` path under
 `.orbit/evidence/` or `.orbit/quality-gates/`). The cited evidence path must be
 an existing regular file in the worktree `.orbit` tree; reject traversal,
-dot-segments, and symlink hops. Scan deferred or incomplete final-hop language
-only in free-form detail or structured `observed=`, not in target/command/
-environment/evidence field values. Free-form wording cannot turn a failed or
+dot-segments, and symlink hops. Scan deferred or incomplete final-hop language in free-form detail and in
+structured `environment=`, `expected=`, and `observed=` only; do not scan
+target/command/evidence values. Reject unknown receipt keys. Free-form wording cannot turn a failed or
 post-LAND/post-merge deferred hop into a pass; remain in PROVE and re-prove the
 final hop. Historical archive reading stays compatible; the strict receipt
 applies when new acceptance or finalization is attempted.
