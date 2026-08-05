@@ -6,6 +6,10 @@ namespace App\Services\ApplicationLogs;
 
 final readonly class ApplicationLogProxyRouteMatcher
 {
+    public function __construct(
+        private ApplicationLogProxyRouteOwner $owner = new ApplicationLogProxyRouteOwner,
+    ) {}
+
     /**
      * @param  list<array<string, mixed>>  $routes
      * @return array{
@@ -58,76 +62,6 @@ final readonly class ApplicationLogProxyRouteMatcher
             ];
         }
 
-        return $this->fromRoute($host, $matches[0]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $route
-     * @return array{
-     *     ok: true,
-     *     type: 'instance',
-     *     selector: string
-     * }|array{
-     *     ok: true,
-     *     type: 'workspace',
-     *     workspace: string,
-     *     instance: string
-     * }|array{
-     *     ok: false,
-     *     field: string,
-     *     message: string,
-     *     meta: array<string, mixed>
-     * }
-     */
-    private function fromRoute(string $host, array $route): array
-    {
-        $owner = is_array($route['owner'] ?? null) ? $route['owner'] : [];
-        $target = is_array($route['target'] ?? null) ? $route['target'] : [];
-        $ownerType = $owner['type'] ?? $target['type'] ?? null;
-        $ownerName = $owner['name'] ?? $target['value'] ?? null;
-
-        if ($ownerType === 'workspace' && is_string($ownerName) && $ownerName !== '') {
-            // Parent app.instance is route-entity authority (ProxyRouteQuery FK enrichment).
-            $instance = $route['instance'] ?? null;
-
-            if (! is_string($instance) || trim($instance) === '' || ! str_contains($instance, '.')) {
-                return [
-                    'ok' => false,
-                    'field' => 'instance',
-                    'message' => 'The workspace proxy route did not include a parent instance selector.',
-                    'meta' => ['workspace' => $ownerName, 'host' => $host],
-                ];
-            }
-
-            return [
-                'ok' => true,
-                'type' => 'workspace',
-                'workspace' => $ownerName,
-                'instance' => trim($instance),
-            ];
-        }
-
-        if (is_string($ownerName) && str_contains($ownerName, '.')) {
-            return [
-                'ok' => true,
-                'type' => 'instance',
-                'selector' => $ownerName,
-            ];
-        }
-
-        if ($ownerType === 'instance' && is_string($ownerName) && $ownerName !== '') {
-            return [
-                'ok' => true,
-                'type' => 'instance',
-                'selector' => $ownerName,
-            ];
-        }
-
-        return [
-            'ok' => false,
-            'field' => 'target',
-            'message' => "Host '{$host}' is not an instance or workspace proxy route.",
-            'meta' => ['host' => $host],
-        ];
+        return $this->owner->resolve($host, $matches[0]);
     }
 }

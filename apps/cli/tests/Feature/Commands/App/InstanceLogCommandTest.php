@@ -6,11 +6,13 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
-describe('instance:log', function (): void {
+describe('instance:log registration', function (): void {
     it('is registered as a public command', function (): void {
         expect(array_key_exists('instance:log', Artisan::all()))->toBeTrue();
     });
+});
 
+describe('instance:log resolution', function (): void {
     it('returns the bounded application log envelope with fixed logical path', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'target' => [
@@ -113,7 +115,8 @@ describe('instance:log', function (): void {
             ->and($decoded['error']['message'])
             ->toContain("No registered proxy route matches host 'docs.development'")
             ->and($decoded['error']['message'])
-            ->not->toContain('lowercase app.instance')
+            ->not
+            ->toContain('lowercase app.instance')
             ->and($decoded['error']['meta']['host'] ?? null)
             ->toBe('docs.development');
     });
@@ -139,7 +142,8 @@ describe('instance:log', function (): void {
             ->and($decoded['error']['message'])
             ->toContain("No registered proxy route matches host 'www.unregistered.example.test'")
             ->and($decoded['error']['message'])
-            ->not->toContain('lowercase app.instance')
+            ->not
+            ->toContain('lowercase app.instance')
             ->and($decoded['error']['meta']['host'] ?? null)
             ->toBe('www.unregistered.example.test')
             ->and($decoded['error']['meta']['field'] ?? null)
@@ -193,7 +197,9 @@ describe('instance:log', function (): void {
 
         expect($exitCode)->toBe(0);
     });
+});
 
+describe('instance:log validation', function (): void {
     it('rejects --json with --follow before opening a gateway stream', function (): void {
         Http::fake();
 
@@ -296,11 +302,15 @@ describe('instance:log', function (): void {
             ->and($decoded['error']['meta']['field'] ?? null)
             ->toBe('lines');
     });
+});
 
+describe('instance:log cwd inference', function (): void {
     it('infers the instance selector from the owned .orbit marker when interactive', function (): void {
         $root = sys_get_temp_dir().'/orbit-instance-log-cwd-'.uniqid('', true);
         mkdir($root.'/.orbit', 0777, true);
-        file_put_contents($root.'/.orbit/config', json_encode([
+        $configPath = $root.'/.orbit/config';
+        $orbitDir = $root.'/.orbit';
+        file_put_contents($configPath, json_encode([
             'instance' => 'docs.development',
         ], JSON_THROW_ON_ERROR));
         $previousCwd = getenv('ORBIT_HOST_CWD');
@@ -326,9 +336,18 @@ describe('instance:log', function (): void {
             } else {
                 putenv('ORBIT_HOST_CWD');
             }
-            @unlink($root.'/.orbit/config');
-            @rmdir($root.'/.orbit');
-            @rmdir($root);
+
+            if (is_file($configPath)) {
+                unlink($configPath);
+            }
+
+            if (is_dir($orbitDir)) {
+                rmdir($orbitDir);
+            }
+
+            if (is_dir($root)) {
+                rmdir($root);
+            }
         }
     });
 });

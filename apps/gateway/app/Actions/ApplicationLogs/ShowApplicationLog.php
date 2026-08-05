@@ -10,7 +10,6 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\ApplicationLogs\ApplicationLogNodeConstraint;
 use App\Services\ApplicationLogs\ApplicationLogPathResolver;
-use App\Services\ApplicationLogs\ApplicationLogStreamTarget;
 use App\Services\ApplicationLogs\RemoteApplicationLogs;
 use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -21,7 +20,6 @@ final readonly class ShowApplicationLog
         private ApplicationLogPathResolver $paths,
         private RemoteApplicationLogs $remoteLogs,
         private WorkspacePlacement $placement,
-        private ApplicationLogStreamTarget $streamTargets,
     ) {}
 
     /**
@@ -31,20 +29,19 @@ final readonly class ShowApplicationLog
     {
         $node = $this->requireInstanceNode($instance);
         ApplicationLogNodeConstraint::assert($node, $nodeConstraint);
-        $paths = $this->paths->forInstance($app, $instance);
-        $payload = $this->read($node, $paths, $lines);
+        $payload = $this->read($node, $this->paths->forInstance($app, $instance), $lines);
 
         return [
-            'data' => $this->envelope(
-                type: 'instance',
-                app: $app->name,
-                instance: $instance->name,
-                workspace: null,
-                selector: "{$app->name}.{$instance->name}",
-                node: $node->name,
-                lines: $lines,
-                payload: $payload,
-            ),
+            'data' => $this->envelope([
+                'type' => 'instance',
+                'app' => $app->name,
+                'instance' => $instance->name,
+                'workspace' => null,
+                'selector' => "{$app->name}.{$instance->name}",
+                'node' => $node->name,
+                'lines' => $lines,
+                'payload' => $payload,
+            ]),
             'meta' => [],
         ];
     }
@@ -56,81 +53,21 @@ final readonly class ShowApplicationLog
     {
         [$app, $instance, $node] = $this->requireWorkspaceContext($workspace);
         ApplicationLogNodeConstraint::assert($node, $nodeConstraint);
-        $paths = $this->paths->forWorkspace($workspace);
-        $payload = $this->read($node, $paths, $lines);
+        $payload = $this->read($node, $this->paths->forWorkspace($workspace), $lines);
 
         return [
-            'data' => $this->envelope(
-                type: 'workspace',
-                app: $app->name,
-                instance: $instance->name,
-                workspace: $workspace->name,
-                selector: $workspace->name,
-                node: $node->name,
-                lines: $lines,
-                payload: $payload,
-            ),
+            'data' => $this->envelope([
+                'type' => 'workspace',
+                'app' => $app->name,
+                'instance' => $instance->name,
+                'workspace' => $workspace->name,
+                'selector' => $workspace->name,
+                'node' => $node->name,
+                'lines' => $lines,
+                'payload' => $payload,
+            ]),
             'meta' => [],
         ];
-    }
-
-    /**
-     * @return array{node: Node, absolute_path: string, authorized_root: string, lines: int, operation_stream: array<string, mixed>}
-     */
-    public function operationStreamTargetForInstance(
-        App $app,
-        Instance $instance,
-        int $lines,
-        ?string $nodeConstraint = null,
-        ?string $gatewayUrl = null,
-    ): array {
-        $node = $this->requireInstanceNode($instance);
-        ApplicationLogNodeConstraint::assert($node, $nodeConstraint);
-
-        return $this->streamTargets->create(
-            $node,
-            $this->paths->forInstance($app, $instance),
-            $lines,
-            $gatewayUrl,
-            'application.logs.follow.instance',
-        );
-    }
-
-    /**
-     * @return array{node: Node, absolute_path: string, authorized_root: string, lines: int, operation_stream: array<string, mixed>}
-     */
-    public function operationStreamTargetForWorkspace(
-        Workspace $workspace,
-        int $lines,
-        ?string $nodeConstraint = null,
-        ?string $gatewayUrl = null,
-    ): array {
-        [, , $node] = $this->requireWorkspaceContext($workspace);
-        ApplicationLogNodeConstraint::assert($node, $nodeConstraint);
-
-        return $this->streamTargets->create(
-            $node,
-            $this->paths->forWorkspace($workspace),
-            $lines,
-            $gatewayUrl,
-            'application.logs.follow.workspace',
-        );
-    }
-
-    /**
-     * @param  array{node: Node, absolute_path: string, authorized_root: string, lines: int, operation_stream?: array<string, mixed>}  $target
-     * @param  callable(string): void  $onOutput
-     */
-    public function followTarget(array $target, callable $onOutput): void
-    {
-        $this->remoteLogs->follow(
-            node: $target['node'],
-            absolutePath: $target['absolute_path'],
-            authorizedRoot: $target['authorized_root'],
-            lines: $target['lines'],
-            onOutput: $onOutput,
-            operationStream: $target['operation_stream'] ?? null,
-        );
     }
 
     /**
@@ -146,12 +83,11 @@ final readonly class ShowApplicationLog
             ]);
         }
 
-        $result = $this->remoteLogs->read(
-            node: $node,
-            absolutePath: $paths['absolute_path'],
-            authorizedRoot: $paths['authorized_root'],
-            lines: $lines,
-        );
+        $result = $this->remoteLogs->read($node, [
+            'absolute_path' => $paths['absolute_path'],
+            'authorized_root' => $paths['authorized_root'],
+            'lines' => $lines,
+        ]);
 
         if (! $result->successful()) {
             throw new GatewayApiException(
@@ -165,30 +101,33 @@ final readonly class ShowApplicationLog
     }
 
     /**
-     * @param  array{file_exists: bool, lines: list<mixed>}  $payload
+     * @param  array{
+     *     type: string,
+     *     app: string,
+     *     instance: string,
+     *     workspace: ?string,
+     *     selector: string,
+     *     node: string,
+     *     lines: int,
+     *     payload: array{file_exists: bool, lines: list<mixed>}
+     * }  $context
      * @return array<string, mixed>
      */
-    private function envelope(
-        string $type,
-        string $app,
-        string $instance,
-        ?string $workspace,
-        string $selector,
-        string $node,
-        int $lines,
-        array $payload,
-    ): array {
+    private function envelope(array $context): array
+    {
+        $payload = $context['payload'];
+
         return [
             'target' => [
-                'type' => $type,
-                'app' => $app,
-                'instance' => $instance,
-                'workspace' => $workspace,
-                'selector' => $selector,
+                'type' => $context['type'],
+                'app' => $context['app'],
+                'instance' => $context['instance'],
+                'workspace' => $context['workspace'],
+                'selector' => $context['selector'],
             ],
-            'node' => $node,
+            'node' => $context['node'],
             'path' => ApplicationLogPathResolver::LogicalPath,
-            'lines_requested' => $lines,
+            'lines_requested' => $context['lines'],
             'file_exists' => $payload['file_exists'],
             'lines' => $payload['lines'],
         ];

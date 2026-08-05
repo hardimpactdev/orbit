@@ -1,4 +1,4 @@
-# Technical Contract: `orbit instance:log [instance]`
+# Technical Contract: `orbit instance:log [target]`
 
 [Back to public `instance:log` documentation.](../instance-log.md)
 
@@ -14,29 +14,59 @@
 ## Signature
 
 ```bash
-orbit instance:log [instance|instance-url] [--lines=<n>] [--follow] [--json] [--node=<node>]
+orbit instance:log [target] [--node=<node>] [--lines=<n>] [--follow] [--json]
 ```
 
 ## Input Contract
 
+This command follows the shared [Invocation Model](../../../README.md#invocation-model).
+
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `instance` | `[instance]` or interactive cwd | Non-interactive always; interactive when cwd is ambiguous or absent | Never | Unambiguous interactive cwd instance | Dotted `app.instance` or strict instance URL/hostname. No numeric IDs. |
-| `lines` | `--lines` | Optional | Never | `100` | Positive integer. |
-| `follow` | `--follow` | Optional | With `--json` | off | Human streaming only. |
-| `json` | `--json` | Optional | With `--follow` | off | Bounded-read envelope only. |
-| `node` | `--node` | Optional | Never | Serving node | Must equal the instance serving node. |
+| `target` | `[target]` or interactive cwd | Non-interactive always; interactive when cwd is ambiguous or absent. | Never. | Unambiguous interactive cwd instance. | Dotted `app.instance` or strict instance URL/hostname. No numeric IDs. |
+| `node` | `--node` | Optional. | Never. | Serving node. | Must equal the instance serving node (placement constraint only). |
+| `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
+| `follow` | `--follow` | Optional. | When `json=true`. | `false`. | Boolean flag. Keeps the human log stream open when true. |
+| `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
 
 ## Behavior Contract
 
-1. Resolve the instance and serving node.
-2. Authorize `instance:read`.
-3. Apply `--node` as a placement constraint only.
-4. Resolve application root consistent with
+1. Resolve the instance and serving node from `[target]` or interactive cwd context.
+2. Authorize `instance:read` on the resolved instance serving node.
+3. Apply `--node` as a placement constraint only; reject mismatches.
+4. Resolve the application root consistent with
    `AppRuntimeContainerRenderer::applicationRootInContainer()` on the host path.
-5. Read or follow only `storage/logs/laravel.log` under that root.
-6. Gateway: `GET /api/instances/{instance}/log` and
-   `POST /api/instances/{instance}/log-stream`.
+5. Read or follow only `storage/logs/laravel.log` under that root. The public
+   logical path is always `storage/logs/laravel.log`.
+6. For bounded reads, a missing file is success with empty `lines` and
+   `file_exists=false`.
+7. Gateway surfaces: `GET /api/instances/{instance}/log` (bounded) and
+   `POST /api/instances/{instance}/log-stream` (follow).
+8. Render the selected output.
+
+`instance:log` does not mutate instance configuration, placement, or durable
+lifecycle events. It does not accept arbitrary `--path` values.
+
+## Renderer Contracts
+
+- [Human renderer](6.1_instance-log_output-render_human.md)
+- [JSON renderer](6.2_instance-log_output-render_json.md)
+
+## Failure Semantics
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| Target required | Non-interactive or `--json` invocation omits `[target]` and cwd cannot supply one. | Failure (`error.code=validation_failed`; `error.meta.field=target`). |
+| Invalid target | Selector is not a dotted `app.instance` or a strict instance URL/hostname, or a host does not resolve to an instance proxy route. | Failure (`error.code=validation_failed`; `error.meta.field=target`). |
+| Invalid lines | `--lines` is not a strict positive integer. | Failure (`error.code=validation_failed`; `error.meta.field=lines`). |
+| JSON with follow | `--json` is combined with `--follow`. | Failure (`error.code=validation_failed`; `error.meta.field=json`). |
+| Node mismatch | `--node` does not equal the instance serving node. | Failure (`error.code=validation_failed`). |
+| Instance not found | The resolved instance does not exist or is not visible. | Failure (`error.code=instance.not_found` or equivalent not-found code). |
+| Log read failed | The gateway cannot read the fixed application log from the serving node. | Failure (`error.code=application_log.read_failed`). |
+
+A missing application log file is not a failure for bounded reads: the command
+exits zero with empty `lines` and `file_exists=false`.
 
 ## Doctor Relationship
 
@@ -47,15 +77,24 @@ authorization succeed.
 
 ## Activity Logging
 
+The gateway API endpoint emits an activity entry for successful and failed
+instance application log reads.
+
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /instances/{instance}/log` or `api:POST /instances/{instance}/log-stream` |
+| Type | `api:GET /instances/{instance}/log` for bounded reads; `api:POST /instances/{instance}/log-stream` for follow operation creation |
 | Effect | `read` |
-| Properties | target identity, selector, node constraint, mode, lines, outcome—never log contents or absolute host paths |
+| Subject | Resolved `Instance` when identity is known; `none` for validation or authorization failures before the owner can be logged. |
+| Properties | Target identity, selector, node constraint, mode, lines, outcome—never log contents or absolute host paths. |
+| Description | derived |
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/InstanceLogCommandTest.php` | CLI selectors, flags, JSON envelope |
-| `apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php` | Gateway routes, auth, node constraint, missing file |
+| `apps/cli/tests/Feature/Commands/App/InstanceLogCommandTest.php` | CLI selectors, flags, JSON envelope, non-interactive target requirement, cwd inference, and `--json` plus `--follow` rejection. |
+| `apps/gateway/tests/Feature/Http/Api/InstanceApplicationLogControllerTest.php` | Gateway routes, `instance:read` authorization, node constraint, missing file success, activity properties, and log read failures. |
+
+Renderer-specific test mapping lives in the split companion files.

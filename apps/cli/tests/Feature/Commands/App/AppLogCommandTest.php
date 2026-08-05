@@ -6,11 +6,13 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
-describe('app:log', function (): void {
+describe('app:log registration', function (): void {
     it('is registered as a public command', function (): void {
         expect(array_key_exists('app:log', Artisan::all()))->toBeTrue();
     });
+});
 
+describe('app:log host resolution', function (): void {
     it('accepts a bare hostname and resolves an exact proxy route', function (): void {
         Http::fake(function (Request $request) {
             $url = urldecode($request->url());
@@ -145,7 +147,9 @@ describe('app:log', function (): void {
             '/api/instances/docs.development/log',
         ));
     });
+});
 
+describe('app:log validation', function (): void {
     it('rejects invalid URL shapes with credentials', function (): void {
         Http::fake();
 
@@ -268,15 +272,20 @@ describe('app:log', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/instances/docs.development/log')
-                && str_contains($url, 'lines='.PHP_INT_MAX);
+            return (
+                str_contains($url, '/api/instances/docs.development/log') && str_contains($url, 'lines='.PHP_INT_MAX)
+            );
         });
     });
+});
 
+describe('app:log cwd inference', function (): void {
     it('infers an instance target from the owned .orbit marker when interactive', function (): void {
         $root = sys_get_temp_dir().'/orbit-app-log-cwd-'.uniqid('', true);
         mkdir($root.'/.orbit', 0777, true);
-        file_put_contents($root.'/.orbit/config', json_encode([
+        $configPath = $root.'/.orbit/config';
+        $orbitDir = $root.'/.orbit';
+        file_put_contents($configPath, json_encode([
             'instance' => 'docs.development',
         ], JSON_THROW_ON_ERROR));
         $previousCwd = getenv('ORBIT_HOST_CWD');
@@ -322,9 +331,18 @@ describe('app:log', function (): void {
             } else {
                 putenv('ORBIT_HOST_CWD');
             }
-            @unlink($root.'/.orbit/config');
-            @rmdir($root.'/.orbit');
-            @rmdir($root);
+
+            if (is_file($configPath)) {
+                unlink($configPath);
+            }
+
+            if (is_dir($orbitDir)) {
+                rmdir($orbitDir);
+            }
+
+            if (is_dir($root)) {
+                rmdir($root);
+            }
         }
     });
 });

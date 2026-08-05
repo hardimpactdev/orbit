@@ -14,19 +14,16 @@ final readonly class RemoteApplicationLogs
         private RemoteLocalExecutor $localExecutor,
     ) {}
 
-    public function read(
-        Node $node,
-        string $absolutePath,
-        string $authorizedRoot,
-        int $lines,
-    ): RemoteShellResult {
+    /**
+     * @param  array{absolute_path: string, authorized_root: string, lines: int}  $paths
+     */
+    public function read(Node $node, array $paths): RemoteShellResult
+    {
         return $this->localExecutor->runInternal(
             node: $node,
             commandName: 'internal:application-log',
             transportOptions: $this->transportOptions(
-                absolutePath: $absolutePath,
-                authorizedRoot: $authorizedRoot,
-                lines: $lines,
+                paths: $paths,
                 follow: false,
                 operationStream: null,
                 operationId: 'application.log.read',
@@ -36,24 +33,17 @@ final readonly class RemoteApplicationLogs
     }
 
     /**
+     * @param  array{absolute_path: string, authorized_root: string, lines: int}  $paths
      * @param  callable(string): void  $onOutput
      * @param  array<string, mixed>|null  $operationStream
      */
-    public function follow(
-        Node $node,
-        string $absolutePath,
-        string $authorizedRoot,
-        int $lines,
-        callable $onOutput,
-        ?array $operationStream = null,
-    ): void {
+    public function follow(Node $node, array $paths, callable $onOutput, ?array $operationStream = null): void
+    {
         $this->localExecutor->streamInternal(
             node: $node,
             commandName: 'internal:application-log',
             transportOptions: $this->transportOptions(
-                absolutePath: $absolutePath,
-                authorizedRoot: $authorizedRoot,
-                lines: $lines,
+                paths: $paths,
                 follow: true,
                 operationStream: $operationStream,
                 operationId: 'application.log.follow',
@@ -64,22 +54,26 @@ final readonly class RemoteApplicationLogs
     }
 
     /**
+     * @param  array{absolute_path: string, authorized_root: string, lines: int}  $paths
      * @param  array<string, mixed>|null  $operationStream
-     * @return array<string, mixed>
+     * @return array{
+     *     input: string,
+     *     metadata: array<string, string>,
+     *     strict: bool,
+     *     timeout: int
+     * }
      */
     private function transportOptions(
-        string $absolutePath,
-        string $authorizedRoot,
-        int $lines,
+        array $paths,
         bool $follow,
         ?array $operationStream,
         string $operationId,
         int $timeout,
     ): array {
         $input = [
-            'absolute_path' => $absolutePath,
-            'authorized_root' => $authorizedRoot,
-            'lines' => $lines,
+            'absolute_path' => $paths['absolute_path'],
+            'authorized_root' => $paths['authorized_root'],
+            'lines' => $paths['lines'],
             'follow' => $follow,
         ];
 

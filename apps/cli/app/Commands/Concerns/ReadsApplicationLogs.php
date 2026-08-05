@@ -6,9 +6,8 @@ namespace App\Commands\Concerns;
 
 use App\Exceptions\GatewayApiException;
 use App\Services\ApplicationLogs\ApplicationLogFlags;
+use App\Services\ApplicationLogs\ApplicationLogFollowClient;
 use App\Services\ApplicationLogs\ApplicationLogUrlParser;
-use App\Services\GatewayOperationStreamSubscriber;
-use RuntimeException;
 
 /**
  * Shared application-log CLI helpers used by GatewayCommand subclasses.
@@ -58,27 +57,10 @@ trait ReadsApplicationLogs
     {
         try {
             $response = $this->gatewayPost($streamPath, $query);
-            $operationRunId = data_get(target: $response, key: 'success.data.operation.uuid');
-
-            if (! is_string($operationRunId) || trim($operationRunId) === '') {
-                throw GatewayApiException::streamMalformed(
-                    new RuntimeException('Gateway application log stream start response omitted operation uuid.'),
-                );
-            }
-
-            app(GatewayOperationStreamSubscriber::class)->subscribe(
-                trim($operationRunId),
-                null,
-                function (array $frame): void {
-                    if (! in_array($frame['type'] ?? null, ['stdout', 'stderr'], strict: true)) {
-                        return;
-                    }
-
-                    $data = data_get(target: $frame, key: 'payload.data');
-
-                    if (is_string($data) && $data !== '') {
-                        $this->output->write($data);
-                    }
+            app(ApplicationLogFollowClient::class)->consumeStartedStream(
+                $response,
+                function (string $data): void {
+                    $this->output->write($data);
                 },
             );
 

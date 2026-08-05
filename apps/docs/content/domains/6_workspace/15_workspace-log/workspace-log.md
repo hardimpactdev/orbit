@@ -1,4 +1,4 @@
-# `orbit workspace:log [workspace]`
+# `orbit workspace:log [target]`
 
 [Back to Workspace commands.](../README.md)
 

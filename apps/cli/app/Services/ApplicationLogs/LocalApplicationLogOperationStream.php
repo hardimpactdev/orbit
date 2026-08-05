@@ -4,20 +4,43 @@ declare(strict_types=1);
 
 namespace App\Services\ApplicationLogs;
 
-use SensitiveParameter;
-
 final readonly class LocalApplicationLogOperationStream
 {
-    public function __construct(
-        public string $operationUuid,
-        public string $channel,
-        public string $publishEndpoint,
-        public string $stopDecisionEndpoint,
-        public ?string $gatewayUrl,
-        public ?string $caPemPath,
-        #[SensitiveParameter]
-        public string $publisherToken,
-    ) {}
+    public string $operationUuid;
+
+    public string $channel;
+
+    public string $publishEndpoint;
+
+    public string $stopDecisionEndpoint;
+
+    public ?string $gatewayUrl;
+
+    public ?string $caPemPath;
+
+    public string $publisherToken;
+
+    /**
+     * @param  array{
+     *     operation_uuid: string,
+     *     channel: string,
+     *     publish_endpoint: string,
+     *     stop_decision_endpoint: string,
+     *     gateway_url: ?string,
+     *     ca_pem_path: ?string,
+     *     publisher_token: string
+     * }  $fields
+     */
+    private function __construct(array $fields)
+    {
+        $this->operationUuid = $fields['operation_uuid'];
+        $this->channel = $fields['channel'];
+        $this->publishEndpoint = $fields['publish_endpoint'];
+        $this->stopDecisionEndpoint = $fields['stop_decision_endpoint'];
+        $this->gatewayUrl = $fields['gateway_url'];
+        $this->caPemPath = $fields['ca_pem_path'];
+        $this->publisherToken = $fields['publisher_token'];
+    }
 
     public static function from(mixed $value): ?self
     {
@@ -33,17 +56,7 @@ final readonly class LocalApplicationLogOperationStream
             );
         }
 
-        $fields = self::validatedFields($value);
-
-        return new self(
-            operationUuid: $fields['operation_uuid'],
-            channel: $fields['channel'],
-            publishEndpoint: $fields['publish_endpoint'],
-            stopDecisionEndpoint: $fields['stop_decision_endpoint'],
-            gatewayUrl: $fields['gateway_url'],
-            caPemPath: $fields['ca_pem_path'],
-            publisherToken: $fields['publisher_token'],
-        );
+        return new self(self::validatedFields($value));
     }
 
     /**

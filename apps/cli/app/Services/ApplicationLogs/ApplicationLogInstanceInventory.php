@@ -39,8 +39,8 @@ final readonly class ApplicationLogInstanceInventory
     /**
      * @param  list<string>  $selectors
      */
-    public function contains(string $token, array $selectors): bool
+    public function contains(string $selector, array $selectors): bool
     {
-        return in_array($token, $selectors, true);
+        return in_array($selector, $selectors, true);
     }
 }

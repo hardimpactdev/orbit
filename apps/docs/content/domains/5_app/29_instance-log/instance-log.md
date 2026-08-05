@@ -1,4 +1,4 @@
-# `orbit instance:log [instance]`
+# `orbit instance:log [target]`
 
 [Back to App and Instance commands.](../README.md)
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('workspace:log application log', function (): void {
+describe('workspace:log application log reads', function (): void {
     it('sends parent instance on bounded workspace application log reads', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'target' => [
@@ -135,7 +135,9 @@ describe('workspace:log application log', function (): void {
             ->and($decoded['error']['meta']['reason'] ?? null)
             ->toBe('wrong_target_type');
     });
+});
 
+describe('workspace:log application log validation', function (): void {
     it('rejects --json with --follow', function (): void {
         Http::fake();
 
@@ -200,7 +202,9 @@ describe('workspace:log application log', function (): void {
             ->and($decoded['error']['meta']['field'] ?? null)
             ->toBe('instance');
     });
+});
 
+describe('workspace:log application log cwd inference', function (): void {
     it('infers workspace target from resolve-by-path when interactive', function (): void {
         $root = sys_get_temp_dir().'/orbit-workspace-log-cwd-'.uniqid('', true);
         mkdir($root, 0777, true);
@@ -237,8 +241,10 @@ describe('workspace:log application log', function (): void {
             Http::assertSent(function (Request $request): bool {
                 $url = urldecode($request->url());
 
-                return str_contains($url, '/api/workspaces/feature-docs/log')
-                    && str_contains($url, 'instance=docs.development');
+                return (
+                    str_contains($url, '/api/workspaces/feature-docs/log')
+                    && str_contains($url, 'instance=docs.development')
+                );
             });
         } finally {
             if (is_string($previousCwd) && $previousCwd !== '') {
@@ -246,7 +252,10 @@ describe('workspace:log application log', function (): void {
             } else {
                 putenv('ORBIT_HOST_CWD');
             }
-            @rmdir($root);
+
+            if (is_dir($root)) {
+                rmdir($root);
+            }
         }
     });
 });

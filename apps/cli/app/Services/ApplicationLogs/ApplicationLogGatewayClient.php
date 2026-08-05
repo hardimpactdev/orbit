@@ -18,9 +18,9 @@ final readonly class ApplicationLogGatewayClient
     /**
      * @param  array<string, mixed>  $instancesData  success.data from GET /api/instances
      */
-    public function isRegisteredInstanceSelector(string $token, array $instancesData): bool
+    public function isRegisteredInstanceSelector(string $selector, array $instancesData): bool
     {
-        return $this->inventory->contains($token, $this->inventory->selectors($instancesData));
+        return $this->inventory->contains($selector, $this->inventory->selectors($instancesData));
     }
 
     /**
@@ -52,13 +52,28 @@ final readonly class ApplicationLogGatewayClient
      */
     public function routeList(array $successData): array
     {
-        $routes = is_array($successData['routes'] ?? null) ? $successData['routes'] : [];
+        $raw = $successData['routes'] ?? null;
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
         $normalized = [];
 
-        foreach ($routes as $route) {
-            if (is_array($route)) {
-                $normalized[] = $route;
+        foreach ($raw as $route) {
+            if (! is_array($route)) {
+                continue;
             }
+
+            $entry = [];
+
+            foreach ($route as $key => $value) {
+                if (is_string($key)) {
+                    $entry[$key] = $value;
+                }
+            }
+
+            $normalized[] = $entry;
         }
 
         return $normalized;

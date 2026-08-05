@@ -9,6 +9,10 @@ namespace App\Services\ApplicationLogs;
  */
 final readonly class ApplicationLogCwdInference
 {
+    public function __construct(
+        private ApplicationLogWorkspacePathTarget $workspacePathTarget = new ApplicationLogWorkspacePathTarget,
+    ) {}
+
     /**
      * Prefer workspace when resolve-by-path yields one; otherwise instance marker.
      *
@@ -17,7 +21,7 @@ final readonly class ApplicationLogCwdInference
      */
     public function forAppLog(?array $workspaceData, ?string $instanceMarker): array
     {
-        $workspace = $this->workspaceTarget($workspaceData);
+        $workspace = $this->workspacePathTarget->fromResolveByPathData($workspaceData);
 
         if ($workspace !== null) {
             return $workspace;
@@ -42,7 +46,7 @@ final readonly class ApplicationLogCwdInference
      */
     public function forWorkspaceLog(?array $workspaceData): array
     {
-        $workspace = $this->workspaceTarget($workspaceData);
+        $workspace = $this->workspacePathTarget->fromResolveByPathData($workspaceData);
 
         if ($workspace !== null) {
             return $workspace;
@@ -51,44 +55,6 @@ final readonly class ApplicationLogCwdInference
         return [
             'error' => 'No unambiguous workspace target could be inferred from the current directory.',
             'reason' => 'cwd_target_missing',
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $workspaceData
-     * @return array{type: 'workspace', workspace: string, instance: string}|null
-     */
-    private function workspaceTarget(?array $workspaceData): ?array
-    {
-        if ($workspaceData === null) {
-            return null;
-        }
-
-        $workspace = is_array($workspaceData['workspace'] ?? null)
-            ? $workspaceData['workspace']
-            : $workspaceData;
-
-        $name = $workspace['name'] ?? null;
-        $app = $workspace['app'] ?? null;
-        $instance = $workspace['instance'] ?? null;
-
-        if (! is_string($name) || $name === '') {
-            return null;
-        }
-
-        if (! is_string($app) || $app === '' || ! is_string($instance) || $instance === '') {
-            return null;
-        }
-
-        // Parent instance may be bare instance name or already app.instance.
-        $parent = str_contains($instance, '.')
-            ? $instance
-            : "{$app}.{$instance}";
-
-        return [
-            'type' => 'workspace',
-            'workspace' => $name,
-            'instance' => $parent,
         ];
     }
 }

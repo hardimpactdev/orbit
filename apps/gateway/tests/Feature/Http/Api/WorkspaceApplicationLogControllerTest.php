@@ -239,12 +239,11 @@ describe('Workspace application log API', function (): void {
         $encoded = json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR);
         expect($encoded)
             ->not->toContain('SECRET_WORKSPACE_LOG_LINE')
-            ->not->toContain('/srv/apps')
-            ->and($entry->properties->get('outcome'))->toBe('success')
-            ->and($entry->properties->get('mode'))->toBe('bounded')
-            ->and($entry->properties->get('workspace'))->toBe('feature-docs')
-            ->and($entry->properties->get('lines'))->toBe(25)
-            ->and($entry->properties->get('node'))->toBe('app-dev-1');
+            ->not->toContain('/srv/apps')->and($entry->properties->get('outcome'))->toBe(
+                'success',
+            )->and($entry->properties->get('mode'))->toBe('bounded')->and($entry->properties->get('workspace'))->toBe(
+                'feature-docs',
+            )->and($entry->properties->get('lines'))->toBe(25)->and($entry->properties->get('node'))->toBe('app-dev-1');
     });
 
     it('records stream-start failure activity without log contents or absolute paths', function (): void {
@@ -258,19 +257,20 @@ describe('Workspace application log API', function (): void {
         grant_workspace_read($caller, $serving);
         seed_workspace_for_app_log($serving);
 
-        $this->call(
-            'POST',
-            '/api/workspaces/feature-docs/log-stream',
-            content: json_encode([
-                'instance' => 'docs.development',
-                'lines' => 40,
-                'node' => 'other-node',
-            ], JSON_THROW_ON_ERROR),
-            server: [
-                'CONTENT_TYPE' => 'application/json',
-                'REMOTE_ADDR' => WORKSPACE_APP_LOG_CALLER_WG_IP,
-            ],
-        )
+        $this
+            ->call(
+                'POST',
+                '/api/workspaces/feature-docs/log-stream',
+                content: json_encode([
+                    'instance' => 'docs.development',
+                    'lines' => 40,
+                    'node' => 'other-node',
+                ], JSON_THROW_ON_ERROR),
+                server: [
+                    'CONTENT_TYPE' => 'application/json',
+                    'REMOTE_ADDR' => WORKSPACE_APP_LOG_CALLER_WG_IP,
+                ],
+            )
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'node_mismatch');
@@ -281,13 +281,13 @@ describe('Workspace application log API', function (): void {
         $encoded = json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR);
         expect($encoded)
             ->not->toContain('/srv/apps')
-            ->not->toContain('SECRET_')
-            ->and($entry->properties->get('outcome'))->toBe('validation_failed')
-            ->and($entry->properties->get('mode'))->toBe('follow')
-            ->and($entry->properties->get('workspace'))->toBe('feature-docs')
-            ->and($entry->properties->get('lines'))->toBe(40)
-            ->and($entry->properties->get('node'))->toBe('other-node')
-            ->and($entry->properties->get('target'))->toBeNull();
+            ->not->toContain('SECRET_')->and($entry->properties->get('outcome'))->toBe(
+                'validation_failed',
+            )->and($entry->properties->get('mode'))->toBe('follow')->and($entry->properties->get('workspace'))->toBe(
+                'feature-docs',
+            )->and($entry->properties->get('lines'))->toBe(40)->and($entry->properties->get('node'))->toBe(
+                'other-node',
+            )->and($entry->properties->get('target'))->toBeNull();
     });
 
     it('records post-authorization read_failed activity without log contents or absolute paths', function (): void {
@@ -305,18 +305,19 @@ describe('Workspace application log API', function (): void {
             'path' => '/srv/apps/docs/storage/logs/laravel.log',
         ], exitCode: 1);
 
-        $this->call(
-            'GET',
-            '/api/workspaces/feature-docs/log',
-            [
-                'instance' => 'docs.development',
-                'lines' => 10,
-                'node' => 'app-dev-1',
-            ],
-            server: [
-                'REMOTE_ADDR' => WORKSPACE_APP_LOG_CALLER_WG_IP,
-            ],
-        )
+        $this
+            ->call(
+                'GET',
+                '/api/workspaces/feature-docs/log',
+                [
+                    'instance' => 'docs.development',
+                    'lines' => 10,
+                    'node' => 'app-dev-1',
+                ],
+                server: [
+                    'REMOTE_ADDR' => WORKSPACE_APP_LOG_CALLER_WG_IP,
+                ],
+            )
             ->assertStatus(502)
             ->assertJsonPath('error.code', 'application_log.read_failed');
 
@@ -326,12 +327,12 @@ describe('Workspace application log API', function (): void {
         $encoded = json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR);
         expect($encoded)
             ->not->toContain('SECRET_WORKSPACE_LOG_LINE')
-            ->not->toContain('/srv/apps')
-            ->and($entry->properties->get('outcome'))->toBe('application_log.read_failed')
-            ->and($entry->properties->get('mode'))->toBe('bounded')
-            ->and($entry->properties->get('workspace'))->toBe('feature-docs')
-            ->and($entry->properties->get('lines'))->toBe(10)
-            ->and($entry->properties->get('node'))->toBe('app-dev-1')
-            ->and($entry->properties->get('target'))->toBeNull();
+            ->not->toContain('/srv/apps')->and($entry->properties->get('outcome'))->toBe(
+                'application_log.read_failed',
+            )->and($entry->properties->get('mode'))->toBe('bounded')->and($entry->properties->get('workspace'))->toBe(
+                'feature-docs',
+            )->and($entry->properties->get('lines'))->toBe(10)->and($entry->properties->get('node'))->toBe(
+                'app-dev-1',
+            )->and($entry->properties->get('target'))->toBeNull();
     });
 });

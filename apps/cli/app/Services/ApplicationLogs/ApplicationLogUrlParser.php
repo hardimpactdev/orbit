@@ -6,6 +6,10 @@ namespace App\Services\ApplicationLogs;
 
 final readonly class ApplicationLogUrlParser
 {
+    public function __construct(
+        private ApplicationLogUrlSchemeValidator $schemeValidator = new ApplicationLogUrlSchemeValidator,
+    ) {}
+
     /**
      * @return array{ok: true, host: string}|array{ok: false, field: string, message: string}
      */
@@ -31,40 +35,17 @@ final readonly class ApplicationLogUrlParser
     {
         $parts = parse_url($value);
 
-        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+        if (! is_array($parts)) {
             return $this->fail('The target URL is invalid.');
         }
 
-        $scheme = strtolower((string) $parts['scheme']);
+        $validated = $this->schemeValidator->validate($parts);
 
-        if (! in_array($scheme, ['http', 'https'], true)) {
-            return $this->fail('The target URL scheme must be http or https.');
+        if ($validated['ok'] === false) {
+            return $this->fail($validated['message']);
         }
 
-        if (isset($parts['user']) || isset($parts['pass'])) {
-            return $this->fail('The target URL must not include credentials.');
-        }
-
-        if (isset($parts['query']) || isset($parts['fragment'])) {
-            return $this->fail('The target URL must not include a query or fragment.');
-        }
-
-        $path = $parts['path'] ?? '/';
-
-        if ($path !== '' && $path !== '/') {
-            return $this->fail('The target URL must not include a path.');
-        }
-
-        if (isset($parts['port'])) {
-            $port = (int) $parts['port'];
-            $default = $scheme === 'https' ? 443 : 80;
-
-            if ($port !== $default) {
-                return $this->fail('The target URL must not include a non-default port.');
-            }
-        }
-
-        return ['ok' => true, 'host' => mb_strtolower((string) $parts['host'])];
+        return ['ok' => true, 'host' => $validated['host']];
     }
 
     /**
@@ -72,7 +53,16 @@ final readonly class ApplicationLogUrlParser
      */
     private function parseHostname(string $value): array
     {
-        if (
+        if ($this->hostnameIsInvalid($value)) {
+            return $this->fail('The target hostname is invalid.');
+        }
+
+        return ['ok' => true, 'host' => mb_strtolower($value)];
+    }
+
+    private function hostnameIsInvalid(string $value): bool
+    {
+        return (
             str_contains($value, '/')
             || str_contains($value, '?')
             || str_contains($value, '#')
@@ -80,11 +70,7 @@ final readonly class ApplicationLogUrlParser
             || str_contains($value, ' ')
             || str_contains($value, '\\')
             || preg_match('/:\d+$/', $value) === 1
-        ) {
-            return $this->fail('The target hostname is invalid.');
-        }
-
-        return ['ok' => true, 'host' => mb_strtolower($value)];
+        );
     }
 
     /**

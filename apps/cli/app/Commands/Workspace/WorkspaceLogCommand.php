@@ -98,7 +98,18 @@ final class WorkspaceLogCommand extends GatewayCommand
             ]);
         }
 
-        return $this->readOrFollow($inferred['workspace'], $inferred['instance'], $flags);
+        $workspace = $inferred['workspace'] ?? null;
+        $instance = $inferred['instance'] ?? null;
+
+        if (! is_string($workspace) || ! is_string($instance)) {
+            return $this->renderFailure(
+                'validation_failed',
+                'No unambiguous workspace target could be inferred from the current directory.',
+                ['field' => 'target', 'reason' => 'cwd_target_missing'],
+            );
+        }
+
+        return $this->readOrFollow($workspace, $instance, $flags);
     }
 
     private function fromUrlOrHost(
@@ -138,8 +149,19 @@ final class WorkspaceLogCommand extends GatewayCommand
             );
         }
 
+        $workspace = $matched['workspace'] ?? null;
+        $instance = $matched['instance'] ?? null;
+
+        if (! is_string($workspace) || ! is_string($instance)) {
+            return $this->renderFailure(
+                'validation_failed',
+                'The workspace proxy route did not include a parent instance selector.',
+                ['field' => 'instance', 'host' => $host['host']],
+            );
+        }
+
         // URL/host resolution supplies parent instance; marker/--instance not required.
-        return $this->readOrFollow($matched['workspace'], $matched['instance'], $flags);
+        return $this->readOrFollow($workspace, $instance, $flags);
     }
 
     private function fromWorkspaceName(
