@@ -35,6 +35,8 @@ final readonly class AddProcess
     ) {}
 
     /**
+     * @mago-expect lint:excessive-parameter-list
+     *
      * @param  array<string, mixed>  $serviceOptions
      * @param  list<string>  $replaceContainers
      * @param  list<string>|null  $binds

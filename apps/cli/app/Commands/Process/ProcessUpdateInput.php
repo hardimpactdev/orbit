@@ -175,6 +175,7 @@ final readonly class ProcessUpdateInput
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
+     *     label?: ?string,
      *     command?: ?string,
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
