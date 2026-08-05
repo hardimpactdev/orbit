@@ -89,8 +89,11 @@ venues, record the structured runtime receipt on the existing
 `result=passed`, exact existing `evidence=` file under `.orbit/evidence/` or
 `.orbit/quality-gates/`). Scan incomplete final-hop language in free-form
 detail or `observed=` only. Do not invent a parallel receipt, artifact, or
-lane. If the final hop is incomplete or deferred, remain in PROVE and re-prove
-it before ACCEPT or LAND.
+lane. If the final hop is incomplete, failed, or deferred, remain in PROVE:
+acceptance cannot arm or stay armed; follow FIX -> BUILD -> PROVE before ACCEPT
+or LAND. A same-candidate proof retry may keep Review and Reviewed feature tip;
+a repair that changes HEAD still needs a refreshed review. Do not treat post-LAND
+closure proof as a substitute for the current candidate receipt.
 
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.

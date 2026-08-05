@@ -57,7 +57,9 @@ separate fields, so values must not embed raw semicolon-delimited
 pseudo-fields. Known keys only. Example evidence citation: write a real receipt
 and cite one exact regular file below the worktree evidence tree (not a
 directory root). A failed, excluded, still-required, or deferred final hop
-cannot be recorded as passed; remain in PROVE and re-prove it. Automated venues
-keep `runtime: not applicable`. Proof files retained by the compact archive
-must be cited as one exact inline-code path; prose, directories, padded code
-spans, and partial paths are not proof citations.
+cannot be recorded as passed; remain in PROVE, disarm any armed or recorded
+acceptance, and follow FIX -> BUILD -> PROVE before ACCEPT. Keep a still-valid
+Review and Reviewed feature tip on proof-only retries; a HEAD change still needs
+a refreshed review. Automated venues keep `runtime: not applicable`. Proof files
+retained by the compact archive must be cited as one exact inline-code path;
+prose, directories, padded code spans, and partial paths are not proof citations.

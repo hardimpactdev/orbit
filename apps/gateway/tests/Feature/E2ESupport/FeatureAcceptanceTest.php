@@ -945,6 +945,214 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
     ],
 ]);
 
+it('keeps a failed terminal runtime proof in PROVE and completes FIX -> BUILD -> PROVE before acceptance', function (): void {
+    $fixture = acceptance_test_workspace(
+        'prove-repair-transition',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $originalTip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        acceptance_test_write_runtime_row(
+            $fixture,
+            'passed - candidate='
+            .$originalTip
+            .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 1; result=failed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        );
+
+        $failedReady = acceptance_test_run($fixture, ['ready']);
+        $afterFailedProof = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+
+        expect($failedReady->getExitCode())
+            ->toBe(2)
+            ->and($failedReady->getErrorOutput())
+            ->toContain('result=')
+            ->toContain('FIX -> BUILD -> PROVE')
+            ->and($afterFailedProof)
+            ->toContain('- State: prove')
+            ->toContain('- Acceptance: pending')
+            ->toContain('- Accepted feature tip: none')
+            ->toContain('- Accepted main tip: none')
+            ->toContain('- Reviewed feature tip: '.$originalTip);
+
+        file_put_contents("{$fixture}/apps/cli/app/Commands/FooCommand.php", "repaired candidate\n");
+        acceptance_test_git($fixture, ['add', 'apps/cli/app/Commands/FooCommand.php']);
+        acceptance_test_git($fixture, ['commit', '-m', 'Repair candidate after failed terminal proof']);
+        $repairedTip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+
+        $staleReady = acceptance_test_run($fixture, ['ready']);
+
+        expect($staleReady->getExitCode())
+            ->toBe(2)
+            ->and($staleReady->getErrorOutput())
+            ->toContain('reviewed feature tip does not equal candidate HEAD')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: prove')
+            ->toContain('- Acceptance: pending')
+            ->toContain('- Reviewed feature tip: '.$originalTip);
+
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        $loop =
+            preg_replace(
+                '/^(\s*)- Review: .+$/m',
+                '${1}- Review: passed - reviewer - human-judgment=not-required',
+                $loop,
+                1,
+            ) ?? $loop;
+        $loop =
+            preg_replace(
+                '/^(\s*)- Reviewed feature tip: .+$/m',
+                '${1}- Reviewed feature tip: '.$repairedTip,
+                $loop,
+                1,
+            ) ?? $loop;
+        file_put_contents("{$fixture}/.orbit/loop.md", $loop);
+        acceptance_test_write_runtime_row(
+            $fixture,
+            acceptance_test_structured_runtime($repairedTip),
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+        $mainTip = acceptance_test_git($fixture, ['rev-parse', 'main']);
+
+        expect($ready->getExitCode())
+            ->toBe(0, $ready->getErrorOutput())
+            ->and($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: accepted')
+            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment')
+            ->toContain('- Accepted feature tip: '.$repairedTip)
+            ->toContain('- Accepted main tip: '.$mainTip)
+            ->toContain('- Reviewed feature tip: '.$repairedTip)
+            ->not->toContain($originalTip);
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('disarms acceptance when terminal runtime proof becomes unresolved after arming or accepting', function (
+    string $state,
+    bool $recordAcceptance,
+): void {
+    $fixture = acceptance_test_workspace(
+        'disarm-runtime-'.$state,
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: $state === 'accepted' ? 'accept' : $state,
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+
+        if ($recordAcceptance) {
+            $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+            expect($accepted->getExitCode())->toBe(0, $accepted->getErrorOutput());
+            expect((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+                ->toContain('- State: accepted');
+        } elseif ($state === 'accept') {
+            $ready = acceptance_test_run($fixture, ['ready']);
+            expect($ready->getExitCode())->toBe(0, $ready->getErrorOutput());
+            expect((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+                ->toContain('- State: accept')
+                ->toContain('- Acceptance: pending');
+        }
+
+        $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        acceptance_test_write_runtime_row(
+            $fixture,
+            'passed - candidate='
+            .$tip
+            .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 1; result=failed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        );
+
+        $blocked = acceptance_test_run($fixture, ['ready']);
+
+        expect($blocked->getExitCode())
+            ->toBe(2)
+            ->and($blocked->getErrorOutput())
+            ->toContain('result=')
+            ->toContain('FIX -> BUILD -> PROVE')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: prove')
+            ->toContain('- Acceptance: pending')
+            ->toContain('- Accepted feature tip: none')
+            ->toContain('- Accepted main tip: none')
+            ->toContain('- Reviewed feature tip: '.$tip);
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'armed accept' => ['accept', false],
+    'already accepted' => ['accepted', true],
+]);
+
+it('does not normalize acceptance through a symlinked .orbit root', function (): void {
+    $fixture = acceptance_test_workspace(
+        'normalize-orbit-root-symlink',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+    $outside = sys_get_temp_dir().'/orbit-orbit-root-'.bin2hex(random_bytes(6));
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $armed = acceptance_test_run($fixture, ['ready']);
+        expect($armed->getExitCode())->toBe(0, $armed->getErrorOutput());
+        expect((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: accept');
+
+        $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+        acceptance_test_write_runtime_row(
+            $fixture,
+            'passed - candidate='
+            .$tip
+            .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 1; result=failed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        );
+
+        acceptance_test_replace_orbit_root_with_symlink($fixture, $outside);
+        // Directory-only tracked ignore (`.orbit/`) does not cover a `.orbit`
+        // symlink. Local exclude lets ready reach runtime refusal without
+        // changing tracked fixture content or the shared workspace contract.
+        file_put_contents("{$fixture}/.git/info/exclude", ".orbit\n", FILE_APPEND);
+        $outsideLoopPath = "{$outside}/loop.md";
+        $beforeOutside = (string) file_get_contents($outsideLoopPath);
+
+        expect($beforeOutside)
+            ->toContain('- State: accept')
+            ->toContain('result=failed');
+
+        $blocked = acceptance_test_run($fixture, ['ready']);
+
+        expect($blocked->getExitCode())
+            ->toBe(2)
+            ->and($blocked->getErrorOutput())
+            ->toContain('result=')
+            ->toContain('FIX -> BUILD -> PROVE')
+            ->and((string) file_get_contents($outsideLoopPath))
+            ->toBe($beforeOutside)
+            ->toContain('- State: accept')
+            ->not->toContain('- State: prove');
+    } finally {
+        acceptance_test_cleanup_orbit_root_symlink($fixture, $outside);
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('rejects runtime evidence when the worktree .orbit root is a symlink', function (): void {
     require_once repo_path('bin/orbit-loop-contract.php');
 

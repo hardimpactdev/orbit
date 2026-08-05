@@ -101,7 +101,7 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
     $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
-        throw new RuntimeException($runtimeProblem);
+        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
     }
 
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
@@ -162,7 +162,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
     $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
 
     if ($runtimeProblem !== null) {
-        throw new RuntimeException($runtimeProblem);
+        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
     }
 
     if ($actor === 'automated' && ! orbitLoopReviewSaysNoHumanJudgment($review)) {
@@ -283,6 +283,49 @@ function acceptanceLoop(string $path): string
     }
 
     return $loop;
+}
+
+/**
+ * Normalize acceptance arming back to PROVE when terminal runtime proof is
+ * unresolved. Preserves Review and Reviewed feature tip so a same-candidate
+ * re-proof does not force another review. Never writes through a symlink loop
+ * file or a symlinked parent (including a symlinked `.orbit` root).
+ */
+function acceptanceRefuseUnresolvedRuntime(string $loopPath, string $loop, string $runtimeProblem): never
+{
+    $normalized = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'pending');
+    $normalized = orbitLoopSetLabel($normalized, 'Proof', 'Accepted feature tip', 'none');
+    $normalized = orbitLoopSetLabel($normalized, 'Proof', 'Accepted main tip', 'none');
+    $normalized = orbitLoopSetLabel($normalized, 'Status', 'State', 'prove');
+
+    if ($normalized !== $loop && acceptanceLoopPathAllowsNormalizeWrite($loopPath)) {
+        acceptanceWriteLoop($loopPath, $normalized);
+    }
+
+    throw new RuntimeException(
+        rtrim($runtimeProblem, " \t.").'. Next: FIX -> BUILD -> PROVE before ACCEPT',
+    );
+}
+
+/**
+ * Allow normalize writes only for a regular loop file whose immediate parent is
+ * not a symlink. `is_file` follows parent symlinks, so a `.orbit` root symlink
+ * would otherwise write outside the worktree while the leaf loop path itself is
+ * not a symlink. Legitimate `--loop` paths under real directories still write.
+ */
+function acceptanceLoopPathAllowsNormalizeWrite(string $loopPath): bool
+{
+    if (! is_file($loopPath) || is_link($loopPath)) {
+        return false;
+    }
+
+    $parent = dirname($loopPath);
+
+    if ($parent === '' || $parent === '.' || $parent === $loopPath) {
+        return false;
+    }
+
+    return ! is_link($parent);
 }
 
 function acceptanceRequireClean(string $cwd): void
