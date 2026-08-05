@@ -26,6 +26,30 @@ if (array_key_exists('help', $options)) {
 
         The index is deterministic metadata for quick session mining before opening archives.
         Session archives remain trace evidence, not product authority.
+
+        Candidate identity:
+          Each indexed record carries candidate_commit from orbit-session-archive.json when
+          that receipt field is an explicit 40-character lowercase commit id. Missing,
+          invalid, or historical unknown receipt identity is stored as JSON null (unknown).
+          The indexer never infers identity from Git, timestamps, later repair commits, or
+          loop prose.
+
+        Counts:
+          record_count is the raw number of indexed archive records.
+          unique_candidate_commit_count counts distinct valid explicit candidate_commit
+          values only. Multiple unknown-identity records remain separate raw records and
+          are never collapsed into a guessed candidate.
+
+        Orphans:
+          Archive-shaped directories that are empty, missing loop.md, or have an unsafe
+          (symlink) loop.md are reported under orphans with a deterministic reason. They
+          are not deleted, repaired, or indexed as records.
+
+        Migration / backfill:
+          Regenerating the index backfills candidate_commit only when a historical receipt
+          already contains a valid explicit id. Absence remains unknown; history is never
+          guessed. Schema version advances when the index contract changes; reading older
+          archives stays compatible.
         EOF);
 
     exit(0);
@@ -97,6 +121,8 @@ function build_session_index(string $sessionsDir): array
 {
     $paths = glob("{$sessionsDir}/*", GLOB_ONLYDIR) ?: [];
     $records = [];
+    $orphans = [];
+    $uniqueCandidateCommits = [];
 
     sort($paths, SORT_STRING);
 
@@ -107,21 +133,86 @@ function build_session_index(string $sessionsDir): array
             continue;
         }
 
-        $loopPath = "{$path}/loop.md";
+        $orphanReason = archive_orphan_reason($path);
 
-        if (! is_file($loopPath) || is_link($loopPath)) {
+        if ($orphanReason !== null) {
+            $orphans[] = [
+                'archive' => $basename,
+                'reason' => $orphanReason,
+            ];
+
             continue;
         }
 
-        $records[] = parse_archive($path, $matches[1], $matches[2]);
+        $record = parse_archive($path, $matches[1], $matches[2]);
+        $records[] = $record;
+
+        $candidateCommit = $record['candidate_commit'] ?? null;
+
+        if (is_string($candidateCommit) && is_explicit_candidate_commit($candidateCommit)) {
+            $uniqueCandidateCommits[$candidateCommit] = true;
+        }
     }
 
     return [
-        'schema_version' => 2,
+        'schema_version' => 3,
         'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
         'record_count' => count($records),
+        'unique_candidate_commit_count' => count($uniqueCandidateCommits),
+        'orphan_count' => count($orphans),
         'records' => $records,
+        'orphans' => $orphans,
     ];
+}
+
+function archive_orphan_reason(string $archiveDir): ?string
+{
+    $loopPath = "{$archiveDir}/loop.md";
+
+    if (is_link($loopPath)) {
+        return 'unsafe_loop_md';
+    }
+
+    if (is_file($loopPath)) {
+        return null;
+    }
+
+    $entries = array_values(array_filter(
+        scandir($archiveDir) ?: [],
+        static fn (string $entry): bool => $entry !== '.' && $entry !== '..',
+    ));
+
+    if ($entries === []) {
+        return 'empty';
+    }
+
+    return 'missing_loop_md';
+}
+
+function is_explicit_candidate_commit(string $value): bool
+{
+    return preg_match('/^[0-9a-f]{40}$/', $value) === 1;
+}
+
+/**
+ * @return string|null JSON null represents unknown historical/missing/invalid identity.
+ */
+function parse_candidate_commit(string $archiveDir): ?string
+{
+    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+
+    if (! is_file($receiptPath) || is_link($receiptPath)) {
+        return null;
+    }
+
+    $receipt = json_decode((string) file_get_contents($receiptPath), true);
+    $candidateCommit = is_array($receipt) ? ($receipt['candidate_commit'] ?? null) : null;
+
+    if (! is_string($candidateCommit) || ! is_explicit_candidate_commit($candidateCommit)) {
+        return null;
+    }
+
+    return $candidateCommit;
 }
 
 /**
@@ -154,6 +245,7 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
         'timestamp' => $timestamp,
         'schema' => $compact ? 'compact-v1' : 'legacy',
         'archive_mode' => archive_mode($archiveDir),
+        'candidate_commit' => parse_candidate_commit($archiveDir),
     ];
 
     if (! $compact) {
