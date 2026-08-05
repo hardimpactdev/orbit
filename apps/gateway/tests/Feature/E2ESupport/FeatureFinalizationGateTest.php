@@ -51,16 +51,10 @@ it('documents clean candidate review escalation and landed archive ordering', fu
             'After merge, keep the accepted feature worktree open',
         ))->and($skill)->toContain('commit the candidate and confirm the worktree is')->toContain(
             'same general reviewer',
-        )->toContain('terminal PASS or FIX')->toContain('Validate the exact merge mutation with')->toContain(
-            '`bin/orbit-feature-finalization-check <exact git command>`',
-        )->toContain('After `FINALIZATION: PASS`, execute that exact command separately.')->toContain(
-            'After the archive/index commit:',
-        )->toContain('Validate each cleanup mutation with')->toContain(
-            'After `FINALIZATION: PASS`, execute that exact cleanup command separately.',
-        )
-        ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')->toContain(
-            'After merge, keep the accepted feature worktree open',
-        );
+        )->toContain('terminal PASS or FIX')->toContain('bin/orbit-feature-finalization-check')->toContain(
+            '`FINALIZATION: PASS`',
+        )->toContain('bin/orbit-session-archive')->toContain('`HARNESS.md` LAND')
+        ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`');
 });
 
 it('lints the compact loop contract without historical ceremony', function (): void {
@@ -84,7 +78,7 @@ it('documents optional compact Scope transition framing without a new row or cer
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
 
-    foreach ([$template, $harness, $skill] as $doc) {
+    foreach ([$template, $harness] as $doc) {
         expect($doc)
             ->toContain('primitive=')
             ->toContain('transitions=')
@@ -95,6 +89,11 @@ it('documents optional compact Scope transition framing without a new row or cer
             ->toContain('stale:')
             ->toContain('Omit the clause');
     }
+
+    expect($skill)
+        ->toContain('primitive=')
+        ->toContain('transitions=')
+        ->toContain('HARNESS.md');
 
     expect($template)
         ->toMatch('/^- Owned:\s*$/m')

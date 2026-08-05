@@ -72,17 +72,17 @@ finalization share that contract for every non-`automated` venue: the existing
 `Verification.runtime` row must carry a candidate-bound structured receipt
 (`candidate=`, `venue=`, `environment=`, `target=` or `command=`, `expected=`,
 `observed=`, `result=passed`, and one exact `evidence=` path under
-`.orbit/evidence/` or `.orbit/quality-gates/`). The cited evidence path must be
-an existing regular file in the worktree `.orbit` tree; reject traversal,
-dot-segments, and symlink hops. Scan deferred or incomplete final-hop language in free-form detail and in
-structured `environment=`, `expected=`, and `observed=` only; do not scan
-target/command/evidence values. Reject unknown receipt keys. Free-form wording cannot turn a failed or
-post-LAND/post-merge deferred hop into a pass. Unresolved terminal runtime proof
-stays in PROVE: `ready`/`accept` refuse, normalize `State` to `prove` with
-`Acceptance: pending` and accepted tips `none`, preserve a still-valid Review
-and Reviewed feature tip, and route FIX -> BUILD -> PROVE before ACCEPT. A
-repair that moves HEAD still needs a refreshed review via the existing identity
-check. Do not invent a post-LAND closure proof. Historical archive reading stays
+`.orbit/evidence/` or `.orbit/quality-gates/`). `bin/orbit-feature-acceptance`
+and `bin/orbit-feature-finalization-check` validate receipt fields, evidence
+paths, and deferred-language wording deterministically; their teaching errors
+are the authority on receipt mechanics. Free-form wording cannot turn a failed
+or post-LAND/post-merge deferred hop into a pass. Unresolved terminal runtime
+proof stays in PROVE: `ready`/`accept` refuse, normalize `State` to `prove`
+with `Acceptance: pending` and accepted tips `none`, preserve a still-valid
+Review and Reviewed feature tip, and return through BUILD -> PROVE before
+ACCEPT. A same-candidate proof retry is not a reviewer FIX: the retry keeps
+Review and the reviewed tip; only a reviewer FIX resets them. A repair that
+moves HEAD still needs a refreshed review via the existing identity check. Do not invent a post-LAND closure proof. Historical archive reading stays
 compatible; the strict receipt applies when new acceptance or finalization is
 attempted.
 
@@ -130,9 +130,9 @@ diff-derived route (no loop packet, no cleanliness/review gates):
 bin/orbit-feature-acceptance route
 ```
 
-It prints stable JSON for the exact candidate HEAD, base tip, merge base,
-changed files, and derived venue. The same derivation feeds `ready` and
-`accept`. Default base is `main`. Fail closed when the route cannot be derived.
+It prints the exact candidate HEAD, base tip, merge base, changed files, and
+derived venue; the same derivation feeds `ready` and `accept`. Default base is
+`main`. Fail closed when the route cannot be derived.
 
 `bin/orbit-feature-acceptance ready` uses that same venue from the changed
 files:
@@ -152,20 +152,19 @@ claim a live/production surface must use exact `environment=live`; ordinary
 retained topology proof may keep `environment=dev-fixture`.
 
 Work that still requires human judgment needs explicit user acceptance before
-merge. Other work is accepted by the automated actor after reviewer PASS and
-the same diff-derived proof venue.
-The venue selects the required proof surface; the actor selects whether a user
-judgment remains. A `human-judgment=not-required` review permits an automated
-actor only after the diff-derived venue is proven. It never downgrades
-`retained-incus`, `browser`, or `host-macos` proof to `automated`.
+merge. The venue selects the required proof surface; the actor selects whether
+a user judgment remains. A `human-judgment=not-required` review permits the
+automated actor only after reviewer PASS and the proven diff-derived venue,
+and never downgrades `retained-incus`, `browser`, or `host-macos` proof to
+`automated`.
 
 Agents run every deterministic check and inspect its output before acceptance.
 Never ask the user to execute a check the agent can execute. The user receives
 only a prepared surface that requires human judgment about intent, UX, or
 real-world behavior. Executable files or a conservatively derived venue do not
-by themselves create a human acceptance task. If no judgment surface remains,
-the general reviewer records `HUMAN_JUDGMENT: not-required` and acceptance is
-recorded by the automated actor at the already proven venue.
+by themselves create a human acceptance task; when no judgment surface remains,
+the general reviewer records `HUMAN_JUDGMENT: not-required` and the automated
+actor accepts at the already proven venue.
 
 ### Retained Incus Acceptance
 
@@ -189,9 +188,14 @@ proof and may close after completion. On feedback, keep the topology, invalidate
 acceptance, fix, resync, restart only affected services, and repeat the affected
 proof.
 
-The `composer test:e2e*` commands are human-only. Agents never run, delegate,
-background, schedule, hook, script, or trigger them. Existing manual E2E
-artifacts may be read and triaged; their existence never authorizes execution.
+The `composer test:e2e*` commands are human-only: they run only when the
+user explicitly invokes the Composer command from a shell, and skills, hooks,
+release flows, and default scripts must not trigger them. Agents never run,
+delegate, background, schedule, hook, script, or trigger them. Never ask the
+user to run them for ordinary feature completion; use retained topology proof.
+Existing manual E2E artifacts may be read and triaged; their existence never
+authorizes execution. This is the canonical E2E rule; other agent docs carry
+one-sentence pointers.
 
 ### Browser And macOS Acceptance
 
@@ -248,10 +252,9 @@ there is no second receipt gate. Semantic similarity is never a hard gate. Do
 not create a semantic grader without one named promoted expectation and both
 examples; if one is eventually justified, `UNKNOWN` never passes.
 
-The existing monotonic quality-check progress protection is the reference
-example: the rejected `Running -> Queued` frame fails
-`bin/quality-check-progress-frame-check`, while the accepted monotonic frame
-passes.
+The monotonic quality-check progress protection (rejected `Running -> Queued`
+frame vs accepted monotonic frame, documented with the command UX contracts) is
+the reference example.
 
 ## LAND
 
@@ -265,12 +268,10 @@ bin/orbit-feature-land \
 ```
 
 Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
-only the next incomplete boundary. The same invocation is safe to resume: it
-derives progress from Git, the committed session archive/index, and Solo state,
-skips completed mutations, and stops with a phase plus next action on failure.
-Solo ownership is exact project path equals the feature worktree path; refuse
-primary/root projects, self-cwd, matching `SOLO_PROJECT_ID`, and
-`--confirm-stop-running` project deletion.
+only the next incomplete boundary. Resume is idempotent from Git, the committed
+session archive/index, and Solo state. Solo ownership is exact: the project
+path equals the feature worktree path; the tool refuses primary/root projects,
+self-cwd, and unsafe deletion flags.
 
 Manual LAND remains validate-then-execute for each destructive mutation:
 
@@ -307,11 +308,9 @@ Manual LAND remains validate-then-execute for each destructive mutation:
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.
 
-Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 or schema-v3
-compact receipt. Schema-v3 newly written receipts may bind exact cited files
-under `.orbit/release-evidence/`; schema-v2 receipts keep pre-v3
-evidence/quality-gates proof roots only so historical archives remain valid.
-Historical/full archives remain valid through their legacy manifests.
+Compact cleanup proof is a regular `loop.md` plus a compact receipt the archive
+and finalization tools validate; historical and full archives remain valid
+through their legacy manifests and receipt schemas.
 
 ## Trigger-Only Loop Improvement
 
@@ -324,11 +323,11 @@ metrics table, or signal record. Process improvement starts only after one of:
 - explicit user process feedback.
 
 There may be one active loop experiment at a time. Keep it in a Solo scratchpad
-tagged `loop-experiment` with the trigger, cause hypothesis, smallest change,
-one target metric, exact derivation from existing compact receipts, baseline
-boundary, fixed window, and revert command. Revert by default when the target
-does not improve, a hard protection fails, or ordinary delivery slows
-materially. Do not create generic evaluator tooling for a one-off calculation.
+tagged `loop-experiment` with the trigger, smallest change, one target metric
+derived from existing compact receipts, a fixed window, and a revert command.
+Revert by default when the target does not improve, a hard protection fails, or
+ordinary delivery slows materially. Do not create generic evaluator tooling for
+a one-off calculation.
 
 The prevention metric counts escaped same-surface defects after terminal PASS,
 not internal commit count or autonomous pre-land rework. The latter is recovery

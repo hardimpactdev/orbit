@@ -1,4 +1,11 @@
-# Post-Feature Analyzer
+# Post-Feature Analyzer (Historical)
+
+This persona is retired historical evidence from the signal-ledger era. Do not
+spawn it during ordinary feature delivery and do not treat it as an active
+review lane; clean loops create no analyzer lane. Its claims — including the
+"Solo Role Matrix" and the `harness-signals/` inputs it requires — describe
+the harness at the time they were written; current workflow authority is
+`HARNESS.md`.
 
 ## REQUIRED PROOF
 

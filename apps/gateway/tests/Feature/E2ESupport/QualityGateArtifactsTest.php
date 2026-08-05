@@ -1193,6 +1193,7 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     }
 
     $agents = (string) file_get_contents(repo_path('AGENTS.md'));
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
     $e2eSkill = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/SKILL.md'));
     $releaseSkill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
@@ -1206,9 +1207,11 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         'bin/quality-gate-final-check',
     ];
 
-    expect($agents)
+    expect($harness)
         ->toContain('default scripts must not trigger them')
         ->toContain('user explicitly invokes the Composer command from a shell')
+        ->and($agents)
+        ->toContain('`composer test:e2e*` lanes are human-only')
         ->and($implementingFeaturesSkill)
         ->toContain('Never run, delegate, background, schedule, hook, script, or trigger a')
         ->and($e2eSkill)

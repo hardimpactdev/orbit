@@ -1,26 +1,17 @@
 # Orbit
 
-Orbit is a command-first PHP/Laravel monorepo for local development,
-provisioning, hosting workflows, and node orchestration.
-
-After this file, read [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md) for the first
-five-minute route, then [`HARNESS.md`](HARNESS.md). That is the same order as
-the `HARNESS.md` agent discovery path, which continues the route from there.
-
-Orbit is an LLM-first monorepo. Repo development harness guidance lives at the
-root; see [`HARNESS.md`](HARNESS.md) for scope, agent discovery path, and how
-the harness differs from the feedback loop. Product behavior contracts remain in
+Orbit is an LLM-first, command-first PHP/Laravel monorepo for local
+development, provisioning, hosting workflows, and node orchestration. Harness
+guidance lives at the root; product behavior contracts live in
 `apps/docs/content/`.
 
-For compact root-start routing, LLM agents can read the generated monorepo unit
-map at [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json).
-It is a routing aid, not product authority.
-
-For repository searches, prefer default `rg` from the root or scoped
-`rg <pattern> <owned-path>` searches. Do not start with `find .`,
-`rg -uu`, or broad hidden-file scans from the root; they include stale
-worktrees and generated/cache artifacts that are intentionally outside the
-normal agent search surface. See [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md).
+Route new work with [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md); load
+`HARNESS.md` sections when the chosen lane reaches them. `HARNESS.md` is the
+canonical repo-development contract. The generated monorepo unit map at
+[`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json)
+is a routing aid, not product authority. For repository searches, follow the
+fast path's Search Route: default `rg` from the root or scoped to an owned
+path — never `find .`, `rg -uu`, or broad hidden-file scans.
 
 ## Repository Shape
 
@@ -28,157 +19,97 @@ normal agent search surface. See [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md).
   helper launchers, Docker/E2E assets, AI/project configuration, and
   cross-project documentation artifacts. There is no root Laravel app, root
   `artisan`, root `phpunit.xml`, or root Rector/Mago config.
-- `apps/gateway/` is the Laravel 13 gateway/control-plane application. It owns
-  the gateway HTTP/API surface, gateway database, provisioning logic, E2E
-  harness, deployed public/storage assets, frontend build, and gateway-local
-  quality tooling.
-- `apps/docs/` is the Laravel 13 documentation and Librarian application. It
-  owns the product documentation under `apps/docs/content/` and docs-linting.
-- `apps/cli/` is the Laravel Zero local CLI and executor application.
-- `apps/e2e/` is the external Orbit end-to-end harness application; its
-  `composer test:e2e*` lanes are manual-only.
-- `apps/reverb/` is the dedicated Laravel Reverb runtime application packaged
-  into the `hardimpact/orbit-reverb` image for websocket role nodes.
-- `packages/core/` is the shared Orbit package for contracts, helpers, and
-  cross-application primitives.
-- `packages/sdk/` is the Laravel SDK for consuming the Orbit gateway API.
-- Each app/package owns its own `composer.json`, test config, Mago config,
-  and Rector config. Root Composer commands only orchestrate
-  those app/package-local commands.
-- The gateway entry point is `php apps/gateway/artisan` from the repository
-  root, or `php artisan` from `apps/gateway/`. The host `orbit` launcher
-  always executes `apps/cli/orbit`. Gateway maintenance uses
-  `bin/orbit-gateway-artisan` or direct `php apps/gateway/artisan` in
-  controlled gateway contexts only.
-- The gateway database is SQLite at
-  `apps/gateway/database/database.sqlite`.
+- `apps/gateway/` is the Laravel 13 gateway/control-plane application (gateway
+  HTTP/API surface, SQLite database at
+  `apps/gateway/database/database.sqlite`, provisioning, E2E harness support,
+  frontend build, quality tooling).
+- `apps/docs/` is the Laravel 13 docs and Librarian application; it owns
+  `apps/docs/content/` and docs-linting.
+- `apps/cli/` is the Laravel Zero CLI and executor application.
+- `apps/e2e/` is the external E2E harness; its `composer test:e2e*` lanes are
+  manual-only.
+- `apps/reverb/` is the Laravel Reverb runtime packaged as
+  `hardimpact/orbit-reverb` for websocket role nodes.
+- `packages/core/` holds shared contracts, helpers, and cross-application
+  primitives; `packages/sdk/` is the Laravel SDK for the gateway API.
+- Each app/package owns its own composer/test/Mago/Rector config; root
+  Composer commands only orchestrate them.
+- The gateway entry point is `php apps/gateway/artisan` from the root (or
+  `bin/orbit-gateway-artisan` for maintenance); the host `orbit` launcher
+  always executes `apps/cli/orbit`.
 
 ## Product Authority
 
-Orbit's current product contract lives in this repo under `apps/docs/content/`:
+Orbit's product contract lives under `apps/docs/content/`: `architecture.md`,
+`mission.md`, `concepts.md`, `tech-stack.md`, and `domains/**`.
+`PRODUCT_DECISIONS.md` is the chronological intent ledger above that chain: it
+records dated direction-change decisions, and when docs conflict the latest
+dated decision states current intent. Session artifacts (plans, specs) live in
+the operator's shared-knowledge project folder; legacy copies remain under
+`docs/superpowers/`. They are not product authority and are not linted as
+product docs.
 
-- `apps/docs/content/architecture.md`
-- `apps/docs/content/mission.md`
-- `apps/docs/content/concepts.md`
-- `apps/docs/content/tech-stack.md`
-- `apps/docs/content/domains/**`
+## Development Rules
 
-`PRODUCT_DECISIONS.md` is the chronological intent ledger. It does not restate
-contracts; it records each direction-change decision with a date. When docs
-conflict, the latest dated decision on a topic states current intent and
-indicates which side is stale. Treat it as the intent anchor above the product
-docs authority chain.
-
-Session artifacts (plans, specs) stay at `docs/superpowers/`. They are not
-product authority and are not linted as product docs.
-
-## Development and debugging Rules
-
-- Feature-request handling is intake only: clarify the outcome, surface,
+- Feature-request handling is intake only: clarify outcome, surface,
   acceptance, constraints, authority, and unresolved product ambiguity without
-  updating repository files. Scratchpads are optional for genuinely complex
-  roadmaps; they are not a worker-dispatch gate.
+  updating repository files.
 - Actual implementation happens through `.agents/skills/implementing-features`
-  in an isolated worktree. That includes documentation updates, product-decision
-  ledger entries, tests, and code changes. Read that skill before starting
-  implementation work.
-- The current feature owner owns `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
-  and may implement directly. Use bounded workers only when they materially
-  improve elapsed time or a concrete decision; no separate dispatch paperwork
-  is required.
+  in an isolated worktree — including docs updates, ledger entries, tests, and
+  code.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
-  implementation worktrees. This is Orbit's worktree setup path and takes
-  priority over generic worktree skills or ad hoc `git worktree add`. Agents
-  must not recreate that setup flow manually. If the script cannot be used,
-  stop and report the blocker instead of silently falling back.
-- When a feature is implemented and verified, follow `HARNESS.md` for one
-  independent review, diff-derived real-surface proof, human judgment only when
-  automation cannot decide intent or UX, exact accepted feature/main identity,
-  merge, post-merge compact archive, and cleanup. Agents run all deterministic
-  checks; never hand the user a mechanical command checklist. Leave `~/orbit` on
-  updated `main`, and preserve unrelated dirty files; never discard user
-  changes to make a merge easier.
-- Always make sure that `apps/docs/content/` describes the correct behavior. If
-  the docs are lacking or contradict what is requested, flag that first before
-  proceeding.
-- When documentation is aligned, check whether a corresponding test exists. If
-  not, create or adjust a failing test that mirrors the correct behavior before
-  changing implementation.
-- From the failing test, work on the implementation/fix. Always keep docs,
-  tests, and code aligned.
-- When an issue is reported about orbit running against live nodes. Make sure to verify the fix against those running nodes.
-- Prefer small, working vertical slices over porting large legacy areas.
-- Keep the command surface contract-first. Use `.agents/skills/command-designer`
-  when designing or changing command behavior.
+  implementation worktrees. It takes priority over generic worktree skills and
+  ad hoc `git worktree add`; do not recreate its setup flow manually. If the
+  script cannot be used, stop and report the blocker instead of silently
+  falling back.
+- When a feature is implemented and verified, follow `HARNESS.md` for review,
+  diff-derived proof, acceptance identity, merge, archive, and cleanup. Agents
+  run all deterministic checks; never hand the user a mechanical command
+  checklist. Leave `~/orbit` on updated `main`, preserve unrelated dirty
+  files, and never discard user changes to make a merge easier.
+- Always make sure `apps/docs/content/` describes the correct behavior; flag
+  gaps or contradictions before proceeding. `HARNESS.md` BUILD owns the
+  docs-tests-code alignment sequence.
+- When an issue is reported against live nodes, verify the fix on those nodes.
+- Prefer small, working vertical slices; keep the command surface
+  contract-first via `.agents/skills/command-designer`.
 
 ## PHP And Laravel
 
 - Use `declare(strict_types=1)` in PHP files.
-- Tests use Pest. Monorepo default is Pest 5 / PHPUnit 13 for
-  `apps/gateway`, `apps/docs`, `apps/e2e`, `packages/core`, and `packages/sdk`.
-  `apps/cli` remains on Pest 4 / plugin-laravel 4 while Laravel Zero 12
-  conflicts with Pest 5's Symfony Process ^8.1 requirement; see
-  `apps/docs/content/testing/README.md#pest-versions`.
-- Style, linting, and static analysis use Mago.
-- Refactoring uses Rector.
+- Tests use Pest (Pest 5 / PHPUnit 13 everywhere except `apps/cli`, which
+  stays on Pest 4; see `apps/docs/content/testing/README.md#pest-versions`).
+- Style, linting, and static analysis use Mago; refactoring uses Rector.
 - Follow the app-local Boost and Spatie skills in `.agents/skills/`.
 
 ## Verification
 
-Before adding, changing, debugging, or running E2E tests, read
-`apps/docs/content/testing/README.md`.
-It is the authoritative lane map for prepared-topology feature tests,
-provisioning tests, host pools, cache strategy, and performance baselines.
-
-Run the narrowest useful check while developing:
-
-```bash
-bin/orbit-gateway-pest --compact
-bin/orbit-gateway-vendor-bin mago format --check
-```
-
-Before handing off a code change that should be broadly safe, run:
-
-```bash
-composer quality-check
-```
-
-`composer quality-check` fans out docs linting, Pest, Mago, Rector, and
-`apps/agent` plus `apps/macos` Cargo checks across every app/package.
-
-When behavior touches the integrated topology, require retained topology proof:
-capture the retained topology id/kind, inspected roles or nodes, exact command,
-terminal/session or artifact path, and result in `.orbit/loop.md` or
-`.orbit/evidence/`.
-
-The `composer test:e2e*` commands and E2E tests remain available, but agents,
-skills, hooks, release flows, and default scripts must not trigger them. They
-run only when the user explicitly invokes the Composer command from a shell.
-Never ask the user to run them for ordinary feature completion; use retained
-topology proof.
-See `apps/docs/content/testing/README.md` for the full verification model and
-lane map.
+Read `apps/docs/content/testing/README.md` before adding, changing, or
+debugging tests; it is the authoritative lane map. Run the narrowest useful
+check while developing (for example `bin/orbit-gateway-pest --compact`), and
+`composer quality-check` (docs linting, Pest, Mago, Rector, and Cargo checks
+across every app/package) before handing off a broadly safe change. Behavior touching the integrated topology requires retained topology
+proof recorded in `.orbit/loop.md` or `.orbit/evidence/`. The
+`composer test:e2e*` lanes are human-only; agents never trigger them — the
+canonical rule, including the explicit user-invocation boundary, is in
+`HARNESS.md`.
 
 ## AI Guideline Precedence
 
 Orbit-specific instructions in this file override the generated Laravel Boost
 and Spatie guidelines below when they conflict. Use Boost and Spatie as the
-PHP/Laravel baseline, not as permission to override Orbit's command contracts,
-clean-rebuild constraints, or local conventions.
+PHP/Laravel baseline, not as permission to override Orbit's command contracts
+or local conventions.
 
 ## Laravel Boost In This Monorepo
 
-- Laravel Boost is installed only in `apps/gateway/`. Do not add a root Laravel
-  app or root Boost install.
-- Root agent MCP configs are authoritative. They start Boost through
-  `php apps/gateway/artisan boost:mcp` from the repository root.
-- Keep Boost maintenance on `boost:update`, via `bin/orbit-boost-update` or the
-  gateway `post-update-cmd`. Do not automate `boost:install --silent`; explicit
-  `boost:install` is setup/reconfiguration and can rewrite agent artifacts.
-- Gateway Boost tools are gateway-scoped. Use package/root skills for
+- Laravel Boost is installed only in `apps/gateway/`; do not add a root
+  Laravel app or root Boost install. Root agent MCP configs are authoritative
+  and start Boost through `php apps/gateway/artisan boost:mcp` from the root.
+- Keep Boost maintenance on `boost:update` via `bin/orbit-boost-update`;
+  never automate `boost:install --silent`.
+- Gateway Boost tools are gateway-scoped; use package/root skills for
   `apps/cli/`, `packages/core/`, `packages/sdk/`, and docs/Librarian work.
-- From the repo root, run gateway Artisan through `bin/orbit-gateway-artisan`
-  or direct `php apps/gateway/artisan`. Do not assume a root `artisan` exists.
 
 ===
 

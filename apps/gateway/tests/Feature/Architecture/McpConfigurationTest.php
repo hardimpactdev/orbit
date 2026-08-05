@@ -290,19 +290,21 @@ it('requires direct final outcome proof for runtime claims before reviewer PASS'
         ->toContain('A failed, excluded, still-required, or deferred final hop')
         ->toContain('`Verification.runtime` cannot be recorded as `passed`')
         ->toContain('structured receipt')
-        ->and($skill)
-        ->toContain('When the Goal claims runtime reachability or convergence')
-        ->toContain('directly exercise the claimed final outcome')
-        ->toContain('A failed, excluded, still-required, or deferred final hop')
-        ->toContain('`Verification.runtime` cannot be recorded as `passed`')
-        ->toContain('structured runtime receipt')
-        ->and($reviewer)
-        ->toContain('When the Goal claims runtime reachability or convergence')
-        ->toContain('directly exercises the claimed final outcome')
-        ->toContain('A failed, excluded, still-required, or deferred final hop')
-        ->toContain('`Verification.runtime` cannot be recorded as `passed`')
-        ->toContain('structured runtime receipt')
-        ->toContain('return `FIX`');
+        ->not->toContain('Reject unknown receipt keys')
+        ->not->toContain('do not scan target/command/evidence values')->and($skill)->toContain(
+            'When the Goal claims runtime reachability or convergence',
+        )->toContain('directly exercise the claimed final outcome')->toContain(
+            'A failed, excluded, still-required, or deferred final hop',
+        )->toContain('`Verification.runtime` cannot be recorded as `passed`')->toContain(
+            'structured runtime receipt',
+        )->toContain('HARNESS.md')
+        ->not->toContain('`result=passed`')->and($reviewer)->toContain(
+            'When the Goal claims runtime reachability or convergence',
+        )->toContain('directly exercises the claimed final outcome')->toContain(
+            'A failed, excluded, still-required, or deferred final hop',
+        )->toContain('`Verification.runtime` cannot be recorded as `passed`')->toContain(
+            'structured runtime receipt',
+        )->toContain('return `FIX`');
 });
 
 it('keeps the current feature owner in charge with optional bounded workers', function (): void {
@@ -411,14 +413,17 @@ it('documents immutable feedback promotion and deterministic protection first', 
         ->toContain('All non-secret user feedback is stored verbatim as immutable events')
         ->toContain('redacted in memory before the event is appended')
         ->toContain('Never ask the user for a waiver')
-        ->and($normalizedSkill)
-        ->toContain('Dogfood the concrete rejected and accepted pair first')
-        ->toContain('Prefer deterministic protection')
+        ->toContain('cheap calibrated UX check')
+        ->toContain('one rejected example and one accepted example')
         ->toContain('Do not create a semantic grader')
         ->toContain('`UNKNOWN` never passes')
-        ->and($ux)
-        ->toContain('Running -> Queued')
-        ->toContain('bin/quality-check-progress-frame-check');
+        ->and($normalizedSkill)
+        ->toContain('Feedback And Protections')
+        ->toContain('Never solicit a waiver')
+        ->not->toContain('cheap calibrated UX check')
+        ->not->toContain('Dogfood the concrete rejected and accepted pair first')->and($ux)->toContain(
+            'Running -> Queued',
+        )->toContain('bin/quality-check-progress-frame-check');
 });
 
 it('binds data list vocabulary to Laravel Prompts datatable across docs and review', function (): void {
@@ -653,4 +658,113 @@ it('keeps the app-owned orbit skill aligned with current CLI stream-json guidanc
         ->toContain('never calls the gateway')
         ->not->toContain('orbit profile [<target>]')
         ->not->toContain('profile [<url>] [--app=');
+});
+
+it('routes ordinary work proportionally without unconditional full-harness preload', function (): void {
+    $agents = preg_replace('/\s+/', ' ', file_get_contents(repo_path('AGENTS.md')) ?: '') ?: '';
+    $fastPath = preg_replace('/\s+/', ' ', file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '') ?: '';
+    $skill = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '',
+    ) ?: '';
+
+    expect($agents)
+        ->toContain('Route new work with [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md)')
+        ->toContain('load `HARNESS.md` sections when the chosen lane reaches them')
+        ->not->toContain('After this file, read')
+        ->not->toContain('check whether a corresponding test exists')->and($fastPath)->toContain(
+            'route proportionally',
+        )->and($skill)
+        ->not->toContain('Read `AGENTS.md`, `AGENT_FAST_PATH.md`, and `HARNESS.md`');
+});
+
+it('names the retained-incus acceptance venue on the CLI fast-path lane', function (): void {
+    $fastPath = file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '';
+
+    expect($fastPath)
+        ->toContain('retained-incus')
+        ->toContain('command-designer');
+});
+
+it('keeps HARNESS canonical with a compact pointer-based implementing skill', function (): void {
+    $skillPath = repo_path('.agents/skills/implementing-features/SKILL.md');
+    $skill = file_get_contents($skillPath) ?: '';
+    $agents = file_get_contents(repo_path('AGENTS.md')) ?: '';
+    $orbitAuthoredAgents = explode('<laravel-boost-guidelines>', $agents)[0];
+
+    expect(strlen($skill))
+        ->toBeLessThanOrEqual(6144)
+        ->and(strlen($orbitAuthoredAgents))
+        ->toBeLessThanOrEqual(6144)
+        ->and($skill)
+        ->toContain('## FRAME')
+        ->toContain('## BUILD')
+        ->toContain('## PROVE')
+        ->toContain('## ACCEPT')
+        ->toContain('## LAND')
+        ->toContain('bin/orbit-feature-acceptance route')
+        ->toContain('bin/orbit-feature-acceptance ready')
+        ->toContain('bin/orbit-feature-acceptance accept')
+        ->toContain('bin/orbit-feature-land')
+        ->toContain('bin/orbit-feature-finalization-check')
+        ->toContain('bin/orbit-session-archive')
+        ->toContain('bin/orbit-feature-feedback')
+        ->toContain('HARNESS.md')
+        ->not->toContain('Solo project deletion must complete before worktree removal')
+        ->not->toContain('primitive=<exact requested primitive>')
+        ->not->toContain('repository-wide search, inventory, or lintable check');
+});
+
+it('tombstones the post-feature analyzer persona as historical evidence', function (): void {
+    $persona = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '',
+    ) ?: '';
+
+    expect($persona)
+        ->toContain('retired historical')
+        ->toContain('Do not spawn it during ordinary feature delivery')
+        ->toContain('current workflow authority is `HARNESS.md`')
+        ->toContain('clean loops create no analyzer lane');
+});
+
+it('keeps reviewer FIX and same-candidate proof retry distinct transitions', function (): void {
+    $harness = preg_replace('/\s+/', ' ', file_get_contents(repo_path('HARNESS.md')) ?: '') ?: '';
+
+    expect($harness)
+        ->toContain('A same-candidate proof retry is not a reviewer FIX')
+        ->toContain('preserve a still-valid Review and Reviewed feature tip')
+        ->toContain('reset `Reviewed feature tip: none`');
+});
+
+it('keeps the eight high-stakes constraints explicit on the implementing path', function (): void {
+    $harness = preg_replace('/\s+/', ' ', file_get_contents(repo_path('HARNESS.md')) ?: '') ?: '';
+    $agents = preg_replace('/\s+/', ' ', file_get_contents(repo_path('AGENTS.md')) ?: '') ?: '';
+    $fastPath = preg_replace('/\s+/', ' ', file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '') ?: '';
+    $skill = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '',
+    ) ?: '';
+    $implementingPath = implode(' ', [$harness, $agents, $fastPath, $skill]);
+
+    expect($harness)
+        ->toContain('never run, delegate, background, schedule, hook, script, or trigger')
+        ->toContain('only when the user explicitly invokes the Composer command from a shell')
+        ->toContain('Never ask the user to run them for ordinary feature completion')
+        ->toContain('redacted in memory before the event is appended')
+        ->toContain('After `FINALIZATION: PASS`, execute that exact command separately')
+        ->toContain('If the feature tip moves, acceptance is invalid')
+        ->toContain('needs explicit user acceptance before merge')
+        ->toContain('Cleanup requires those archive and index bytes to be tracked and committed')
+        ->and($agents)
+        ->toContain('`composer test:e2e*` lanes are human-only')
+        ->not
+        ->toContain('Never ask the user to run them for ordinary feature completion')
+        ->and($implementingPath)
+        ->toContain('bin/orbit-prepare-worktree')
+        ->toContain('stop and report the blocker')
+        ->toContain('never discard user changes');
 });

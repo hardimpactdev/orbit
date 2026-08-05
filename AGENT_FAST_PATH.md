@@ -1,14 +1,16 @@
 # Orbit Agent Fast Path
 
 Use this as the first five-minute route before opening deeper docs. It is a
-navigation aid, not product authority.
+navigation aid, not product authority; route proportionally — load only what
+the chosen lane needs. Ordinary changes do not require full `HARNESS.md`
+ingestion before routing.
 
 ## Choose The Lane
 
 | Request shape | Start here | Then verify with |
 | --- | --- | --- |
-| Feature, bug fix, docs correction, or command behavior change | `AGENTS.md`, `HARNESS.md`, `.agents/skills/implementing-features/SKILL.md` | Focused Pest/docs-lint/Mago, then `composer quality-check` when broadly safe |
-| Command UX, JSON output, stream output, or CLI option behavior | `.agents/skills/command-designer/SKILL.md` and the command docs under `apps/docs/content/domains/` | Focused CLI/gateway Pest plus `composer docs-lint` |
+| Feature, bug fix, docs correction, or command behavior change | `AGENTS.md`, `.agents/skills/implementing-features/SKILL.md` (loads `HARNESS.md` sections per state) | Focused Pest/docs-lint/Mago, then `composer quality-check` when broadly safe |
+| Command UX, JSON output, stream output, or CLI option behavior | `.agents/skills/command-designer/SKILL.md` and the command docs under `apps/docs/content/domains/` | Focused CLI/gateway Pest plus `composer docs-lint`, then the `retained-incus` acceptance venue (`HARNESS.md` venue table) |
 | Product docs or Librarian/docs-lint work | `.agents/skills/librarian/SKILL.md` and `apps/docs/content/` authority docs | `composer docs-lint` and focused docs Pest/Mago when PHP rules changed |
 | Eval design, execution, or review | `.agents/skills/orbit-evals/SKILL.md`, then construct, execute, and evaluate in order | Structured eval-suite/case/run/trial/review artifacts |
 | Quality-gate failure or timing warning | `.agents/skills/quality-gate-triage/SKILL.md` | Narrow failing lane first; do not rerun E2E |
@@ -69,8 +71,8 @@ navigation aid, not product authority.
 - Integrated topology or runtime-node behavior: focused owning tests first,
   then retained real-surface acceptance with topology id, role/node, command,
   ready Solo terminal, and evidence.
-- E2E Composer commands are manual-only. Agents never run, delegate,
-  background, schedule, hook, script, or trigger `composer test:e2e*`.
+- `composer test:e2e*` lanes are human-only; agents never trigger them.
+  Canonical rule: `HARNESS.md`.
 
 ## Stop Conditions
 
