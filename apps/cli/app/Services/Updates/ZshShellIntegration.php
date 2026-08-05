@@ -182,49 +182,14 @@ final class ZshShellIntegration
     }
 
     /**
-     * True when contents already contain the exact complete managed block for the snippet.
+     * True when contents already contain the exact adjacent canonical managed block:
+     * BEGIN newline, exact expected source line newline, END (optional trailing newline).
      */
     public static function hasCompleteManagedBlock(string $contents, string $snippetPath): bool
     {
-        return (
-            str_contains($contents, self::zshrcBlock($snippetPath))
-            || str_contains($contents, rtrim(self::zshrcBlock($snippetPath), "\n"))
-        );
-    }
+        $block = self::zshrcBlock($snippetPath);
 
-    /**
-     * Remove managed Orbit zsh integration lines while preserving all unknown
-     * user content.
-     *
-     * - A complete BEGIN…END block is removed only as a bounded range.
-     * - An orphan BEGIN with no END removes only that exact marker line (never
-     *   consumes following user lines).
-     * - Orphan END lines and the exact Orbit source line for `$snippetPath` are
-     *   removed when recognizable.
-     */
-    public static function stripManagedBlocks(string $contents, string $snippetPath): string
-    {
-        $stripped = preg_replace(
-            '/'.preg_quote(self::BEGIN_MARKER, '/').'.*?'.preg_quote(self::END_MARKER, '/').'\n?/s',
-            '',
-            $contents,
-        );
-
-        if (! is_string($stripped)) {
-            $stripped = $contents;
-        }
-
-        // Orphan markers only — never delete arbitrary later user content.
-        $stripped = preg_replace('/^'.preg_quote(self::BEGIN_MARKER, '/').'\n?/m', '', $stripped) ?? $stripped;
-        $stripped = preg_replace('/^'.preg_quote(self::END_MARKER, '/').'\n?/m', '', $stripped) ?? $stripped;
-        $stripped =
-            preg_replace(
-                '/^'.preg_quote(self::sourceLine($snippetPath), '/').'\n?/m',
-                '',
-                $stripped,
-            ) ?? $stripped;
-
-        return $stripped;
+        return str_contains($contents, $block) || str_contains($contents, rtrim($block, "\n"));
     }
 
     private function resolveShell(?string $shell): string
@@ -354,13 +319,12 @@ final class ZshShellIntegration
     }
 
     /**
-     * Ensure exactly one complete managed source block for the snippet path.
+     * Append-only ensure of the exact adjacent canonical managed block.
      *
-     * Only the exact complete block (begin marker, source line for this snippet,
-     * end marker) counts as already present. A begin-marker-only or otherwise
-     * partial interrupted append is repaired to one complete block. Writes go
-     * through the existing path so symlink targets and modes are preserved
-     * (never rename-over the rc file).
+     * When the exact block (BEGIN + expected source line + END) is already
+     * present, leave the rc file untouched. Otherwise append one canonical
+     * block via FILE_APPEND (follows symlinks, preserves mode, does not
+     * truncate or rewrite partial/orphan markers or user content).
      *
      * @return self::STATUS_INSTALLED|self::STATUS_ALREADY_PRESENT|self::STATUS_FAILED
      */
@@ -387,15 +351,13 @@ final class ZshShellIntegration
                 return self::STATUS_ALREADY_PRESENT;
             }
 
-            $cleaned = self::stripManagedBlocks($existing, $snippetPath);
-            $separator = $cleaned === '' || str_ends_with($cleaned, "\n") ? '' : "\n";
-            // Write through the path (follows symlink); do not rename-over.
-            $written = @file_put_contents($zshrcPath, $cleaned.$separator.$block, LOCK_EX);
+            $prefix = $existing === '' || str_ends_with($existing, "\n") ? '' : "\n";
+            $written = @file_put_contents($zshrcPath, $prefix.$block, FILE_APPEND | LOCK_EX);
 
             return $written === false ? self::STATUS_FAILED : self::STATUS_INSTALLED;
         }
 
-        $written = @file_put_contents($zshrcPath, $block, LOCK_EX);
+        $written = @file_put_contents($zshrcPath, $block, FILE_APPEND | LOCK_EX);
 
         return $written === false ? self::STATUS_FAILED : self::STATUS_INSTALLED;
     }

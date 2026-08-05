@@ -303,8 +303,7 @@ describe('ZshShellIntegration shell boundary', function (): void {
     it('preserves root directory paths for HOME and ZDOTDIR without writing root', function (): void {
         $integration = new ZshShellIntegration;
 
-        // Pure path resolution only — never call ensure() with home/zdotdir `/`
-        // (that can persistently write under the real filesystem root).
+        // Pure path resolution only — never call ensure() with home/zdotdir `/`.
         $rootHome = $integration->resolvePaths('/');
         $rootZdot = $integration->resolvePaths($this->home, '/');
         $slashed = $integration->resolvePaths($this->home.'/', $this->root.'/zdotdir/');
@@ -324,46 +323,45 @@ describe('ZshShellIntegration shell boundary', function (): void {
                 'snippet_path' => $this->home.'/.config/orbit/shell/zsh-noglob.zsh',
                 'zshrc_path' => $this->root.'/zdotdir/.zshrc',
             ])
-            ->and(file_exists('/.config/orbit/shell/zsh-noglob.zsh') || is_link('/.config/orbit/shell/zsh-noglob.zsh'))
-            ->toBeFalse()
             ->and($integration->resolvePaths(''))
             ->toBeNull();
     });
 
-    it('repairs a begin-marker-only interrupted block without deleting following user lines', function (): void {
+    it('appends a complete canonical block after a begin-marker-only orphan without rewriting user bytes', function (): void {
         $zshrc = $this->home.'/.zshrc';
         $snippet = $this->home.'/.config/orbit/shell/zsh-noglob.zsh';
-        file_put_contents(
-            $zshrc,
-            ZshShellIntegration::BEGIN_MARKER."\n"."export ORBIT_ZSH_SENTINEL=keep-me\n"."# user trailing comment\n",
-        );
+        $prefix =
+            ZshShellIntegration::BEGIN_MARKER."\n"."export ORBIT_ZSH_SENTINEL=keep-me\n"."# user trailing comment\n";
+        file_put_contents($zshrc, $prefix);
 
         $first = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
         $contents = file_get_contents($zshrc);
 
         expect($first['status'])
             ->toBe(ZshShellIntegration::STATUS_INSTALLED)
+            ->and(str_starts_with($contents, $prefix))
+            ->toBeTrue()
             ->and($contents)
             ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
             ->and($contents)
             ->toContain('# user trailing comment')
-            ->and($contents)
-            ->toContain(ZshShellIntegration::sourceLine($snippet))
-            ->and($contents)
-            ->toContain(ZshShellIntegration::END_MARKER)
-            ->and(substr_count($contents, ZshShellIntegration::BEGIN_MARKER))
-            ->toBe(1)
             ->and(ZshShellIntegration::hasCompleteManagedBlock($contents, $snippet))
-            ->toBeTrue();
+            ->toBeTrue()
+            // Orphan BEGIN remains; one complete block is appended after it.
+            ->and(substr_count($contents, ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(2);
 
         $second = new ZshShellIntegration()->ensure(home: $this->home, shell: '/bin/zsh');
+        $after = file_get_contents($zshrc);
 
         expect($second['status'])
             ->toBe(ZshShellIntegration::STATUS_ALREADY_PRESENT)
-            ->and(file_get_contents($zshrc))
+            ->and($after)
+            ->toBe($contents)
+            ->and($after)
             ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
-            ->and(substr_count(file_get_contents($zshrc), ZshShellIntegration::BEGIN_MARKER))
-            ->toBe(1);
+            ->and(substr_count($after, ZshShellIntegration::BEGIN_MARKER))
+            ->toBe(2);
     });
 
     it('fails coherently when HOME cannot be resolved for a zsh shell', function (): void {

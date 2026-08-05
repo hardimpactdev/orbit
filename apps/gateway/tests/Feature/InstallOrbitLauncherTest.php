@@ -67,9 +67,11 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toContain('snippet_dir="/.config/orbit/shell"')
             ->toContain('zshrc_path="/.zshrc"')
             ->toContain('source_line=')
-            ->toContain('flush_hold')
+            ->toContain('b == 1')
+            ->toContain('printf \'%s\' "$block" >>"$zshrc_path"')
             ->not->toContain('existing="$(cat "$zshrc_path"')
             ->not->toContain('install -m 0600 "$tmp_file" "$snippet_path"')
+            ->not->toContain('flush_hold')
             ->not->toMatch('/^\s*cat\s+>\s*"\$snippet_path"/m')
             ->not->toContain('setopt nonomatch')
             ->not->toContain('unsetopt nomatch');
@@ -80,17 +82,15 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->toBeLessThan(strrpos($installer, 'Verify Orbit'));
     });
 
-    it('repairs marker-only interrupted zshrc content without deleting following user lines', function (): void {
+    it('appends a complete canonical block after marker-only orphan without rewriting user bytes', function (): void {
         $root = sys_get_temp_dir().'/orbit-install-zsh-partial-'.bin2hex(random_bytes(4));
         $home = $root.'/home';
         $zshrc = $home.'/.zshrc';
+        $prefix = "# >>> orbit zsh integration >>>\nexport ORBIT_ZSH_SENTINEL=keep-me\n# user trailing comment\n";
 
         try {
             File::ensureDirectoryExists($home);
-            File::put(
-                $zshrc,
-                "# >>> orbit zsh integration >>>\nexport ORBIT_ZSH_SENTINEL=keep-me\n# user trailing comment\n",
-            );
+            File::put($zshrc, $prefix);
 
             $process = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
             $process->run();
@@ -99,6 +99,8 @@ describe('install-orbit always-cli launcher contract', function (): void {
 
             expect($process->isSuccessful())
                 ->toBeTrue($process->getErrorOutput().$process->getOutput())
+                ->and(str_starts_with($contents, $prefix))
+                ->toBeTrue()
                 ->and($contents)
                 ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
                 ->and($contents)
@@ -107,8 +109,9 @@ describe('install-orbit always-cli launcher contract', function (): void {
                 ->toContain('# <<< orbit zsh integration <<<')
                 ->and($contents)
                 ->toContain('zsh-noglob.zsh')
+                // Orphan BEGIN remains; one complete block is appended after it.
                 ->and(substr_count($contents, '# >>> orbit zsh integration >>>'))
-                ->toBe(1);
+                ->toBe(2);
 
             $second = installOrbitEnsureZshIntegrationProcess(home: $home, shell: '/bin/zsh');
             $second->run();
@@ -116,9 +119,11 @@ describe('install-orbit always-cli launcher contract', function (): void {
             expect($second->isSuccessful())
                 ->toBeTrue($second->getErrorOutput().$second->getOutput())
                 ->and(File::get($zshrc))
+                ->toBe($contents)
+                ->and(File::get($zshrc))
                 ->toContain('export ORBIT_ZSH_SENTINEL=keep-me')
                 ->and(substr_count(File::get($zshrc), '# >>> orbit zsh integration >>>'))
-                ->toBe(1);
+                ->toBe(2);
         } finally {
             if (is_dir($root)) {
                 File::deleteDirectory($root);
