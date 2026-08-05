@@ -1,0 +1,38 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-05T14:19:56+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-compact-index-identity/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-05-161956-codex-loop-compact-index-identity",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/session-index-green.txt",
+        "evidence/session-index-red.txt",
+        "evidence/session-index-trailing-newline-green.txt",
+        "evidence/session-index-trailing-newline-red.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-05T140306Z-376f4fcbbc37.json",
+        "quality-gates/quality-check-2026-08-05T141413Z-b3de20731ba4.json"
+    ],
+    "entry_digests": {
+        "evidence/session-index-green.txt": "81431f8a22234537dc19a21b5022bbe79e7a17230e0cb99299db4eb25b22c0d9",
+        "evidence/session-index-red.txt": "2e4a3039a8a147ca746e40bd7ac66eed1310071d22e428ad7d5f0dd1fb501429",
+        "evidence/session-index-trailing-newline-green.txt": "259d79dc551037d2ab5f2dddc09cca6472111064679ade43f4113b9a8fadd57b",
+        "evidence/session-index-trailing-newline-red.txt": "95df35a6fc136b3542ce9a17745b08af90a02c7134065c5940036cc5c519e9f9",
+        "loop.md": "809ab45ecc6eafb8543a4f46cc9b891fddd48577a377a4b9894a516f1e8b888c",
+        "quality-gates/quality-check-2026-08-05T140306Z-376f4fcbbc37.json": "9941efed811df38ba343867767e244bddb67079142a48ad2443842ed82cfd798",
+        "quality-gates/quality-check-2026-08-05T141413Z-b3de20731ba4.json": "d62f7c8f9bc7289e331faf827c837c98d5348a214e6831f900a547d2f3c4c7e2"
+    },
+    "slug": "codex-loop-compact-index-identity",
+    "requested_slug": "codex-loop-compact-index-identity",
+    "compatible_slugs": [
+        "codex-loop-compact-index-identity"
+    ],
+    "branch": "codex/loop-compact-index-identity",
+    "candidate_commit": "53712ac4d47b43759e2ab6627fa57653570607a1",
+    "accepted_feature_tip": "53712ac4d47b43759e2ab6627fa57653570607a1",
+    "accepted_main_tip": "defb9434f8d264ffefe125ecc38ea10cd4497eec",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

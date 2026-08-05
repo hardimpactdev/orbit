@@ -104,8 +104,9 @@ and compares their content hash, restart policy, and environment lines against
 the rendered gateway spec. For Docker and Docker Swarm runtime units, the probe
 compares the Orbit-managed process spec hash on the concrete container or
 service labels. Docker port host bindings are part of that rendered spec, so
-the SeaweedFS WireGuard-only bind posture is verified as process runtime-unit
-shape rather than as tool drift.
+selected publish binds (`wireguard` and/or `loopback`) and the SeaweedFS
+WireGuard-only bind posture are verified as process runtime-unit shape rather
+than as tool drift.
 
 For launchd runtime units, the probe reads LaunchAgent plist files that Orbit
 owns and compares content hashes against the gateway-rendered plist. When the

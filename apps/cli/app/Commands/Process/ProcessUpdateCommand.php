@@ -20,6 +20,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         {--restart-policy= : Restart policy (never|on_failure|always)}
         {--crash-notification= : Crash notification policy (none)}
         {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd)}
+        {--bind=* : Publish host for node-owned Docker managed services (wireguard|loopback); repeatable}
         {--restart : Restart affected runtime units after update}
         {--json : Output JSON}';
 
@@ -46,6 +47,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
             'restart_policy' => $this->stringOption('restart-policy'),
             'crash_notification' => $this->stringOption('crash-notification'),
             'runtime' => $this->stringOption('runtime'),
+            'binds' => ProcessBindOption::fromOption($this->option('bind')),
             'restart' => $this->option('restart') === true,
         ]);
         $validation = new ProcessUpdateValidator()->validate($input);

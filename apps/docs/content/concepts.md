@@ -293,6 +293,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**
+- **Managed service publish binds**
 - **PostgreSQL service process**
 - **Process order**
 - **Runtime unit**

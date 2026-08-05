@@ -76,6 +76,7 @@ final class ProcessStoreController implements Loggable
                 image: $input['image'],
                 serviceOptions: $input['service_options'],
                 replaceContainers: $input['replace_containers'],
+                binds: $input['binds'],
                 consumer: $caller,
                 label: $input['label'],
             );
@@ -101,7 +102,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, instance: string|null, workspace: string|null, name: string, label: string|null, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, start: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, name: string, label: string|null, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, binds: list<string>|null, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -125,11 +126,16 @@ final class ProcessStoreController implements Loggable
         $image = $this->optionalString($request, 'image');
         $serviceOptions = $request->input('service_options');
         $replaceContainers = $this->stringList($request, 'replace_containers');
+        $binds = $this->optionalStringList($request, 'binds');
         $noStart = $request->boolean('no_start');
         $startExplicit = $request->has('start') ? $request->boolean('start') : null;
 
         if ($replaceContainers instanceof JsonResponse) {
             return $replaceContainers;
+        }
+
+        if ($binds instanceof JsonResponse) {
+            return $binds;
         }
 
         if ($serviceOptions === null) {
@@ -406,6 +412,7 @@ final class ProcessStoreController implements Loggable
             'image' => $image,
             'service_options' => $serviceOptions,
             'replace_containers' => $replaceContainers,
+            'binds' => $binds,
             'start' => $start,
         ];
     }
@@ -479,6 +486,39 @@ final class ProcessStoreController implements Loggable
         $value = $request->input($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @return list<string>|null|JsonResponse
+     */
+    private function optionalStringList(Request $request, string $key): array|JsonResponse|null
+    {
+        if (! $request->exists($key)) {
+            return null;
+        }
+
+        $value = $request->input($key);
+
+        if (! is_array($value)) {
+            return $this->error(
+                'validation_failed',
+                'Publish binds must be a list of wireguard or loopback selectors.',
+                [
+                    'field' => 'bind',
+                    'reason' => 'invalid_type',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+                422,
+            );
+        }
+
+        $strings = [];
+
+        foreach ($value as $item) {
+            $strings[] = is_string($item) ? trim($item) : '';
+        }
+
+        return $strings;
     }
 
     /**

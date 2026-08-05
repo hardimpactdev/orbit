@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--label=<label>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
+orbit process:add [name] [process_command] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--label=<label>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--bind=<wireguard|loopback>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -35,6 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `database` | `--database` / `service_options.database` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
 | `username` | `--username` / `service_options.username` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
 | `published_port` | `--published-port` / `service_options.published_port` | `service=postgres`. | Every other service or host-command process. | None. | Integer from 1 through 65535. The container target remains `5432`. |
+| `binds` | repeated `--bind` | Optional for node-owned Docker managed services. | Host-command processes; instance/workspace ownership; `runtime=docker-swarm`; when `service` is absent. | `["wireguard"]` when omitted. | Each value must be exactly `wireguard` or `loopback`. Empty strings and unsupported values fail with `validation_failed` (`field=bind`). Duplicates normalize. Explicit selectors replace the WireGuard-only default. Arbitrary IP addresses or interface names are never accepted. |
 | `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. A PostgreSQL override must expose a tag whose major matches the selected version family; an override cannot represent a different major while retaining stale metadata. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `none`. |
@@ -57,10 +58,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
-3. Resolve typed managed-service options, then validate the requested WireGuard
-   host and published port plus volume names against every process on the node
-   before any runtime, configuration, or destructive replacement-container
-   effect.
+3. Resolve typed managed-service options and normalized publish binds
+   (`wireguard` and/or `loopback`), then validate every selected host and
+   published port plus volume names against every process on the node before any
+   runtime, configuration, or destructive replacement-container effect.
+   Omitted binds default to WireGuard-only. `loopback` publishes on host-local
+   `127.0.0.1` and is not reachable as `127.0.0.1` from another container.
+   `wireguard` publishes on the node's WireGuard service address. When both are
+   selected, every service target port is published on both hosts at the same
+   published port. The primary `endpoint` prefers WireGuard when selected;
+   otherwise it is loopback. Every selected bind appears in `endpoints`.
 4. When explicit `replace_containers` are present, remove only those named Docker containers on the resolved node.
 5. Resolve the runtime backend. Host-command processes default to `systemd` on
    Linux nodes and `launchd` on macOS nodes. Managed services default to
@@ -110,7 +117,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Managed service with tool | `--service` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_cannot_reference_tool`). |
 | Unsupported managed service | `--service` names an unsupported service. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
 | Unsupported managed service runtime | `--service` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_runtime_unsupported`). |
-| Managed service resource conflict | The managed service WireGuard host and published port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
+| Managed service resource conflict | Any selected bind host and published port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
+| Invalid publish bind | `--bind` is empty, unsupported, an IP/interface, used without a node-owned Docker managed service, or combined with Docker Swarm. | Failure (`error.code=validation_failed`; `error.meta.field=bind`; reasons such as `unsupported_value`, `required`, `process_bind_requires_node_docker_service`, or `process_bind_requires_docker_runtime`). |
 | Replacement cleanup without consent | `--replace-container` is supplied in non-interactive mode without `--force`. | Failure (`error.code=validation_failed`; `error.meta.field=force`; `error.meta.reason=destructive_consent_required`). |
 | Invalid replacement cleanup scope | `--replace-container` is supplied outside a node-owned Docker managed service. | Failure (`error.code=validation_failed`; `error.meta.field=replace_containers`; `error.meta.reason=replace_container_requires_node_docker_service`). |
 | Replacement cleanup failed | The gateway could not remove one explicitly named replacement container. | Failure (`error.code=process.replace_container_failed`; `error.meta.container=<name>`). No process configuration is written. |
@@ -140,5 +148,7 @@ Primary test owners:
 | `apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, managed service selector, default start, image override, replacement-container cleanup, repairable warnings, and no write on validation failure. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | CLI payload mapping, enum validation, default start, `--no-start`, managed service selector, and `--json` input-mode selection. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php` | Public `--version` normalization, managed service payloads, image override, replacement-container consent, and human start-step defaults. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessBindContractTest.php` | CLI `--bind` mapping, normalization, and pre-gateway validation for add/update. |
+| `apps/gateway/tests/Unit/Services/Processes/ProcessServiceCatalogBindTest.php` | Catalog bind host resolution, dual-publish ports, endpoint priority, and legacy inference. |
 
 Renderer and input-mode test mapping lives in the split companion files.

@@ -14,6 +14,7 @@ Add a process definition for an app, workspace, or node.
 ```bash
 orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
                   [--service=<mysql|valkey>] [--version=<version>] [--image=<image>]
+                  [--bind=wireguard|loopback]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none]
                   [--runtime=docker|docker-swarm|systemd|launchd]
@@ -30,6 +31,7 @@ orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
 | `--service` |  -  | Managed service identifier (`mysql`, `valkey`, ...). Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
 | `--image` | resolved catalog image | Explicit Docker image override for managed services. |
+| `--bind` | `wireguard` | Repeatable. Node-owned Docker managed services only. `wireguard` publishes on the node WireGuard service address; `loopback` publishes on host-local `127.0.0.1` (not reachable as `127.0.0.1` from another container). Both publish every target port on both hosts. Rejects host commands, instance/workspace, Docker Swarm, empty/unsupported values, and arbitrary IPs. |
 | `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |
 | `--force` | off | Confirm destructive replacement-container cleanup. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
@@ -56,6 +58,9 @@ orbit process:add mysql8 --node=beast --service=mysql --runtime=docker \
 
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker \
   --replace-container=dngdmt-mailpit-1 --replace-container=orbit-mailpit --force
+
+orbit process:add valkey --node=database-1 --service=valkey --runtime=docker \
+  --bind=wireguard --bind=loopback
 ```
 
 ## `orbit process:update [name]`
@@ -66,12 +71,15 @@ Update a process definition. Only the supplied fields change.
 orbit process:update [<name>] [--instance=<name>] [--command='<shell>']
                      [--name=<new-slug>] [--restart-policy=<p>]
                      [--crash-notification=<n>] [--runtime=<backend>]
+                     [--bind=wireguard|loopback]
                      [--restart] [--json]
 ```
 
 `--restart` restarts affected runtime units after the update lands. Omitting
 `--runtime` preserves the current runtime; the same platform rules as
-`process:add` apply when changing it.
+`process:add` apply when changing it. Omitting `--bind` preserves existing
+publish binds for managed Docker services; supplying `--bind` replaces the
+entire bind list and re-renders while preserving unrelated service config.
 
 ## `orbit process:remove [name]`
 

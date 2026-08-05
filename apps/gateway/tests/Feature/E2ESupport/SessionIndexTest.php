@@ -69,7 +69,7 @@ it('indexes compact loop receipts alongside historical archives', function (): v
         $historical = session_index_record($index, 'historical-loop');
 
         expect($index)
-            ->toHaveKey('schema_version', 2)
+            ->toHaveKey('schema_version', 3)
             ->and($compact)
             ->toMatchArray([
                 'schema' => 'compact-v1',
@@ -237,7 +237,7 @@ it('writes and checks deterministic facets for heterogeneous session archives', 
         $index = session_index_json($sessionsDir);
 
         expect($index)
-            ->toHaveKey('schema_version', 2)
+            ->toHaveKey('schema_version', 3)
             ->toHaveKey('record_count', 4);
 
         $legacy = session_index_record($index, 'legacy-slice');
@@ -527,7 +527,7 @@ it('classifies token usage without inventing missing or invalid values', functio
         $invalidPrecedence = session_index_record($index, 'invalid-precedence-token-usage');
 
         expect($index)
-            ->toHaveKey('schema_version', 2)
+            ->toHaveKey('schema_version', 3)
             ->and($unavailable)
             ->not
             ->toHaveKey('token_usage_status')
@@ -1397,6 +1397,353 @@ it('fails check mode when the committed session index is stale', function (): vo
     }
 });
 
+it('rejects receipt candidate_commit values with an embedded trailing newline', function (): void {
+    $workspace = session_index_workspace('candidate-trailing-newline');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $hex = '1d9deacb42810f202ac39b45af6e1ca79652564d';
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-160000-newline-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-160000-newline-identity", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $hex."\n",
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect(session_index_record($index, 'newline-identity')['candidate_commit'])
+            ->toBeNull()
+            ->and($index)
+            ->toHaveKey('record_count', 1)
+            ->toHaveKey('unique_candidate_commit_count', 0);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('stores explicit candidate_commit identity from receipts without guessing history', function (): void {
+    $workspace = session_index_workspace('candidate-identity');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $validCommit = '1d9deacb42810f202ac39b45af6e1ca79652564d';
+        $otherCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-120000-valid-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-120000-valid-identity", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $validCommit,
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-120100-missing-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-120100-missing-identity", [
+            'schema_version' => 2,
+            'archive_mode' => 'compact',
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-120200-invalid-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-120200-invalid-identity", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => 'UNKNOWN',
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-120300-uppercase-identity',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-120300-uppercase-identity", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => strtoupper($otherCommit),
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-120400-legacy-no-receipt',
+            session_index_loop(outcome: 'complete'),
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect(session_index_record($index, 'valid-identity')['candidate_commit'])
+            ->toBe($validCommit)
+            ->and(session_index_record($index, 'missing-identity')['candidate_commit'])
+            ->toBeNull()
+            ->and(session_index_record($index, 'invalid-identity')['candidate_commit'])
+            ->toBeNull()
+            ->and(session_index_record($index, 'uppercase-identity')['candidate_commit'])
+            ->toBeNull()
+            ->and(session_index_record($index, 'legacy-no-receipt')['candidate_commit'])
+            ->toBeNull()
+            ->and($index)
+            ->toHaveKey('schema_version', 3)
+            ->toHaveKey('record_count', 5)
+            ->toHaveKey('unique_candidate_commit_count', 1);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('deduplicates only valid explicit candidate commits and keeps multiple unknowns as raw records', function (): void {
+    $workspace = session_index_workspace('unique-candidates');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $shared = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $other = 'cccccccccccccccccccccccccccccccccccccccc';
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-130000-shared-a',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-130000-shared-a", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $shared,
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-130100-shared-b',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-130100-shared-b", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $shared,
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-130200-other',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-130200-other", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $other,
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-130300-unknown-a',
+            session_index_loop(outcome: 'complete'),
+        );
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-130400-unknown-b',
+            session_index_loop(outcome: 'blocked'),
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+        $archives = array_column($index['records'], 'archive');
+        $commits = array_column($index['records'], 'candidate_commit');
+
+        expect($index)
+            ->toHaveKey('record_count', 5)
+            ->toHaveKey('unique_candidate_commit_count', 2)
+            ->and($archives)
+            ->toBe([
+                '2026-08-05-130000-shared-a',
+                '2026-08-05-130100-shared-b',
+                '2026-08-05-130200-other',
+                '2026-08-05-130300-unknown-a',
+                '2026-08-05-130400-unknown-b',
+            ])
+            ->and($commits)
+            ->toBe([
+                $shared,
+                $shared,
+                $other,
+                null,
+                null,
+            ]);
+
+        $check = run_session_index($sessionsDir, ['--check']);
+
+        expect($check->getExitCode())->toBe(0, $check->getErrorOutput());
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('reports empty and partial orphan archive directories without deleting them', function (): void {
+    $workspace = session_index_workspace('orphans');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-140000-indexed',
+            session_index_loop(outcome: 'complete'),
+        );
+
+        $emptyDir = "{$sessionsDir}/2026-08-05-140100-empty-orphan";
+        mkdir($emptyDir, recursive: true);
+
+        $partialDir = "{$sessionsDir}/2026-08-05-140200-partial-orphan";
+        mkdir($partialDir, recursive: true);
+        file_put_contents("{$partialDir}/notes.txt", "partial\n");
+
+        $unsafeDir = "{$sessionsDir}/2026-08-05-140050-unsafe-orphan";
+        mkdir($unsafeDir, recursive: true);
+        file_put_contents("{$unsafeDir}/real-loop.md", session_index_loop(outcome: 'complete'));
+        symlink('real-loop.md', "{$unsafeDir}/loop.md");
+
+        $ignoredDir = "{$sessionsDir}/not-an-archive-name";
+        mkdir($ignoredDir, recursive: true);
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect($index)
+            ->toHaveKey('record_count', 1)
+            ->toHaveKey('orphan_count', 3)
+            ->and($index['orphans'])
+            ->toBe([
+                [
+                    'archive' => '2026-08-05-140050-unsafe-orphan',
+                    'reason' => 'unsafe_loop_md',
+                ],
+                [
+                    'archive' => '2026-08-05-140100-empty-orphan',
+                    'reason' => 'empty',
+                ],
+                [
+                    'archive' => '2026-08-05-140200-partial-orphan',
+                    'reason' => 'missing_loop_md',
+                ],
+            ])
+            ->and(is_dir($emptyDir))
+            ->toBeTrue()
+            ->and(is_dir($partialDir))
+            ->toBeTrue()
+            ->and(is_dir($unsafeDir))
+            ->toBeTrue()
+            ->and(is_link("{$unsafeDir}/loop.md"))
+            ->toBeTrue();
+
+        $fresh = run_session_index($sessionsDir, ['--check']);
+
+        expect($fresh->getExitCode())->toBe(0, $fresh->getErrorOutput());
+
+        file_put_contents("{$partialDir}/loop.md", session_index_loop(outcome: 'complete'));
+
+        $stale = run_session_index($sessionsDir, ['--check']);
+
+        expect($stale->getExitCode())
+            ->toBe(1)
+            ->and($stale->getErrorOutput())
+            ->toContain('Session index is stale');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('documents regeneration backfill only for explicit receipt identity', function (): void {
+    $workspace = session_index_workspace('backfill-semantics');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $commit = 'dddddddddddddddddddddddddddddddddddddddd';
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-150000-historical-receipt',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-150000-historical-receipt", [
+            'schema_version' => 3,
+            'archive_mode' => 'compact',
+            'candidate_commit' => $commit,
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        session_index_archive(
+            $sessionsDir,
+            '2026-08-05-150100-historical-absence',
+            session_index_compact_loop(),
+        );
+        session_index_write_receipt("{$sessionsDir}/2026-08-05-150100-historical-absence", [
+            'schema_version' => 2,
+            'archive_mode' => 'compact',
+            'copied_entries' => ['loop.md'],
+        ]);
+
+        $first = run_session_index($sessionsDir, ['--write']);
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput());
+
+        $second = run_session_index($sessionsDir, ['--write']);
+        expect($second->getExitCode())->toBe(0, $second->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect(session_index_record($index, 'historical-receipt')['candidate_commit'])
+            ->toBe($commit)
+            ->and(session_index_record($index, 'historical-absence')['candidate_commit'])
+            ->toBeNull()
+            ->and($index['unique_candidate_commit_count'])
+            ->toBe(1);
+
+        $help = run_session_index($sessionsDir, ['--help']);
+
+        expect($help->getExitCode())
+            ->toBe(0, $help->getErrorOutput())
+            ->and($help->getOutput())
+            ->toContain('candidate_commit')
+            ->toContain('unknown')
+            ->toContain('backfill');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('refreshes the session index when session archive creates and refreshes an archive', function (): void {
     $workspace = session_index_workspace('archive-hook');
 
@@ -1483,6 +1830,14 @@ function session_index_workspace(string $suffix): string
     mkdir($workspace, recursive: true);
 
     return $workspace;
+}
+
+function session_index_write_receipt(string $archiveDir, array $receipt): void
+{
+    file_put_contents(
+        "{$archiveDir}/orbit-session-archive.json",
+        json_encode($receipt, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
 }
 
 function session_index_archive(

@@ -12,18 +12,25 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use App\Services\Processes\ProcessServiceCatalog;
+use App\Services\Processes\ProcessServiceResourceGuard;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class EditProcess
 {
     public function __construct(
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private EditProcessRuntimeUnits $runtimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
+        private ProcessServiceCatalog $serviceCatalog,
+        private ProcessServiceResourceGuard $resourceGuard,
     ) {}
 
     /**
-     * @param  array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
+     * @param  array{name?: string, label?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(
@@ -127,6 +134,10 @@ final readonly class EditProcess
             $changed[] = 'runtime';
         }
 
+        if (array_key_exists('binds', $changes)) {
+            $this->applyBinds($context, $process, $changes['binds'], $changed);
+        }
+
         if ($changed === []) {
             throw new GatewayApiException(
                 'At least one editable field is required.',
@@ -192,5 +203,134 @@ final readonly class EditProcess
             ],
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * @param  list<string>  $binds
+     * @param  list<string>  $changed
+     */
+    private function applyBinds(
+        ProcessOwnerContext $context,
+        Process $process,
+        array $binds,
+        array &$changed,
+    ): void {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $service = is_string($config['service'] ?? null) ? trim($config['service']) : '';
+
+        if ($service === '' || ! $context->owner instanceof Node || $process->runtime !== ProcessRuntime::Docker) {
+            throw new GatewayApiException(
+                'Publish binds are only supported for node-owned Docker managed services.',
+                'validation_failed',
+                [
+                    'field' => 'bind',
+                    'reason' => 'process_bind_requires_node_docker_service',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+            );
+        }
+
+        // Explicit list only — never treat omission as the update path.
+        $normalized = $this->serviceCatalog->normalizeBinds($binds, $process->runtime);
+        $currentRawBinds = $config['binds'] ?? null;
+        // Legacy rows without stored bind intent infer WireGuard-only.
+        $currentBinds = is_array($currentRawBinds)
+            ? $this->serviceCatalog->normalizeBinds($this->stringList($currentRawBinds), $process->runtime)
+            : $this->serviceCatalog->normalizeBinds(null, $process->runtime);
+
+        if ($normalized === $currentBinds) {
+            return;
+        }
+
+        $version = is_string($config['version'] ?? null) ? $config['version'] : null;
+        $image = is_string($config['image'] ?? null) ? $config['image'] : null;
+        $serviceOptions = $this->stringKeyedArray($config['service_options'] ?? null);
+
+        // Existing runtime_config is the source of truth. Resolve only to obtain the
+        // publish surface; replace binds/endpoint/endpoints/ports, refresh the
+        // canonical spec_hash, and leave every other key untouched.
+        $descriptor = $this->serviceCatalog->resolve(
+            service: $service,
+            version: $version,
+            runtime: $process->runtime,
+            node: $context->node,
+            processName: $process->name,
+            imageOverride: $image,
+            serviceOptions: $serviceOptions,
+            binds: $normalized,
+        );
+
+        $resolved = $descriptor->runtimeConfig;
+        $runtimeConfig = $config;
+        $runtimeConfig['binds'] = is_array($resolved['binds'] ?? null)
+            ? $resolved['binds']
+            : $normalized;
+        $runtimeConfig['endpoint'] = $resolved['endpoint'] ?? null;
+        $runtimeConfig['endpoints'] = is_array($resolved['endpoints'] ?? null)
+            ? $resolved['endpoints']
+            : [];
+        $runtimeConfig['ports'] = is_array($resolved['ports'] ?? null)
+            ? $resolved['ports']
+            : [];
+
+        $labels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
+        unset($runtimeConfig['labels'], $runtimeConfig['spec_hash']);
+
+        $specHash = $this->serviceCatalog->hashRuntimeSpec([
+            ...$runtimeConfig,
+            'runtime' => $process->runtime->value,
+            'process' => $process->name,
+        ]);
+        $runtimeConfig['spec_hash'] = $specHash;
+        $labels['orbit.process.spec_hash'] = $specHash;
+        $runtimeConfig['labels'] = $labels;
+
+        $this->resourceGuard->assertNoConflicts(
+            context: $context,
+            name: $process->name,
+            runtimeConfig: $runtimeConfig,
+            ignoreProcessId: $process->id,
+        );
+
+        // Bind updates never regenerate or clear process credentials.
+        $process->runtime_config = $runtimeConfig;
+        $changed[] = 'binds';
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $values
+     * @return list<string>
+     */
+    private function stringList(array $values): array
+    {
+        $strings = [];
+
+        foreach ($values as $value) {
+            if (is_string($value)) {
+                $strings[] = $value;
+            }
+        }
+
+        return $strings;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $result[$key] = $item;
+            }
+        }
+
+        return $result;
     }
 }

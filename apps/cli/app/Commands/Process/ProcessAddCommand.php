@@ -8,6 +8,9 @@ use App\Exceptions\GatewayApiException;
 
 use function Laravel\Prompts\confirm;
 
+/**
+ * @mago-expect lint:too-many-methods
+ */
 final class ProcessAddCommand extends ProcessGatewayCommand
 {
     #[\Override]
@@ -25,6 +28,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--username= : PostgreSQL username}
         {--published-port= : PostgreSQL host port}
         {--image= : Explicit Docker image override}
+        {--bind=* : Publish host for node-owned Docker managed services (wireguard|loopback); repeatable}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none)}
         {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd); defaults to docker for managed services, systemd for Linux host commands, and launchd for macOS host commands}
@@ -59,6 +63,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $database = $this->stringOption('database');
         $username = $this->stringOption('username');
         $publishedPort = $this->stringOption('published-port');
+        $binds = ProcessBindOption::fromOption($this->option('bind'));
         $replaceContainers = $this->replaceContainers();
         $noStart = $this->option('no-start') === true;
 
@@ -128,6 +133,8 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                 $database,
                 $username,
                 $publishedPort,
+            ) ?? $this->failBindValidation(
+                ProcessBindOption::validate($binds, $node, $service, $runtime),
             ) ?? $this->validateReplaceContainers(
                 $replaceContainers,
                 $node,
@@ -147,6 +154,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                 'published_port' => (int) $publishedPort,
             ]
             : null;
+        $normalizedBinds = $binds === [] ? null : ProcessBindOption::normalize($binds);
 
         $payload = $this->filledQuery([
             'node' => $node,
@@ -164,6 +172,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             'version' => $version,
             'image' => $image,
             'service_options' => $serviceOptions,
+            'binds' => $normalizedBinds,
             'replace_containers' => $replaceContainers === [] ? null : $replaceContainers,
             'destructive_consent' => $replaceContainers === [] ? null : true,
             'destructive_consent_source' => $replaceContainers === [] ? null : $this->replaceContainerConsentSource(),
@@ -318,6 +327,15 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         }
 
         return null;
+    }
+
+    private function failBindValidation(?ProcessBindValidationFailure $failure): ?int
+    {
+        if ($failure === null) {
+            return null;
+        }
+
+        return $this->failValidation($failure->field, $failure->message, $failure->meta);
     }
 
     /**
