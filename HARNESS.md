@@ -258,10 +258,12 @@ passes.
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
    optional `feedback.jsonl`, regular files cited by the loop as one exact
-   inline-code path below `.orbit/evidence/` or `.orbit/quality-gates/`, and a
-   versioned receipt bound to the landed feature branch and every archived
-   byte. Cite files, never proof directories; missing, malformed, or unsafe
-   citations block archival.
+   inline-code path below `.orbit/evidence/`, `.orbit/quality-gates/`, or
+   `.orbit/release-evidence/`, and a versioned receipt bound to the landed
+   feature branch and every archived byte. Cite files, never proof
+   directories; missing, malformed, or unsafe citations block archival.
+   Runtime acceptance receipts still require evidence under
+   `.orbit/evidence/` or `.orbit/quality-gates/` only.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
 7. Update the session index and commit the archive/index.

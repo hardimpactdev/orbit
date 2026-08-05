@@ -720,9 +720,43 @@ it('keeps LOOP.md.example free of compact proof path citations', function (): vo
         ->not->toContain('evidence=\`')
         ->not->toContain('.orbit/evidence/')
         ->not->toContain('.orbit/quality-gates/')
+        ->not->toContain('.orbit/release-evidence/')
         ->not->toContain('target=<target>|command=<cmd>')->toContain('exactly one of target= or command=')->toContain(
             'worktree evidence tree',
         );
+});
+
+it('extracts compact release-evidence citations without expanding runtime receipt roots', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    $fixture = acceptance_test_workspace(
+        'release-evidence-root-separation',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        $releasePath = "{$fixture}/.orbit/release-evidence/2026-08-05-slice/proof.txt";
+        mkdir(dirname($releasePath), recursive: true);
+        file_put_contents($releasePath, "release packaging proof\n");
+
+        $references = orbitLoopProofReferences(
+            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n",
+        );
+        $runtimeProblem = orbitLoopRuntimeProofEvidenceProblem(
+            $fixture,
+            '`.orbit/release-evidence/2026-08-05-slice/proof.txt`',
+        );
+
+        expect($references)
+            ->toBe(['.orbit/release-evidence/2026-08-05-slice/proof.txt'])
+            ->and($runtimeProblem)
+            ->not
+            ->toBeNull()
+            ->toContain('.orbit/evidence/')
+            ->toContain('.orbit/quality-gates/');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
 });
 
 it('rejects deferred or failed final-hop runtime claims and accepts structured completed proof', function (
@@ -1092,6 +1126,17 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         false,
         'evidence=',
         false,
+    ],
+    'release-evidence root remains outside runtime receipt roots' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/release-evidence/2026-08-05-slice/proof.txt`',
+        false,
+        'evidence=',
+        false,
+        static function (string $fixture): void {
+            $path = "{$fixture}/.orbit/release-evidence/2026-08-05-slice/proof.txt";
+            mkdir(dirname($path), recursive: true);
+            file_put_contents($path, "release packaging proof\n");
+        },
     ],
     'evidence traversal' => [
         'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/../sessions/escape.txt`',

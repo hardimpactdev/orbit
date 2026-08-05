@@ -129,6 +129,72 @@ it('retains only regular proof files explicitly cited by the compact loop', func
     }
 });
 
+it('retains only exact cited nested release-evidence regular files in compact archives', function (): void {
+    $workspace = session_archive_workspace('compact-cited-release-evidence');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        $releaseEvidencePath = "{$paths['sourceOrbitDir']}/release-evidence/2026-08-05-slice/proof.txt";
+        mkdir(dirname($releaseEvidencePath), recursive: true);
+        file_put_contents($releaseEvidencePath, "release packaging proof\n");
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/release-evidence/2026-08-05-slice/uncited-sibling.log",
+            "omit uncited sibling\n",
+        );
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/release-evidence/unreferenced-root.txt",
+            "omit unreferenced root\n",
+        );
+
+        $loop = (string) file_get_contents($paths['loopPath']);
+        $loop = str_replace(
+            '## Status',
+            <<<'MARKDOWN'
+                - Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`
+
+                ## Status
+                MARKDOWN,
+            $loop,
+        );
+        file_put_contents($paths['loopPath'], $loop);
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180014',
+            '--slug=compact-cited-release-evidence',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+        $archive = (string) $summary['archive_dir'];
+        $relative = 'release-evidence/2026-08-05-slice/proof.txt';
+
+        expect($summary['copied_entries'])
+            ->toBe([
+                'loop.md',
+                $relative,
+            ])
+            ->and($summary['entry_digests'])
+            ->toBe([
+                'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+                $relative => hash_file('sha256', "{$archive}/{$relative}"),
+            ])
+            ->and("{$archive}/{$relative}")
+            ->toBeFile()
+            ->and(file_get_contents("{$archive}/{$relative}"))
+            ->toBe("release packaging proof\n")
+            ->and("{$archive}/release-evidence/2026-08-05-slice/uncited-sibling.log")
+            ->not->toBeFile()->and("{$archive}/release-evidence/unreferenced-root.txt")
+            ->not->toBeFile();
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
 it('refuses a compact archive when the loop cites missing proof', function (): void {
     $workspace = session_archive_workspace('compact-missing-proof');
 
@@ -181,6 +247,20 @@ it('refuses unsafe compact proof citations: :dataset', function (
             symlink($externalProof, "{$paths['sourceOrbitDir']}/evidence/linked-proof.txt");
         }
 
+        if ($kind === 'release-evidence-symlink') {
+            mkdir("{$paths['sourceOrbitDir']}/release-evidence", recursive: true);
+            $externalProof = "{$workspace}/external-release-proof.txt";
+            file_put_contents($externalProof, "must not be archived\n");
+            symlink($externalProof, "{$paths['sourceOrbitDir']}/release-evidence/linked-proof.txt");
+        }
+
+        if ($kind === 'release-evidence-symlinked-parent') {
+            $store = "{$workspace}/real-release-evidence-store";
+            mkdir($store, recursive: true);
+            file_put_contents("{$store}/nested-proof.txt", "must not follow symlinked parent\n");
+            symlink($store, "{$paths['sourceOrbitDir']}/release-evidence");
+        }
+
         if ($kind === 'directory') {
             mkdir("{$paths['sourceOrbitDir']}/evidence/proof-directory");
             file_put_contents(
@@ -189,13 +269,36 @@ it('refuses unsafe compact proof citations: :dataset', function (
             );
         }
 
+        if ($kind === 'release-evidence-directory') {
+            mkdir("{$paths['sourceOrbitDir']}/release-evidence/proof-directory", recursive: true);
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/release-evidence/proof-directory/proof.txt",
+                "must not be copied through a directory citation\n",
+            );
+        }
+
         if ($kind === 'traversal') {
             file_put_contents("{$paths['sourceOrbitDir']}/outside-proof.txt", "must remain outside proof roots\n");
+        }
+
+        if ($kind === 'release-evidence-traversal') {
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/outside-release-proof.txt",
+                "must remain outside proof roots\n",
+            );
         }
 
         if (str_starts_with($kind, 'truncated-')) {
             file_put_contents(
                 "{$paths['sourceOrbitDir']}/evidence/proof",
+                "must not be substituted for the malformed citation\n",
+            );
+        }
+
+        if (str_starts_with($kind, 'release-evidence-truncated-')) {
+            mkdir("{$paths['sourceOrbitDir']}/release-evidence", recursive: true);
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/release-evidence/proof",
                 "must not be substituted for the malformed citation\n",
             );
         }
@@ -276,6 +379,34 @@ it('refuses unsafe compact proof citations: :dataset', function (
     'punctuated leading prefix' => [
         'truncated-punctuated-prefix',
         'bad:.orbit/evidence/proof',
+    ],
+    'release-evidence missing' => [
+        'release-evidence-missing',
+        '.orbit/release-evidence/missing-proof.txt',
+    ],
+    'release-evidence directory' => [
+        'release-evidence-directory',
+        '.orbit/release-evidence/proof-directory',
+    ],
+    'release-evidence traversal' => [
+        'release-evidence-traversal',
+        '.orbit/release-evidence/../outside-release-proof.txt',
+    ],
+    'release-evidence direct symlink' => [
+        'release-evidence-symlink',
+        '.orbit/release-evidence/linked-proof.txt',
+    ],
+    'release-evidence symlinked parent' => [
+        'release-evidence-symlinked-parent',
+        '.orbit/release-evidence/nested-proof.txt',
+    ],
+    'release-evidence empty path segment' => [
+        'release-evidence-empty-path-segment',
+        '.orbit/release-evidence//proof.txt',
+    ],
+    'release-evidence truncated invalid character' => [
+        'release-evidence-truncated-invalid-character',
+        '.orbit/release-evidence/proof?.txt',
     ],
 ]);
 

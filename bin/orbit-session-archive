@@ -65,8 +65,8 @@ if (array_key_exists('help', $options)) {
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
           --full                       Preserve the complete active .orbit state and provider captures.
                                        The default archive is compact: loop.md, feedback.jsonl when present,
-                                       evidence/quality-gate files cited as exact inline-code paths, and a
-                                       versioned archive receipt.
+                                       evidence/quality-gate/release-evidence files cited as exact
+                                       inline-code paths, and a versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
@@ -1158,7 +1158,7 @@ function compactOrbitProofSource(string $sourceOrbitDir, string $relative, strin
     $segments = explode('/', $relative);
 
     if (
-        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates'], true)
+        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates', 'release-evidence'], true)
         || count($segments) < 2
         || in_array('', $segments, true)
         || in_array('.', $segments, true)

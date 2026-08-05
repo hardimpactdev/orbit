@@ -1020,7 +1020,8 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     $receiptProofEntries = array_values(array_filter(
         $copiedEntries,
         static fn (string $entry): bool => str_starts_with($entry, 'evidence/')
-            || str_starts_with($entry, 'quality-gates/'),
+            || str_starts_with($entry, 'quality-gates/')
+            || str_starts_with($entry, 'release-evidence/'),
     ));
 
     if ($receiptProofEntries !== $loopProofEntries) {
@@ -1075,7 +1076,7 @@ function compact_archive_entry_path_is_allowed(string $entry): bool
     }
 
     return preg_match(
-        '~^(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
+        '~^(?:evidence|quality-gates|release-evidence)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
         $entry,
     ) === 1
         && ! in_array('.', explode('/', $entry), true)
@@ -1104,7 +1105,7 @@ function compact_archive_actual_entries(string $archiveDir): ?array
 
         if ($entry->isDir()) {
             if (
-                preg_match('~^(?:evidence|quality-gates)(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
+                preg_match('~^(?:evidence|quality-gates|release-evidence)(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
                 || in_array('.', explode('/', $relative), true)
                 || in_array('..', explode('/', $relative), true)
             ) {
