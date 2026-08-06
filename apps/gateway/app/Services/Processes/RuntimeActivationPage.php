@@ -86,7 +86,7 @@ final readonly class RuntimeActivationPage
     private function failureReason(OperationRun $run): ?string
     {
         $error = $run->error;
-        $message = is_array($error) ? ($error['message'] ?? null) : null;
+        $message = is_array($error) ? $error['message'] ?? null : null;
 
         return is_string($message) && trim($message) !== '' ? trim($message) : null;
     }

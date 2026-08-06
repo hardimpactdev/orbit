@@ -7,6 +7,7 @@ namespace App\Services\Nodes\Access;
 use App\Data\Nodes\NodeAccessPermissions;
 use InvalidArgumentException;
 
+/** @mago-expect lint:kan-defect */
 final readonly class NodePermissionNormalizer
 {
     public function __construct(

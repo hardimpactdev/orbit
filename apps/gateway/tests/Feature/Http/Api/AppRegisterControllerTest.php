@@ -647,6 +647,77 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('error.meta.field', 'name');
     });
 
+    it('reports sibling instances that follow shared policy changed by re-register', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'managed' => true,
+        ]);
+        $siblingNode = createTestAppHostNode([
+            'name' => 'beast',
+            'tld' => 'beast',
+            'status' => 'active',
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44');
+        $app = App::factory()->for($targetNode, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => true,
+        ]);
+        app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
+        app_register_instance($app, 'second', $siblingNode, '/srv/docs');
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.4', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs.development',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+                'php_version' => '8.4',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response->assertOk();
+
+        $warnings = $response->json('success.meta.warnings');
+        $fanout = array_values(array_filter(
+            is_array($warnings) ? $warnings : [],
+            static fn (array $warning): bool => ($warning['code'] ?? null) === 'instance.shared_runtime_policy_applied',
+        ));
+
+        expect($fanout)
+            ->toHaveCount(1)
+            ->and($fanout[0]['family'])
+            ->toBe('instance')
+            ->and($fanout[0]['message'])
+            ->toContain('docs.second')
+            ->and($fanout[0]['message'])
+            ->toContain('beast')
+            ->and($fanout[0]['message'])
+            ->toContain('PHP 8.4');
+    });
+
     it('keeps omitted root and php version values on re-register', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
@@ -943,6 +1014,7 @@ describe('AppRegisterController', function (): void {
     });
 });
 
+/** @mago-expect lint:excessive-parameter-list */
 function app_register_instance(
     App $app,
     string $name,

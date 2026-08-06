@@ -655,6 +655,98 @@ describe('ToolInstallController', function (): void {
             ->toContain('claude --version');
     });
 
+    it('preserves a pinned expected version when re-install omits the version', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-1',
+            'status' => 'active',
+            'user' => 'deploy',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'claude-code',
+            'expected_version' => '2.0.0',
+            'expected_state' => 'installed',
+            'config' => [
+                'default_user' => 'deploy',
+                'install_users' => ['alice'],
+            ],
+        ]);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-1',
+            ],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response->assertOk();
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'claude-code')
+            ->firstOrFail();
+
+        expect($tool->expected_version)
+            ->toBe('2.0.0')
+            ->and($tool->config['install_users'] ?? null)
+            ->toBe(['alice']);
+    });
+
+    it('accumulates install users across re-installs instead of dropping stored ones', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-1',
+            'status' => 'active',
+            'user' => 'deploy',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'claude-code',
+            'expected_state' => 'installed',
+            'config' => [
+                'default_user' => 'deploy',
+                'install_users' => ['alice'],
+            ],
+        ]);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-1',
+                'config' => [
+                    'install_users' => ['bob'],
+                ],
+            ],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response->assertOk();
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'claude-code')
+            ->firstOrFail();
+
+        expect($tool->config['install_users'] ?? null)
+            ->toBe(['alice', 'bob']);
+    });
+
     it('persists agent coding CLI install config with node default user and sanitized additional users', function (
         string $tool,
         string $installNeedle,

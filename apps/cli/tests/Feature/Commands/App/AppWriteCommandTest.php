@@ -239,10 +239,12 @@ describe('app and instance write commands', function (): void {
         ]);
 
         Http::assertSent(
-            fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/instances/register'
-            && ! array_key_exists('root', $request->data())
-            && ! array_key_exists('php_version', $request->data()),
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/instances/register'
+                && ! array_key_exists('root', $request->data())
+                && ! array_key_exists('php_version', $request->data())
+            ),
         );
 
         expect($exitCode)->toBe(0);

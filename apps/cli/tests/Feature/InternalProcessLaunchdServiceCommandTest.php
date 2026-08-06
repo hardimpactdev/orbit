@@ -248,7 +248,9 @@ describe('internal process launchd service command', function (): void {
             ->toBe(
                 "enable {$target}\n"
                 ."bootout {$target}\n"
-                .'bootstrap gui/'.getmyuid()." {$plist}\n"
+                .'bootstrap gui/'
+                .getmyuid()
+                ." {$plist}\n"
                 ."kickstart {$target}\n",
             );
     });

@@ -161,15 +161,23 @@ final readonly class ToolInstaller
             }
         }
 
+        $existingRow = NodeTool::query()
+            ->where('node_id', $targetNode->id)
+            ->where('name', $tool)
+            ->first();
+
         $row = NodeTool::query()->updateOrCreate(
             [
                 'node_id' => $targetNode->id,
                 'name' => $tool,
             ],
             [
-                'expected_version' => $version,
+                'expected_version' => $version ?? $existingRow?->expected_version,
                 'expected_state' => $expectedState,
-                'config' => $config === [] ? null : $config,
+                'config' => $this->mergedInstallConfig(
+                    is_array($existingRow?->config) ? $existingRow->config : [],
+                    $config,
+                ),
             ],
         );
 
@@ -470,6 +478,39 @@ final readonly class ToolInstaller
      * @param  array<string, mixed>  $config
      * @param  callable(array<string, mixed>): string  $scriptFactory
      */
+    /**
+     * Re-installing must never reset stored intent the request did not name:
+     * an omitted config keeps the stored config, request keys override stored
+     * keys, and install_users accumulates — installing for one user does not
+     * uninstall another, so the union stays visible to doctor convergence.
+     *
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>|null
+     */
+    private function mergedInstallConfig(array $existing, array $config): ?array
+    {
+        if ($config === []) {
+            return $existing === [] ? null : $existing;
+        }
+
+        $merged = [...$existing, ...$config];
+
+        $existingUsers = is_array($existing['install_users'] ?? null) ? $existing['install_users'] : [];
+        $requestedUsers = is_array($config['install_users'] ?? null) ? $config['install_users'] : [];
+
+        if ($existingUsers !== [] || array_key_exists('install_users', $config)) {
+            $union = array_values(array_unique(array_filter(
+                [...$existingUsers, ...$requestedUsers],
+                is_string(...),
+            )));
+            sort($union);
+            $merged['install_users'] = $union;
+        }
+
+        return $merged === [] ? null : $merged;
+    }
+
     private function runToolScriptWithGitHubAuth(
         Node $node,
         string $tool,

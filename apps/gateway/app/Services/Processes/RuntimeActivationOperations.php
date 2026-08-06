@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Orbit\Core\Enums\OperationStatus;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class RuntimeActivationOperations
 {
     public function __construct(

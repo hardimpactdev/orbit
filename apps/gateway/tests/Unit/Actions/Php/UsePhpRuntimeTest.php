@@ -144,7 +144,7 @@ it('reports sibling instances that follow a changed shared PHP policy', function
         ->and($fanout[0]['family'])
         ->toBe('instance')
         ->and($fanout[0]['message'])
-        ->toContain("docs.development")
+        ->toContain('docs.development')
         ->and($fanout[0]['message'])
         ->toContain('beast')
         ->and($fanout[0]['message'])

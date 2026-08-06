@@ -1166,7 +1166,7 @@ final readonly class NodesProbe
 
             $known = array_values(array_filter(
                 $permissions,
-                static fn (string $permission): bool => $registry->isKnown($permission),
+                $registry->isKnown(...),
             ));
             $normalized = $normalizer->normalize($known)->permissions;
 

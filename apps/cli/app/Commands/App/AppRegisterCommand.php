@@ -138,8 +138,7 @@ final class AppRegisterCommand extends AppGatewayCommand
             'adopted' => "Instance '{$selector}' successfully adopted from path '{$path}' on node '{$node}'.",
             'moved' => "Instance '{$selector}' successfully moved to path '{$path}' on node '{$node}'.",
             'converged' => "Instance '{$selector}' is already converged on node '{$node}'. No changes were needed.",
-            'partial'
-                => "Instance '{$selector}' is registered on node '{$node}', but proxy enactment is incomplete.",
+            'partial' => "Instance '{$selector}' is registered on node '{$node}', but proxy enactment is incomplete.",
             default => "Instance '{$selector}' successfully registered on node '{$node}'.",
         };
     }
@@ -171,7 +170,11 @@ final class AppRegisterCommand extends AppGatewayCommand
             'domain' => $this->stringOption('domain'),
         ];
 
-        foreach (['root' => 'root', 'php-version' => 'php_version', 'runtime-proxy-transport' => 'runtime_proxy_transport'] as $option => $key) {
+        foreach ([
+            'root' => 'root',
+            'php-version' => 'php_version',
+            'runtime-proxy-transport' => 'runtime_proxy_transport',
+        ] as $option => $key) {
             $value = $this->stringOption($option);
 
             if ($value !== null) {

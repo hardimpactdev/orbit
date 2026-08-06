@@ -15,6 +15,7 @@ use App\Services\Php\PhpRuntimeManager;
 use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class UsePhpRuntime
 {
     public function __construct(
@@ -109,8 +110,9 @@ final readonly class UsePhpRuntime
             $warnings[] = [
                 'code' => 'instance.shared_php_policy_applied',
                 'family' => 'instance',
-                'message' => "Sibling instance '{$appName}.{$sibling->name}'{$placement} now follows the shared "
-                    ."app PHP policy {$version} changed by this run.",
+                'message' =>
+                    "Sibling instance '{$appName}.{$sibling->name}'{$placement} now follows the shared "
+                        ."app PHP policy {$version} changed by this run.",
                 'next_command' => 'doctor --family=instance',
             ];
         }

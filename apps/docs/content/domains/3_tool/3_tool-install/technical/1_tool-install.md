@@ -50,6 +50,11 @@ the concrete Claude Code binary version returned by `claude --version`.
 
 - Verifies the tool supports managed installation on the target node.
 - Resolves the requested expected version before any gateway row or node artifact is written.
+- Re-installing never resets stored intent the request did not name: an
+  omitted `version` keeps a previously pinned `expected_version`, an omitted
+  `config` keeps the stored config, and `config.install_users` accumulates
+  across installs — installing for one user does not drop another user's
+  recorded install.
 - Keeps gateway configuration work gateway-local and dispatches target-node
   probes and apply actions through Agent push. The command exposes no node
   transport selector and never falls back to SSH.

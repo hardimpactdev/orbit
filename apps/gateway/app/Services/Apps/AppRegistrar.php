@@ -146,7 +146,7 @@ final class AppRegistrar
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "Instance '{$input['app']}.{$selectedName}' is already registered on node '{$currentNodeName}'. "
-                    ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
+                ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
                     'path' => $currentPath,
                     'existing_project' => $existingApp->name,
@@ -160,7 +160,7 @@ final class AppRegistrar
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "Instance '{$input['app']}.{$selectedName}' is already registered at '{$currentPath}'. "
-                    ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
+                ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
                     'path' => $path,
                     'existing_project' => $existingApp->name,
@@ -195,7 +195,10 @@ final class AppRegistrar
             $selectedName,
             $effectiveDomain,
         );
-        $warnings = $enactAppRuntime->handle($app);
+        $warnings = [
+            ...$this->sharedPolicyFanoutWarnings($existingApp, $app, $selectedName),
+            ...$enactAppRuntime->handle($app),
+        ];
         $action = $this->resultAction->afterEnactment($action, $warnings);
 
         return $this->successCommand(
@@ -207,6 +210,72 @@ final class AppRegistrar
             $warnings,
             $node->name,
         );
+    }
+
+    /**
+     * PHP version and runtime proxy transport are app-owned shared policy;
+     * a registration that changes either fans out to every sibling instance,
+     * so each sibling is named instead of changing silently.
+     *
+     * @return list<array<string, string>>
+     */
+    private function sharedPolicyFanoutWarnings(?App $before, App $after, string $selectedName): array
+    {
+        if (! $before instanceof App) {
+            return [];
+        }
+
+        $changes = [];
+
+        if ($before->php_version !== $after->php_version) {
+            $changes[] = "PHP {$after->php_version}";
+        }
+
+        $transportBefore = $this->proxyTransportLabel($before->runtime_config);
+        $transportAfter = $this->proxyTransportLabel($after->runtime_config);
+
+        if ($transportBefore !== $transportAfter) {
+            $changes[] = "proxy transport {$transportAfter}";
+        }
+
+        if ($changes === []) {
+            return [];
+        }
+
+        $changedFacts = implode(', ', $changes);
+        $warnings = [];
+        $siblings = Instance::query()
+            ->where('app_id', $after->id)
+            ->where('name', '!=', $selectedName)
+            ->where('driver', InstanceDriver::Orbit)
+            ->get();
+
+        foreach ($siblings as $sibling) {
+            $config = $sibling->driver_config;
+            $nodeName = $config instanceof OrbitInstanceDriverConfigData ? $config->node : null;
+            $placement = $nodeName === null ? '' : " on node '{$nodeName}'";
+
+            $warnings[] = [
+                'code' => 'instance.shared_runtime_policy_applied',
+                'family' => 'instance',
+                'message' =>
+                    "Sibling instance '{$after->name}.{$sibling->name}'{$placement} now follows the "
+                        ."shared app policy ({$changedFacts}) changed by this run.",
+                'next_command' => 'doctor --family=instance',
+            ];
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $runtimeConfig
+     */
+    private function proxyTransportLabel(?array $runtimeConfig): string
+    {
+        $transport = $runtimeConfig['proxy_transport'] ?? null;
+
+        return is_string($transport) && $transport !== '' ? $transport : 'http';
     }
 
     /**
@@ -286,16 +355,17 @@ final class AppRegistrar
                 ->where('driver_config->path', $path)
                 ->get()
                 ->first(
-                    fn (Instance $candidate): bool => $candidate->app?->name !== $appName
-                        || $candidate->name !== $selectedName,
+                    fn (Instance $candidate): bool => (
+                        $candidate->app?->name !== $appName
+                        || $candidate->name !== $selectedName
+                    ),
                 );
 
         if (! $pathOwner instanceof App && ! $owningInstance instanceof Instance) {
             return null;
         }
 
-        $ownerName = $pathOwner?->name
-            ?? ($owningInstance?->app?->name.'.'.$owningInstance?->name);
+        $ownerName = $pathOwner?->name ?? $owningInstance?->app?->name.'.'.$owningInstance?->name;
 
         return $this->failCommand(
             code: 'app.path_collision',
@@ -310,6 +380,8 @@ final class AppRegistrar
 
     /**
      * @param  array{app: string, instance: ?string, node: ?string, path: ?string, root: ?string, php_version: ?string, domain: ?string, runtime_proxy_transport: ?string}  $input
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private function isExplicitMove(
         array $input,
@@ -341,6 +413,8 @@ final class AppRegistrar
 
     /**
      * @param  array{app: string, instance: ?string, node: ?string, path: ?string, root: ?string, php_version: ?string, domain: ?string, runtime_proxy_transport: ?string}  $input
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private function registerAppRecord(
         array $input,
@@ -354,13 +428,8 @@ final class AppRegistrar
     ): App {
         $selectedConfig = $selected?->driver_config;
         $selectedConfig = $selectedConfig instanceof OrbitInstanceDriverConfigData ? $selectedConfig : null;
-        $documentRoot = $input['root']
-            ?? $selectedConfig?->document_root
-            ?? $existingApp?->document_root
-            ?? 'public';
-        $phpVersion = $input['php_version']
-            ?? $existingApp?->php_version
-            ?? PhpRuntimeCatalog::DEFAULT;
+        $documentRoot = $input['root'] ?? $selectedConfig?->document_root ?? $existingApp?->document_root ?? 'public';
+        $phpVersion = $input['php_version'] ?? $existingApp?->php_version ?? PhpRuntimeCatalog::DEFAULT;
         $isDefaultInstance = ! $existingApp instanceof App || $selectedName === $existingApp->environment;
 
         $attributes = [
@@ -405,7 +474,8 @@ final class AppRegistrar
                     node: $node->name,
                     path: $path,
                     document_root: $documentRoot,
-                    domain: $input['domain'] ?? $selectedConfig?->domain ?? ($isDefaultInstance ? $effectiveDomain : null),
+                    domain: $input['domain'] ?? $selectedConfig?->domain
+                        ?? ($isDefaultInstance ? $effectiveDomain : null),
                 ),
                 'runtime_requirements' => $selected?->runtime_requirements ?? new InstanceRuntimeRequirementsData,
             ],
@@ -442,7 +512,8 @@ final class AppRegistrar
 
         if (
             $instanceName !== null
-            && (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $instanceName) || mb_strlen($instanceName) > 40)
+            && (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $instanceName)
+            || mb_strlen($instanceName) > 40)
         ) {
             return $this->failValidation('name', 'Instance name must be a slug of 40 characters or fewer.');
         }
@@ -625,8 +696,12 @@ final class AppRegistrar
         return $tld !== '' && str_ends_with($domain, ".{$tld}");
     }
 
-    private function routeConflict(?string $effectiveDomain, string $appName, Node $node, ?App $existingApp): ?ProxyRoute
-    {
+    private function routeConflict(
+        ?string $effectiveDomain,
+        string $appName,
+        Node $node,
+        ?App $existingApp,
+    ): ?ProxyRoute {
         $domain = $effectiveDomain ?? $this->developmentDomain($appName, $node);
 
         $route = ProxyRoute::query()->where('domain', $domain)->first();
