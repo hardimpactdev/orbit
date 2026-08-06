@@ -76,12 +76,13 @@ machine-readable output.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
-- The current node identity has `php:write` on every affected Orbit instance
-  serving node for an app-policy write, or on the resolved workspace/CLI node.
+- The current node identity has `php:write` on the selected instance's serving
+  node for an app-policy write, or on the resolved workspace/CLI node.
   Gateway identity remains implicit.
-- The requested app PHP version is available on every affected Orbit instance
-  serving node; a workspace version is available on that workspace's serving
-  node. Node CLI selection requires PHP 8.5.
+- The requested app PHP version is available on the selected instance's serving
+  node; sibling instances whose nodes lack the image surface as instance-family
+  warnings and doctor drift. A workspace version is available on that
+  workspace's serving node. Node CLI selection requires PHP 8.5.
 - The concrete instance-serving node is Agent-eligible and reachable when
   runtime artifacts must be applied.
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Php;
 
 use App\Contracts\PhpRuntimeArtifactConverger;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Php\PhpRuntimeOperation;
+use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -53,7 +55,10 @@ final readonly class UsePhpRuntime
         /** @var array<string, mixed> $result */
 
         $warnings = match ($result['target'] ?? null) {
-            'instance' => $this->convergeProject($result),
+            'instance' => [
+                ...$this->sharedPolicyFanoutWarnings($result),
+                ...$this->convergeProject($result),
+            ],
             'workspace' => $this->convergeWorkspace($result),
             'node_cli' => [],
             default => throw new RuntimeException('PHP runtime selection result has an invalid target.'),
@@ -66,6 +71,51 @@ final readonly class UsePhpRuntime
                 'warnings' => $warnings,
             ],
         );
+    }
+
+    /**
+     * The shared app PHP policy fans out to every sibling instance; name each
+     * one so the operator sees exactly which other runtimes this run changed.
+     *
+     * @param  array<string, mixed>  $result
+     * @return list<array<string, string>>
+     */
+    private function sharedPolicyFanoutWarnings(array $result): array
+    {
+        if (($result['changed'] ?? null) !== true) {
+            return [];
+        }
+
+        $appName = $this->requiredString($result, 'app');
+        $selectedInstance = $this->requiredString($result, 'instance');
+        $version = $this->requiredString($result, 'version');
+        $app = App::query()->with('instances')->where('name', $appName)->first();
+
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        $warnings = [];
+
+        foreach ($app->instances as $sibling) {
+            if ($sibling->name === $selectedInstance || $sibling->driver !== InstanceDriver::Orbit) {
+                continue;
+            }
+
+            $config = $sibling->driver_config;
+            $nodeName = $config instanceof OrbitInstanceDriverConfigData ? $config->node : null;
+            $placement = $nodeName === null ? '' : " on node '{$nodeName}'";
+
+            $warnings[] = [
+                'code' => 'instance.shared_php_policy_applied',
+                'family' => 'instance',
+                'message' => "Sibling instance '{$appName}.{$sibling->name}'{$placement} now follows the shared "
+                    ."app PHP policy {$version} changed by this run.",
+                'next_command' => 'doctor --family=instance',
+            ];
+        }
+
+        return $warnings;
     }
 
     /**
