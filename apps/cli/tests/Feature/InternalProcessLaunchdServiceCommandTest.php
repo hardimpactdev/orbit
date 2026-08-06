@@ -184,7 +184,7 @@ describe('internal process launchd service command', function (): void {
             ]);
     });
 
-    it('bootstraps an unloaded launchd service without forcing an immediate restart', function (): void {
+    it('confirms an already running unit without restarting it', function (): void {
         $bin = install_launchd_fake_bin();
 
         [$exitCode, $output] = run_internal_process_launchd_service_command([
@@ -194,20 +194,25 @@ describe('internal process launchd service command', function (): void {
             '--json' => true,
         ]);
 
+        /** @var array{success: array{data: array{changed: bool}}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $calls = file_get_contents("{$bin}/calls.log");
         $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
-        $plist = getenv('HOME').'/Library/LaunchAgents/dev.hardimpact.orbit.test-unit.plist';
 
         expect($exitCode)
             ->toBe(0, $output)
+            ->and($payload['success']['data']['changed'])
+            ->toBeFalse()
             ->and($calls)
-            ->toBe(
-                "enable {$target}\n".'bootstrap gui/'.getmyuid()." {$plist}\n",
-            );
+            ->toBe("enable {$target}\n");
     });
 
-    it('kickstarts a launchd service when it is already loaded', function (): void {
-        $bin = install_launchd_fake_bin_with_bootstrap_already_loaded();
+    it('waits across the launchd throttle window before declaring start failure', function (): void {
+        install_launchd_fake_bin_stateful(
+            bootstrapFirstCallExitCode: 37,
+            kickstartExitCode: 5,
+            printRunningAfterPrintCalls: 3,
+        );
 
         [$exitCode, $output] = run_internal_process_launchd_service_command([
             'action' => 'start',
@@ -216,7 +221,24 @@ describe('internal process launchd service command', function (): void {
             '--json' => true,
         ]);
 
-        $calls = file_get_contents("{$bin}/calls.log");
+        expect($exitCode)->toBe(0, $output);
+    });
+
+    it('starts a stopped unit by rebooting the on-disk definition and kickstarting without a kill', function (): void {
+        $bin = install_launchd_fake_bin_stateful(
+            bootstrapFirstCallExitCode: 0,
+            kickstartExitCode: 0,
+            printRunningAfterPrintCalls: 2,
+        );
+
+        [$exitCode, $output] = run_internal_process_launchd_service_command([
+            'action' => 'start',
+            'label' => 'dev.hardimpact.orbit.test-unit',
+            '--operation-token' => launchd_service_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        $calls = (string) file_get_contents("{$bin}/calls.log");
         $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
         $plist = getenv('HOME').'/Library/LaunchAgents/dev.hardimpact.orbit.test-unit.plist';
 
@@ -224,8 +246,61 @@ describe('internal process launchd service command', function (): void {
             ->toBe(0, $output)
             ->and($calls)
             ->toBe(
-                "enable {$target}\n".'bootstrap gui/'.getmyuid()." {$plist}\n"."kickstart -k {$target}\n",
+                "enable {$target}\n"
+                ."bootout {$target}\n"
+                .'bootstrap gui/'.getmyuid()." {$plist}\n"
+                ."kickstart {$target}\n",
             );
+    });
+
+    it('resets a stuck unit through bootout so start does not accumulate spawn penalties', function (): void {
+        $bin = install_launchd_fake_bin_stateful(
+            bootstrapFirstCallExitCode: 37,
+            kickstartExitCode: 0,
+            printRunningAfterBootout: true,
+        );
+
+        [$exitCode, $output] = run_internal_process_launchd_service_command([
+            'action' => 'start',
+            'label' => 'dev.hardimpact.orbit.test-unit',
+            '--operation-token' => launchd_service_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        $calls = (string) file_get_contents("{$bin}/calls.log");
+        $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($calls)
+            ->toContain("bootout {$target}");
+    });
+
+    it('fails start only after polling and recovery both observe a unit that never runs', function (): void {
+        $bin = install_launchd_fake_bin_stateful(
+            bootstrapFirstCallExitCode: 37,
+            kickstartExitCode: 0,
+            printRunningAfterPrintCalls: null,
+        );
+
+        [$exitCode, $output] = run_internal_process_launchd_service_command([
+            'action' => 'start',
+            'label' => 'dev.hardimpact.orbit.test-unit',
+            '--operation-token' => launchd_service_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        /** @var array{error: array{code: string}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = (string) file_get_contents("{$bin}/calls.log");
+        $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'])
+            ->toBe('launchd_service.start_failed')
+            ->and($calls)
+            ->toContain("bootout {$target}");
     });
 
     it('applies development launch agents disabled and disables them again when stopped', function (): void {
@@ -349,11 +424,6 @@ function install_launchd_fake_bin_with_enable_failure(): string
     return install_launchd_fake_bin_with_exit_codes(enableExitCode: 42, bootstrapExitCode: 0);
 }
 
-function install_launchd_fake_bin_with_bootstrap_already_loaded(): string
-{
-    return install_launchd_fake_bin_with_exit_codes(enableExitCode: 0, bootstrapExitCode: 37);
-}
-
 function install_launchd_fake_bin_with_print_output(string $printOutput): string
 {
     return install_launchd_fake_bin_with_exit_codes(
@@ -366,12 +436,16 @@ function install_launchd_fake_bin_with_print_output(string $printOutput): string
 function install_launchd_fake_bin_with_exit_codes(
     int $enableExitCode,
     int $bootstrapExitCode,
-    string $printOutput = "launchctl print output\n",
+    string $printOutput = "state = running\npid = 4242\n",
 ): string {
     $dir = sys_get_temp_dir().'/orbit-launchd-fake-bin-'.bin2hex(random_bytes(8));
     mkdir($dir, permissions: 0o755, recursive: true);
 
-    app()->instance(LocalLaunchdServiceAction::class, new LocalLaunchdServiceAction(osFamily: 'Darwin'));
+    app()->instance(LocalLaunchdServiceAction::class, new LocalLaunchdServiceAction(
+        osFamily: 'Darwin',
+        startReadinessTimeoutSeconds: 1.0,
+        startReadinessPollMicroseconds: 10_000,
+    ));
 
     $enableExit = "exit({$enableExitCode});";
     $bootstrapExit = "exit({$bootstrapExitCode});";
@@ -398,6 +472,74 @@ function install_launchd_fake_bin_with_exit_codes(
         if (\$cmd === 'bootstrap' && {$bootstrapExitCode} !== 0) {
             fwrite(STDERR, "service already loaded\n");
             {$bootstrapExit}
+        }
+        exit(0);
+        PHP);
+    chmod("{$dir}/launchctl", permissions: 0o755);
+
+    $path = getenv('PATH');
+    $path = is_string($path) ? $path : '';
+    putenv("PATH={$dir}:{$path}");
+
+    return $dir;
+}
+
+/**
+ * Stateful launchctl fake for start-readiness scenarios: bootstrap can differ
+ * between its first and later calls, kickstart can fail like a throttled
+ * spawn, and print reports state=running either after N print polls, after a
+ * bootout happened, or never (null).
+ */
+function install_launchd_fake_bin_stateful(
+    int $bootstrapFirstCallExitCode,
+    int $kickstartExitCode,
+    ?int $printRunningAfterPrintCalls = null,
+    bool $printRunningAfterBootout = false,
+): string {
+    $dir = sys_get_temp_dir().'/orbit-launchd-fake-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir, permissions: 0o755, recursive: true);
+
+    app()->instance(LocalLaunchdServiceAction::class, new LocalLaunchdServiceAction(
+        osFamily: 'Darwin',
+        startReadinessTimeoutSeconds: 1.0,
+        startReadinessPollMicroseconds: 10_000,
+    ));
+
+    $printThreshold = $printRunningAfterPrintCalls === null ? 'null' : (string) $printRunningAfterPrintCalls;
+    $afterBootout = $printRunningAfterBootout ? 'true' : 'false';
+
+    file_put_contents("{$dir}/launchctl", <<<PHP
+        #!/usr/bin/env php
+        <?php
+        \$cmd = \$argv[1] ?? '';
+        \$dir = __DIR__;
+        if (\$cmd === 'help') {
+            echo "launchctl help\\n";
+            exit(0);
+        }
+        if (\$cmd === 'print') {
+            \$count = ((int) @file_get_contents(\$dir.'/print-count')) + 1;
+            file_put_contents(\$dir.'/print-count', (string) \$count);
+            \$calls = (string) @file_get_contents(\$dir.'/calls.log');
+            \$threshold = {$printThreshold};
+            \$running = (\$threshold !== null && \$count >= \$threshold)
+                || ({$afterBootout} && str_contains(\$calls, 'bootout'));
+            echo \$running ? "state = running\\npid = 4242\\n" : "state = not running\\npid = 0\\n";
+            exit(0);
+        }
+        file_put_contents(\$dir.'/calls.log', implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
+        if (\$cmd === 'bootstrap') {
+            \$count = ((int) @file_get_contents(\$dir.'/bootstrap-count')) + 1;
+            file_put_contents(\$dir.'/bootstrap-count', (string) \$count);
+            if (\$count === 1 && {$bootstrapFirstCallExitCode} !== 0) {
+                fwrite(STDERR, "service already loaded\\n");
+                exit({$bootstrapFirstCallExitCode});
+            }
+            exit(0);
+        }
+        if (\$cmd === 'kickstart' && {$kickstartExitCode} !== 0) {
+            fwrite(STDERR, "kickstart failed: throttled\\n");
+            exit({$kickstartExitCode});
         }
         exit(0);
         PHP);

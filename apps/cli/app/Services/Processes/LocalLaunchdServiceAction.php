@@ -18,8 +18,18 @@ final readonly class LocalLaunchdServiceAction
 
     private const string LABEL_PATTERN = '#^dev\.hardimpact\.orbit\.[A-Za-z0-9_.-]+$#';
 
+    /**
+     * Covers launchd's default 10-second ThrottleInterval: a unit whose spawn
+     * is throttled becomes observable as running within this window.
+     */
+    private const float START_READINESS_TIMEOUT_SECONDS = 15.0;
+
+    private const int START_READINESS_POLL_MICROSECONDS = 500_000;
+
     public function __construct(
         private ?string $osFamily = null,
+        private ?float $startReadinessTimeoutSeconds = null,
+        private ?int $startReadinessPollMicroseconds = null,
     ) {}
 
     /**
@@ -214,27 +224,7 @@ final readonly class LocalLaunchdServiceAction
         $plist = $this->plistPathForLabel($label);
 
         if ($action === 'start') {
-            $enable = $this->runProcess(['launchctl', 'enable', $target]);
-            if (! $enable->isSuccessful()) {
-                throw $this->failure('start', $label, $enable);
-            }
-
-            $bootstrap = $this->runProcess(['launchctl', 'bootstrap', $gui, $plist]);
-            if ($bootstrap->isSuccessful()) {
-                return ['action' => 'start', 'label' => $label, 'changed' => true];
-            }
-
-            $error = strtolower($bootstrap->getErrorOutput().' '.$bootstrap->getOutput());
-            if (! str_contains($error, 'already loaded') && ! str_contains($error, 'already bootstrapped')) {
-                throw $this->failure('start', $label, $bootstrap);
-            }
-
-            $kick = $this->runProcess(['launchctl', 'kickstart', '-k', $target]);
-            if (! $kick->isSuccessful()) {
-                throw $this->failure('start', $label, $kick);
-            }
-
-            return ['action' => 'start', 'label' => $label, 'changed' => true];
+            return $this->start($label, $gui, $target, $plist);
         }
 
         if ($action === 'stop') {
@@ -275,6 +265,62 @@ final readonly class LocalLaunchdServiceAction
         }
 
         throw $this->failure($action, $label, $result);
+    }
+
+    /**
+     * Outcome-based, convergent start. An already-running unit is confirmed
+     * without being touched (start never kills). Otherwise the unit is booted
+     * out and re-bootstrapped from the on-disk plist — resetting launchd's
+     * accumulated spawn penalty and loading the current definition — then
+     * kickstarted, because development units carry RunAtLoad=false and never
+     * spawn from bootstrap alone. Bootstrap or kickstart refusals inside
+     * launchd's throttle window are not failures: success is decided by the
+     * readiness poll that covers that window.
+     *
+     * @return array<string, mixed>
+     */
+    private function start(string $label, string $gui, string $target, string $plist): array
+    {
+        $enable = $this->runProcess(['launchctl', 'enable', $target]);
+        if (! $enable->isSuccessful()) {
+            throw $this->failure('start', $label, $enable);
+        }
+
+        $print = $this->runProcess(['launchctl', 'print', $target]);
+        if ($print->isSuccessful() && $this->isLaunchdRunning($print->getOutput())) {
+            return ['action' => 'start', 'label' => $label, 'changed' => false];
+        }
+
+        $this->runProcess(['launchctl', 'bootout', $target]);
+        $bootstrap = $this->runProcess(['launchctl', 'bootstrap', $gui, $plist]);
+        $kick = $this->runProcess(['launchctl', 'kickstart', $target]);
+
+        if ($this->waitUntilRunning($target)) {
+            return ['action' => 'start', 'label' => $label, 'changed' => true];
+        }
+
+        throw $this->failure('start', $label, $bootstrap->isSuccessful() ? $kick : $bootstrap);
+    }
+
+    private function waitUntilRunning(string $target): bool
+    {
+        $timeout = $this->startReadinessTimeoutSeconds ?? self::START_READINESS_TIMEOUT_SECONDS;
+        $poll = $this->startReadinessPollMicroseconds ?? self::START_READINESS_POLL_MICROSECONDS;
+        $deadline = microtime(true) + max(0.1, $timeout);
+
+        while (true) {
+            $print = $this->runProcess(['launchctl', 'print', $target]);
+
+            if ($print->isSuccessful() && $this->isLaunchdRunning($print->getOutput())) {
+                return true;
+            }
+
+            if (microtime(true) >= $deadline) {
+                return false;
+            }
+
+            usleep(max(1000, $poll));
+        }
     }
 
     /**

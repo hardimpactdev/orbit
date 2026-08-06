@@ -54,7 +54,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    serving node. On success, record and publish a durable `started` event. On
    backend false or thrown driver error, record and publish a durable `failed`
    event (status becomes `unknown`) before rethrowing or reporting the failure
-   so status is never stuck transitional.
+   so status is never stuck transitional. On macOS launchd the node-side start
+   is outcome-based: an already-running unit is confirmed without a restart, a
+   stopped unit is re-bootstrapped from its on-disk definition (clearing
+   launchd's accumulated spawn penalty) and kickstarted, and success requires
+   launchd to observe the unit running within a readiness window that covers
+   launchd's spawn throttle. A throttled bootstrap or kickstart alone never
+   declares the start failed.
 8. After a successful bulk development start, mark the group awake before
    releasing the hibernation lock. Named, node-owned, and `app-prod` actions do
    not change a group-level hibernation marker.
