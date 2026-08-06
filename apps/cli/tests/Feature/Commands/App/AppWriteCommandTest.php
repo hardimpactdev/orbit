@@ -214,15 +214,38 @@ describe('app and instance write commands', function (): void {
                     'name' => 'docs',
                     'node' => 'app-1',
                     'path' => '/home/orbit/apps/docs',
+                    'domain' => 'docs.example.com',
                     'root' => 'public',
                     'php_version' => '8.5',
-                    'domain' => 'docs.example.com',
                     'runtime_proxy_transport' => 'https',
                 ]
             ),
         );
 
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['action'])->toBe('adopted');
+    });
+
+    it('omits instance:register root and php version unless they are explicit', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'converged'],
+            'app' => ['name' => 'docs', 'node' => 'app-1'],
+        ]));
+
+        [$exitCode] = runCommand($this, 'instance:register', [
+            'app' => 'docs',
+            '--node' => 'app-1',
+            '--path' => '/home/orbit/apps/docs',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/instances/register'
+            && ! array_key_exists('root', $request->data())
+            && ! array_key_exists('php_version', $request->data()),
+        );
+
+        expect($exitCode)->toBe(0);
     });
 
     it('omits instance:register runtime proxy transport unless it is explicit', function (): void {
@@ -742,7 +765,7 @@ describe('project and instance mutation command human renderers', function (): v
             ->and($output)
             ->toContain('Apply and verify instance runtime')
             ->and($output)
-            ->toContain("Instance for app 'docs' successfully registered on node 'app-1'.")
+            ->toContain("Instance 'docs.development' successfully registered on node 'app-1'.")
             ->and($output)
             ->not->toContain('action:')->and($output)
             ->not->toContain('{');
@@ -765,7 +788,7 @@ describe('project and instance mutation command human renderers', function (): v
             ->toBe(0)
             ->and($output)
             ->toContain(
-                "Instance for app 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.",
+                "Instance 'docs.development' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.",
             )
             ->and($output)
             ->not->toContain('{');
@@ -787,7 +810,28 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for app 'docs' is already converged on node 'app-1'. No changes were needed.")
+            ->toContain("Instance 'docs.development' is already converged on node 'app-1'. No changes were needed.")
+            ->and($output)
+            ->not->toContain('{');
+    });
+
+    it('renders instance:register moved action as explicit move prose', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'moved'],
+            'app' => ['name' => 'docs'],
+            'instance' => ['name' => 'development', 'node' => 'new-app', 'path' => '/srv/docs'],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'instance:register', [
+            'app' => 'docs.development',
+            '--node' => 'new-app',
+            '--path' => '/srv/docs',
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Instance 'docs.development' successfully moved to path '/srv/docs' on node 'new-app'.")
             ->and($output)
             ->not->toContain('{');
     });
@@ -818,9 +862,9 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for app 'docs' is registered on node 'app-1', but proxy enactment is incomplete.")
+            ->toContain("Instance 'docs.development' is registered on node 'app-1', but proxy enactment is incomplete.")
             ->toContain("failed on node 'gateway-router' during 'caddy.router.install'")
-            ->not->toContain("Instance for app 'docs' converged")
+            ->not->toContain("Instance 'docs.development' converged")
             ->not->toContain('No changes were needed.');
     });
 
@@ -847,7 +891,7 @@ describe('project and instance mutation command human renderers', function (): v
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Instance for app 'docs' successfully registered on node 'app-1'.")
+            ->toContain("Instance 'docs.development' successfully registered on node 'app-1'.")
             ->and($output)
             ->toContain("Production domain 'docs.example.com' is not yet active.")
             ->and($output)

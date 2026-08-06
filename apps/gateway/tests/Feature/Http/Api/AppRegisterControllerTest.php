@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Apps\AppRuntimeContainerManager;
@@ -392,7 +394,7 @@ describe('AppRegisterController', function (): void {
         expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
-    it('moves an existing app when node and path are explicit', function (): void {
+    it('moves only the selected instance when the dotted selector plus node and path are explicit', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
         ]);
@@ -412,19 +414,100 @@ describe('AppRegisterController', function (): void {
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $oldNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
             'adopted' => true,
         ]);
+        app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
+        app_register_instance($app, 'second', $targetNode, '/srv/other');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs.development',
+                'node' => 'new-app',
+                'path' => '/srv/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'moved')
+            ->assertJsonPath('success.data.instance.name', 'development')
+            ->assertJsonPath('success.data.instance.node', 'new-app')
+            ->assertJsonPath('success.data.instance.path', '/srv/docs')
+            ->assertJsonMissingPath('success.data.app.path');
+
+        $app = App::query()->where('name', 'docs')->firstOrFail();
+
+        expect($app->node_id)
+            ->toBe($targetNode->id)
+            ->and($app->path)
+            ->toBe('/srv/docs')
+            ->and($app->adopted)
+            ->toBeTrue();
+
+        $sibling = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'second')
+            ->firstOrFail();
+        $siblingConfig = $sibling->driver_config;
+
+        expect($siblingConfig)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($siblingConfig->node_id)
+            ->toBe($targetNode->id)
+            ->and($siblingConfig->path)
+            ->toBe('/srv/other');
+
+        expect($remoteShell->scripts)
+            ->toContainAppRegisterSourcePathProbe('/srv/docs');
+    });
+
+    it('refuses to move an existing instance when the selector is a bare app slug', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $oldNode = createTestAppHostNode([
+            'name' => 'old-app',
+            'tld' => 'old',
+            'status' => 'active',
+        ]);
+        $targetNode = createTestAppHostNode([
+            'name' => 'new-app',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $oldNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'adopted' => true,
+        ]);
+        app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
@@ -441,25 +524,181 @@ describe('AppRegisterController', function (): void {
         );
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'moved')
-            ->assertJsonPath('success.data.instance.node', 'new-app')
-            ->assertJsonPath('success.data.instance.path', '/srv/docs')
-            ->assertJsonMissingPath('success.data.app.path');
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'app.path_collision');
+
+        $app = App::query()->where('name', 'docs')->firstOrFail();
+        $instance = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'development')
+            ->firstOrFail();
+        $config = $instance->driver_config;
+
+        expect($app->node_id)
+            ->toBe($oldNode->id)
+            ->and($app->path)
+            ->toBe('/home/orbit/apps/docs')
+            ->and($config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($config->node_id)
+            ->toBe($oldNode->id)
+            ->and($config->path)
+            ->toBe('/home/orbit/apps/docs');
+    });
+
+    it('requires an instance selector when a bare slug matches multiple instances', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $oldNode = createTestAppHostNode([
+            'name' => 'old-app',
+            'tld' => 'old',
+            'status' => 'active',
+        ]);
+        $targetNode = createTestAppHostNode([
+            'name' => 'new-app',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $oldNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'adopted' => true,
+        ]);
+        app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
+        app_register_instance($app, 'second', $targetNode, '/srv/other');
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs',
+                'node' => 'new-app',
+                'path' => '/srv/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
 
-        expect($app->node_id)
-            ->toBe($targetNode->id)
-            ->and($app->path)
-            ->toBe('/srv/docs')
-            ->and($app->adopted)
-            ->toBeTrue()
-            ->and($remoteShell->nodeNames[0])
-            ->toBe('new-app');
+        expect($app->node_id)->toBe($oldNode->id);
+    });
 
-        expect($remoteShell->scripts)
-            ->toContainAppRegisterSourcePathProbe('/srv/docs');
+    it('rejects a dotted selector that names a missing instance', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44');
+        $app = App::factory()->for($targetNode, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'adopted' => true,
+        ]);
+        app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs.staging',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'name');
+    });
+
+    it('keeps omitted root and php version values on re-register', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44');
+        $app = App::factory()->for($targetNode, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'web',
+            'php_version' => '8.4',
+            'adopted' => true,
+        ]);
+        app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs', 'web');
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.4', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response->assertOk();
+
+        $app = App::query()->where('name', 'docs')->firstOrFail();
+
+        expect($app->document_root)
+            ->toBe('web')
+            ->and($app->php_version)
+            ->toBe('8.4');
     });
 
     it('allows an app-dev node to re-register an existing app with a domain under its development tld', function (): void {
@@ -703,6 +942,27 @@ describe('AppRegisterController', function (): void {
             ->toContainAppRegisterSourcePathProbe('/home/orbit/apps/docs');
     });
 });
+
+function app_register_instance(
+    App $app,
+    string $name,
+    Node $node,
+    string $path,
+    string $documentRoot = 'public',
+    ?string $domain = null,
+): Instance {
+    return Instance::factory()->for($app)->create([
+        'name' => $name,
+        'adopted' => true,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $path,
+            document_root: $documentRoot,
+            domain: $domain,
+        ),
+    ]);
+}
 
 function fake_app_register_source_path_probe(
     string $address,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
@@ -63,9 +64,12 @@ final class AppRegisterController implements Loggable
         $result = app(AppRegistrar::class)->register($arguments);
 
         $name = $this->optionalString($request, 'name');
-        $this->activitySubject = $name === null
+        $appName = $name !== null && str_contains($name, '.')
+            ? explode('.', $name, 2)[0]
+            : $name;
+        $this->activitySubject = $appName === null
             ? null
-            : App::query()->where('name', $name)->first();
+            : App::query()->where('name', $appName)->first();
 
         return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
@@ -84,14 +88,32 @@ final class AppRegisterController implements Loggable
             return null;
         }
 
-        $existingNode = App::query()
-            ->with('node')
-            ->where('name', $name)
-            ->first()
-            ?->node;
+        $appName = $name;
+        $instanceName = null;
 
-        if ($existingNode instanceof Node) {
-            return $existingNode;
+        if (str_contains($name, '.')) {
+            [$appName, $instanceName] = explode('.', $name, 2);
+        }
+
+        $existingApp = App::query()
+            ->with(['node', 'instances'])
+            ->where('name', $appName)
+            ->first();
+
+        if ($existingApp instanceof App && $instanceName !== null) {
+            $config = $existingApp->instances->firstWhere('name', $instanceName)?->driver_config;
+
+            if ($config instanceof OrbitInstanceDriverConfigData && $config->node_id !== null) {
+                $instanceNode = Node::query()->find($config->node_id);
+
+                if ($instanceNode instanceof Node) {
+                    return $instanceNode;
+                }
+            }
+        }
+
+        if ($existingApp?->node instanceof Node) {
+            return $existingApp->node;
         }
 
         return $this->singleActiveAppHostNode();

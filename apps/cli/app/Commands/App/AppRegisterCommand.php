@@ -14,11 +14,11 @@ final class AppRegisterCommand extends AppGatewayCommand
 
     #[\Override]
     protected $signature = 'instance:register
-        {app? : App name}
+        {app? : App name or app.instance selector}
         {--node= : Target instance node}
         {--path= : Existing app path on the target node}
-        {--root=public : Document root relative to app path}
-        {--php-version=8.5 : PHP version}
+        {--root= : Document root relative to app path (default: existing value or public)}
+        {--php-version= : PHP version (default: existing app value or 8.5)}
         {--domain= : Production domain}
         {--runtime-proxy-transport= : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}';
@@ -93,6 +93,7 @@ final class AppRegisterCommand extends AppGatewayCommand
     {
         return match ($this->action($response)) {
             'adopted' => "Instance for app '{$name}' adopted",
+            'moved' => "Instance for app '{$name}' moved",
             'converged' => "Instance for app '{$name}' converged",
             'partial' => "Instance for app '{$name}' partially enacted",
             default => "Instance for app '{$name}' registered",
@@ -128,19 +129,34 @@ final class AppRegisterCommand extends AppGatewayCommand
      */
     private function successLine(array $response): string
     {
-        $app = $this->appData($response);
-        $name = (string) ($app['name'] ?? '');
+        $selector = $this->selectorFor($response);
         $instance = $this->instanceData($response);
         $node = (string) ($instance['node'] ?? '');
         $path = (string) ($instance['path'] ?? '');
 
         return match ($this->action($response)) {
-            'adopted' => "Instance for app '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
-            'converged' => "Instance for app '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            'adopted' => "Instance '{$selector}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'moved' => "Instance '{$selector}' successfully moved to path '{$path}' on node '{$node}'.",
+            'converged' => "Instance '{$selector}' is already converged on node '{$node}'. No changes were needed.",
             'partial'
-                => "Instance for app '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
-            default => "Instance for app '{$name}' successfully registered on node '{$node}'.",
+                => "Instance '{$selector}' is registered on node '{$node}', but proxy enactment is incomplete.",
+            default => "Instance '{$selector}' successfully registered on node '{$node}'.",
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function selectorFor(array $response): string
+    {
+        $appName = (string) ($this->appData($response)['name'] ?? '');
+        $instanceName = (string) ($this->instanceData($response)['name'] ?? '');
+
+        if ($appName === '' || $instanceName === '') {
+            return $appName !== '' ? $appName : (string) $this->stringArgument('app');
+        }
+
+        return "{$appName}.{$instanceName}";
     }
 
     /**
@@ -152,15 +168,15 @@ final class AppRegisterCommand extends AppGatewayCommand
             'name' => $name,
             'node' => $this->stringOption('node'),
             'path' => $this->stringOption('path'),
-            'root' => $this->stringOption('root') ?? 'public',
-            'php_version' => $this->stringOption('php-version') ?? '8.5',
             'domain' => $this->stringOption('domain'),
         ];
 
-        $runtimeProxyTransport = $this->stringOption('runtime-proxy-transport');
+        foreach (['root' => 'root', 'php-version' => 'php_version', 'runtime-proxy-transport' => 'runtime_proxy_transport'] as $option => $key) {
+            $value = $this->stringOption($option);
 
-        if ($runtimeProxyTransport !== null) {
-            $payload['runtime_proxy_transport'] = $runtimeProxyTransport;
+            if ($value !== null) {
+                $payload[$key] = $value;
+            }
         }
 
         return $this->gatewayPost('/api/instances/register', $payload);
