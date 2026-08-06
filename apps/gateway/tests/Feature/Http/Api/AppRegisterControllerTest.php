@@ -525,7 +525,9 @@ describe('AppRegisterController', function (): void {
 
         $response
             ->assertStatus(422)
-            ->assertJsonPath('error.code', 'app.path_collision');
+            ->assertJsonPath('error.code', 'app.path_collision')
+            ->assertJsonPath('error.meta.existing_instance', 'docs.development')
+            ->assertJsonPath('error.meta.serving_node', 'old-app');
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
         $instance = Instance::query()

@@ -149,9 +149,8 @@ final class AppRegistrar
                 ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
                     'path' => $currentPath,
-                    'existing_project' => $existingApp->name,
                     'existing_instance' => "{$input['app']}.{$selectedName}",
-                    'node' => $currentNodeName,
+                    'serving_node' => $currentNodeName,
                 ],
             );
         }
@@ -162,10 +161,9 @@ final class AppRegistrar
                 message: "Instance '{$input['app']}.{$selectedName}' is already registered at '{$currentPath}'. "
                 ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
-                    'path' => $path,
-                    'existing_project' => $existingApp->name,
+                    'path' => $currentPath,
                     'existing_instance' => "{$input['app']}.{$selectedName}",
-                    'node' => $node->name,
+                    'serving_node' => $node->name,
                 ],
             );
         }
@@ -365,15 +363,17 @@ final class AppRegistrar
             return null;
         }
 
-        $ownerName = $pathOwner?->name ?? $owningInstance?->app?->name.'.'.$owningInstance?->name;
+        $owningSelector = $pathOwner instanceof App
+            ? "{$pathOwner->name}.{$pathOwner->environment}"
+            : $owningInstance?->app?->name.'.'.$owningInstance?->name;
 
         return $this->failCommand(
             code: 'app.path_collision',
-            message: "Path '{$path}' on node '{$node->name}' is already owned by project '{$ownerName}'.",
+            message: "Path '{$path}' on node '{$node->name}' is already owned by instance '{$owningSelector}'.",
             meta: [
                 'path' => $path,
-                'existing_project' => $ownerName,
-                'node' => $node->name,
+                'existing_instance' => $owningSelector,
+                'serving_node' => $node->name,
             ],
         );
     }

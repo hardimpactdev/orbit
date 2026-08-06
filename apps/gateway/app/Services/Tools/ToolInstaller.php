@@ -475,10 +475,6 @@ final readonly class ToolInstaller
     }
 
     /**
-     * @param  array<string, mixed>  $config
-     * @param  callable(array<string, mixed>): string  $scriptFactory
-     */
-    /**
      * Re-installing must never reset stored intent the request did not name:
      * an omitted config keeps the stored config, request keys override stored
      * keys, and install_users accumulates — installing for one user does not
@@ -511,6 +507,10 @@ final readonly class ToolInstaller
         return $merged === [] ? null : $merged;
     }
 
+    /**
+     * @param  array<string, mixed>  $config
+     * @param  callable(array<string, mixed>): string  $scriptFactory
+     */
     private function runToolScriptWithGitHubAuth(
         Node $node,
         string $tool,

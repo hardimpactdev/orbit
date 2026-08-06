@@ -550,11 +550,19 @@ final readonly class ProcessServiceCatalog
             return [];
         }
 
-        $singlePort = is_int($entry['target_port'] ?? null) && ! is_array($entry['service_ports'] ?? null);
-
-        if (! $singlePort || array_keys($serviceOptions) !== ['published_port']) {
+        if (array_keys($serviceOptions) !== ['published_port']) {
             throw new GatewayApiException(
                 "Managed service '{$service}' does not accept PostgreSQL service options.",
+                'validation_failed',
+                ['field' => 'service_options', 'reason' => 'process_service_options_unsupported'],
+            );
+        }
+
+        $singlePort = is_int($entry['target_port'] ?? null) && ! is_array($entry['service_ports'] ?? null);
+
+        if (! $singlePort) {
+            throw new GatewayApiException(
+                "Managed service '{$service}' does not accept a published-port override.",
                 'validation_failed',
                 ['field' => 'service_options', 'reason' => 'process_service_options_unsupported'],
             );
