@@ -22,7 +22,11 @@ final class NodeDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'node',
                 'restore_node_access_grant_invalid',
             ),
-            self::invalid('node.access_permission_invalid', 'node'),
+            self::genuine(
+                'node.access_permission_invalid',
+                'node',
+                'restore_node_access_permission_invalid',
+            ),
             self::genuine(
                 'node.agent_expectation_stale',
                 'node',

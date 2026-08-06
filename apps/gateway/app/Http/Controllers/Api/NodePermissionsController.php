@@ -107,26 +107,14 @@ final readonly class NodePermissionsController implements Loggable
             $toRemove = array_map(trim(...), explode(',', $removeOpt));
             $toRemove = array_values(array_filter($toRemove));
 
-            try {
-                app(NodePermissionNormalizer::class)->validate($toRemove);
-            } catch (InvalidArgumentException $e) {
-                return $this->error(
-                    code: 'validation_failed',
-                    message: $e->getMessage(),
-                    meta: ['field' => 'remove'],
-                    status: 422,
-                );
-            }
-
             $storedPermissions = $grant->permissions ?? ['*'];
             $currentPermissions = is_array($storedPermissions) ? $storedPermissions : ['*'];
             $newPermissions = array_values(array_diff($currentPermissions, $toRemove));
 
-            if ($newPermissions === []) {
-                $newPermissions = [];
-            }
-
-            $normalized = app(NodePermissionNormalizer::class)->normalize($newPermissions);
+            // Removal is never validated against the live permission registry:
+            // stale stored names are exactly the entries an operator must be
+            // able to strip, and unknown leftovers stay visible to doctor.
+            $normalized = app(NodePermissionNormalizer::class)->normalizeKnown($newPermissions);
             $newPermissions = $normalized->permissions;
 
             $workspaceBoundaryFailure = $this->workspaceBoundaryFailure(

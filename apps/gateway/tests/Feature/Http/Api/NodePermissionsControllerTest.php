@@ -361,6 +361,68 @@ describe('NodePermissionsController', function (): void {
         expect(DB::table('node_access')->count())->toBe(1);
     });
 
+    it('removes stale permission names the registry no longer knows', function (): void {
+        createPermsCallerNode('gateway');
+        $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $controlId,
+            'serving_node_id' => $appId,
+            'permissions' => json_encode(['app:credentials', 'app:mount', 'instance:read', 'node:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'remove' => 'app:credentials,app:mount',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.action', 'updated')
+            ->assertJsonPath('success.data.permissions', ['instance:read', 'node:read']);
+    });
+
+    it('preserves other stale permission names when removing one of them', function (): void {
+        createPermsCallerNode('gateway');
+        $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $controlId,
+            'serving_node_id' => $appId,
+            'permissions' => json_encode(['app:credentials', 'app:mount', 'instance:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'remove' => 'app:credentials',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.action', 'updated')
+            ->assertJsonPath('success.data.permissions', ['app:mount', 'instance:read']);
+    });
+
     it('does not preserve a stale production workspace grant through remove mode', function (): void {
         createPermsCallerNode('gateway');
         $productionConsumerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([

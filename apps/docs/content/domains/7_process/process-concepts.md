@@ -176,6 +176,12 @@ readiness check observes every expected runtime unit running. Public bulk
 `process:start` keeps process-order semantics and does not adopt a
 process-dependency model.
 
+A wake run that ends terminally failed serves a failed wake page that names
+the recorded failure reason and offers an explicit retry link. The failed
+state is bounded: after a short backoff (default 60 seconds,
+`ORBIT_RUNTIME_FAILED_ACTIVATION_RETRY_SECONDS`), an ordinary request begins a
+fresh wake run instead of replaying the stale failed page.
+
 One hour without route activity makes a group eligible for an automatic stop
 during the next ten-minute sweep. The hibernator runs independently from the
 Orbit Scheduler. Routes for one scope share its marker, activity state, and

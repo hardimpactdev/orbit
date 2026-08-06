@@ -962,6 +962,7 @@ final readonly class NodesProbe
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
             'node.access_grant_invalid',
+            'node.access_permission_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
             'node.websocket.backend_cert_missing',
@@ -1022,6 +1023,7 @@ final readonly class NodesProbe
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
             'node.gateway_runtime_unready' => $this->reconcileGatewayService($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
+            'node.access_permission_invalid' => $this->reconcileAccessPermissions($node, $entry),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
             'node.role_baseline_mismatch',
             'node.websocket.backend_cert_missing',
@@ -1124,6 +1126,54 @@ final readonly class NodesProbe
                 $query->select('id')->from('nodes')->where('status', NodeStatus::Active->value);
             })
             ->delete();
+    }
+
+    /**
+     * Strip permission strings the registry no longer knows and re-normalize
+     * the remainder. Bounded to the grant named by the drift entry when its
+     * detail carries the edge; otherwise every grant touching the node.
+     */
+    private function reconcileAccessPermissions(Node $node, DriftEntry $entry): void
+    {
+        $registry = $this->nodePermissionRegistry();
+        $normalizer = $this->nodePermissionNormalizer();
+        $detail = $entry->detail;
+        $consumerId = is_int($detail['consumer_node_id'] ?? null) ? $detail['consumer_node_id'] : null;
+        $servingId = is_int($detail['serving_node_id'] ?? null) ? $detail['serving_node_id'] : null;
+
+        $grants = NodeAccess::query()
+            ->when(
+                $consumerId !== null && $servingId !== null,
+                static function ($query) use ($consumerId, $servingId): void {
+                    $query->where('consumer_node_id', $consumerId)->where('serving_node_id', $servingId);
+                },
+                static function ($query) use ($node): void {
+                    $query->where(function ($inner) use ($node): void {
+                        $inner->where('consumer_node_id', $node->id)
+                            ->orWhere('serving_node_id', $node->id);
+                    });
+                },
+            )
+            ->get();
+
+        foreach ($grants as $grant) {
+            /** @var list<string> $permissions */
+            $permissions = is_array($grant->permissions) ? $grant->permissions : [];
+
+            if ($permissions === []) {
+                continue;
+            }
+
+            $known = array_values(array_filter(
+                $permissions,
+                static fn (string $permission): bool => $registry->isKnown($permission),
+            ));
+            $normalized = $normalizer->normalize($known)->permissions;
+
+            if ($normalized !== $permissions) {
+                $grant->update(['permissions' => $normalized]);
+            }
+        }
     }
 
     private function reconcileRoleConvergenceFailures(Node $node, DriftEntry $entry): void

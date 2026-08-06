@@ -1929,6 +1929,52 @@ describe('access permission validity', function (): void {
         expect($permission)->toHaveCount(0);
     });
 
+    it('reconciles invalid grant permissions by stripping unknown strings', function (): void {
+        $consumer = nodes_probe_node([
+            'name' => 'consumer',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        $serving = nodes_probe_node([
+            'name' => 'serving',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        $grant = NodeAccess::create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['app:credentials', 'app:mount', 'instance:read', 'node:read'],
+        ]);
+
+        $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
+        $permission = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid',
+        ));
+
+        expect($permission)->toHaveCount(1);
+
+        $this->probe->reconcile($consumer, $permission[0]);
+
+        expect($grant->fresh()?->permissions)
+            ->toBe(['instance:read', 'node:read']);
+
+        $remaining = array_filter(
+            $this->probe->diff($consumer, new ProbeSnapshot([])),
+            fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid',
+        );
+
+        expect($remaining)->toHaveCount(0);
+    });
+
     it('detects unknown permissions on grants', function (): void {
         $consumer = nodes_probe_node([
             'name' => 'consumer',

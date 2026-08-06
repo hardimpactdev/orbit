@@ -33,6 +33,7 @@ final readonly class RuntimeActivationPage
                 [
                     'name' => $scope->displayName(),
                     'failed' => $failed,
+                    'failureReason' => $failed ? $this->failureReason($run) : null,
                     'refreshUri' => $uri,
                     'retryUri' => $this->retryUri($uri),
                     'scriptNonce' => $scriptNonce,
@@ -76,6 +77,18 @@ final readonly class RuntimeActivationPage
         }
 
         return implode('; ', $directives);
+    }
+
+    /**
+     * Gateway-authored failure prose recorded on the run; never node-side
+     * output, so it is safe to render on the public wake page.
+     */
+    private function failureReason(OperationRun $run): ?string
+    {
+        $error = $run->error;
+        $message = is_array($error) ? ($error['message'] ?? null) : null;
+
+        return is_string($message) && trim($message) !== '' ? trim($message) : null;
     }
 
     private function safeOriginalUri(string $uri): string

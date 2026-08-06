@@ -54,6 +54,7 @@ final readonly class RuntimeActivationOperations
                         $current instanceof OperationRun
                         && $current->status === OperationStatus::Failed
                         && ! $retry
+                        && ! $this->failedRetryBackoffElapsed($current)
                     ) {
                         $resolvedRun = $current;
 
@@ -161,6 +162,23 @@ final readonly class RuntimeActivationOperations
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * A terminal failed activation stays failed only for a bounded backoff;
+     * afterwards an ordinary request begins a fresh wake run instead of
+     * serving the stale failed page until someone finds ?orbit-wake-retry=1.
+     */
+    private function failedRetryBackoffElapsed(OperationRun $run): bool
+    {
+        $backoff = (int) config(
+            'orbit.runtime_hibernation.failed_activation_retry_seconds',
+            default: 60,
+        );
+
+        $failedAt = $run->finished_at ?? $run->updated_at;
+
+        return $failedAt->lte(now()->subSeconds(max(1, $backoff)));
     }
 
     private function isStale(OperationRun $run): bool

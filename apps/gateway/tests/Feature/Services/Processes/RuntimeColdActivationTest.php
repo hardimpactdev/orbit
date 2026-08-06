@@ -754,6 +754,98 @@ it('keeps the cold marker and failed progress page when a process cannot start',
         ->assertDontSee('Wake-up paused');
 });
 
+it('surfaces the failure reason on the failed wake page', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor(
+        dependencies: [],
+        failingAction: 'internal:process-systemd-service:start',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)->toBe(OperationStatus::Failed);
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
+        ->assertSee('The application could not be prepared.');
+});
+
+it('auto-retries a terminal failed activation after the backoff elapses', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor(
+        dependencies: [],
+        failingAction: 'internal:process-systemd-service:start',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)->toBe(OperationStatus::Failed);
+
+    // Within the backoff the failed page persists without a new run.
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )
+        ->assertHeader('X-Orbit-Runtime-Activation-State', 'failed');
+
+    expect(OperationRun::query()->count())->toBe(1);
+
+    $this->travel(61)->seconds();
+
+    $retried = $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    );
+
+    $retried
+        ->assertServiceUnavailable()
+        ->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+
+    expect(OperationRun::query()->count())->toBe(2);
+});
+
 it('launches the activation runner as a detached one-shot gateway container', function (): void {
     $run = app(OperationRunRecorder::class)->queued(
         operationId: 'runtime-activation:app-instance-1',

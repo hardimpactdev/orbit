@@ -131,7 +131,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Mode conflict | More than one of `--preset`, `--permissions`, `--add`, `--remove` is supplied. | Failure |
 | Empty replacement | `--preset` or `--permissions` normalizes to an empty set. | Failure |
 | Grant not found | Read mode or `--remove` against a missing grant edge. | Failure |
-| Unknown permission | Any supplied permission string is not registry-known. | Failure |
+| Unknown permission | A permission string supplied to `--preset`, `--permissions`, or `--add` is not registry-known. `--remove` accepts unknown names: stripping a stale stored string is exactly how an invalid grant is repaired, so removal never validates against the live registry. | Failure (additive and replacement modes only) |
 | Unknown preset | The named preset is not registry-known. | Failure |
 | Workspace role boundary | A replacement or additive result contains `*` or `workspace:*` while either grant endpoint has `app-prod`. | Failure (`error.code=workspace.unsupported_for_production`) |
 
@@ -139,9 +139,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 - [`doctor --family=node`](../../node-doctor.md) reports
   `node.access_permission_invalid` when a stored permission set does not
-  normalize cleanly against the permission registry.
+  normalize cleanly against the permission registry, and `--restore` strips
+  the unrecognised strings and re-normalizes the remainder.
 - `node:permissions` is the explicit grant-management surface for re-normalizing or
-  rewriting a grant's permission set after such drift.
+  rewriting a grant's permission set after such drift; `--remove` accepts
+  stale names so the invalid entries can be stripped selectively.
 
 ## Activity Logging
 

@@ -169,6 +169,14 @@
 @endforeach
         }
 
+        .reason {
+            margin: 28px 0 0;
+            max-width: 32rem;
+            color: #a1a1aa;
+            font-size: 13px;
+            text-align: center;
+        }
+
         .retry {
             display: block;
             margin-top: 28px;
@@ -244,6 +252,9 @@
         </div>
 
         @if ($failed)
+            @if ($failureReason !== null)
+                <p class="reason">{{ $failureReason }}</p>
+            @endif
             <a class="retry" href="{{ $retryUri }}">Try again</a>
         @endif
     </main>

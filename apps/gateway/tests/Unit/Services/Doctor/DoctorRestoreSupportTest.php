@@ -95,7 +95,7 @@ it('only marks support-registered codes restorable', function (): void {
         ->and(DoctorIssueCatalog::isRestorable('node.wireguard_peer_extra'))
         ->toBeFalse()
         ->and(DoctorIssueCatalog::isRestorable('node.access_permission_invalid'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(DoctorIssueCatalog::isRestorable('app.production_user_missing'))
         ->toBeFalse()
         ->and(DoctorIssueCatalog::isRestorable('tool.seaweedfs.credentials_missing'))
@@ -119,12 +119,12 @@ it('binds node genuine codes to NodesProbe restoreSupport consumed by reconcile'
         $node,
         new DriftEntry(
             family: 'node',
-            key: 'node.access_permission_invalid',
+            key: 'node.wireguard_peer_extra',
             kind: DriftKind::Divergent,
             summary: 'not restorable',
         ),
     ))
-        ->toThrow(RuntimeException::class, "NodesProbe cannot reconcile drift key 'node.access_permission_invalid'");
+        ->toThrow(RuntimeException::class, "NodesProbe cannot reconcile drift key 'node.wireguard_peer_extra'");
 
     // Representative supported key is accepted by the gate (may complete or fail downstream).
     try {

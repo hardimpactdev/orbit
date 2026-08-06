@@ -128,6 +128,10 @@ return [
             key: 'ORBIT_RUNTIME_ACTIVATION_READINESS_TIMEOUT_SECONDS',
             default: 60,
         ),
+        'failed_activation_retry_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_FAILED_ACTIVATION_RETRY_SECONDS',
+            default: 60,
+        ),
         'activation_readiness_poll_milliseconds' => (int) env(
             key: 'ORBIT_RUNTIME_ACTIVATION_READINESS_POLL_MILLISECONDS',
             default: 200,

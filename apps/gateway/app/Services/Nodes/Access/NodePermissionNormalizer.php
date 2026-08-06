@@ -76,6 +76,40 @@ final readonly class NodePermissionNormalizer
     }
 
     /**
+     * Normalize a stored permission set that may contain stale names.
+     *
+     * Registry-known permissions are deduplicated and coverage-reduced as in
+     * normalize(); unknown strings are preserved verbatim instead of throwing.
+     * Removal paths use this so a grant holding names the registry no longer
+     * recognizes stays repairable — the stale leftovers remain visible to
+     * doctor rather than blocking the whole write.
+     *
+     * @param  list<string>  $permissions
+     */
+    public function normalizeKnown(array $permissions): NodeAccessPermissions
+    {
+        $known = [];
+        $unknown = [];
+
+        foreach ($permissions as $permission) {
+            if ($this->registry->isKnown($permission)) {
+                $known[] = $permission;
+            } else {
+                $unknown[] = $permission;
+            }
+        }
+
+        $normalized = $this->normalize($known);
+        $kept = [...$normalized->permissions, ...array_values(array_unique($unknown))];
+        sort($kept);
+
+        return new NodeAccessPermissions(
+            permissions: $kept,
+            removed: $normalized->removed,
+        );
+    }
+
+    /**
      * Validate that all permissions are known.
      *
      * @param  list<string>  $permissions

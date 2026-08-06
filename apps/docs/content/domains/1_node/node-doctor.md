@@ -275,7 +275,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.updates_unverifiable` | A supported update driver cannot inspect update posture. Unsupported targets are silent instead. The issue object uses `key=node.updates` and this value as `code`. |
 | `node.local_default_invalid` | Catalogued issue for a missing or unauthorized local `node:default` preference. A dedicated default-preference probe under `--self` is pending, not current doctor behavior. |
 
-`node.access_permission_invalid` and `node.wireguard_peer_extra` are not restore targets (`invalid_intent` / adopt-only respectively); doctor restore does not invent permission or peer intent. Use `node:permissions` for permission-set repair and `doctor --family=node --adopt` when peer attachment is the intended recovery.
+`node.access_permission_invalid` is a restore target: stripping permission strings the registry does not know and re-normalizing the remainder never invents intent, so `doctor --restore` repairs the grant deterministically. `node.wireguard_peer_extra` remains adopt-only; doctor restore does not invent peer intent. Use `node:permissions` for explicit permission-set rewrites and `doctor --family=node --adopt` when peer attachment is the intended recovery.
 
 ## Node Fix Map
 
@@ -288,6 +288,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --family=node --adopt`. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
+| `node.access_permission_invalid` | Strip permission strings the registry no longer knows from the flagged grant and re-normalize the remaining known permissions. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path. |
 | `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, then re-probe the backend certificate and keep the issue visible if drift remains. |
@@ -308,8 +309,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
 `node.runtime_missing`, `node.security.runtime_user`,
-`node.security.posture_probe_failed`,
-`node.access_permission_invalid`, `node.wireguard_peer_extra`,
+`node.security.posture_probe_failed`, `node.wireguard_peer_extra`,
 or `node.local_default_invalid`.
 
 `node.runtime_missing` is report-only because the gateway never owns bootstrap
