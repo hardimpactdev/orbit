@@ -26,7 +26,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--service-version= : Managed service version selector}
         {--database= : PostgreSQL database name}
         {--username= : PostgreSQL username}
-        {--published-port= : PostgreSQL host port}
+        {--published-port= : Published host port for a single-port managed service}
         {--image= : Explicit Docker image override}
         {--bind=* : Publish host for node-owned Docker managed services (wireguard|loopback); repeatable}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
@@ -147,13 +147,15 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         }
 
         $start = ! $noStart;
-        $serviceOptions = $service === 'postgres'
-            ? [
+        $serviceOptions = match (true) {
+            $service === 'postgres' => [
                 'database' => $database,
                 'username' => $username,
                 'published_port' => (int) $publishedPort,
-            ]
-            : null;
+            ],
+            $service !== null && $publishedPort !== null => ['published_port' => (int) $publishedPort],
+            default => null,
+        };
         $normalizedBinds = $binds === [] ? null : ProcessBindOption::normalize($binds);
 
         $payload = $this->filledQuery([
@@ -277,18 +279,28 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         ?string $username,
         ?string $publishedPort,
     ): ?int {
-        $optionsSupplied = $database !== null || $username !== null || $publishedPort !== null;
-
         if ($service !== 'postgres') {
-            return (
-                $optionsSupplied
-                    ? $this->failValidation(
-                        'service_options',
-                        'PostgreSQL service options require --service=postgres.',
-                        ['reason' => 'process_service_options_unsupported'],
-                    )
-                    : null
-            );
+            if ($database !== null || $username !== null) {
+                return $this->failValidation(
+                    'service_options',
+                    'PostgreSQL identifier options require --service=postgres.',
+                    ['reason' => 'process_service_options_unsupported'],
+                );
+            }
+
+            if ($publishedPort === null) {
+                return null;
+            }
+
+            if ($service === null) {
+                return $this->failValidation(
+                    'service_options',
+                    'The --published-port option requires a managed --service.',
+                    ['reason' => 'process_service_options_unsupported'],
+                );
+            }
+
+            return $this->validatePublishedPort($publishedPort);
         }
 
         if ($database === null) {
@@ -319,8 +331,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             ]);
         }
 
+        return $this->validatePublishedPort($publishedPort);
+    }
+
+    private function validatePublishedPort(string $publishedPort): ?int
+    {
         if (preg_match('/^\d+$/', $publishedPort) !== 1 || (int) $publishedPort < 1 || (int) $publishedPort > 65535) {
-            return $this->failValidation('published_port', 'PostgreSQL published port must be between 1 and 65535.', [
+            return $this->failValidation('published_port', 'Published port must be between 1 and 65535.', [
                 'value' => $publishedPort,
                 'reason' => 'out_of_range',
             ]);

@@ -77,7 +77,7 @@ final readonly class ProcessServiceCatalog
             );
         }
 
-        $serviceOptions = $this->resolveServiceOptions($service, $serviceOptions);
+        $serviceOptions = $this->resolveServiceOptions($service, $entry, $serviceOptions);
         /** @var array<array-key, array{default: string, versions: list<string>, port: int, data_path?: string}> $versions */
         $versions = $entry['versions'];
         $resolved = $this->resolveVersion($service, $versions, $version);
@@ -385,6 +385,12 @@ final readonly class ProcessServiceCatalog
                         'port' => 5432,
                         'data_path' => '/var/lib/postgresql/data',
                     ],
+                    '17' => [
+                        'default' => '17-alpine',
+                        'versions' => ['17-alpine'],
+                        'port' => 5432,
+                        'data_path' => '/var/lib/postgresql/data',
+                    ],
                     '18' => [
                         'default' => '18-alpine',
                         'versions' => ['18-alpine'],
@@ -469,21 +475,14 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
+     * @param  array<string, mixed>  $entry
      * @param  array<string, mixed>  $serviceOptions
      * @return array<string, mixed>
      */
-    private function resolveServiceOptions(string $service, array $serviceOptions): array
+    private function resolveServiceOptions(string $service, array $entry, array $serviceOptions): array
     {
         if ($service !== 'postgres') {
-            if ($serviceOptions !== []) {
-                throw new GatewayApiException(
-                    "Managed service '{$service}' does not accept PostgreSQL service options.",
-                    'validation_failed',
-                    ['field' => 'service_options', 'reason' => 'process_service_options_unsupported'],
-                );
-            }
-
-            return [];
+            return $this->resolveSinglePortServiceOptions($service, $entry, $serviceOptions);
         }
 
         foreach (array_keys($serviceOptions) as $key) {
@@ -533,6 +532,49 @@ final readonly class ProcessServiceCatalog
         }
 
         return $serviceOptions;
+    }
+
+    /**
+     * Non-postgres managed services accept only a published-port override,
+     * and only when the service exposes exactly one endpoint port. Without an
+     * override the catalog default port forces every additional instance on a
+     * node into an endpoint conflict.
+     *
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $serviceOptions
+     * @return array<string, mixed>
+     */
+    private function resolveSinglePortServiceOptions(string $service, array $entry, array $serviceOptions): array
+    {
+        if ($serviceOptions === []) {
+            return [];
+        }
+
+        $singlePort = is_int($entry['target_port'] ?? null) && ! is_array($entry['service_ports'] ?? null);
+
+        if (! $singlePort || array_keys($serviceOptions) !== ['published_port']) {
+            throw new GatewayApiException(
+                "Managed service '{$service}' does not accept PostgreSQL service options.",
+                'validation_failed',
+                ['field' => 'service_options', 'reason' => 'process_service_options_unsupported'],
+            );
+        }
+
+        $publishedPort = $serviceOptions['published_port'];
+
+        if (! is_int($publishedPort) || $publishedPort < 1 || $publishedPort > 65535) {
+            throw new GatewayApiException(
+                'Published port must be between 1 and 65535.',
+                'validation_failed',
+                [
+                    'field' => 'service_options.published_port',
+                    'value' => $publishedPort,
+                    'reason' => 'out_of_range',
+                ],
+            );
+        }
+
+        return ['published_port' => $publishedPort];
     }
 
     /**

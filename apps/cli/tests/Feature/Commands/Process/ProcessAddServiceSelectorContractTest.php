@@ -148,6 +148,84 @@ describe('process:add managed service selector contract', function (): void {
         ],
     ]);
 
+    it('posts a Valkey published-port override so a second instance can coexist', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'valkey-feedback',
+                'node' => 'nmbp',
+                'tool' => null,
+                'runtime' => 'docker',
+            ],
+            'runtime_units' => [['name' => 'orbit-valkey-feedback', 'context' => 'node']],
+        ], ['warnings' => []]));
+
+        [$exitCode] = runCommand($this, 'process:add', [
+            'name' => 'valkey-feedback',
+            '--node' => 'nmbp',
+            '--service' => 'valkey',
+            '--published-port' => '6380',
+            '--restart-policy' => 'always',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data()['service'] === 'valkey'
+                && $request->data()['service_options'] === ['published_port' => 6380]
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('rejects PostgreSQL identifier options for non-postgres managed services', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'valkey-feedback',
+            '--node' => 'nmbp',
+            '--service' => 'valkey',
+            '--database' => 'feedback',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('process_service_options_unsupported');
+    });
+
+    it('rejects a published-port override without a managed service selector', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'worker',
+            'process_command' => 'php artisan queue:work',
+            '--node' => 'nmbp',
+            '--published-port' => '6380',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('process_service_options_unsupported');
+    });
+
     it('posts optional image overrides for managed service processes', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [

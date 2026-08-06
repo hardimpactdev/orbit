@@ -104,6 +104,85 @@ it('resolves Valkey as the managed websocket broker service', function (): void 
         ]);
 });
 
+it('resolves PostgreSQL 17 with the shared data-directory layout', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $postgres = app(ProcessServiceCatalog::class)->resolve(
+        service: 'postgres',
+        version: '17',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'postgres-app',
+        serviceOptions: [
+            'database' => 'app',
+            'username' => 'app',
+            'published_port' => 5433,
+        ],
+    );
+
+    expect($postgres->versionFamily)
+        ->toBe('17')
+        ->and($postgres->version)
+        ->toBe('17-alpine')
+        ->and($postgres->runtimeConfig['image'])
+        ->toBe('postgres:17-alpine')
+        ->and($postgres->runtimeConfig['endpoint']['port'])
+        ->toBe(5433)
+        ->and($postgres->runtimeConfig['volumes'][0]['target'])
+        ->toBe('/var/lib/postgresql/data');
+});
+
+it('resolves a Valkey published-port override so a second instance can coexist', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $valkey = app(ProcessServiceCatalog::class)->resolve(
+        service: 'valkey',
+        version: null,
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'valkey-feedback',
+        serviceOptions: ['published_port' => 6380],
+    );
+
+    expect($valkey->runtimeConfig['endpoint'])
+        ->toMatchArray([
+            'name' => 'valkey-feedback',
+            'host' => '10.6.0.44',
+            'port' => 6380,
+        ])
+        ->and($valkey->runtimeConfig['ports'][0])
+        ->toBe([
+            'host' => '10.6.0.44',
+            'published' => 6380,
+            'target' => 6379,
+            'protocol' => 'tcp',
+        ])
+        ->and($valkey->runtimeConfig['service_options'])
+        ->toBe(['published_port' => 6380]);
+});
+
+it('rejects PostgreSQL identifier options for single-port managed services', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    app(ProcessServiceCatalog::class)->resolve(
+        service: 'valkey',
+        version: null,
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'valkey-feedback',
+        serviceOptions: ['database' => 'feedback'],
+    );
+})->throws(GatewayApiException::class);
+
 it('rejects the retired Redis managed service', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',

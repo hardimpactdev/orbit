@@ -60,11 +60,17 @@ Use this command to define a managed process for a node, instance, or workspace.
   workspace scopes.
 - **PostgreSQL Instances**: `postgres` is the generic service identifier for
   every PostgreSQL process. New PostgreSQL processes require `--database`,
-  `--username`, and `--published-port`. Both supported majors listen on
-  container port `5432`; the published port belongs to the individual process,
-  so PostgreSQL 16 on `5432` and PostgreSQL 18 on `5433` may coexist on one
-  node. Orbit generates and encrypts a distinct password for each process and
-  never renders it in command output, process metadata, activity, or scripts.
+  `--username`, and `--published-port`. The supported majors are 16, 17, and
+  18; all listen on container port `5432`. The published port belongs to the
+  individual process, so PostgreSQL 16 on `5432` and PostgreSQL 17 on `5433`
+  may coexist on one node. Orbit generates and encrypts a distinct password
+  for each process and never renders it in command output, process metadata,
+  activity, or scripts.
+- **Single-Port Published Ports**: Every other single-port managed service
+  (for example `valkey`) accepts an optional `--published-port` override of
+  its catalog default. The override is what lets a second instance of the
+  same service coexist on one node instead of failing the endpoint-conflict
+  check. `--database` and `--username` remain PostgreSQL-only.
 - **Publish binds**: Repeatable `--bind=<wireguard|loopback>` selects where
   node-owned Docker managed services publish target ports. Omission defaults to
   WireGuard-only. Explicit selectors replace that default, duplicates normalize,
