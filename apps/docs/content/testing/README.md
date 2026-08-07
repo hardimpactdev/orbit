@@ -127,26 +127,25 @@ token signing material.
 
 ## Pest versions
 
-Orbit uses Pest for PHP/Laravel in-memory coverage. Active Composer apps
-default to the Pest 5 / PHPUnit 13 line:
+Orbit uses Pest for PHP/Laravel in-memory coverage. All active Composer
+projects run the Pest 5 / PHPUnit 13 line:
 
 | Project | Pest line | Notes |
 | --- | --- | --- |
 | `apps/gateway` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13 |
 | `apps/docs` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13; runtime `php` stays `^8.3` (Pest 5 is `require-dev` only and needs PHP ≥ 8.4 at test time) |
 | `apps/e2e` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13 (safe in-memory suite; external E2E groups remain manual) |
+| `apps/cli` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13; Laravel Zero 13 allows Symfony Process ^7.4.13\|^8.1, ending the former Pest 4 exception |
 | `packages/core` | Pest 5 | PHPUnit 13 (transitive) |
 | `packages/sdk` | Pest 5 | PHPUnit 13 (transitive) |
-| `apps/cli` | **Pest 4 + `pest-plugin-laravel` 4** | Authorized exception while Laravel Zero 12 requires Symfony Process 7.x and Pest 5 requires Symfony Process ^8.1 |
 
-Remove the CLI exception when a stable Laravel Zero release (or an authorized
-successor CLI stack) can resolve Pest 5 without a `symfony/process` 7/8
-conflict—including any desktop-notifier / `jolicode/jolinotif` chain that still
-caps Process at 7.x. Until then, keep `apps/cli` installable on Pest 4 and do
-not force Pest 5 there via replace, alias, patch, or fork.
+`apps/cli` additionally carries `illuminate/validation` in `require-dev`: the
+Laravel Zero foundation test teardown loads `FormRequest` whenever
+`illuminate/http` is installed, and the CLI ships `illuminate/http` without the
+full framework.
 
-A focused architecture guard in the gateway suite asserts the five Pest 5
-manifests and the CLI Pest 4 exception.
+A focused architecture guard in the gateway suite asserts all six Pest 5
+manifests.
 
 ## Development lane invariant
 

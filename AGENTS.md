@@ -77,8 +77,8 @@ product docs.
 ## PHP And Laravel
 
 - Use `declare(strict_types=1)` in PHP files.
-- Tests use Pest (Pest 5 / PHPUnit 13 everywhere except `apps/cli`, which
-  stays on Pest 4; see `apps/docs/content/testing/README.md#pest-versions`).
+- Tests use Pest (Pest 5 / PHPUnit 13 everywhere; see
+  `apps/docs/content/testing/README.md#pest-versions`).
 - Style, linting, and static analysis use Mago; refactoring uses Rector.
 - Follow the app-local Boost and Spatie skills in `.agents/skills/`.
 

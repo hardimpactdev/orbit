@@ -66,6 +66,9 @@ final readonly class LocalAppSourceCreateAction
         ];
     }
 
+    /**
+     * @param  list<string>  $command
+     */
     private function run(array $command): Process
     {
         $process = new Process($command);

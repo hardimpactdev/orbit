@@ -1,0 +1,41 @@
+Retained Incus runtime proof — Laravel Zero 13 CLI upgrade
+Candidate: f5e34c3c0dcd5a2b275fcaebfd570023538cb9dc
+Topology: dev-4adc05 (operator_gateway_app-dev, host beast, acquired 2026-08-07T12:13:38+00:00)
+Venue terminal: Solo process 1502 (lz13-retained-incus-proof), agent-owned
+Operator VM: orbit-e2e-dev-4adc05-operator, commands run as user orbit
+
+== launcher identity ==
+lrwxrwxrwx 1 root root 36 Aug  7 12:13 /usr/local/bin/orbit -> /home/orbit/orbit-run/apps/cli/orbit
+/home/orbit/orbit-run/apps/cli/orbit
+
+== framework versions (source-mounted overlay vendor) ==
+laravel-zero/framework=v13.0.0 symfony/process=v8.1.0 illuminate/http=v13.24.0 pest-installed=yes
+
+== orbit --version (human) ==
+Version       0.1.190
+Released at   unknown
+Installed at  07-08-2026 - 11:41
+exit=0
+
+== orbit node:list (human) ==
+ ┌───┬────────────┬──────────┬──────────┬──────────────────────┐
+ │   │ NAME       │ PEER IP  │ PLATFORM │ ROLES                │
+ ├───┼────────────┼──────────┼──────────┼──────────────────────┤
+ │ ● │ app-dev-1  │ 10.6.0.4 │ ubuntu   │ app-dev, database    │
+ │ ● │ gateway    │ 10.6.0.2 │ ubuntu   │ gateway, vpn, router │
+ │ ● │ operator-1 │ 10.6.0.3 │ ubuntu   │ —                    │
+ └───┴────────────┴──────────┴──────────┴──────────────────────┘
+exit=0
+
+== orbit node:list --json (success envelope, gateway API round-trip over WireGuard) ==
+{"success":{"data":{"nodes":[{"name":"app-dev-1","tld":"test","host":"10.6.0.4","addresses":{"wireguard":"10.6.0.4"},"platform":"ubuntu","status":"active","roles":[{"role":"app-dev","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-07T12:12:37.000000Z"},{"role":"database","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-07T12:13:07.000000Z"}]},{"name":"gateway","tld":"gateway","host":"10.6.0.2","addresses":{"wireguard":"10.6.0.2"},"platform":"ubuntu","status":"active","roles":[{"role":"gateway","status":"active","settings":[],"last_error":null,"converged_at":null},{"role":"router","status":"active","settings":[],"last_error":null,"converged_at":"2026-08-07T12:11:41.000000Z"},{"role":"vpn","status":"active","settings":{"public_endpoint":"10.232.1.120","wireguard_cidr":"10.6.0.0/24","wireguard_port":51820,"dns_ip":"10.6.0.1"},"last_error":null,"converged_at":"2026-08-07T12:11:41.000000Z"}]},{"name":"operator-1","tld":"operator","host":"10.6.0.3","addresses":{"wireguard":"10.6.0.3"},"platform":"ubuntu","status":"active","roles":[]}]},"meta":[]}}
+exit=0
+
+== failure path: orbit app:show missing-app --json (error envelope) ==
+{"error":{"code":"app.not_found","message":"App 'missing-app' not found.","meta":{"app":"missing-app"}}}
+exit=1
+
+Result: human output, success JSON envelope, gateway API round-trip, and error
+envelope with non-zero exit all behave correctly on the Laravel Zero 13 /
+Symfony Process 8 / illuminate 13.24 dependency stack. No command behavior
+change observed versus the documented contract.

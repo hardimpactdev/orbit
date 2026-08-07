@@ -98,6 +98,9 @@ final readonly class LocalAppSourceCloneAction
         return trim($process->getOutput());
     }
 
+    /**
+     * @param  list<string>  $command
+     */
     private function run(array $command): Process
     {
         $environment = ['GIT_TERMINAL_PROMPT' => '0'];
