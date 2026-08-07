@@ -466,6 +466,10 @@ final class AppRegistrar
             ['name' => $selectedName],
             [
                 'driver' => InstanceDriver::Orbit,
+                // Instance-scoped: an explicit --php-version writes this
+                // instance only; otherwise keep its stored value, falling back
+                // to the app default when creating the first instance.
+                'php_version' => $input['php_version'] ?? $selected?->php_version ?? $phpVersion,
                 'adopted' => $selected instanceof Instance
                     ? $selected->adopted
                     : ! $existingApp instanceof App,

@@ -521,13 +521,16 @@ final readonly class PhpRuntimeManager
             return new PhpRuntimeOperation(failure: $availabilityFailure);
         }
 
-        $previous = $app->php_version;
+        // Instance scope writes the instance. The app value is the template for
+        // new instances and is deliberately left alone, so sibling instances
+        // and workspaces never move because of this run.
+        $previous = $instance->php_version ?? $app->php_version;
         $changed = $previous !== $version;
-        $app->forceFill(['php_version' => $version])->save();
+        $instance->forceFill(['php_version' => $version])->save();
 
         return $this->selectionOperation(
             node: $node,
-            app: $app->refresh(),
+            app: $app,
             instance: $instance,
             workspace: null,
             result: [

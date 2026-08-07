@@ -202,13 +202,13 @@ it('frankenphp selects app runtime from approved image facts', function (): void
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
-    place_php_runtime_manager_app($app, $node);
+    $instance = place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs');
 
     expect($result->failed())
         ->toBeFalse()
-        ->and($app->refresh()->php_version)
+        ->and($instance->refresh()->php_version)
         ->toBe('8.5')
         ->and($result->payload['result'])
         ->toMatchArray([

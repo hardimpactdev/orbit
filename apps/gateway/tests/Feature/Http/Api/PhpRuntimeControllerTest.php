@@ -314,7 +314,7 @@ describe('PHP runtime API controllers', function (): void {
             ->assertJsonPath('success.data.php.workspace.inherits', true);
     });
 
-    it('writes app PHP runtime intent for an authorized caller', function (): void {
+    it('writes instance PHP runtime intent without moving the app default', function (): void {
         $caller = createPhpApiCaller();
         $legacyNode = Node::factory()->appDev()->create(['name' => 'legacy-app-1']);
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
@@ -332,7 +332,7 @@ describe('PHP runtime API controllers', function (): void {
             ],
         ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id, 'php_version' => '8.4']);
-        place_php_api_app($app, $node);
+        $instance = place_php_api_app($app, $node);
 
         $response = $this->call(
             'POST',
@@ -349,7 +349,12 @@ describe('PHP runtime API controllers', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.result.target', 'instance');
 
-        expect($app->refresh()->php_version)->toBe('8.5');
+        // Instance scope writes the instance; the app default is the template
+        // for new instances and must not move.
+        expect($instance->refresh()->php_version)
+            ->toBe('8.5')
+            ->and($app->refresh()->php_version)
+            ->toBe('8.4');
     });
 
     it('returns authorization failure for hidden nodes', function (): void {
