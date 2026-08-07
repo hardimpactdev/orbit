@@ -47,6 +47,9 @@ final readonly class LocalAppSecurityRepairAction
         ];
     }
 
+    /**
+     * @param  list<string>  $command
+     */
     private function run(array $command): Process
     {
         $process = new Process($command);
