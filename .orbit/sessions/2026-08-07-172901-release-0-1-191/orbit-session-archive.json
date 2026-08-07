@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-07T15:29:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/release-0.1.191/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-07-172901-release-0-1-191",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/release-0.1.191/PROOF-MANIFEST.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-07T123744Z-f5521bca2108.json"
+    ],
+    "entry_digests": {
+        "evidence/release-0.1.191/PROOF-MANIFEST.md": "c6f9dd86e8ffe19d023d8ecc61635dc9a3f483e53818356eba186ec279b002e2",
+        "feedback.jsonl": "9e1e96631959982d8ed62dd8fe8d14adf9245b107d7a87d5cdf5e0e0ccafa05b",
+        "loop.md": "629fc4596862ac25a0b17e58a6c4d0a1de78ef2b6227b0daca64832be4f7a5be",
+        "quality-gates/quality-check-2026-08-07T123744Z-f5521bca2108.json": "7f1b1219e6b2cf191f6bfaf745fca94138f0aeaf8992183a3587100dfe3c81b3"
+    },
+    "slug": "release-0-1-191",
+    "requested_slug": "release-0-1-191",
+    "compatible_slugs": [
+        "release-0-1-191"
+    ],
+    "branch": "release/0.1.191",
+    "candidate_commit": "911458734b7587bb4470a037311242d7005a2e2d",
+    "accepted_feature_tip": "911458734b7587bb4470a037311242d7005a2e2d",
+    "accepted_main_tip": "911458734b7587bb4470a037311242d7005a2e2d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

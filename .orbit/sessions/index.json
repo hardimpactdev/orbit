@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 230,
-    "unique_candidate_commit_count": 126,
+    "record_count": 231,
+    "unique_candidate_commit_count": 127,
     "orphan_count": 4,
     "records": [
         {
@@ -6386,6 +6386,29 @@
                 "status": "valid",
                 "event_count": 2,
                 "raw_count": 2,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-07-172901-release-0-1-191",
+            "slug": "release-0-1-191",
+            "timestamp": "2026-08-07-172901",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "911458734b7587bb4470a037311242d7005a2e2d",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 1,
+            "feedback": {
+                "status": "valid",
+                "event_count": 1,
+                "raw_count": 1,
                 "promoted_count": 0,
                 "waived_count": 0,
                 "protection_failures": 0
