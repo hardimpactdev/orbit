@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-07T16:17:05+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-grant-firewall-tool-followups/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-07-181705-codex-grant-firewall-tool-followups",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/grant-firewall-tool-followups/PROOF-MANIFEST.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-07T160712Z-dc2d74fa43fc.json"
+    ],
+    "entry_digests": {
+        "evidence/grant-firewall-tool-followups/PROOF-MANIFEST.md": "06f4cdd53a4d299a177e7bf54b8260bc74959eb05b2255976bf872938f3bbfff",
+        "loop.md": "52e22894aa84046d8ee3ac2cfc0034db40216108c276a95bcdbc853319c94914",
+        "quality-gates/quality-check-2026-08-07T160712Z-dc2d74fa43fc.json": "9b1d0ed6724fee38746a72b6e27657d037faa880a9eb0ad7c0165d5794c667ed"
+    },
+    "slug": "codex-grant-firewall-tool-followups",
+    "requested_slug": "codex-grant-firewall-tool-followups",
+    "compatible_slugs": [
+        "codex-grant-firewall-tool-followups"
+    ],
+    "branch": "codex/grant-firewall-tool-followups",
+    "candidate_commit": "f6010bbfd29270befcbafbefcc5260440277adba",
+    "accepted_feature_tip": "f6010bbfd29270befcbafbefcc5260440277adba",
+    "accepted_main_tip": "bf5567ac674cdd5fc8e5f135eafe4462d0d9096b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
