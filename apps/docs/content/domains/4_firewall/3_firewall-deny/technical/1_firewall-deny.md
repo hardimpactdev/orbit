@@ -76,6 +76,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Name collision | A different firewall rule already uses the selected name on the target node. | `error.code=firewall_rule.name_collision` |
+| Protected rule | The named rule on the target node is role-owned and protected. | `error.code=firewall_rule.protected` |
 | Baseline conflict | The requested rule would mutate node bootstrap policy. | `error.code=firewall_rule.baseline_conflict` |
 | Apply failed | Gateway configuration was written, but the backend firewall apply failed. | `error.code=firewall_rule.enactment_failed` |
 
