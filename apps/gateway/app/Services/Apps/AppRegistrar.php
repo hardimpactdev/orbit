@@ -588,8 +588,10 @@ final class AppRegistrar
         ?App $existingApp,
         ?OrbitInstanceDriverConfigData $selectedConfig,
     ): Node|int {
-        if ($nodeName === null && $selectedConfig?->node_id !== null) {
-            $node = Node::query()->find($selectedConfig->node_id);
+        $selectedNodeId = $selectedConfig?->node_id;
+
+        if ($nodeName === null && $selectedNodeId !== null) {
+            $node = Node::query()->find($selectedNodeId);
 
             if ($node instanceof Node) {
                 return $node;

@@ -165,6 +165,9 @@ final readonly class ToolInstaller
             ->where('node_id', $targetNode->id)
             ->where('name', $tool)
             ->first();
+        $storedConfig = $existingRow?->config;
+        /** @var array<string, mixed> $existingConfig */
+        $existingConfig = is_array($storedConfig) ? $storedConfig : [];
 
         $row = NodeTool::query()->updateOrCreate(
             [
@@ -174,10 +177,7 @@ final readonly class ToolInstaller
             [
                 'expected_version' => $version ?? $existingRow?->expected_version,
                 'expected_state' => $expectedState,
-                'config' => $this->mergedInstallConfig(
-                    is_array($existingRow?->config) ? $existingRow->config : [],
-                    $config,
-                ),
+                'config' => $this->mergedInstallConfig($existingConfig, $config),
             ],
         );
 

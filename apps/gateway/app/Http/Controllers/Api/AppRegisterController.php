@@ -113,8 +113,10 @@ final class AppRegisterController implements Loggable
             }
         }
 
-        if ($existingApp?->node instanceof Node) {
-            return $existingApp->node;
+        $existingNode = $existingApp?->node;
+
+        if ($existingNode instanceof Node) {
+            return $existingNode;
         }
 
         return $this->singleActiveAppHostNode();

@@ -1141,24 +1141,21 @@ final readonly class NodesProbe
         $consumerId = is_int($detail['consumer_node_id'] ?? null) ? $detail['consumer_node_id'] : null;
         $servingId = is_int($detail['serving_node_id'] ?? null) ? $detail['serving_node_id'] : null;
 
-        $grants = NodeAccess::query()
-            ->when(
-                $consumerId !== null && $servingId !== null,
-                static function ($query) use ($consumerId, $servingId): void {
-                    $query->where('consumer_node_id', $consumerId)->where('serving_node_id', $servingId);
-                },
-                static function ($query) use ($node): void {
-                    $query->where(function ($inner) use ($node): void {
-                        $inner->where('consumer_node_id', $node->id)
-                            ->orWhere('serving_node_id', $node->id);
-                    });
-                },
-            )
-            ->get();
+        $query = NodeAccess::query();
 
-        foreach ($grants as $grant) {
+        if ($consumerId !== null && $servingId !== null) {
+            $query->where('consumer_node_id', $consumerId)->where('serving_node_id', $servingId);
+        } else {
+            $query->where(static function ($inner) use ($node): void {
+                $inner->where('consumer_node_id', $node->id)
+                    ->orWhere('serving_node_id', $node->id);
+            });
+        }
+
+        foreach ($query->get() as $grant) {
+            $stored = $grant->permissions;
             /** @var list<string> $permissions */
-            $permissions = is_array($grant->permissions) ? $grant->permissions : [];
+            $permissions = is_array($stored) ? $stored : [];
 
             if ($permissions === []) {
                 continue;
