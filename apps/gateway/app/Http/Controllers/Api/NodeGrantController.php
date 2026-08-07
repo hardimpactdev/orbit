@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
+use App\Services\Nodes\Access\NodePermissionRegistry;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
@@ -269,28 +270,36 @@ final readonly class NodeGrantController implements Loggable
     ): ?array {
         $stored = $grant->permissions ?? ['*'];
         $stored = is_array($stored) ? $stored : ['*'];
+        $registry = app(NodePermissionRegistry::class);
 
-        $storedSet = $stored;
-        $requestedSet = $requested;
-        sort($storedSet);
-        sort($requestedSet);
+        // Coverage, not set equality: a stored '*' or 'node:*' already confers
+        // the requested entry, so it is not missing. Set equality would report
+        // it as missing, which is false, and would then suggest a command that
+        // narrows the wider grant.
+        $missing = array_values(array_filter(
+            $requested,
+            static fn (string $permission): bool => ! $registry->allows($stored, $permission),
+        ));
 
-        if ($storedSet === $requestedSet) {
+        if ($missing === []) {
             return null;
         }
 
-        $missing = array_values(array_diff($requestedSet, $storedSet));
-        $requestedList = implode(',', $requestedSet);
+        sort($missing);
+        $missingList = implode(',', $missing);
 
         return [
             'code' => 'node.grant_permissions_ignored',
             'family' => 'node',
             'message' =>
                 "Grant from '{$consumerName}' to '{$servingName}' already exists and was left unchanged; "
-                    .'the requested permissions were not applied'
-                    .($missing === [] ? '.' : ' (missing: '.implode(', ', $missing).').'),
-            'next_command' => "node:permissions {$consumerName} {$servingName} --permissions='{$requestedList}'",
-            'permissions' => $requestedSet,
+                    .'these requested permissions are not covered by it: '
+                    .implode(', ', $missing)
+                    .'.',
+            // Additive on purpose: --permissions replaces the stored set and
+            // would drop everything the grant already confers.
+            'next_command' => "node:permissions {$consumerName} {$servingName} --add='{$missingList}'",
+            'permissions' => $missing,
         ];
     }
 

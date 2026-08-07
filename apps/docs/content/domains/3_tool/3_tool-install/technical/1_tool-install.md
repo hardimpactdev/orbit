@@ -131,6 +131,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
+| Unsupported status value (API only) | An API caller sends `status` other than `installed`. The CLI no longer exposes this field. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
 | Unsatisfied install constraint | A declared operating-system, container-provider, runtime-user, isolation, route/TLD, gateway-local, or active-status requirement is not satisfied. | `error.code=tool.constraint_unsatisfied`; `error.meta.constraint=<constraint>`; `error.meta.required=<value>`; `error.meta.actual=<value>` |
 | Missing target source | Non-interactive input provides no `--node`, `--instance`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |

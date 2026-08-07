@@ -54,6 +54,18 @@ class FirewallRuleIntent
             'protocol' => $protocol,
         ];
 
+        if ($existing instanceof FirewallRule && $existing->protected) {
+            throw new GatewayApiException(
+                'Protected firewall rules cannot be changed through firewall commands.',
+                'firewall_rule.protected',
+                [
+                    'name' => $name,
+                    'node' => $node->name,
+                    'owner' => $existing->owner,
+                ],
+            );
+        }
+
         if ($existing instanceof FirewallRule && ! $this->sameShape($existing, $shape)) {
             throw new GatewayApiException(
                 'A different firewall rule already uses this name on the selected node.',
@@ -75,8 +87,10 @@ class FirewallRuleIntent
                 ...$shape,
                 'reason' => $effectiveReason,
                 'source_hash' => $this->sourceHash($node->name, $name, $shape, $effectiveReason),
+                // Preserving owner is what protects a role-owned rule from
+                // being adopted as user-owned; the model derives `protected`
+                // from owner on save, so it is not set here.
                 'owner' => $existing->owner ?? 'user',
-                'protected' => $existing->protected ?? false,
             ],
         );
 

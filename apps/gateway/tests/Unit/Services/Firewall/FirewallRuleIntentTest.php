@@ -182,6 +182,46 @@ describe('FirewallRuleIntent', function (): void {
             ->toBe('updated note');
     });
 
+    it('rejects converging onto a protected role-owned rule', function (): void {
+        $node = createFirewallRuleIntentAppHostNode();
+
+        FirewallRule::query()->create([
+            'node_id' => $node->id,
+            'name' => 'metrics-scrape',
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => '10.6.0.0/24',
+            'destination' => null,
+            'port' => '9100',
+            'protocol' => 'tcp',
+            'reason' => 'role owned',
+            'owner' => 'metrics',
+            'source_hash' => 'seed',
+        ]);
+
+        expect(fn () => app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'metrics-scrape',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '9100',
+            protocol: 'tcp',
+            reason: 'user attempt',
+        ))
+            ->toThrow(GatewayApiException::class);
+
+        $rule = FirewallRule::query()->where('name', 'metrics-scrape')->sole();
+
+        expect($rule->owner)
+            ->toBe('metrics')
+            ->and($rule->protected)
+            ->toBeTrue()
+            ->and($rule->reason)
+            ->toBe('role owned');
+    });
+
     it('rejects same-name different policy before mutation', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite', 'port' => '5173']);

@@ -325,8 +325,44 @@ describe('NodeGrantController', function (): void {
 
         expect($warning['message'])
             ->toContain('instance:read')
+            ->and($warning['permissions'])
+            ->toBe(['instance:read'])
             ->and($warning['next_command'])
-            ->toBe("node:permissions control-1 app-1 --permissions='app:read,instance:read'");
+            ->toBe("node:permissions control-1 app-1 --add='instance:read'");
+    });
+
+    it('does not warn when a wildcard grant already covers the requested permissions', function (): void {
+        $callerId = createGrantCallerNode();
+        $gatewayId = createGrantGatewayNode();
+        grantGatewayManagementAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumingId,
+            'serving_node_id' => $servingId,
+            'permissions' => json_encode(['*']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'permissions' => 'app:read,instance:read',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.already_granted', true)
+            ->assertJsonPath('success.data.permissions', ['*'])
+            ->assertJsonMissingPath('success.meta');
     });
 
     it('does not warn when an existing grant already matches the requested permissions', function (): void {

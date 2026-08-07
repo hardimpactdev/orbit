@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `destination` | `--to` | `Optional.` | `Never.` | `None.` | CIDR when supported by the backend. |
 | `port` | `--port` | `Always.` | `Never.` | `None.` | Destination port or supported port range. |
 | `protocol` | `--protocol` | `Optional.` | `Never.` | `tcp` | `tcp` or `udp`. |
-| `reason` | `--reason` | `Optional.` | `Never.` | `None.` | Operator note. |
+| `reason` | `--reason` | `Optional.` | `Never.` | Stored note on convergence; `None.` on create. | Operator note. On a converging run an omitted `--reason` preserves the stored note rather than clearing it; clearing requires `firewall:remove` then re-adding. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 ## Input Mode Contracts

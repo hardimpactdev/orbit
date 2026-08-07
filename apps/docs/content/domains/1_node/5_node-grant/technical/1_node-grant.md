@@ -113,7 +113,10 @@ This command follows the shared
 - If the grant already exists, succeed without mutation, report
   `action=granted`, set `already_granted=true`, and return the existing
   permission set without modification. Point the caller to
-  `node:permissions` for later permission edits.
+  `node:permissions` for later permission edits. When the requested set names
+  permissions the stored grant does not already confer, report
+  `node.grant_permissions_ignored` naming those uncovered entries, so the
+  ignored request is visible rather than silent.
 - If the grant does not exist, create the `node_access` record from
   `consuming_node` to `serving_node` with the normalized permission set,
   report `action=granted`, and set `already_granted=false`.
