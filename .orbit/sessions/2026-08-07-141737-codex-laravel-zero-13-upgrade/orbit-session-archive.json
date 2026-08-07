@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-07T12:17:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-laravel-zero-13-upgrade/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-07-141737-codex-laravel-zero-13-upgrade",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/laravel-zero-13-retained-incus-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-07T120729Z-c668406b9afc.json"
+    ],
+    "entry_digests": {
+        "evidence/laravel-zero-13-retained-incus-proof.txt": "463b562bab18c6a51eed6c43017f532545f5aca7d5380b9f16887af5b62d2237",
+        "loop.md": "67af83b3e36b21ebf2df6307a96f542d1f038b36525b8b32e828ddc90ad3ceac",
+        "quality-gates/quality-check-2026-08-07T120729Z-c668406b9afc.json": "cc8b9537346ed6eab2488d0e1de77242840d83f8061b865a27cd841f7325c4e6"
+    },
+    "slug": "codex-laravel-zero-13-upgrade",
+    "requested_slug": "codex-laravel-zero-13-upgrade",
+    "compatible_slugs": [
+        "codex-laravel-zero-13-upgrade"
+    ],
+    "branch": "codex/laravel-zero-13-upgrade",
+    "candidate_commit": "f5e34c3c0dcd5a2b275fcaebfd570023538cb9dc",
+    "accepted_feature_tip": "f5e34c3c0dcd5a2b275fcaebfd570023538cb9dc",
+    "accepted_main_tip": "8ec8cbab7daeb90c90611a21ede0890035fb708b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
