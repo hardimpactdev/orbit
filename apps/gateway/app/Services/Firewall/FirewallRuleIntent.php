@@ -65,14 +65,18 @@ class FirewallRuleIntent
             );
         }
 
+        // An omitted --reason means "unchanged", not "clear": a converging run
+        // must never silently drop an operator note it was not asked to touch.
+        $effectiveReason = $reason ?? $existing?->reason;
+
         $rule = FirewallRule::query()->updateOrCreate(
             ['node_id' => $node->id, 'name' => $name],
             [
                 ...$shape,
-                'reason' => $reason,
-                'source_hash' => $this->sourceHash($node->name, $name, $shape, $reason),
-                'owner' => 'user',
-                'protected' => false,
+                'reason' => $effectiveReason,
+                'source_hash' => $this->sourceHash($node->name, $name, $shape, $effectiveReason),
+                'owner' => $existing->owner ?? 'user',
+                'protected' => $existing->protected ?? false,
             ],
         );
 

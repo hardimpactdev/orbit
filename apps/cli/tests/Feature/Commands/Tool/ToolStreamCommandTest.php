@@ -37,7 +37,6 @@ describe('ToolStream commands', function (): void {
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => true,
                 ]
             ),
@@ -82,7 +81,6 @@ describe('ToolStream commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/tools/opencode-cli/install'
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => false,
                 ]
             ),

@@ -6,8 +6,6 @@ namespace App\Commands\Tool;
 
 final class ToolInstallCommand extends ToolGatewayCommand
 {
-    private const array STATUSES = ['installed', 'running'];
-
     #[\Override]
     protected $signature = 'tool:install
         {tool? : Tool catalog name to install}
@@ -15,7 +13,6 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--node= : Resolve target by node}
         {--tool-version= : Version or version family to install}
         {--user=* : Additional OS user to install a user-scoped CLI tool for}
-        {--status=installed : Desired state after install (installed|running)}
         {--with-process : Also configure the related service process (default for service tools)}
         {--no-process : Install the capability only; do not configure the related service process}
         {--json : Output JSON}
@@ -30,19 +27,6 @@ final class ToolInstallCommand extends ToolGatewayCommand
 
         if (is_int($tool)) {
             return $tool;
-        }
-
-        $status = (string) $this->option('status');
-
-        if (! in_array($status, self::STATUSES, true)) {
-            return $this->failValidation(
-                'status',
-                "Invalid --status value '{$status}'. Valid values: installed, running.",
-                [
-                    'value' => $status,
-                    'reason' => 'unsupported_value',
-                ],
-            );
         }
 
         if ($this->option('with-process') && $this->option('no-process')) {
@@ -68,7 +52,6 @@ final class ToolInstallCommand extends ToolGatewayCommand
             ...$this->filledQuery([
                 'version' => $this->stringOption('tool-version'),
             ]),
-            'status' => $status,
             'with_process' => ! $this->option('no-process'),
             ...($installConfig !== [] ? ['config' => $installConfig] : []),
         ]);

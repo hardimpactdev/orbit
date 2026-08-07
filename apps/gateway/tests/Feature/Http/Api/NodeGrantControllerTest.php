@@ -287,6 +287,81 @@ describe('NodeGrantController', function (): void {
             ->toBe(1);
     });
 
+    it('warns that requested permissions were not applied to an existing grant', function (): void {
+        $callerId = createGrantCallerNode();
+        $gatewayId = createGrantGatewayNode();
+        grantGatewayManagementAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumingId,
+            'serving_node_id' => $servingId,
+            'permissions' => json_encode(['app:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'permissions' => 'app:read,instance:read',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.already_granted', true)
+            ->assertJsonPath('success.data.permissions', ['app:read'])
+            ->assertJsonPath('success.meta.warnings.0.code', 'node.grant_permissions_ignored')
+            ->assertJsonPath('success.meta.warnings.0.family', 'node');
+
+        $warning = $response->json('success.meta.warnings.0');
+
+        expect($warning['message'])
+            ->toContain('instance:read')
+            ->and($warning['next_command'])
+            ->toBe("node:permissions control-1 app-1 --permissions='app:read,instance:read'");
+    });
+
+    it('does not warn when an existing grant already matches the requested permissions', function (): void {
+        $callerId = createGrantCallerNode();
+        $gatewayId = createGrantGatewayNode();
+        grantGatewayManagementAccess($callerId, $gatewayId);
+        $consumingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $servingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        DB::table('node_access')->insert([
+            'consumer_node_id' => $consumingId,
+            'serving_node_id' => $servingId,
+            'permissions' => json_encode(['app:read', 'instance:read']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'permissions' => 'instance:read,app:read',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.already_granted', true)
+            ->assertJsonMissingPath('success.meta.warnings');
+    });
+
     it('rejects unauthenticated requests', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'control-1',
@@ -792,7 +867,7 @@ describe('NodeGrantController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', true)
-            ->assertJsonMissingPath('success.meta');
+            ->assertJsonPath('success.meta.warnings.0.code', 'node.grant_permissions_ignored');
 
         $grant = NodeAccess::query()
             ->where('consumer_node_id', $consumingId)

@@ -14,7 +14,7 @@ MySQL or Valkey are not tool installs; use `process:add --service=<identifier>` 
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Examples
@@ -47,8 +47,6 @@ orbit tool:install codex-cli --node=app-1 --user=agent
   existing OS user. The option does not create Linux accounts. Empty values are
   rejected by gateway validation before row writes. This is additive install
   targeting, not a node-role eligibility gate.
-- `--status`: Expected capability state after install. Defaults to
-  `installed`; it does not create or start a process.
 - `--with-process`: Also configure the tool's related service process. This is
   the default for service-backing tools.
 - `--no-process`: Install the capability only; do not configure the related

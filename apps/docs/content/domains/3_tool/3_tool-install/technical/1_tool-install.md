@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
+# Technical Contract: `orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<app.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | When the selected tool definition does not explicitly support install versions. | Tool-defined latest supported version when applicable. | Specific version or installer channel supported by the selected tool definition. |
 | `config.install_users` | `--user` (repeatable) | Optional for user-scoped CLI tools. | For tools that are not user-scoped CLI tools. | `None.` | Additional existing Linux usernames for user-scoped CLI installs. Each value must match a conservative Linux username allow-list; Orbit does not create the account. |
-| `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
 | `with_process` | `--with-process` / `--no-process` | `Optional.` | `Never.` | `true` for tools that declare a related process | When set true (the default), a tool that declares a related singleton process configures that process. `--no-process` installs the capability only. Supplying both `--with-process` and `--no-process` fails. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -133,7 +132,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
 | Unsatisfied install constraint | A declared operating-system, container-provider, runtime-user, isolation, route/TLD, gateway-local, or active-status requirement is not satisfied. | `error.code=tool.constraint_unsatisfied`; `error.meta.constraint=<constraint>`; `error.meta.required=<value>`; `error.meta.actual=<value>` |
-| Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
 | Missing target source | Non-interactive input provides no `--node`, `--instance`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |
 | Unsupported instance field | API input includes `instance`. Tools do not support runnable service instances. | `error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=unsupported_field` |
@@ -151,9 +149,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI install write flow: prompts, payloads, default node resolution, `--tool-version`, user-scoped CLI `--user` forwarding, empty `--user` gateway rejection, unsupported `--status`, and gateway install error envelope pass-through. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI install write flow: prompts, payloads, default node resolution, `--tool-version`, user-scoped CLI `--user` forwarding, empty `--user` gateway rejection, and gateway install error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for install: final complete frame in `--json` mode, canonical stream request shape, `--no-process`, and pre-stream gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway/API install: constraint preflight ordering and stable failure metadata, row writes, CLI install-user config, rejected runtime/instance fields, related process convergence, authorization failure, unsupported status/action/version, and update-only version intent rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway/API install: constraint preflight ordering and stable failure metadata, row writes, CLI install-user config, rejected runtime/instance fields, related process convergence, authorization failure, unsupported action/version, and update-only version intent rejection. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolInstallPreflightTest.php` | Read-only route/TLD constraint preflight before any remote probe. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | Tool-family probe behavior, including `claude-code` row-specific probing through the persisted default install user. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape and tool-family entity mapping used by install request handling. |

@@ -109,6 +109,14 @@ final readonly class NodeGrantController implements Loggable
 
         $warnings = [];
 
+        if ($alreadyGranted) {
+            $ignored = $this->ignoredPermissionsWarning($grant, $permissions, $consumer->name, $serving->name);
+
+            if ($ignored !== null) {
+                $warnings[] = $ignored;
+            }
+        }
+
         if ($grant->wasRecentlyCreated) {
             $originalPermissions = $request->permissionsInput() !== null
                 ? array_map(trim(...), explode(',', $request->permissionsInput()))
@@ -243,6 +251,47 @@ final readonly class NodeGrantController implements Loggable
             meta: $meta,
             status: 403,
         );
+    }
+
+    /**
+     * node:grant is create-only by contract: an existing grant is returned
+     * unmodified. Say so out loud when the caller asked for a different
+     * permission set, instead of silently discarding the request.
+     *
+     * @param  list<string>  $requested
+     * @return array<string, mixed>|null
+     */
+    private function ignoredPermissionsWarning(
+        NodeAccess $grant,
+        array $requested,
+        string $consumerName,
+        string $servingName,
+    ): ?array {
+        $stored = $grant->permissions ?? ['*'];
+        $stored = is_array($stored) ? $stored : ['*'];
+
+        $storedSet = $stored;
+        $requestedSet = $requested;
+        sort($storedSet);
+        sort($requestedSet);
+
+        if ($storedSet === $requestedSet) {
+            return null;
+        }
+
+        $missing = array_values(array_diff($requestedSet, $storedSet));
+        $requestedList = implode(',', $requestedSet);
+
+        return [
+            'code' => 'node.grant_permissions_ignored',
+            'family' => 'node',
+            'message' =>
+                "Grant from '{$consumerName}' to '{$servingName}' already exists and was left unchanged; "
+                    .'the requested permissions were not applied'
+                    .($missing === [] ? '.' : ' (missing: '.implode(', ', $missing).').'),
+            'next_command' => "node:permissions {$consumerName} {$servingName} --permissions='{$requestedList}'",
+            'permissions' => $requestedSet,
+        ];
     }
 
     /**

@@ -120,6 +120,68 @@ describe('FirewallRuleIntent', function (): void {
         expect(FirewallRule::query()->count())->toBe(1)->and($again['meta']['action'])->toBe('converged');
     });
 
+    it('preserves a stored reason when a converging run omits it', function (): void {
+        createFirewallRuleIntentAppHostNode();
+
+        app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'local-vite',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '5173',
+            protocol: 'tcp',
+            reason: 'keep this operator note',
+        );
+
+        app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'local-vite',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '5173',
+            protocol: 'tcp',
+            reason: null,
+        );
+
+        expect(FirewallRule::query()->where('name', 'local-vite')->sole()->reason)
+            ->toBe('keep this operator note');
+    });
+
+    it('replaces a stored reason when the run supplies a new one', function (): void {
+        createFirewallRuleIntentAppHostNode();
+
+        app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'local-vite',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '5173',
+            protocol: 'tcp',
+            reason: 'original note',
+        );
+
+        app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'local-vite',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '5173',
+            protocol: 'tcp',
+            reason: 'updated note',
+        );
+
+        expect(FirewallRule::query()->where('name', 'local-vite')->sole()->reason)
+            ->toBe('updated note');
+    });
+
     it('rejects same-name different policy before mutation', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite', 'port' => '5173']);

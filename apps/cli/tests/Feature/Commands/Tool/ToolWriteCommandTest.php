@@ -38,7 +38,6 @@ describe('tool write commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/tools/composer/install'
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => true,
                 ]
             ),
@@ -56,7 +55,6 @@ describe('tool write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'tool:install', [
             'tool' => 'composer',
             '--node' => 'app-1',
-            '--status' => 'running',
             '--json' => true,
         ]);
 
@@ -69,7 +67,6 @@ describe('tool write commands', function (): void {
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'running',
                     'with_process' => true,
                 ]
             ),
@@ -113,7 +110,6 @@ describe('tool write commands', function (): void {
                 && $request->data() === [
                     'node' => 'database-1',
                     'version' => '2.8',
-                    'status' => 'installed',
                     'with_process' => true,
                 ]
             ),
@@ -154,7 +150,6 @@ describe('tool write commands', function (): void {
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'node' => 'default-app',
-                    'status' => 'installed',
                     'with_process' => true,
                 ]
             ),
@@ -168,30 +163,6 @@ describe('tool write commands', function (): void {
             ->toBe('default-app');
 
         @unlink($store->path());
-    });
-
-    it('validates tool:install status before contacting the gateway', function (): void {
-        fakeGateway(fakeSuccessEnvelope());
-
-        [$exitCode, $output] = runCommand($this, 'tool:install', [
-            'tool' => 'composer',
-            '--node' => 'app-1',
-            '--status' => 'started',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])
-            ->toBe('status')
-            ->and($decoded['error']['meta']['reason'])
-            ->toBe('unsupported_value');
     });
 
     it('uses --json as destructive consent for tool:remove', function (): void {
@@ -599,7 +570,6 @@ describe('tool write commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/tools/composer/install'
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => true,
                     'config' => [
                         'install_users' => ['agent'],
@@ -644,7 +614,6 @@ describe('tool write commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/tools/claude-code/install'
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => true,
                     'config' => [
                         'install_users' => [''],
@@ -685,7 +654,6 @@ describe('tool write commands', function (): void {
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'node' => 'app-1',
-                    'status' => 'installed',
                     'with_process' => true,
                     'config' => [
                         'install_users' => ['agent', 'deploy'],

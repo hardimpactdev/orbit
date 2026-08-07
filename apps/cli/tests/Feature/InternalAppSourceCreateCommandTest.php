@@ -21,25 +21,17 @@ describe('internal app source create command', function (): void {
     afterEach(function (): void {
         putenv("PATH={$this->originalPath}");
 
-        $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-app-source-bin-*');
+        foreach (app_source_owned_paths() as $path) {
+            if (str_contains($path, '/orbit-app-source-bin-')) {
+                delete_app_source_fake_bin($path);
 
-        if ($fakeBinPaths === false) {
-            return;
-        }
+                continue;
+            }
 
-        foreach ($fakeBinPaths as $dir) {
-            delete_app_source_fake_bin($dir);
-        }
-
-        $checkoutPaths = glob(sys_get_temp_dir().'/orbit-app-source-checkout-*');
-
-        if ($checkoutPaths === false) {
-            return;
-        }
-
-        foreach ($checkoutPaths as $path) {
             delete_app_source_checkout($path);
         }
+
+        app_source_owned_paths(reset: true);
     });
 
     it('rejects a missing operation token before creating source', function (): void {
@@ -184,6 +176,7 @@ describe('internal app source create command', function (): void {
     it('reuses a matching checkout case-insensitively without cloning it again', function (): void {
         $bin = install_app_source_fake_bin();
         $path = sys_get_temp_dir().'/orbit-app-source-checkout-'.bin2hex(random_bytes(8));
+        app_source_owned_paths($path);
         mkdir($path);
         mkdir("{$path}/.git");
         file_put_contents("{$path}/README.md", 'existing checkout');
@@ -209,6 +202,7 @@ describe('internal app source create command', function (): void {
     it('verifies template provenance before reusing a matching checkout', function (): void {
         $bin = install_app_source_fake_bin();
         $path = sys_get_temp_dir().'/orbit-app-source-checkout-'.bin2hex(random_bytes(8));
+        app_source_owned_paths($path);
         mkdir($path);
         mkdir("{$path}/.git");
         file_put_contents("{$path}/README.md", 'existing checkout');
@@ -243,6 +237,7 @@ describe('internal app source create command', function (): void {
     ): void {
         $bin = install_app_source_fake_bin();
         $path = sys_get_temp_dir().'/orbit-app-source-checkout-'.bin2hex(random_bytes(8));
+        app_source_owned_paths($path);
         mkdir($path);
         mkdir("{$path}/.git");
         file_put_contents("{$path}/README.md", 'existing checkout');
@@ -393,10 +388,34 @@ function run_internal_app_source_create_command(array $parameters): array
     return [$exitCode, trim($output->fetch())];
 }
 
+/**
+ * Track only the paths this process created. A glob over the shared temp dir
+ * would delete directories belonging to other parallel Pest shards mid-test.
+ *
+ * @return list<string>
+ */
+function app_source_owned_paths(?string $add = null, bool $reset = false): array
+{
+    static $paths = [];
+
+    if ($reset) {
+        $paths = [];
+
+        return [];
+    }
+
+    if ($add !== null) {
+        $paths[] = $add;
+    }
+
+    return $paths;
+}
+
 function install_app_source_fake_bin(): string
 {
     $dir = sys_get_temp_dir().'/orbit-app-source-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
+    app_source_owned_paths($dir);
 
     file_put_contents("{$dir}/sudo", <<<'PHP'
         #!/usr/bin/env php
