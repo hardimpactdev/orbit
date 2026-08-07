@@ -139,7 +139,9 @@ final readonly class CreateWorkspace
             'instance_id' => $instance->id,
             'name' => $provisionResult->name,
             'path' => $provisionResult->path,
-            'php_version' => $phpVersion,
+            // Snapshot from the instance this workspace copies; the app
+            // default only reaches it through the instance at creation.
+            'php_version' => $phpVersion ?? $instance->php_version ?? $app->php_version,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 

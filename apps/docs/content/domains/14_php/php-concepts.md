@@ -13,8 +13,9 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   containers, but it does not install host PHP runtimes or create a `php` state
   family.
 - **PHP runtime selection:** Image version choice tracked by the gateway for
-  one target scope: shared app runtime policy or one workspace runtime
-  override/inheritance.
+  one target scope: one instance's own version, or one workspace's own version.
+  The app-level version is a creation-time template for new instances, not a
+  live policy the existing ones follow.
 - **PHP image selection:** PHP image version tracked by the gateway and used to
   create or recreate a FrankenPHP app runtime container for an instance or workspace.
 - **Supported PHP version set:** Version set Orbit can manage through the PHP
@@ -51,8 +52,8 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   a failed inspection reports inventory unavailability without treating the
   image as confirmed missing.
 - **PHP runtime view:** Shared PHP JSON entity reporting supported versions,
-  shared app PHP selection, and either one explicitly selected instance or
-  workspace serving-node inventory. It never presents one arbitrary instance
+  the app-level creation template, and either one explicitly selected instance
+  or workspace serving-node inventory. It never presents one arbitrary instance
   and node as the inventory for an app.
 
 ## Runtime Scopes

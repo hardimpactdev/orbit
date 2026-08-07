@@ -21,9 +21,9 @@ orbit php:use 8.5 --instance=docs --json
 ## Arguments and options
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
-- `--instance=<app.instance>`: Select the concrete instance whose parent
-  app's shared PHP runtime policy is changed. All instances of that app
-  consume the shared policy.
+- `--instance=<app.instance>`: Select the concrete instance whose own PHP
+  version is changed. Each instance owns its version outright; sibling
+  instances and workspaces are never changed by this run.
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
   app PHP version.
@@ -53,13 +53,12 @@ Orbit. Before an app-policy write it authorizes `php:write` and verifies the
 image only on the selected instance's serving node; any denial or missing image
 stops before policy mutation. Node CLI selection only accepts PHP 8.5.
 
-For an instance target, the command writes the parent app's shared policy
-only after that selected-instance preflight, then reconciles the selected
-instance's runtime container and proxy backend. Fan-out reconciliation for
-sibling Orbit instances is reported as non-fatal warnings when applicable; the
-success payload remains single-instance result facts. External-driver instances
-are not reconciled by Orbit. Workspace targets update and reconcile only the
-selected workspace placement. Proxy drift remains a `proxy` family concern.
+For an instance target, the command writes that instance's own version after
+its preflight, then reconciles only that instance's runtime container and proxy
+backend. No sibling instance and no workspace changes. The app-level version is
+a creation-time template for new instances and is not written here. Workspace
+targets update and reconcile only the selected workspace placement. Proxy drift
+remains a `proxy` family concern.
 
 The command does not install PHP, edit project files, read `.php-version`, or
 mutate Composer constraints.
@@ -77,12 +76,11 @@ machine-readable output.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity has `php:write` on the selected instance's serving
-  node for an app-policy write, or on the resolved workspace/CLI node.
-  Gateway identity remains implicit.
-- The requested app PHP version is available on the selected instance's serving
-  node; sibling instances whose nodes lack the image surface as instance-family
-  warnings and doctor drift. A workspace version is available on that
-  workspace's serving node. Node CLI selection requires PHP 8.5.
+  node, or on the resolved workspace/CLI node. Gateway identity remains
+  implicit.
+- The requested PHP version is available on the selected instance's serving
+  node, or on the workspace's serving node for a workspace target. Node CLI
+  selection requires PHP 8.5.
 - The concrete instance-serving node is Agent-eligible and reachable when
   runtime artifacts must be applied.
 

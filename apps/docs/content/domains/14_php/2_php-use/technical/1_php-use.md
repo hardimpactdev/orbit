@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `php:write` on the selected instance serving
-  node for an app write, or on the resolved workspace
-  or node-CLI target. Gateway identity remains implicit.
+  node, or on the resolved workspace or node-CLI target. Gateway identity
+  remains implicit.
 
 ## Signature
 
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
-| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent app's shared PHP policy. |
+| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes that instance's own PHP version. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
@@ -37,15 +37,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve target scope:
    - `--cli` selects node CLI runtime intent.
    - `--workspace` or cwd workspace context selects workspace runtime.
-   - `--instance` or cwd instance context selects the parent app runtime policy.
+   - `--instance` or cwd instance context selects that instance's own runtime version.
    - With no resolved target, interactive mode prompts from authorized instance,
      workspace choices; non-interactive mode fails.
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
 3. Validate mutually exclusive inputs.
 4. For an instance target, authorize `php:write` on its serving node and verify
    the approved image there. Refresh stale inventory before rejecting. Any
-   denial, unavailable inventory, or missing image stops before the shared
-   app-policy write.
+   denial, unavailable inventory, or missing image stops before the instance
+   write.
 5. For a workspace target, authorize and verify only its concrete serving node.
    For CLI scope, accept only PHP 8.5 and use the host toolchain boundary.
 6. Begin side effects only after the complete target-specific preflight passes.
@@ -59,10 +59,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Instance Runtime Selection
 
-- Writes the shared app PHP version after the selected instance has passed
-  authorization and image preflight.
-- Reconciles app runtime-container and affected proxy-backend artifacts for the
-  parent app after changing its shared policy.
+- Writes the selected instance's own PHP version after it has passed
+  authorization and image preflight. The app-level version is a creation-time
+  template for new instances and is never written by this command.
+- Reconciles runtime-container and affected proxy-backend artifacts for that
+  instance. Sibling instances and workspaces are not touched, because each owns
+  its version outright.
 - Returns the selected `app`, `instance`, `node`, `version`, `image`, and
   `changed` result facts.
 

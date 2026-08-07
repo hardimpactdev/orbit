@@ -139,9 +139,12 @@ class Workspace extends Model
             return $this->php_version;
         }
 
-        $this->loadMissing('app');
+        // Rows predating the snapshot migration may still be null. Resolve
+        // through the owning instance first, since a workspace is a copy of
+        // that instance, and only then the app template.
+        $this->loadMissing(['instance', 'app']);
 
-        return $this->app?->php_version;
+        return $this->instance?->php_version ?? $this->app?->php_version;
     }
 
     public function url(): string

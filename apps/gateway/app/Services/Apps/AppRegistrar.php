@@ -432,10 +432,16 @@ final class AppRegistrar
         $phpVersion = $input['php_version'] ?? $existingApp?->php_version ?? PhpRuntimeCatalog::DEFAULT;
         $isDefaultInstance = ! $existingApp instanceof App || $selectedName === $existingApp->environment;
 
+        // instance:register is instance-scoped: --php-version writes the
+        // selected instance only. The app default is a creation-time template
+        // and is set when the app is created, never re-stamped from here.
         $attributes = [
             'repository' => $existingApp?->repository,
-            'php_version' => $phpVersion,
         ];
+
+        if (! $existingApp instanceof App) {
+            $attributes['php_version'] = $phpVersion;
+        }
 
         if ($isDefaultInstance) {
             $attributes = [
