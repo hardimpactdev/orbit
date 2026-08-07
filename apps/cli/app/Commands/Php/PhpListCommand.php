@@ -98,7 +98,11 @@ final class PhpListCommand extends GatewayCommand
 
         $projectName = $this->runtimeString($app, 'name');
         $instanceName = $this->runtimeString($instance, 'name');
-        $version = $this->runtimeString($app, 'php_version');
+        $version = $this->runtimeString($instance, 'php_version');
+
+        if ($version === '—') {
+            $version = $this->runtimeString($app, 'php_version');
+        }
 
         if ($projectName === '—' || $instanceName === '—') {
             return '—';

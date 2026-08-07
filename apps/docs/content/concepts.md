@@ -598,7 +598,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
-- **App PHP runtime policy**
+- **App PHP creation template**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**

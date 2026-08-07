@@ -566,10 +566,14 @@ final readonly class PhpRuntimeManager
         }
 
         $workspace->loadMissing(['app', 'instance']);
-        $previous = $workspace->php_version ?? $workspace->app?->php_version;
+        // Inheritance resolves instance-first, matching effectivePhpVersion().
+        // Preflighting the app template here would verify an image the
+        // workspace will never run and let the real one through unchecked.
+        $inheritedVersion = $workspace->instance?->php_version ?? $workspace->app?->php_version;
+        $previous = $workspace->php_version ?? $inheritedVersion;
         $previousRaw = $workspace->php_version;
         $nextRaw = $inherit ? null : $version;
-        $nextEffective = $nextRaw ?? $workspace->app?->php_version;
+        $nextEffective = $nextRaw ?? $inheritedVersion;
 
         if (is_string($nextEffective)) {
             $availabilityFailure = $this->versionAvailabilityFailure($node, $nextEffective);
@@ -721,6 +725,9 @@ final readonly class PhpRuntimeManager
                 ? [
                     'name' => $instance->name,
                     'app' => $app?->name,
+                    // The instance's own version. The adjacent app value is the
+                    // creation template and does not describe this runtime.
+                    'php_version' => $instance->php_version ?? $app?->php_version,
                 ] : null,
             'workspace' => $workspace instanceof Workspace
                 ? [

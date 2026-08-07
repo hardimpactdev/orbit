@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - When an instance or workspace context resolves a serving node, any
   explicit `--node` selector must match that node; `--node` is not an alternate
   image inventory source for instance or workspace runtime facts.
-- Reads the app's shared PHP policy and reports it alongside the
+- Reads the app-level creation template and each instance's own version and reports it alongside the
   selected instance and serving-node inventory. Reads workspace override or
   inheritance when that scope is resolved.
 - Rejects an explicit workspace scope before configuration or live inventory

@@ -5,7 +5,7 @@
 Show one app's gateway registry details.
 
 Use `app:show` when you need an app's gateway-owned registry record and
-placement breakdown: repository, shared PHP version, visible instances,
+placement breakdown: repository, PHP version template used by new instances, visible instances,
 and each instance's path, workspaces, processes, and
 WebSocket, analytics, or route bindings. Live
 runtime drift, readiness, and repair belong to

@@ -15,6 +15,11 @@ use Illuminate\Support\Facades\Schema;
  * "follow the app") is materialized to the same effective value. After this
  * migration no runtime changes version, and changing an app default no longer
  * reaches into anything that already exists.
+ *
+ * down() is deliberately asymmetric: it drops the instance column but leaves
+ * materialized workspace versions in place. Un-pinning them would hand those
+ * workspaces back to live inheritance and could silently move a running
+ * runtime, which is the failure this migration exists to prevent.
  */
 return new class extends Migration {
     public function up(): void

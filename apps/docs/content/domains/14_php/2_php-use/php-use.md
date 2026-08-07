@@ -25,8 +25,8 @@ orbit php:use 8.5 --instance=docs --json
   version is changed. Each instance owns its version outright; sibling
   instances and workspaces are never changed by this run.
 - `--workspace=<workspace>`: Target workspace override.
-- `--inherit`: Clear a workspace override so the workspace inherits the parent
-  app PHP version.
+- `--inherit`: Clear a workspace override so the workspace resolves through its owning
+  instance, falling back to the app template.
 - `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported,
   matching the production native Orbit CLI binary artifact's embedded PHP
   version. Source-mounted Docker/Incus development and E2E nodes invoke

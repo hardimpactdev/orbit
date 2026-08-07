@@ -151,7 +151,7 @@ entity does not define.
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
   "php_version": "8.5",
-  "php_inherited": true,
+  "php_inherited": false,
   "adopted": false,
   "lifecycle_status": "expected"
 }
@@ -166,7 +166,7 @@ entity does not define.
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
+| `php_inherited` | boolean | `false` for every workspace created under snapshot inheritance, which always stores a concrete version copied from the owning instance. `true` only for legacy rows predating that model. Retained for payload compatibility. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 

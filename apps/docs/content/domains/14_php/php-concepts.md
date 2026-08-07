@@ -60,7 +60,7 @@ These terms define the PHP command domain and how PHP runtime selections are tra
 
 These terms define each target scope that a PHP command can read or write.
 
-- **App PHP runtime policy:** Shared app PHP version stored as gateway
+- **App PHP creation template:** App PHP version copied by new instances stored as gateway
   app configuration. A write selects one concrete instance, authorizes its
   serving node, verifies the approved image, changes the policy, and reconciles
   the app's Orbit-managed runtime artifacts.

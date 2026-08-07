@@ -64,7 +64,7 @@ This command follows the shared
    - Non-interactive failure if path is required for adoption.
 4. **Resolve PHP version**:
    - Explicit `--php-version`.
-   - Existing app PHP version when registered.
+   - Existing instance PHP version when registered.
    - Orbit's app runtime default (`8.5`) for first-time registration or
      adoption.
    - Do not read or inherit any host PHP default; app runtime container
