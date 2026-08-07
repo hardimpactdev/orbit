@@ -104,6 +104,10 @@
             width: min(100%, 158px);
         }
 
+        main:has(.reason) {
+            width: min(100%, 32rem);
+        }
+
         .logo {
             position: relative;
             width: var(--logo-w);
@@ -171,9 +175,9 @@
 
         .reason {
             margin: 28px 0 0;
-            max-width: 32rem;
             color: #a1a1aa;
             font-size: 13px;
+            line-height: 1.5;
             text-align: center;
         }
 
