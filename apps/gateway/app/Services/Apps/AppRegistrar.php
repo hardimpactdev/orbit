@@ -211,9 +211,9 @@ final class AppRegistrar
     }
 
     /**
-     * PHP version and runtime proxy transport are app-owned shared policy;
-     * a registration that changes either fans out to every sibling instance,
-     * so each sibling is named instead of changing silently.
+     * Runtime proxy transport is app-owned shared policy: a registration that
+     * changes it fans out to every sibling instance, so each sibling is named
+     * instead of changing silently.
      *
      * @return list<array<string, string>>
      */
@@ -223,11 +223,10 @@ final class AppRegistrar
             return [];
         }
 
+        // PHP version is no longer app-owned: each instance holds its own, so a
+        // register run cannot move a sibling's PHP. Runtime proxy transport is
+        // still app-owned and still fans out, so it keeps its warning.
         $changes = [];
-
-        if ($before->php_version !== $after->php_version) {
-            $changes[] = "PHP {$after->php_version}";
-        }
 
         $transportBefore = $this->proxyTransportLabel($before->runtime_config);
         $transportAfter = $this->proxyTransportLabel($after->runtime_config);
