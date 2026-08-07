@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-07T12:29:00+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-nmbp-instance-defects/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-07-142900-codex-nmbp-instance-defects",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/nmbp-instance-defects-wake-page/PROOF-MANIFEST.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-07T122416Z-5a91daec32cf.json"
+    ],
+    "entry_digests": {
+        "evidence/nmbp-instance-defects-wake-page/PROOF-MANIFEST.md": "1999cdcef71263aff52fb47e084830e85b8b48da9265b733355173443e913547",
+        "feedback.jsonl": "7285d73ece1103da6dfc96a220bf058e3bf5a6880af447f37b4286ce83c7df5c",
+        "loop.md": "b7ab0f8680d0be2d20ee55e187631c75af3975bfe23436e9cd2257640c27e0f0",
+        "quality-gates/quality-check-2026-08-07T122416Z-5a91daec32cf.json": "a0bbf2efaaaf45b03e094223f3dde505401653540e56e0a8459dbbe6dc9278c7"
+    },
+    "slug": "codex-nmbp-instance-defects",
+    "requested_slug": "codex-nmbp-instance-defects",
+    "compatible_slugs": [
+        "codex-nmbp-instance-defects"
+    ],
+    "branch": "codex/nmbp-instance-defects",
+    "candidate_commit": "b2279fcab99aba3a040822e9aaa33935d51775ef",
+    "accepted_feature_tip": "b2279fcab99aba3a040822e9aaa33935d51775ef",
+    "accepted_main_tip": "7d9bf4b48248c6af58b75a4d488778a279ff066c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
