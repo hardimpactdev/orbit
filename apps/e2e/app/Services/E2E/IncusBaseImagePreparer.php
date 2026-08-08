@@ -55,22 +55,23 @@ class IncusBaseImagePreparer
             $publicKey = $this->createRemoteSshKey($remotePrivateKey, $runId);
 
             $packages = $this->readPackageList($options->depsScriptPath, '--all');
-            $frankenPhpImageArchive = "{$remoteWorkDir}/frankenphp-1-php8.5-bookworm.tar";
 
-            $this->stageRemoteDockerImageArchive(
-                new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT),
-                $frankenPhpImageArchive,
-            );
+            foreach ($this->frankenPhpImageArchives() as $image => $archiveName) {
+                $this->stageRemoteDockerImageArchive($image, "{$remoteWorkDir}/{$archiveName}");
+            }
 
             $this->launchBaseInstance($instanceName, $options);
             $tempInstance = $instanceName;
 
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
-            $this->pushRemoteFileToInstance(
-                $frankenPhpImageArchive,
-                $instanceName,
-                '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
-            );
+
+            foreach ($this->frankenPhpImageArchives() as $archiveName) {
+                $this->pushRemoteFileToInstance(
+                    "{$remoteWorkDir}/{$archiveName}",
+                    $instanceName,
+                    "/var/tmp/{$archiveName}",
+                );
+            }
             $this->bootstrapBaseInstance($instanceName, $options, $publicKey, $packages);
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
@@ -88,6 +89,28 @@ class IncusBaseImagePreparer
         } finally {
             $this->cleanupRemote($tempInstance, $remoteWorkDir);
         }
+    }
+
+    /**
+     * Every supported FrankenPHP runtime image, mapped to its archive filename.
+     *
+     * The base image carries all of them, not just the catalog default: a
+     * topology holding one version can never exercise a PHP version change,
+     * because preflight refuses every other version as `not_installed` before
+     * any write. This mirrors what the Docker lane already prepares.
+     *
+     * @return array<string, string>
+     */
+    private function frankenPhpImageArchives(): array
+    {
+        $archives = [];
+
+        foreach (new PhpRuntimeCatalog()->supportedImages() as $image) {
+            $tag = substr($image, strrpos($image, ':') + 1);
+            $archives[$image] = "frankenphp-{$tag}.tar";
+        }
+
+        return $archives;
     }
 
     private function newRunId(): string
@@ -250,7 +273,16 @@ class IncusBaseImagePreparer
         $publicKeyValue = escapeshellarg($publicKey);
         $caddyImage = escapeshellarg(OrbitCaddyContainer::Image);
         $frankenPhpDockerfileImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
-        $frankenPhpImage = escapeshellarg($frankenPhpDockerfileImage);
+        $frankenPhpLoads = implode("\n            ", array_map(
+            static fn (string $archive, string $image): string => sprintf(
+                'docker load -i /var/tmp/%s && docker image inspect %s >/dev/null && rm -f /var/tmp/%s',
+                $archive,
+                escapeshellarg($image),
+                $archive,
+            ),
+            $this->frankenPhpImageArchives(),
+            array_keys($this->frankenPhpImageArchives()),
+        ));
         $sourceGatewayArtisanImage = escapeshellarg(DockerTopologyProvider::sourceGatewayArtisanImage());
         $webSocketRuntimeImage = escapeshellarg(DockerTopologyProvider::webSocketRuntimeImage());
         $wgEasyImage = escapeshellarg(WgEasyServiceInstaller::Image);
@@ -353,9 +385,7 @@ class IncusBaseImagePreparer
                 docker pull "\$image"
                 docker image inspect "\$image" >/dev/null
             done
-            docker load -i /var/tmp/frankenphp-1-php8.5-bookworm.tar
-            docker image inspect {$frankenPhpImage} >/dev/null
-            rm -f /var/tmp/frankenphp-1-php8.5-bookworm.tar
+            {$frankenPhpLoads}
 
             cat > /tmp/orbit-e2e-source-gateway-artisan.Dockerfile <<'DOCKERFILE'
             FROM {$frankenPhpDockerfileImage}

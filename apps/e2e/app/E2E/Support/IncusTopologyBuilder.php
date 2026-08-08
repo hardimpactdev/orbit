@@ -1708,26 +1708,22 @@ class IncusTopologyBuilder
 
     private function verifySourceMountedDockerImagesCommand(): string
     {
-        $frankenPhpImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
-        $sourceGatewayArtisanImage = DockerTopologyProvider::sourceGatewayArtisanImage();
-        $webSocketRuntimeImage = DockerTopologyProvider::webSocketRuntimeImage();
-        $caddyImage = OrbitCaddyContainer::Image;
-        $wgEasyImage = WgEasyServiceInstaller::Image;
+        // Every supported PHP image, not just the default: a topology carrying
+        // one version cannot exercise a version change, and a base image built
+        // before that became a requirement should say so instead of silently
+        // failing preflight later as `not_installed`.
+        $requiredImages = [
+            ...new PhpRuntimeCatalog()->supportedImages(),
+            DockerTopologyProvider::sourceGatewayArtisanImage(),
+            DockerTopologyProvider::webSocketRuntimeImage(),
+            OrbitCaddyContainer::Image,
+            WgEasyServiceInstaller::Image,
+        ];
 
         $script = implode("\n", [
             'set -euo pipefail',
             'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable --now docker || sudo systemctl start docker || true; fi',
-            'for image in '
-                .escapeshellarg($frankenPhpImage)
-                .' '
-                .escapeshellarg($sourceGatewayArtisanImage)
-                .' '
-                .escapeshellarg($webSocketRuntimeImage)
-                .' '
-                .escapeshellarg($caddyImage)
-                .' '
-                .escapeshellarg($wgEasyImage)
-                .'; do',
+            'for image in '.implode(' ', array_map(escapeshellarg(...), $requiredImages)).'; do',
             '  docker image inspect "$image" >/dev/null 2>&1 || { echo "prepared Incus runtime base image is missing Docker image: $image. Rebuild it with composer e2e:prepare-base-image -- --force." >&2; exit 1; }',
             'done',
         ]);

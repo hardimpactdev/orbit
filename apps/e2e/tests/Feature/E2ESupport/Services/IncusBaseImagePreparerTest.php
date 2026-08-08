@@ -132,6 +132,78 @@ it('builds the base image with the expected incus call sequence', function (): v
     expect($publishes[0])->toContain("--alias 'orbit-base-ubuntu-26.04-runtime'");
 });
 
+it('bakes every supported frankenphp runtime image into the base image', function (): void {
+    $host = m::mock(IncusHost::class);
+
+    $bootstrapScript = null;
+    $savedArchives = [];
+    $pushedArchives = [];
+
+    $host->shouldReceive('run')
+        ->andReturnUsing(function (string $command) use (
+            &$bootstrapScript,
+            &$savedArchives,
+            &$pushedArchives,
+        ): ProcessResult {
+            if (str_contains($command, 'mktemp -d')) {
+                return fakeProcessResult(output: "/tmp/orbit-prep-base\n");
+            }
+
+            if (str_contains($command, 'docker save')) {
+                $savedArchives[] = $command;
+
+                return fakeProcessResult();
+            }
+
+            if (str_contains($command, 'incus file push')) {
+                $pushedArchives[] = $command;
+
+                return fakeProcessResult();
+            }
+
+            if (str_starts_with(ltrim($command), 'cat ')) {
+                return fakeProcessResult(output: "ssh-ed25519 AAAA fake-key\n");
+            }
+
+            if (
+                str_contains($command, 'bash -lc')
+                && str_contains($command, 'docker.io')
+                && str_contains($command, 'orbit-e2e-docker-swarm-init.service')
+            ) {
+                $bootstrapScript = $command;
+
+                return fakeProcessResult();
+            }
+
+            if (str_contains($command, 'ip -o -4 addr show scope global')) {
+                return fakeProcessResult(output: "10.0.0.5\n");
+            }
+
+            return fakeProcessResult();
+        });
+
+    new IncusBaseImagePreparer($host)->build(baseImageOptions(force: true));
+
+    // A topology that carries only the default version can never exercise a
+    // PHP version change: preflight refuses every other version as
+    // not_installed before any write.
+    $supportedImages = [
+        'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+        'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm',
+        'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm',
+    ];
+
+    foreach ($supportedImages as $image) {
+        expect(implode("\n", $savedArchives))->toContain($image);
+        expect($bootstrapScript)->toContain($image);
+    }
+
+    expect($pushedArchives)->toHaveCount(count($supportedImages));
+    expect($bootstrapScript)->toContain('frankenphp-2-php8.5-bookworm.tar');
+    expect($bootstrapScript)->toContain('frankenphp-1-php8.4-bookworm.tar');
+    expect($bootstrapScript)->toContain('frankenphp-1-php8.3-bookworm.tar');
+});
+
 it('bootstraps the runtime image without guest user-data', function (): void {
     $host = m::mock(IncusHost::class);
 
