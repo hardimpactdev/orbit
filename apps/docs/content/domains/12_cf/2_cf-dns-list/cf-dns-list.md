@@ -5,7 +5,7 @@ List DNS records in a Cloudflare zone.
 ## Usage
 
 ```bash
-orbit cf-dns:list <zone> [--json]
+orbit cf-dns:list <zone> [--zone=<zone>] [--json]
 ```
 
 ## Examples
@@ -13,11 +13,13 @@ orbit cf-dns:list <zone> [--json]
 ```bash
 orbit cf-dns:list example.com
 orbit cf-dns:list aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+orbit cf-dns:list --zone=example.com --json
 ```
 
 ## Arguments and options
 
 - `zone`: Cloudflare zone ID or domain name.
+- `--zone`: Alias for the `zone` argument, matching `cf-dns:add`, `cf-dns:remove`, and `cf-cache:flush`. The positional argument wins when both are given.
 - `--json`: Return DNS records in the JSON output.
 
 ## What Happens

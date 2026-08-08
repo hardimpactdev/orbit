@@ -70,6 +70,101 @@ function grantCloudflareApiAccess(Node $consumer, Node $gateway, array $permissi
     ]);
 }
 
+// A rejected token is the operator's to fix, so the error has to name where the
+// token lives and what it needs -- not just repeat the provider's message.
+it('returns actionable remediation when Cloudflare rejects the token', function (): void {
+    createCloudflareApiCallerNode();
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => false,
+            'errors' => [['code' => 10000, 'message' => 'Invalid access token']],
+        ], 403),
+    ]);
+
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
+
+    $response
+        ->assertStatus(503)
+        ->assertJsonPath('error.code', 'cloudflare_unavailable')
+        ->assertJsonPath('error.meta.reason', 'token_rejected')
+        ->assertJsonPath('error.meta.provider_status', 403)
+        ->assertJsonPath('error.meta.provider_message', 'Invalid access token')
+        ->assertJsonPath('error.meta.env_var', 'CLOUDFLARE_API_TOKEN')
+        ->assertJsonPath('error.meta.config_key', 'orbit.cloudflare.api_token')
+        ->assertJsonPath('error.meta.required_scopes.0', 'Zone:Read');
+
+    expect($response->json('error.message'))
+        ->toContain('Cloudflare rejected the gateway API token (HTTP 403)')
+        ->toContain('Invalid access token')
+        ->and($response->json('error.meta.remediation'))
+        ->toContain('Rotate CLOUDFLARE_API_TOKEN')
+        ->toContain('https://dash.cloudflare.com/profile/api-tokens');
+});
+
+it('does not blame credentials for a Cloudflare provider outage', function (): void {
+    createCloudflareApiCallerNode();
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => false,
+            'errors' => [['message' => 'Internal error']],
+        ], 500),
+    ]);
+
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
+
+    $response
+        ->assertStatus(503)
+        ->assertJsonPath('error.code', 'cloudflare_unavailable')
+        ->assertJsonPath('error.meta.provider_status', 500)
+        ->assertJsonMissingPath('error.meta.remediation')
+        ->assertJsonMissingPath('error.meta.reason');
+});
+
+it('reports a missing token with the configuration location', function (): void {
+    createCloudflareApiCallerNode();
+    config()->set('orbit.cloudflare.api_token', null);
+
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
+
+    $response
+        ->assertStatus(503)
+        ->assertJsonPath('error.meta.reason', 'token_missing')
+        ->assertJsonPath('error.meta.env_var', 'CLOUDFLARE_API_TOKEN');
+
+    expect($response->json('error.meta.remediation'))->toContain('Set CLOUDFLARE_API_TOKEN');
+
+    Http::assertNothingSent();
+});
+
 it('lists Cloudflare zones through the gateway API', function (): void {
     createCloudflareApiCallerNode();
 

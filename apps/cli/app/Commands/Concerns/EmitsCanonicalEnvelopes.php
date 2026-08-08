@@ -48,7 +48,16 @@ trait EmitsCanonicalEnvelopes
             return self::FAILURE;
         }
 
-        $this->line("{$code}: {$message}");
+        // Human mode never prints meta, so a failure that carries an explicit
+        // operator fix would otherwise lose it. JSON callers already get it.
+        $remediation = $meta['remediation'] ?? null;
+        $failure = "{$code}: {$message}";
+
+        if (is_string($remediation) && trim($remediation) !== '') {
+            $failure .= PHP_EOL.trim($remediation);
+        }
+
+        $this->line($failure);
 
         return self::FAILURE;
     }

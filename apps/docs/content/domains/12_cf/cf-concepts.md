@@ -21,7 +21,15 @@ These terms define the Cloudflare command domain and its relationship to the gat
 - **Cloudflare API token:** External provider secret stored on the gateway as
   `CLOUDFLARE_API_TOKEN` and used only by the gateway when calling the
   Cloudflare API. `CLOUDFLARE_API_EMAIL` is optional compatibility for
-  Cloudflare global API key authentication.
+  Cloudflare global API key authentication. It needs at least `Zone:Read`,
+  `DNS:Edit`, `Cache Purge:Purge`, and `Zone Settings:Edit`. There is no
+  rotation command: operators set the value in the gateway environment and
+  restart the gateway.
+- **Credential fault:** A missing or provider-rejected API token. It is
+  operator-fixable, so `cloudflare_unavailable` errors caused by one carry
+  `error.meta.reason`, `error.meta.remediation`, `error.meta.env_var`,
+  `error.meta.config_key`, and `error.meta.required_scopes`. A provider outage
+  is not a credential fault and carries no remediation fields.
 - **Real Cloudflare-backed domain:** Public domain that belongs to a Cloudflare
   zone visible to the gateway token. Development TLDs and DNS overrides local
   to the caller are not Cloudflare targets.
@@ -89,4 +97,5 @@ These terms define what Cloudflare commands own and exclude.
 - **Cloudflare-domain exclusions:** Cloudflare commands do not own a state
   family, create Orbit instance-owned domains or proxy routes, replace `proxy` as the
   canonical ingress registry, manage development TLDs, store provider records as
-  Orbit configuration, or create a `doctor --family=cf` contract.
+  Orbit configuration, or create a `doctor --family=cf` contract. Provider
+  credential health is reported by the `tool` family, not by a `cf` family.

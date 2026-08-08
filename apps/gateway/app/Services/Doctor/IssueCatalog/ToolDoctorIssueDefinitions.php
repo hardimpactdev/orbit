@@ -107,6 +107,11 @@ final class ToolDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             ),
             self::invalid('tool.record_incomplete', 'tool'),
             self::blocked('tool.remote_shell_probe_failed', 'tool'),
+            // Rotating an external provider secret is operator work; report-only
+            // like the seaweedfs credential findings below.
+            self::incident('tool.cloudflare.credentials_missing', 'tool'),
+            self::incident('tool.cloudflare.token_rejected', 'tool'),
+            self::blocked('tool.cloudflare.credentials_probe_failed', 'tool'),
             // ToolsFixer has no seaweedfs credential restorer; operator must re-run s3 configure.
             self::incident('tool.seaweedfs.credentials_missing', 'tool'),
             self::invalid('tool.seaweedfs.row_missing', 'tool'),

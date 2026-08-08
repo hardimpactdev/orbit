@@ -44,6 +44,7 @@ use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Cloudflare\CloudflareCredentialDoctorProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
@@ -209,6 +210,7 @@ final readonly class DoctorReportRunner
         private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
         private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
+        private CloudflareCredentialDoctorProbe $cloudflareCredentialProbe,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private RecordProcessEvent $recordProcessEvent = new RecordProcessEvent,
@@ -1760,50 +1762,15 @@ final readonly class DoctorReportRunner
                 NodeTool::query()->where('node_id', $node->id)->count()
                 + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
-                + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
+                + ($this->shouldProbeDnsRuntime($node) ? 1 : 0)
+                + ($this->shouldProbeCloudflareCredentials($node) ? 1 : 0);
 
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'tool',
                 $toolCheckTotal,
                 function (callable $advance) use ($node, &$issues): void {
-                    foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
-                        $snapshot = $this->toolsProbe->introspect($tool);
-
-                        foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                            $issues[] = $this->toolIssuePayload($entry, $tool);
-                        }
-
-                        $advance();
-                    }
-
-                    $webSocketAssignment = $this->activeWebSocketAssignment($node);
-
-                    if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                        foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-                        }
-
-                        $advance();
-                    }
-
-                    $s3Assignment = $this->activeS3Assignment($node);
-
-                    if ($s3Assignment instanceof NodeRoleAssignment) {
-                        foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-                        }
-
-                        $advance();
-                    }
-
-                    if ($this->shouldProbeDnsRuntime($node)) {
-                        foreach ($this->dnsRuntimeProbe->probe() as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-                        }
-
-                        $advance();
-                    }
+                    $this->probeToolFamily($node, $issues, $advance);
                 },
                 function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
                     $node,
@@ -2989,6 +2956,67 @@ final readonly class DoctorReportRunner
         return (
             $this->nodeRoleAssignments->nodeIsGateway($node) && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)
         );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     */
+    private function probeToolFamily(Node $node, array &$issues, callable $advance): void
+    {
+        foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
+            $snapshot = $this->toolsProbe->introspect($tool);
+
+            foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
+                $issues[] = $this->toolIssuePayload($entry, $tool);
+            }
+
+            $advance();
+        }
+
+        $webSocketAssignment = $this->activeWebSocketAssignment($node);
+
+        if ($webSocketAssignment instanceof NodeRoleAssignment) {
+            foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            $advance();
+        }
+
+        $s3Assignment = $this->activeS3Assignment($node);
+
+        if ($s3Assignment instanceof NodeRoleAssignment) {
+            foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            $advance();
+        }
+
+        if ($this->shouldProbeDnsRuntime($node)) {
+            foreach ($this->dnsRuntimeProbe->probe() as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            $advance();
+        }
+
+        if ($this->shouldProbeCloudflareCredentials($node)) {
+            foreach ($this->cloudflareCredentialProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            $advance();
+        }
+    }
+
+    /**
+     * The Cloudflare token is gateway-held state, so it is verified once on the
+     * gateway node and only when the operator enabled the gateway extension.
+     */
+    private function shouldProbeCloudflareCredentials(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeIsGateway($node) && $this->cloudflareCredentialProbe->shouldProbe();
     }
 
     /**

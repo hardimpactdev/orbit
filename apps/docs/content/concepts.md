@@ -539,6 +539,7 @@ Source: [Cloudflare Concepts](domains/12_cf/cf-concepts.md).
 - **Cloudflare provider integration**
 - **Provider administration**
 - **Cloudflare API token**
+- **Credential fault**
 - **Real Cloudflare-backed domain**
 - **Cloudflare zone**
 - **Provider DNS record**

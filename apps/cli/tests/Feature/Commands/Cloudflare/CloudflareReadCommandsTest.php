@@ -115,6 +115,73 @@ describe('cf-zone:list', function (): void {
     });
 });
 
+describe('cf-dns:list zone selector', function (): void {
+    // `--zone=` is how cf-dns:add, cf-dns:remove, and cf-cache:flush take the
+    // zone, so the read command has to accept it too.
+    it('accepts --zone as an alias for the positional zone', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['records' => []], ['count' => 0]));
+
+        [$exitCode] = runCommand(
+            $this,
+            command: 'cf-dns:list',
+            params: ['--zone' => 'nckrtl.com', '--json' => true],
+        );
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->url(), '/api/cloudflare/zones/nckrtl.com/dns'),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('prefers the positional zone when both spellings are given', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['records' => []], ['count' => 0]));
+
+        runCommand($this, command: 'cf-dns:list', params: [
+            'zone' => 'positional.com',
+            '--zone' => 'option.com',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => str_contains($request->url(), '/api/cloudflare/zones/positional.com/dns'),
+        );
+    });
+
+    it('names both accepted spellings when the zone is missing', function (): void {
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toContain('cf-dns:list <zone>')
+            ->and($decoded['error']['message'])
+            ->toContain('--zone=<zone>');
+    });
+});
+
+describe('cloudflare failure remediation', function (): void {
+    it('prints the remediation line in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('cloudflare_unavailable', 'Cloudflare rejected the gateway API token.', [
+            'reason' => 'token_rejected',
+            'remediation' => 'Rotate CLOUDFLARE_API_TOKEN in the gateway environment, then restart the gateway.',
+        ]), 503);
+
+        [$exitCode, $output] = runCommand($this, command: 'cf-zone:list');
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('cloudflare_unavailable: Cloudflare rejected the gateway API token.')
+            ->and($output)
+            ->toContain('Rotate CLOUDFLARE_API_TOKEN in the gateway environment');
+    });
+});
+
 describe('cf-dns:list', function (): void {
     it('returns a canonical success envelope in JSON mode and forwards the zone path', function (): void {
         fakeGateway(fakeSuccessEnvelope([

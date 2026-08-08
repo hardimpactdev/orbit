@@ -1,4 +1,4 @@
-# Technical Contract: `orbit cf-dns:list <zone> [--json]`
+# Technical Contract: `orbit cf-dns:list <zone> [--zone=<zone>] [--json]`
 
 [Back to public `cf-dns:list` documentation.](../cf-dns-list.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit cf-dns:list <zone> [--json]
+orbit cf-dns:list <zone> [--zone=<zone>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `zone` | Argument `zone` | `Always.` | `Never.` | `None.` | Cloudflare zone ID or exact zone domain name. |
+| `zone` | Argument `zone`, or option `--zone` | `Always; either spelling.` | `Never.` | `None.` | Cloudflare zone ID or exact zone domain name. The positional argument wins when both are supplied. `--zone` matches how `cf-dns:add`, `cf-dns:remove`, and `cf-cache:flush` take the zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
