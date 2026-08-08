@@ -309,10 +309,6 @@ class GatewaySwarmInstaller
         File::chmod("{$configRoot}/certs", 0o700);
         File::chmod("{$configRoot}/operations-websocket", 0o700);
         $this->tlsKeyModeRepairer->repair($configRoot);
-        // Owner-only modes are only safe while the tree belongs to the host
-        // install user. Repair ownership alongside the modes so convergence can
-        // never leave the host Orbit CLI locked out of its own config.
-        $this->configRootOwnershipRepairer->repair($configRoot);
 
         $database = "{$configRoot}/gateway.sqlite";
 
@@ -381,6 +377,13 @@ class GatewaySwarmInstaller
             ),
         );
         File::chmod($operationsWebSocketApps, 0o600);
+
+        // Last, so every path this method creates or hardens is covered.
+        // Owner-only modes are only safe while the tree belongs to the host
+        // install user, so convergence can never leave the host Orbit CLI
+        // locked out of its own config. Mirrors the container entrypoint,
+        // which chowns after all install/chmod work.
+        $this->configRootOwnershipRepairer->repair($configRoot);
     }
 
     /**

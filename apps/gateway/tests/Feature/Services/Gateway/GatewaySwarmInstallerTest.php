@@ -251,6 +251,7 @@ it('repairs pre-existing gateway-owned TLS private key modes during routine runt
     File::chmod($configKey, 0o644);
     File::chmod($hostKey, 0o644);
     putenv("ORBIT_HOST_PATH_PREFIX={$hostRoot}");
+    Process::fake();
 
     try {
         new GatewaySwarmInstaller()->bootstrapRuntimeConfig();

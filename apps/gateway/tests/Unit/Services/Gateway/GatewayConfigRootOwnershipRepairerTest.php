@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Gateway\GatewayConfigRootOwnershipRepairer;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\TestCase;
 
@@ -100,25 +101,43 @@ it('repairs ownership across the config root tree', function (): void {
     File::ensureDirectoryExists("{$configRoot}/certs");
     File::put("{$configRoot}/.env", 'APP_ENV=production');
 
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = is_array($process->command)
+            ? implode(' ', $process->command)
+            : (string) $process->command;
+
+        return Process::result();
+    });
+
     new GatewayConfigRootOwnershipRepairer()->repair($configRoot, '/home/orbit/.config/orbit');
 
-    $expectedUid = fileowner("{$hostPrefix}/home/orbit");
+    $expectedOwner = fileowner("{$hostPrefix}/home/orbit").':'.filegroup("{$hostPrefix}/home/orbit");
 
-    expect(fileowner($configRoot))
-        ->toBe($expectedUid)
-        ->and(fileowner("{$configRoot}/certs"))
-        ->toBe($expectedUid)
-        ->and(fileowner("{$configRoot}/.env"))
-        ->toBe($expectedUid);
+    expect($commands)->toBe(["chown -R {$expectedOwner} {$configRoot}"]);
+});
+
+it('surfaces a failed ownership repair instead of reporting success', function (): void {
+    $hostPrefix = "{$this->root}/mnt/orbit-host";
+    File::ensureDirectoryExists("{$hostPrefix}/home/orbit");
+    putenv("ORBIT_HOST_PATH_PREFIX={$hostPrefix}");
+
+    $configRoot = "{$this->root}/config";
+    File::ensureDirectoryExists($configRoot);
+
+    Process::fake(fn () => Process::result(output: '', errorOutput: 'chown: not permitted', exitCode: 1));
+
+    expect(fn (): null => new GatewayConfigRootOwnershipRepairer()->repair($configRoot, '/home/orbit/.config/orbit'))
+        ->toThrow(RuntimeException::class, 'Failed to repair gateway config root ownership');
 });
 
 it('leaves ownership untouched when no host path prefix is present', function (): void {
     $configRoot = "{$this->root}/config";
     File::ensureDirectoryExists($configRoot);
 
-    $before = fileowner($configRoot);
+    Process::fake();
 
     new GatewayConfigRootOwnershipRepairer()->repair($configRoot, '/home/orbit/.config/orbit');
 
-    expect(fileowner($configRoot))->toBe($before);
+    Process::assertNothingRan();
 });
