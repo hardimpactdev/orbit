@@ -74,7 +74,7 @@ class IncusBaseImagePreparer
             }
             $this->bootstrapBaseInstance($instanceName, $options, $publicKey, $packages);
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
-            $this->loadNonDefaultFrankenPhpImages($instanceName);
+            $this->loadNonDefaultFrankenPhpImages($instanceName, $options->timeoutSeconds);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
@@ -123,7 +123,7 @@ class IncusBaseImagePreparer
      * the whole bootstrap past the limit, so each remaining image gets its own
      * exec and reports its own failure.
      */
-    private function loadNonDefaultFrankenPhpImages(string $instanceName): void
+    private function loadNonDefaultFrankenPhpImages(string $instanceName, int $timeoutSeconds): void
     {
         $defaultImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
 
@@ -139,11 +139,14 @@ class IncusBaseImagePreparer
                 $archive,
             );
 
-            $result = $this->host->run(sprintf(
-                'incus exec %s -- bash -lc %s',
-                escapeshellarg($instanceName),
-                escapeshellarg($script),
-            ), timeoutSeconds: 900);
+            $result = $this->host->run(
+                sprintf(
+                    'incus exec %s -- bash -lc %s',
+                    escapeshellarg($instanceName),
+                    escapeshellarg($script),
+                ),
+                timeoutSeconds: max(900, $timeoutSeconds),
+            );
 
             if (! $result->successful()) {
                 throw new RuntimeException(

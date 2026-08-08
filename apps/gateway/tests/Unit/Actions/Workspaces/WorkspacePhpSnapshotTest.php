@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Workspaces\CreateWorkspace;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Workspaces\WorkspaceProvisionResult;
+use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -86,4 +88,42 @@ it('does not move a workspace when the app default changes', function (): void {
     $app->forceFill(['php_version' => '8.5'])->save();
 
     expect($workspace->refresh()->effectivePhpVersion())->toBe('8.4');
+});
+
+it('stamps the owning instance version onto a workspace adopted by path', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'app-1']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'php_version' => '8.5',
+        'path' => '/srv/docs',
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'php_version' => '8.3',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/srv/docs',
+            document_root: 'public',
+        ),
+    ]);
+
+    // The public entry point the setup controller itself calls.
+    app(WorkspaceSetupTargetResolver::class)->resolve(
+        null,
+        'docs.development',
+        '/srv/docs/.worktrees/adopted',
+        null,
+        $node,
+    );
+
+    // Adoption creates the row after the migration has run, so an empty value
+    // here is a brand-new live-inheriting workspace, not a legacy one.
+    $workspace = Workspace::query()->where('name', 'adopted')->sole();
+
+    expect($workspace->php_version)->toBe('8.3');
+
+    $instance->forceFill(['php_version' => '8.4'])->save();
+
+    expect($workspace->refresh()->php_version)->toBe('8.3');
 });
