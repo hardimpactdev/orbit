@@ -272,12 +272,21 @@ it('restores canonical host ownership of the config root during routine runtime 
     $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
     $chownCommands = [];
 
+    $credentialsWrittenBeforeChown = null;
+
     File::ensureDirectoryExists($hostRoot.dirname($this->configRoot));
     putenv("ORBIT_HOST_PATH_PREFIX={$hostRoot}");
-    Process::fake(function ($process) use (&$chownCommands) {
+    Process::fake(function ($process) use (&$chownCommands, &$credentialsWrittenBeforeChown) {
         $chownCommands[] = is_array($process->command)
             ? implode(' ', $process->command)
             : (string) $process->command;
+        // Ordering guard: every owner-only credential file must already exist
+        // when the chown runs, or convergence leaves freshly written files
+        // owned by the container account inside a 0700 tree.
+        $credentialsWrittenBeforeChown =
+            File::exists("{$this->configRoot}/operations-websocket/apps.php")
+            && File::exists("{$this->configRoot}/.env")
+            && File::exists("{$this->configRoot}/gateway.sqlite");
 
         return Process::result();
     });
@@ -294,7 +303,9 @@ it('restores canonical host ownership of the config root during routine runtime 
     $expectedOwner = fileowner($hostIdentityPath).':'.filegroup($hostIdentityPath);
 
     expect($chownCommands)
-        ->toContain("chown -R {$expectedOwner} {$this->configRoot}");
+        ->toContain("chown -R {$expectedOwner} {$this->configRoot}")
+        ->and($credentialsWrittenBeforeChown)
+        ->toBeTrue();
 });
 
 it('fails closed when convergence cannot resolve canonical host ownership', function (): void {

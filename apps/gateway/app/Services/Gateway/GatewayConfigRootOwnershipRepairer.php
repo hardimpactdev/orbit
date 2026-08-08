@@ -43,8 +43,11 @@ final class GatewayConfigRootOwnershipRepairer
         $result = Process::run(['chown', '-R', $owner, $configRoot]);
 
         if (! $result->successful()) {
+            $reason = trim($result->errorOutput().' '.$result->output());
+
             throw new RuntimeException(
-                "Failed to repair gateway config root ownership at {$configRoot}: ".trim($result->errorOutput()),
+                "Failed to repair gateway config root ownership at {$configRoot}: "
+                .($reason !== '' ? $reason : 'unknown error'),
             );
         }
     }
