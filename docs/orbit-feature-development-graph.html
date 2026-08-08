@@ -166,6 +166,26 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 .axis strong { display: block; margin-bottom: 0.2rem; }
 .axis ul { margin: 0.2rem 0 0; padding-left: 1.1rem; }
 .axis li { margin: 0.1rem 0; font-size: 0.9rem; }
+.compare {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0.55rem 0 0.85rem;
+}
+@media (min-width: 40rem) {
+    .compare { grid-template-columns: 1fr 1fr; }
+}
+.compare .card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.55rem 0.7rem;
+    background: color-mix(in srgb, var(--note) 35%, transparent);
+}
+.compare .card.proposed {
+    border-color: color-mix(in srgb, var(--future) 55%, var(--border));
+}
+.compare .card strong { display: block; margin-bottom: 0.25rem; }
+.compare .card ol { margin: 0.25rem 0 0; padding-left: 1.15rem; }
+.compare .card li { margin: 0.12rem 0; font-size: 0.9rem; }
 #llm-reading-guide {
     margin-top: 1rem;
     padding-top: 0.85rem;
@@ -179,14 +199,16 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 <body>
 <header>
     <h1>Orbit feature-development graph</h1>
-    <p class="note proposed"><strong>Proposed / target model</strong> for how the feature loop should be understood.
-    Solid boxes are already enforced by <code>HARNESS.md</code> and tooling. Dashed purple path is the separate release lifecycle (after LAND) and future fleet-safety prerequisites — not mandatory feature steps.
+    <p class="note proposed"><strong>Mixed current + proposed model.</strong>
+    Solid boxes are already enforced by <code>HARNESS.md</code> and tooling.
+    Dashed purple is the separate release lifecycle after LAND (optional for ordinary feature completion).
+    Some PROVE ordering is <strong>proposed/target only</strong> — see the current-vs-proposed boxes.
     <code>HARNESS.md</code> remains authoritative when this page conflicts.</p>
 </header>
 
 <div class="legend" aria-label="Legend">
     <span class="enforced">Already enforced (feature loop)</span>
-    <span class="proposed">Separate / future (release &amp; fleet safety)</span>
+    <span class="proposed">Release lifecycle / proposed ordering / future safety</span>
 </div>
 
 <div class="toolbar" role="group" aria-label="View">
@@ -199,10 +221,10 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 <section id="panel-simple" class="panel is-active" aria-labelledby="simple-title">
     <h2 id="simple-title">Feature loop overview</h2>
     <figure>
-        <figcaption>FRAME → BUILD ↔ PROVE → ACCEPT → LAND → Done · release path optional after LAND</figcaption>
-        <svg viewBox="0 0 780 300" role="img" aria-labelledby="simple-svg-title simple-svg-desc">
-            <title id="simple-svg-title">Orbit feature loop and optional release path</title>
-            <desc id="simple-svg-desc">Feature request flows through FRAME, BUILD, PROVE, ACCEPT, LAND, then Done. PROVE holds focused checks, pre-live venue proof, reviewer PASS, then conditional live-environment proof when the Goal requires it. After LAND, fleet rollout and public release are a separate conditional path. BUILD and PROVE loop on defects and FIX.</desc>
+        <figcaption>Feature loop (top) · notes (middle) · release lifecycle after LAND (bottom, optional for feature Done)</figcaption>
+        <svg viewBox="0 0 820 420" role="img" aria-labelledby="simple-svg-title simple-svg-desc">
+            <title id="simple-svg-title">Orbit feature loop and optional release lifecycle</title>
+            <desc id="simple-svg-desc">Feature request flows through FRAME, BUILD, PROVE, ACCEPT, LAND, then Done. PROVE holds checks and venue proof. Current enforcement requires any decisive live runtime receipt before reviewer PASS. A proposed target places reviewer PASS before conditional live proof. After LAND, a separate optional release lifecycle builds candidate artifacts, runs live update:all acceptance, gets human publish approval, then public release.</desc>
             <defs>
                 <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker>
                 <marker id="ml" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--loop)"/></marker>
@@ -210,46 +232,67 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
                 <marker id="mf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--future)"/></marker>
             </defs>
 
-            <!-- Main loop -->
-            <rect class="b" x="8" y="40" width="68" height="32" rx="5"/><text x="42" y="60" text-anchor="middle">Request</text>
-            <rect class="b" x="96" y="40" width="64" height="32" rx="5"/><text x="128" y="60" text-anchor="middle">FRAME</text>
-            <rect class="b" x="180" y="40" width="64" height="32" rx="5"/><text x="212" y="60" text-anchor="middle">BUILD</text>
+            <!-- Band 1: feature loop -->
+            <text class="l" x="8" y="14">Feature loop (enforced)</text>
+            <rect class="b" x="8" y="28" width="68" height="32" rx="5"/><text x="42" y="48" text-anchor="middle">Request</text>
+            <rect class="b" x="96" y="28" width="64" height="32" rx="5"/><text x="128" y="48" text-anchor="middle">FRAME</text>
+            <rect class="b" x="180" y="28" width="64" height="32" rx="5"/><text x="212" y="48" text-anchor="middle">BUILD</text>
 
-            <rect class="b" x="264" y="8" width="230" height="108" rx="6"/>
-            <text x="379" y="24" text-anchor="middle" font-weight="600">PROVE</text>
-            <text class="l" x="379" y="40" text-anchor="middle">Checks → exact candidate</text>
-            <text class="l" x="379" y="54" text-anchor="middle">→ pre-live venue proof</text>
-            <text class="l" x="379" y="68" text-anchor="middle">→ reviewer PASS on HEAD</text>
-            <text class="l" x="379" y="82" text-anchor="middle">→ live env proof if Goal needs it</text>
-            <text class="l" x="379" y="100" text-anchor="middle">→ candidate-bound evidence</text>
+            <rect class="b" x="264" y="12" width="236" height="96" rx="6"/>
+            <text x="382" y="28" text-anchor="middle" font-weight="600">PROVE</text>
+            <text class="l" x="382" y="44" text-anchor="middle">Checks → exact candidate</text>
+            <text class="l" x="382" y="58" text-anchor="middle">→ derived-venue proof</text>
+            <text class="l" x="382" y="72" text-anchor="middle">→ decisive runtime receipt</text>
+            <text class="l" x="382" y="86" text-anchor="middle">→ reviewer PASS (current order)</text>
+            <text class="l" x="382" y="100" text-anchor="middle">see proposed order below</text>
 
-            <rect class="b" x="514" y="40" width="68" height="32" rx="5"/><text x="548" y="60" text-anchor="middle">ACCEPT</text>
-            <rect class="b" x="602" y="40" width="64" height="32" rx="5"/><text x="634" y="60" text-anchor="middle">LAND</text>
-            <rect class="b" x="686" y="40" width="64" height="32" rx="5"/><text x="718" y="60" text-anchor="middle">Done</text>
+            <rect class="b" x="520" y="28" width="68" height="32" rx="5"/><text x="554" y="48" text-anchor="middle">ACCEPT</text>
+            <rect class="b" x="608" y="28" width="64" height="32" rx="5"/><text x="640" y="48" text-anchor="middle">LAND</text>
+            <rect class="b" x="692" y="28" width="64" height="32" rx="5"/><text x="724" y="48" text-anchor="middle">Done</text>
 
-            <path class="a" d="M76 56H96"/><path class="a" d="M160 56H180"/><path class="a" d="M244 56H264"/>
-            <path class="a" d="M494 56H514"/><path class="ao" d="M582 56H602"/><path class="ao" d="M666 56H686"/>
-            <path class="al" d="M340 116H212V72"/><text class="l" x="268" y="132" text-anchor="middle">code change / FIX</text>
+            <path class="a" d="M76 44H96"/><path class="a" d="M160 44H180"/><path class="a" d="M244 44H264"/>
+            <path class="a" d="M500 44H520"/><path class="ao" d="M588 44H608"/><path class="ao" d="M672 44H692"/>
+            <path class="al" d="M340 108H212V60"/><text class="l" x="268" y="124" text-anchor="middle">code change / FIX</text>
 
-            <!-- Release path (separate) -->
-            <rect class="bf" x="560" y="168" width="100" height="28" rx="5"/><text x="610" y="186" text-anchor="middle">Fleet rollout</text>
-            <rect class="bf" x="680" y="168" width="80" height="28" rx="5"/><text x="720" y="186" text-anchor="middle">Release</text>
-            <path class="af" d="M634 72V168"/><path class="af" d="M660 182H680"/>
-            <text class="l" x="560" y="158">After LAND only · not a feature step</text>
-            <text class="l" x="560" y="216">Artifacts from pushed origin/main (policy)</text>
-            <text class="l" x="560" y="232">update:all is fleet-wide (not canary)</text>
-            <text class="l" x="560" y="248">Canary + proven rollback = future prereqs</text>
+            <!-- Band 2: feature annotations only -->
+            <text class="l" x="8" y="148">Feature notes (no release boxes in this band)</text>
+            <text class="l" x="8" y="166">Same-candidate proof retry keeps Review. Any code change → BUILD, invalidates review, re-run affected proof + re-review.</text>
+            <text class="l" x="8" y="182">Venue (automated | retained-incus | browser | host-macos) ≠ environment (dev-fixture | live). Live is not a fifth venue.</text>
+            <text class="l" x="8" y="198">Current enforcement: when live proof is required, the decisive live runtime receipt is recorded before reviewer PASS (one receipt).</text>
+            <text class="l" x="8" y="214">Proposed target: pre-live venue proof → reviewer PASS on exact HEAD → conditional live proof on the same reviewed candidate.</text>
+            <text class="l" x="8" y="230">Live failure → stop further action/rollout and diagnose. Do not assume rollback exists.</text>
+            <text class="l" x="8" y="246">Protections follow the HARNESS Feedback ladder (six rungs). Incus is not a ladder rung.</text>
+            <text class="l" x="8" y="262">Orange loop: PROVE fail or FIX → BUILD. ACCEPT feedback → BUILD. Main advance after accept → PROVE again.</text>
 
-            <text class="l" x="8" y="168">PROVE: same-candidate proof retry keeps review. Any code change → BUILD, invalidates review, re-run affected proof + re-review.</text>
-            <text class="l" x="8" y="186">Venue (automated | retained-incus | browser | host-macos) ≠ environment (dev-fixture | live). Live is not a fifth venue.</text>
-            <text class="l" x="8" y="204">Live failure → stop further action/rollout and diagnose. Do not assume rollback exists.</text>
-            <text class="l" x="8" y="222">Protections follow the Feedback ladder (cheap checks first), not a seven-criterion Incus gate.</text>
-            <text class="l" x="8" y="250">Fleet rollout = install landed candidate on managed nodes. Public release = publish already-tested artifacts.</text>
-            <text class="l" x="8" y="268">Live proof = exercise the exact reviewed candidate against the live environment when the Goal claims live reachability/convergence.</text>
-            <text class="l" x="8" y="286">Orange loop: PROVE fail or FIX → BUILD. ACCEPT feedback → BUILD. Main advance after accept → PROVE again.</text>
+            <!-- Band 3: release lifecycle row, fully below annotations -->
+            <line x1="8" y1="280" x2="812" y2="280" stroke="var(--border)" stroke-width="1"/>
+            <text class="l" x="8" y="298">Release lifecycle after LAND (optional for ordinary feature completion; mandatory sequence if you enter release)</text>
+
+            <rect class="bf" x="40" y="318" width="120" height="36" rx="5"/>
+            <text x="100" y="334" text-anchor="middle">Build candidate</text>
+            <text class="l" x="100" y="348" text-anchor="middle">origin/main clean</text>
+
+            <rect class="bf" x="200" y="318" width="150" height="36" rx="5"/>
+            <text x="275" y="334" text-anchor="middle">Live update:all accept</text>
+            <text class="l" x="275" y="348" text-anchor="middle">fleet-wide (not canary)</text>
+
+            <rect class="bf" x="390" y="318" width="140" height="36" rx="5"/>
+            <text x="460" y="334" text-anchor="middle">Human publish OK</text>
+            <text class="l" x="460" y="348" text-anchor="middle">explicit approval</text>
+
+            <rect class="bf" x="570" y="318" width="150" height="36" rx="5"/>
+            <text x="645" y="334" text-anchor="middle">Public release</text>
+            <text class="l" x="645" y="348" text-anchor="middle">exact tested artifacts</text>
+
+            <path class="af" d="M640 60V300"/><path class="af" d="M640 300H100"/><path class="af" d="M100 300V318"/>
+            <path class="af" d="M160 336H200"/><path class="af" d="M350 336H390"/><path class="af" d="M530 336H570"/>
+
+            <text class="l" x="8" y="380">No LAND → public-release shortcut. Canary and proven rollback/downgrade are future safety prerequisites, not current capabilities.</text>
+            <text class="l" x="8" y="396">Live proof (in PROVE) ≠ fleet rollout (release) ≠ public release (publish). Root docs/*.html currently routes retained-incus, not automated.</text>
+            <text class="l" x="8" y="412">Derived by bin/orbit-feature-acceptance route. This HTML graph file does not derive automated under current path rules.</text>
         </svg>
     </figure>
-    <p class="muted">Open <strong>Detailed</strong> for phase inputs/exits. Open <strong>Venues &amp; proof</strong> for the venue/environment axes and PROVE sequence.</p>
+    <p class="muted">Open <strong>Detailed</strong> for phase inputs/exits. Open <strong>Venues &amp; proof</strong> for axes, current vs proposed PROVE order, and the protection ladder.</p>
 </section>
 
 <section id="panel-detailed" class="panel" aria-labelledby="detailed-title" hidden>
@@ -270,17 +313,18 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     <div class="axes">
         <div class="axis">
             <strong>Proof venue</strong>
-            <span class="muted">Where proof runs (derived from changed files)</span>
+            <span class="muted">Derived by <code>bin/orbit-feature-acceptance route</code></span>
             <ul>
-                <li><code>automated</code> — docs, tests, <code>bin/</code>, repo-only tooling</li>
-                <li><code>retained-incus</code> — core/SDK/CLI/server runtime</li>
-                <li><code>browser</code> — gateway or docs web UI</li>
+                <li><code>automated</code> — Markdown (<code>*.md</code>), tests, <code>bin/</code>, <code>.agents/</code>, <code>.github/</code>, and specifically allowlisted repo-only paths (for example TypeScript SDK packaging and a short root allowlist)</li>
+                <li><code>retained-incus</code> — default for other non-browser/non-macOS paths, including root <code>docs/*.html</code> today</li>
+                <li><code>browser</code> — gateway or docs web UI resources</li>
                 <li><code>host-macos</code> — native macOS Agent</li>
             </ul>
+            <p class="muted" style="margin:0.4rem 0 0">This HTML candidate is <strong>not</strong> claimed as automated under current routing.</p>
         </div>
         <div class="axis">
             <strong>Proof environment</strong>
-            <span class="muted">What kind of target is exercised (orthogonal axis)</span>
+            <span class="muted">Orthogonal axis on the runtime receipt</span>
             <ul>
                 <li><code>dev-fixture</code> — ordinary retained topology / local surfaces</li>
                 <li><code>live</code> — real managed environment when Goal claims live reachability/convergence</li>
@@ -289,40 +333,60 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
         </div>
     </div>
 
-    <h3>PROVE sequence</h3>
-    <ol>
-        <li>Focused checks, then diff-routed broader gate</li>
-        <li>Commit exact candidate; clean worktree</li>
-        <li>Pre-live proof on the derived venue (Incus + terminal when routed; browser/host-macos on those surfaces; automated skips runtime)</li>
-        <li>General reviewer PASS on that exact HEAD</li>
-        <li>If Goal requires live reachability/convergence: live-environment proof with the <em>same</em> reviewed candidate</li>
-        <li>Record candidate-bound evidence → ACCEPT</li>
-    </ol>
+    <h3>PROVE sequence: current enforcement vs proposed target</h3>
+    <div class="compare">
+        <div class="card">
+            <strong>Current enforcement</strong>
+            <ol>
+                <li>Focused checks, then diff-routed broader gate</li>
+                <li>Commit exact candidate; clean worktree</li>
+                <li>Derived-venue proof (and any required decisive live proof) on the single runtime receipt</li>
+                <li>General reviewer PASS only after that decisive runtime receipt is already present</li>
+                <li>Candidate-bound evidence → ACCEPT</li>
+            </ol>
+            <p class="muted" style="margin:0.4rem 0 0">Today’s reviewer contract and <code>loop.md</code> have one runtime receipt. Tooling does not support a second post-review runtime receipt.</p>
+        </div>
+        <div class="card proposed">
+            <strong>Proposed / target (not enforced yet)</strong>
+            <ol>
+                <li>Focused checks, then broader gate</li>
+                <li>Commit exact candidate; clean worktree</li>
+                <li>Pre-live venue proof (usually <code>dev-fixture</code>)</li>
+                <li>Reviewer PASS on that exact HEAD</li>
+                <li>Conditional live-environment proof with the <em>same</em> reviewed candidate when the Goal requires it</li>
+                <li>Candidate-bound evidence → ACCEPT</li>
+            </ol>
+            <p class="muted" style="margin:0.4rem 0 0">Visible as the agreed target. Do not treat it as current tooling behavior.</p>
+        </div>
+    </div>
     <p class="note"><strong>Same-candidate retry</strong> keeps Review and the reviewed tip.
     <strong>Any code change</strong> returns to BUILD, invalidates review, and requires all affected proof plus re-review.</p>
 
     <h3>Three different ideas (do not collapse them)</h3>
     <ul>
-        <li><strong>Live proof</strong> — in PROVE: exercise the exact reviewed feature candidate against the live environment when the Goal claims live reachability/convergence.</li>
-        <li><strong>Fleet rollout</strong> — after LAND: install a landed Orbit candidate across managed nodes (<code>update:all</code> today is fleet-wide, not canary).</li>
-        <li><strong>Public release</strong> — after LAND: publish already-tested artifacts; release candidates build from the pushed <code>origin/main</code> commit per current policy.</li>
+        <li><strong>Live proof</strong> — in PROVE: exercise the exact feature candidate against the live environment when the Goal claims live reachability/convergence (currently must be the decisive pre-PASS receipt when required).</li>
+        <li><strong>Fleet rollout / live update:all acceptance</strong> — in the release lifecycle after LAND: fleet-wide <code>update:all</code> of the candidate (mandatory if you enter release; not a feature-loop step).</li>
+        <li><strong>Public release</strong> — after live update:all acceptance and explicit human publish approval: publish the exact tested artifacts.</li>
     </ul>
 
-    <h3>Protection ladder (after actionable failure / feedback)</h3>
+    <h3>Protection ladder (HARNESS Feedback And Protections)</h3>
+    <p class="muted">After diagnosing and repairing the immediate problem, promote reusable protection in this order:</p>
     <ol>
-        <li>Diagnose and repair the immediate problem</li>
-        <li>Cheapest reusable protection: test / linter / schema / state check</li>
-        <li>Then tool, safe default, generated contract, or template</li>
-        <li>Then cheap UX check, reviewer context, or concise instruction</li>
-        <li>Integrated Incus safeguard only when the failure genuinely needs integrated topology to reproduce</li>
-        <li>Unknown cause → improve evidence; do not add speculative protection</li>
-        <li>Every chosen protection later validates with one rejected and one accepted example</li>
+        <li>test, linter, schema, or state check</li>
+        <li>tool, safe default, generated contract, or template</li>
+        <li>cheap calibrated UX check</li>
+        <li>targeted context for the general reviewer</li>
+        <li>concise instruction</li>
+        <li>extra ceremony only when unavoidable</li>
     </ol>
+    <p class="note">Incus is <strong>not</strong> a ladder rung. A chosen protection is proved through the normal diff-routed proof, so retained Incus is used only when the protection genuinely requires integrated topology.
+    Every promoted protection names one rejected and one accepted example and runs through normal diff-routed proof; there is no second receipt gate.
+    Unknown cause → improve evidence; do not add speculative protection.</p>
 </section>
 
 <section id="panel-responsibilities" class="panel" aria-labelledby="resp-title" hidden>
     <h2 id="resp-title">Responsibilities</h2>
-    <p class="note">This is the <strong>current local execution policy</strong> (from local agent instructions). It is distinct from the generic HARNESS roles. HARNESS calls the coordinating role <strong>feature owner</strong>; the mapping below is the current local policy for who plays that role and who implements.</p>
+    <p class="note">This is the <strong>current local execution policy</strong> from <strong>out-of-repo operator instruction</strong>. It is distinct from the generic HARNESS roles. HARNESS calls the coordinating role <strong>feature owner</strong>; the mapping below is the current local policy for who plays that role and who implements. Repo-root <code>AGENTS.md</code> does <em>not</em> define this Codex/Grok split.</p>
     <ul class="actor-list">
         <li><strong>User</strong> Supplies the goal and human judgment when required.</li>
         <li><strong>Codex</strong> Frames, coordinates, reviews worker results, and verifies.</li>
@@ -336,40 +400,44 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 <section id="llm-reading-guide">
     <h2>LLM reading guide</h2>
     <ol>
-        <li>Parse <code>#orbit-feature-graph-data</code> for version, enforcement markers, states, PROVE sequence, proof axes (venue vs environment), protection ladder, release lifecycle, guards, loops, actors, and evidence.</li>
-        <li>Main machine is only FRAME → BUILD ↔ PROVE → ACCEPT → LAND → Done. There is no mandatory “final deployment gate.” Conditional live-environment proof lives inside PROVE when the Goal requires it. Fleet rollout and public release are a separate post-LAND path.</li>
-        <li>Do not treat <code>live</code> as a venue. Do not invent canary or rollback as present capabilities; they are marked <code>future_prerequisite</code>.</li>
+        <li>Parse <code>#orbit-feature-graph-data</code> for version, <code>enforcement</code>, <code>prove_sequence.current</code> vs <code>prove_sequence.proposed_target</code>, protection ladder, release lifecycle, <code>derived_by</code>, and actor sources.</li>
+        <li>Main machine is only FRAME → BUILD ↔ PROVE → ACCEPT → LAND → Done. There is no mandatory “final deployment gate.”</li>
+        <li>Do not treat post-review live proof as already enforced. Do not invent a second post-review runtime receipt in current tooling.</li>
+        <li>Release lifecycle: LAND/pushed main → build candidate → live update:all acceptance → human publish approval → public release. No LAND→public shortcut.</li>
         <li>If this page conflicts with instructions, prefer <code>HARNESS.md</code>.</li>
     </ol>
 </section>
 
 <script type="application/json" id="orbit-feature-graph-data">
 {
-  "version": "3.0.0",
-  "scope": "feature-development-loop-proposed-target",
+  "version": "3.1.0",
+  "scope": "feature-development-loop-current-and-proposed",
   "title": "Orbit feature-development graph",
-  "model_status": "proposed-target",
-  "authority": ["HARNESS.md", "AGENT_FAST_PATH.md", "AGENTS.md", ".agents/skills/implementing-features/SKILL.md", "PRODUCT_DECISIONS.md", "bin/orbit-release-candidate"],
+  "model_status": "mixed-current-and-proposed",
+  "authority": ["HARNESS.md", "AGENT_FAST_PATH.md", "AGENTS.md", ".agents/skills/implementing-features/SKILL.md", "PRODUCT_DECISIONS.md", "bin/orbit-release-candidate", "bin/orbit-feature-acceptance route", "bin/orbit-loop-contract.php"],
   "initial_view": "simple",
   "enforcement": {
     "already_enforced": [
       "feature state machine FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND",
-      "diff-derived venues automated | retained-incus | browser | host-macos",
+      "diff-derived venues automated | retained-incus | browser | host-macos via bin/orbit-feature-acceptance route",
       "environment axis dev-fixture | live on runtime receipts",
+      "when live/runtime proof is required, the decisive runtime receipt must exist before reviewer PASS (single Verification.runtime receipt)",
       "same-candidate proof retry keeps Review; HEAD change requires re-review",
-      "Feedback And Protections ladder (cheap reusable protection first)",
+      "Feedback And Protections ladder exactly as HARNESS.md:232-241",
       "release candidate build requires clean checkout of pushed origin/main",
-      "update:all updates every managed installation through the gateway (fleet-wide)"
+      "update:all updates every managed installation through the gateway (fleet-wide)",
+      "public release promotes already-tested artifacts after candidate live acceptance and explicit human publish approval"
     ],
     "proposed_or_clarifying": [
-      "explicit separation of live proof vs fleet rollout vs public release in the operator-facing graph",
+      "post-review conditional live-environment proof order (pre-live venue proof -> reviewer PASS exact HEAD -> conditional live proof same reviewed candidate)",
+      "operator-facing separation of live proof vs fleet rollout vs public release",
       "labeling live proof as environment-axis work inside PROVE rather than a deployment_gate phase",
-      "showing release lifecycle after LAND as optional and non-mandatory for feature completion"
+      "showing release lifecycle after LAND as optional for ordinary feature completion while mandatory in sequence once entered"
     ],
     "future_prerequisites": [
       {
         "id": "canary-or-scoped-rollout",
-        "summary": "Canary or scoped rollout before fleet rollout could become a mandatory safety gate",
+        "summary": "Canary or scoped rollout before fleet rollout could become a safer mandatory gate",
         "status": "future_prerequisite",
         "current_reality": "update:all is fleet-wide and is not a canary"
       },
@@ -378,14 +446,20 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
         "summary": "Proven rollback/downgrade path before promising rollback on live failure",
         "status": "future_prerequisite",
         "current_reality": "no proven rollback path is claimed by this graph"
+      },
+      {
+        "id": "post-review-second-runtime-receipt",
+        "summary": "Tooling support for a second post-review runtime receipt if proposed PROVE order is adopted",
+        "status": "future_prerequisite",
+        "current_reality": "loop.md has one Verification.runtime receipt; reviewer PASS currently expects the decisive receipt already present"
       }
     ]
   },
   "views": [
-    {"id": "simple", "title": "Overview", "shows": "main feature loop, PROVE internal sequence, optional post-LAND release path"},
+    {"id": "simple", "title": "Overview", "shows": "feature loop band, feature notes band, separate lower release lifecycle row"},
     {"id": "detailed", "title": "Detailed", "shows": "phase panels with inputs, work, exit guards, problem paths"},
-    {"id": "axes", "title": "Venues & proof", "shows": "venue vs environment axes, PROVE sequence, protection ladder, live/fleet/release distinctions"},
-    {"id": "responsibilities", "title": "Responsibilities", "shows": "current local actor policy"}
+    {"id": "axes", "title": "Venues & proof", "shows": "venue vs environment axes, current vs proposed PROVE order, protection ladder, live/fleet/release distinctions"},
+    {"id": "responsibilities", "title": "Responsibilities", "shows": "local actor policy from out-of-repo operator instruction"}
   ],
   "states": [
     {"id": "request", "label": "Request", "loop": "feature"},
@@ -395,23 +469,26 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     {"id": "accept", "label": "ACCEPT", "loop": "feature"},
     {"id": "land", "label": "LAND", "loop": "feature"},
     {"id": "done", "label": "Done", "loop": "feature"},
-    {"id": "fleet-rollout", "label": "Fleet rollout", "loop": "release", "mandatory_for_feature": false, "status": "conditional-after-land"},
-    {"id": "public-release", "label": "Public release", "loop": "release", "mandatory_for_feature": false, "status": "conditional-after-land"}
+    {"id": "build-candidate-artifacts", "label": "Build candidate artifacts", "loop": "release", "mandatory_for_feature": false, "mandatory_for_release_lifecycle": true},
+    {"id": "live-update-all-acceptance", "label": "Live update:all candidate acceptance", "loop": "release", "mandatory_for_feature": false, "mandatory_for_release_lifecycle": true},
+    {"id": "human-publish-approval", "label": "Explicit human publish approval", "loop": "release", "mandatory_for_feature": false, "mandatory_for_release_lifecycle": true},
+    {"id": "public-release", "label": "Public release", "loop": "release", "mandatory_for_feature": false, "mandatory_for_release_lifecycle": true}
   ],
   "transitions": [
     {"id": "t-request-frame", "from": "request", "to": "frame", "loop": "feature"},
     {"id": "t-frame-build", "from": "frame", "to": "build", "guard": "intent-clear", "loop": "feature"},
     {"id": "t-build-prove", "from": "build", "to": "prove", "guard": "candidate-committed-clean", "loop": "feature"},
-    {"id": "t-prove-accept", "from": "prove", "to": "accept", "guard": "prove-ready-for-accept", "requires": ["checks-pass", "pre-live-proof-when-applicable", "review-pass-on-exact-candidate", "live-environment-proof-when-goal-requires"], "loop": "feature"},
+    {"id": "t-prove-accept", "from": "prove", "to": "accept", "guard": "prove-ready-for-accept", "requires": ["checks-pass", "derived-venue-proof-when-applicable", "decisive-runtime-receipt-before-review-when-required", "review-pass-on-exact-candidate"], "loop": "feature"},
     {"id": "t-accept-land", "from": "accept", "to": "land", "guard": "acceptance-valid", "loop": "feature"},
     {"id": "t-land-done", "from": "land", "to": "done", "guard": "finalization-pass", "loop": "feature"},
-    {"id": "t-land-fleet-rollout", "from": "land", "to": "fleet-rollout", "loop": "release", "mandatory": false, "guard": "operator-chooses-fleet-rollout"},
-    {"id": "t-fleet-public-release", "from": "fleet-rollout", "to": "public-release", "loop": "release", "mandatory": false, "note": "public release can also proceed without fleet rollout depending on policy"},
-    {"id": "t-land-public-release", "from": "land", "to": "public-release", "loop": "release", "mandatory": false, "guard": "operator-chooses-public-release"}
+    {"id": "t-land-build-candidate", "from": "land", "to": "build-candidate-artifacts", "loop": "release", "mandatory_for_feature": false, "mandatory_for_release_lifecycle": true, "guard": "operator-enters-release-lifecycle"},
+    {"id": "t-build-candidate-live-update-all", "from": "build-candidate-artifacts", "to": "live-update-all-acceptance", "loop": "release", "mandatory_for_release_lifecycle": true},
+    {"id": "t-live-update-all-human-publish", "from": "live-update-all-acceptance", "to": "human-publish-approval", "loop": "release", "mandatory_for_release_lifecycle": true},
+    {"id": "t-human-publish-public-release", "from": "human-publish-approval", "to": "public-release", "loop": "release", "mandatory_for_release_lifecycle": true}
   ],
   "loops": [
-    {"id": "loop-prelive-defect-build", "from": "prove", "to": "build", "label": "Venue proof reveals candidate defect → BUILD; review invalidated"},
-    {"id": "loop-prelive-retry", "from": "prove", "to": "prove", "label": "Same-candidate venue/topology or transient issue; Review kept"},
+    {"id": "loop-venue-defect-build", "from": "prove", "to": "build", "label": "Venue proof reveals candidate defect → BUILD; review invalidated"},
+    {"id": "loop-venue-retry", "from": "prove", "to": "prove", "label": "Same-candidate venue/topology or transient issue; Review kept"},
     {"id": "loop-reviewer-fix-build", "from": "prove", "to": "build", "label": "reviewer FIX → BUILD; review reset"},
     {"id": "loop-live-defect-build", "from": "prove", "to": "build", "label": "Live-environment proof reveals candidate defect → BUILD; review invalidated"},
     {"id": "loop-live-retry", "from": "prove", "to": "prove", "label": "Same-candidate live environment or transient issue after stop-and-diagnose; Review kept when HEAD unchanged"},
@@ -424,66 +501,112 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     {"id": "intent-clear", "summary": "Outcome and authority are clear enough to proceed", "enforcement": "already_enforced"},
     {"id": "candidate-committed-clean", "summary": "Aligned docs/tests/code committed; worktree clean", "enforcement": "already_enforced"},
     {"id": "checks-pass", "summary": "Focused and broader checks pass on the exact candidate", "enforcement": "already_enforced"},
-    {"id": "pre-live-proof-when-applicable", "summary": "Derived-venue pre-live proof done: retained-incus uses Incus + terminal/runtime; browser and host-macos use their candidate surfaces; automated/docs-only skips runtime venue proof", "enforcement": "already_enforced"},
-    {"id": "review-pass-on-exact-candidate", "summary": "General reviewer PASS on the exact candidate HEAD and its pre-live proof", "enforcement": "already_enforced"},
-    {"id": "live-environment-proof-when-goal-requires", "summary": "When Goal claims live reachability or convergence: exercise the exact reviewed candidate against the live environment and record environment=live receipt. Otherwise skip. This is conditional environment proof, not a universal deployment gate.", "enforcement": "already_enforced"},
-    {"id": "prove-ready-for-accept", "summary": "Checks, pre-live venue proof (if required), reviewer PASS, and conditional live-environment proof (if Goal requires) all complete with candidate-bound evidence", "enforcement": "already_enforced"},
+    {"id": "derived-venue-proof-when-applicable", "summary": "Derived-venue proof done via bin/orbit-feature-acceptance route: retained-incus uses Incus + terminal/runtime; browser and host-macos use their candidate surfaces; automated skips runtime venue proof", "enforcement": "already_enforced"},
+    {"id": "decisive-runtime-receipt-before-review-when-required", "summary": "When runtime/live proof is required, the single decisive Verification.runtime receipt must be present before reviewer PASS. Current tooling has one runtime receipt, not a second post-review receipt.", "enforcement": "already_enforced"},
+    {"id": "review-pass-on-exact-candidate", "summary": "General reviewer PASS on the exact candidate HEAD after required decisive proof/receipt is present", "enforcement": "already_enforced"},
+    {"id": "proposed-post-review-live-proof", "summary": "Proposed only: after pre-live venue proof and reviewer PASS, conditional live proof with the same reviewed candidate when Goal requires it. Not currently enforceable as a second post-review runtime receipt.", "enforcement": "proposed_target"},
+    {"id": "prove-ready-for-accept", "summary": "Checks, derived-venue proof (if required), decisive runtime receipt when required, and reviewer PASS complete with candidate-bound evidence", "enforcement": "already_enforced"},
     {"id": "acceptance-valid", "summary": "Accepted feature tip == HEAD; accepted main tip current; feedback closed", "enforcement": "already_enforced"},
     {"id": "finalization-pass", "summary": "bin/orbit-feature-finalization-check PASS before destructive LAND steps", "enforcement": "already_enforced"},
-    {"id": "operator-chooses-fleet-rollout", "summary": "Operator elects to install a landed candidate across managed nodes; not required to finish the feature loop", "enforcement": "conditional-release"},
-    {"id": "operator-chooses-public-release", "summary": "Operator elects to publish already-tested artifacts; not required to finish the feature loop", "enforcement": "conditional-release"},
-    {"id": "release-artifacts-from-origin-main", "summary": "Release candidate artifacts must be built from a clean checkout of the pushed origin/main commit (bin/orbit-release-candidate)", "enforcement": "already_enforced"}
+    {"id": "operator-enters-release-lifecycle", "summary": "Operator elects the separate release lifecycle after LAND; not required to finish the feature loop", "enforcement": "conditional-release"},
+    {"id": "release-artifacts-from-origin-main", "summary": "Release candidate artifacts must be built from a clean checkout of the pushed origin/main commit (bin/orbit-release-candidate)", "enforcement": "already_enforced"},
+    {"id": "live-update-all-acceptance-for-release", "summary": "Within the release lifecycle, fleet-wide live update:all candidate acceptance is mandatory before human publish approval", "enforcement": "already_enforced"},
+    {"id": "explicit-human-publish-approval", "summary": "Explicit human approval is required before public release of exact tested artifacts", "enforcement": "already_enforced"}
   ],
   "proof_axes": {
+    "derived_by": "bin/orbit-feature-acceptance route",
     "venues": [
-      {"id": "automated", "required_runtime": false, "action": "repository checks only; no Incus/runtime surface"},
-      {"id": "retained-incus", "required_runtime": true, "action": "verify exact candidate in retained Incus including terminal output and runtime behavior", "default_environment": "dev-fixture"},
-      {"id": "browser", "required_runtime": true, "action": "use exact candidate browser surface; do not force Incus"},
-      {"id": "host-macos", "required_runtime": true, "action": "use exact candidate host-macos surface; do not force Incus"}
+      {
+        "id": "automated",
+        "required_runtime": false,
+        "action": "repository checks only; no Incus/runtime surface",
+        "includes": [
+          "Markdown files (*.md)",
+          "tests paths",
+          "bin/",
+          ".agents/",
+          ".github/",
+          "packages/sdk-typescript/",
+          "allowlisted apps/docs Librarian/generated paths",
+          "short root allowlist (composer files, HARNESS.md, AGENTS.md, AGENT_FAST_PATH.md, LOOP.md.example, orbit/sessions/index.json)"
+        ]
+      },
+      {
+        "id": "retained-incus",
+        "required_runtime": true,
+        "action": "default for other non-browser/non-macOS paths; verify exact candidate in retained Incus including terminal/runtime",
+        "default_environment": "dev-fixture",
+        "includes_today": ["root docs/*.html and other non-allowlisted paths"]
+      },
+      {"id": "browser", "required_runtime": true, "action": "use exact candidate browser surface; do not force Incus", "includes": ["apps/gateway/resources/", "apps/docs/resources/"]},
+      {"id": "host-macos", "required_runtime": true, "action": "use exact candidate host-macos surface; do not force Incus", "includes": ["apps/macos/"]}
     ],
     "environments": [
       {"id": "dev-fixture", "summary": "Ordinary retained topology or local proof surface"},
       {"id": "live", "summary": "Real managed environment; use only when Goal claims live reachability/convergence; receipt field environment=live"}
     ],
     "not_venues": ["live"],
-    "note": "Venue is the proof surface derived from changed files. Environment is an orthogonal axis on the receipt. Live is never a fifth venue."
+    "this_candidate_note": "docs/orbit-feature-development-graph.html is root docs/*.html and currently derives retained-incus, not automated. Do not claim this HTML candidate is automated.",
+    "note": "Venue is the proof surface derived from changed files by bin/orbit-feature-acceptance route. Environment is an orthogonal axis on the receipt. Live is never a fifth venue."
   },
   "concepts": {
     "live_proof": {
       "id": "live_proof",
       "phase": "prove",
-      "summary": "Conditionally exercise the exact reviewed feature candidate against the live environment when the Goal claims live reachability or convergence.",
+      "summary": "Exercise the exact feature candidate against the live environment when the Goal claims live reachability or convergence.",
+      "current_enforcement": "When required, this is the decisive Verification.runtime receipt and must exist before reviewer PASS.",
+      "proposed_target": "After pre-live venue proof and reviewer PASS, conditional live proof with the same reviewed candidate.",
       "not": ["fleet rollout", "public release", "a derived venue"]
     },
     "fleet_rollout": {
       "id": "fleet_rollout",
       "phase": "release",
-      "summary": "Install a landed Orbit candidate across managed nodes.",
+      "summary": "Install a landed Orbit candidate across managed nodes via live update:all acceptance.",
       "current_command": "update:all",
       "current_scope": "fleet-wide",
       "is_canary": false,
-      "mandatory_for_feature": false
+      "mandatory_for_feature": false,
+      "mandatory_for_release_lifecycle": true
     },
     "public_release": {
       "id": "public_release",
       "phase": "release",
-      "summary": "Publish already-tested artifacts.",
+      "summary": "Publish the exact already-tested artifacts after live update:all acceptance and explicit human publish approval.",
       "artifacts_built_from": "pushed origin/main (clean checkout)",
-      "mandatory_for_feature": false
+      "mandatory_for_feature": false,
+      "mandatory_for_release_lifecycle": true,
+      "may_skip_fleet_rollout": false
     }
   },
   "prove_sequence": {
     "id": "prove_sequence",
     "owned_by_phase": "prove",
-    "steps": [
-      {"id": "focused-and-broader-checks", "summary": "Focused checks then diff-routed broader gate"},
-      {"id": "exact-candidate-commit", "summary": "Commit exact candidate; confirm clean worktree"},
-      {"id": "pre-live-venue-proof", "summary": "Derived-venue pre-live proof (Incus/terminal when routed; browser/host-macos surfaces; automated skips runtime)"},
-      {"id": "reviewer-pass-exact-head", "summary": "General reviewer PASS on exact HEAD"},
-      {"id": "conditional-live-environment-proof", "summary": "When Goal requires live reachability/convergence, prove the same reviewed candidate on environment=live"},
-      {"id": "candidate-bound-evidence", "summary": "Record candidate-bound evidence"},
-      {"id": "ready-for-accept", "summary": "Proceed to ACCEPT"}
-    ],
+    "current": {
+      "enforcement": "already_enforced",
+      "summary": "Required decisive live/runtime proof and the single Verification.runtime receipt happen before reviewer PASS. Tooling does not support a second post-review runtime receipt.",
+      "steps": [
+        {"id": "focused-and-broader-checks", "summary": "Focused checks then diff-routed broader gate"},
+        {"id": "exact-candidate-commit", "summary": "Commit exact candidate; confirm clean worktree"},
+        {"id": "derived-venue-and-decisive-runtime-proof", "summary": "Derived-venue proof; when Goal requires live reachability/convergence, include that decisive live proof in the single runtime receipt"},
+        {"id": "reviewer-pass-exact-head", "summary": "General reviewer PASS on exact HEAD after decisive receipt is present"},
+        {"id": "candidate-bound-evidence", "summary": "Record candidate-bound evidence"},
+        {"id": "ready-for-accept", "summary": "Proceed to ACCEPT"}
+      ]
+    },
+    "proposed_target": {
+      "enforcement": "proposed_target",
+      "summary": "Agreed target model: pre-live venue proof, then reviewer PASS on exact HEAD, then conditional live proof with the same reviewed candidate. Not currently enforceable as a second post-review runtime receipt.",
+      "steps": [
+        {"id": "focused-and-broader-checks", "summary": "Focused checks then diff-routed broader gate"},
+        {"id": "exact-candidate-commit", "summary": "Commit exact candidate; confirm clean worktree"},
+        {"id": "pre-live-venue-proof", "summary": "Derived-venue pre-live proof (usually environment=dev-fixture)"},
+        {"id": "reviewer-pass-exact-head", "summary": "General reviewer PASS on exact HEAD"},
+        {"id": "conditional-live-environment-proof", "summary": "When Goal requires live reachability/convergence, prove the same reviewed candidate on environment=live"},
+        {"id": "candidate-bound-evidence", "summary": "Record candidate-bound evidence"},
+        {"id": "ready-for-accept", "summary": "Proceed to ACCEPT"}
+      ],
+      "tooling_gap": "loop.md has one Verification.runtime receipt; current reviewer contract expects the decisive runtime receipt before PASS"
+    },
     "same_candidate_retry": {
       "keeps_review": true,
       "keeps_reviewed_feature_tip": true,
@@ -499,12 +622,12 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
   "pre_live_proof": {
     "id": "pre_live_proof",
     "owned_by_phase": "prove",
-    "label": "Pre-live venue proof",
-    "position": "after checks and candidate commit; before reviewer PASS and before any live-environment proof",
-    "summary": "Prove the exact candidate on the derived venue (usually environment=dev-fixture). Not fleet rollout and not public release.",
+    "label": "Derived-venue proof (pre-live when environment is dev-fixture)",
+    "position": "after checks and candidate commit; currently also carries any required decisive live receipt before reviewer PASS",
+    "summary": "Prove the exact candidate on the derived venue. Not fleet rollout and not public release.",
     "replaces_stale_label": "pre_deployment_verification",
     "venue_branches": [
-      {"venue": "automated", "required": false, "action": "skip Incus and other runtime pre-live proof; repository checks only"},
+      {"venue": "automated", "required": false, "action": "skip Incus and other runtime venue proof; repository checks only"},
       {"venue": "retained-incus", "required": true, "action": "verify exact candidate in retained Incus including terminal output and runtime behavior", "environment": "dev-fixture"},
       {"venue": "browser", "required": true, "action": "use exact candidate browser surface; do not force Incus"},
       {"venue": "host-macos", "required": true, "action": "use exact candidate host-macos surface; do not force Incus"}
@@ -518,26 +641,27 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     "id": "live_environment_proof",
     "owned_by_phase": "prove",
     "label": "Conditional live-environment proof",
-    "position": "after pre-live venue proof and reviewer PASS; before ACCEPT",
-    "not_after": ["land", "done"],
     "mandatory": false,
     "not_a_universal_gate": true,
     "not_labels": ["Final deployment gate", "deployment_gate"],
     "conditional_on": "Goal claims live reachability or convergence",
-    "summary": "Exercise the exact already-reviewed candidate against the live environment when the Goal requires it. Distinct from retained Incus pre-live proof, fleet rollout, and public release. Automated/docs-only usually skips. Live is an environment axis value, not a venue.",
-    "same_reviewed_candidate_required": true,
+    "current_enforcement": {
+      "enforcement": "already_enforced",
+      "position": "before reviewer PASS when required",
+      "summary": "When required, live proof is the decisive single Verification.runtime receipt and must exist before reviewer PASS. There is no separate post-review live-proof step in current tooling."
+    },
+    "proposed_target": {
+      "enforcement": "proposed_target",
+      "position": "after pre-live venue proof and reviewer PASS; before ACCEPT",
+      "summary": "Exercise the exact already-reviewed candidate against the live environment when the Goal requires it. Requires future support for a second post-review runtime receipt if kept distinct from the pre-review venue proof.",
+      "same_reviewed_candidate_required": true
+    },
     "receipt_environment": "live",
-    "sequence": [
-      "when Goal requires it, exercise exact reviewed candidate on live environment",
-      "verify claimed live reachability/convergence",
-      "record candidate-bound evidence with environment=live"
-    ],
     "on_failure": {
       "candidate_defect": "BUILD (invalidates review after any HEAD change)",
       "environment_or_transient": "stop further action/rollout, diagnose, then same-candidate retry only when safe",
       "unexpected_live_failure": "stop further action/rollout and diagnose; do not promise rollback unless a proven rollback path exists; then apply protection_ladder"
     },
-    "on_success": "evidence → ACCEPT",
     "rollback_policy": {
       "promise_rollback": false,
       "current_guidance": "stop further action/rollout and diagnose",
@@ -548,29 +672,33 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     "id": "protection_ladder",
     "owned_by_phase": "prove_or_feedback_close",
     "not_a_main_phase": true,
-    "aligns_with": "HARNESS.md Feedback And Protections",
+    "aligns_with": "HARNESS.md Feedback And Protections lines 232-241",
     "replaces_stale_label": "safeguard_promotion",
     "removed_seven_criterion_gate": true,
-    "summary": "After actionable failure or feedback: repair the immediate problem, then choose the cheapest reusable protection. Integrated Incus safeguard only when the failure genuinely requires integrated topology. Unknown cause improves evidence rather than speculative protection.",
-    "immediate_sequence": [
+    "incus_is_ladder_rung": false,
+    "summary": "After diagnosing and repairing the immediate problem, promote reusable protection in HARNESS order. Incus is not a rung.",
+    "immediate_before_ladder": [
       "stop further action/rollout when the failure is live",
       "diagnose cause",
-      "repair immediate problem",
-      "choose protection via ladder"
+      "repair immediate problem"
     ],
     "ladder": [
-      {"order": 1, "id": "repair-immediate", "summary": "Diagnose and repair the immediate problem"},
-      {"order": 2, "id": "cheap-check", "summary": "Cheapest reusable protection: test, linter, schema, or state check"},
-      {"order": 3, "id": "tool-or-default", "summary": "Tool, safe default, generated contract, or template"},
-      {"order": 4, "id": "ux-reviewer-instruction", "summary": "Cheap calibrated UX check, targeted reviewer context, or concise instruction"},
-      {"order": 5, "id": "integrated-incus-safeguard", "summary": "Integrated Incus safeguard only when the failure genuinely requires integrated topology to reproduce"},
-      {"order": 6, "id": "unknown-cause", "summary": "Unknown cause → improve evidence; do not add speculative protection"},
-      {"order": 7, "id": "validate-examples", "summary": "Every chosen protection is later validated by one rejected and one accepted example"}
+      {"order": 1, "id": "cheap-check", "summary": "test, linter, schema, or state check"},
+      {"order": 2, "id": "tool-or-default", "summary": "tool, safe default, generated contract, or template"},
+      {"order": 3, "id": "cheap-ux-check", "summary": "cheap calibrated UX check"},
+      {"order": 4, "id": "reviewer-context", "summary": "targeted context for the general reviewer"},
+      {"order": 5, "id": "concise-instruction", "summary": "concise instruction"},
+      {"order": 6, "id": "extra-ceremony", "summary": "extra ceremony only when unavoidable"}
     ],
+    "outside_ladder": {
+      "proof_of_protection": "A chosen protection is proved through the normal diff-routed proof, so retained Incus is used only when the protection genuinely requires integrated topology.",
+      "examples_rule": "Every promoted protection names one rejected and one accepted example and runs through normal diff-routed proof; there is no second receipt gate.",
+      "unknown_cause": "Unknown cause → improve evidence; do not add speculative protection."
+    },
     "outcomes": {
       "protection_requires_change": {
         "next": "BUILD",
-        "steps": ["return to BUILD", "add the chosen protection", "re-run affected proof", "re-review after HEAD change"]
+        "steps": ["return to BUILD", "add the chosen protection", "re-run affected proof through normal diff-routed proof", "re-review after HEAD change"]
       },
       "ops_only": {
         "next": "PROVE",
@@ -587,7 +715,18 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     "separate_from_feature_loop": true,
     "mandatory_for_feature_completion": false,
     "starts_after": "land",
-    "summary": "Fleet rollout and public release happen after LAND as a conditional operator path. They are not mandatory feature steps and are not part of PROVE.",
+    "summary": "If the operator enters the release lifecycle after LAND/pushed main: build candidate artifacts, live update:all candidate acceptance, explicit human publish approval, then public release of exact tested artifacts. Entire lifecycle is optional for ordinary feature completion; once entered, fleet-wide update:all acceptance is mandatory before publish.",
+    "sequence": [
+      "LAND / pushed main",
+      "build candidate artifacts from clean origin/main",
+      "live update:all candidate acceptance (fleet-wide)",
+      "explicit human approval to publish",
+      "public release of exact tested artifacts"
+    ],
+    "forbidden_shortcuts": [
+      "LAND directly to public release",
+      "public release that skips fleet-wide update:all candidate acceptance"
+    ],
     "artifacts_policy": {
       "built_from": "pushed origin/main",
       "clean_checkout_required": true,
@@ -595,39 +734,44 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "message": "Candidate artifacts must be built from the pushed origin/main commit."
     },
     "fleet_rollout": {
-      "definition": "Install a landed Orbit candidate across managed nodes",
+      "definition": "Live update:all candidate acceptance across managed nodes",
       "current_command": "update:all",
       "description": "Update every managed Orbit installation through the gateway",
       "is_canary": false,
       "scope": "fleet-wide",
+      "mandatory_for_release_lifecycle": true,
       "ordering_note": "Gateway updates first as version ceiling, then local CLI and remote workload nodes",
       "safety": {
         "canary_or_scoped_rollout": "future_prerequisite",
         "proven_rollback_or_downgrade": "future_prerequisite",
-        "before_mandatory_safety_gate": "canary/scoped rollout and a proven rollback/downgrade path are future prerequisites before fleet rollout could become a mandatory safety gate",
+        "before_safer_mandatory_gate": "canary/scoped rollout and a proven rollback/downgrade path are future prerequisites for making rollout safer, not current capabilities",
         "do_not_claim_rollback_exists": true
       }
     },
     "public_release": {
-      "definition": "Publish the already-tested artifacts",
+      "definition": "Publish the exact already-tested artifacts",
       "promotes_tested_assets": true,
-      "rebuild_at_publication": false
+      "rebuild_at_publication": false,
+      "requires": ["build candidate artifacts", "live update:all candidate acceptance", "explicit human publish approval"],
+      "may_skip_fleet_rollout": false
     }
   },
   "blockers": [
     {"id": "unclear-intent", "phase": "frame", "effect": "wait for user or authority"},
-    {"id": "prelive-candidate-defect", "phase": "prove", "effect": "return to BUILD; review invalidated after HEAD change"},
-    {"id": "prelive-topology-issue", "phase": "prove", "effect": "remain in PROVE and retry same candidate"},
+    {"id": "venue-candidate-defect", "phase": "prove", "effect": "return to BUILD; review invalidated after HEAD change"},
+    {"id": "venue-topology-issue", "phase": "prove", "effect": "remain in PROVE and retry same candidate"},
     {"id": "reviewer-fix", "phase": "prove", "effect": "return to BUILD; review reset"},
     {"id": "live-candidate-defect", "phase": "prove", "effect": "return to BUILD; review invalidated after HEAD change"},
     {"id": "live-environment-issue", "phase": "prove", "effect": "stop further action/rollout, diagnose, then same-candidate retry when safe"},
     {"id": "live-failure-pending-diagnosis", "phase": "prove", "effect": "stop further action/rollout and diagnose; apply protection_ladder; do not assume rollback"},
-    {"id": "missing-runtime-receipt", "phase": "prove", "effect": "block ACCEPT when pre-live or live-environment proof is required"},
+    {"id": "missing-runtime-receipt", "phase": "prove", "effect": "block reviewer PASS / ACCEPT when runtime proof is required"},
     {"id": "dirty-worktree", "phase": "land", "effect": "block LAND"},
     {"id": "unresolved-feedback", "phase": "land", "effect": "block ACCEPT/LAND"},
     {"id": "stale-acceptance", "phase": "land", "effect": "block LAND until re-ACCEPT"},
     {"id": "failed-finalization", "phase": "land", "effect": "do not execute destructive command"},
-    {"id": "release-not-on-origin-main", "phase": "release", "effect": "block release-candidate build until HEAD equals pushed origin/main and tree is clean"}
+    {"id": "release-not-on-origin-main", "phase": "release", "effect": "block release-candidate build until HEAD equals pushed origin/main and tree is clean"},
+    {"id": "release-missing-live-update-all", "phase": "release", "effect": "block public release until live update:all candidate acceptance completes"},
+    {"id": "release-missing-human-publish-approval", "phase": "release", "effect": "block public release until explicit human publish approval"}
   ],
   "phases": {
     "frame": {
@@ -635,7 +779,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "label": "FRAME",
       "enforcement": "already_enforced",
       "inputs": ["Feature request / goal", "Product docs and PRODUCT_DECISIONS.md", "Prior feedback when scope is stable"],
-      "happens": ["Resolve outcome, owned paths, constraints", "Prepare isolated worktree and .orbit/loop.md", "Route acceptance venue early (venue axis, not live-as-venue)"],
+      "happens": ["Resolve outcome, owned paths, constraints", "Prepare isolated worktree and .orbit/loop.md", "Route acceptance venue early via bin/orbit-feature-acceptance route"],
       "exit": ["Intent is clear and scoped", "Worktree and Goal/Scope recorded → BUILD"],
       "problems": ["Unclear or conflicting intent → wait for user/authority", "Do not invent product intent"],
       "mini_flow": ["unclear intent → wait", "clear → BUILD"]
@@ -653,12 +797,12 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     "prove": {
       "id": "prove",
       "label": "PROVE",
-      "enforcement": "already_enforced",
+      "enforcement": "mixed-current-and-proposed",
       "owns": ["prove_sequence", "pre_live_proof", "live_environment_proof", "protection_ladder"],
       "does_not_own": ["fleet_rollout", "public_release", "deployment_gate"],
       "inputs": [
         "Exact committed candidate HEAD",
-        "Derived proof venue (automated | retained-incus | browser | host-macos)",
+        "Derived proof venue from bin/orbit-feature-acceptance route",
         "Proof environment axis (dev-fixture | live)",
         "Checks and reviewer context",
         "Goal claim for optional live-environment proof"
@@ -666,18 +810,17 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "happens": [
         "Focused and broader checks",
         "Commit exact candidate; clean worktree",
-        "Pre-live venue proof: retained-incus uses Incus + terminal/runtime; browser/host-macos use those surfaces; automated skips runtime",
-        "General reviewer PASS on that exact HEAD",
-        "If Goal claims live reachability/convergence: live-environment proof with the same reviewed candidate (environment=live)",
+        "CURRENT: derived-venue proof and any required decisive live/runtime proof into the single Verification.runtime receipt, then general reviewer PASS on that exact HEAD",
+        "PROPOSED TARGET (not enforced): pre-live venue proof → reviewer PASS exact HEAD → conditional live proof on the same reviewed candidate",
         "Record candidate-bound evidence → ACCEPT",
         "Same-candidate proof retry keeps Review; any code change → BUILD, invalidates review, re-run affected proof + re-review",
         "On unexpected live failure: stop further action/rollout and diagnose; apply protection ladder; do not promise rollback unless a proven path exists"
       ],
       "exit": [
         "Checks passed",
-        "Pre-live venue proof complete for the derived venue (or skipped for automated)",
+        "Derived-venue proof complete (or skipped for automated)",
+        "Decisive runtime receipt present when required (current enforcement before PASS)",
         "Reviewer PASS on exact candidate",
-        "Live-environment proof complete when Goal requires it (else skipped)",
         "Evidence recorded → ACCEPT"
       ],
       "problems": [
@@ -686,22 +829,15 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
         "Reviewer FIX → BUILD",
         "Live-environment proof reveals candidate defect → BUILD",
         "Live environment or transient issue → stop further action/rollout, diagnose, same-candidate retry when safe",
-        "Unexpected live failure → stop further action/rollout and diagnose → protection ladder (cheap protection first; Incus safeguard only if topology-required; unknown → improve evidence)",
-        "Protection needs code/test/tooling → BUILD then re-PROVE",
-        "Automated/docs-only → skip runtime venue proof and usually skip live-environment proof",
+        "Unexpected live failure → stop further action/rollout and diagnose → protection ladder",
+        "Protection needs code/test/tooling → BUILD then re-PROVE through normal diff-routed proof",
+        "Automated surfaces → skip runtime venue proof",
         "Never treat live as a fifth venue; never treat fleet rollout as part of PROVE"
       ],
       "mini_flow": [
         "Checks → commit exact candidate",
-        "Pre-live venue proof required?",
-        "No (automated) → Reviewer PASS → live env required by Goal?",
-        "Yes retained-incus → Incus + terminal proof → pass? defect→BUILD / env→PROVE retry",
-        "Yes browser|host-macos → that surface proof (not forced Incus)",
-        "After pre-live pass → Reviewer PASS (FIX→BUILD)",
-        "Live env required by Goal? No → evidence → ACCEPT",
-        "Yes → same reviewed candidate on live → verify claim",
-        "Live defect → BUILD; env issue → stop/diagnose then PROVE retry; pass → evidence → ACCEPT",
-        "Unexpected live failure → stop further action/rollout → diagnose → protection ladder",
+        "CURRENT: venue/runtime proof + decisive receipt when required → Reviewer PASS → evidence → ACCEPT",
+        "PROPOSED: pre-live venue proof → Reviewer PASS → conditional live proof if Goal needs it → evidence → ACCEPT",
         "Code change anywhere → BUILD, invalidate review, re-proof, re-review"
       ]
     },
@@ -709,7 +845,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "id": "accept",
       "label": "ACCEPT",
       "enforcement": "already_enforced",
-      "inputs": ["Reviewer PASS on exact tip", "Pre-live venue proof and conditional live-environment evidence when required", "human-judgment decision"],
+      "inputs": ["Reviewer PASS on exact tip", "Decisive venue/runtime evidence when required", "human-judgment decision"],
       "happens": ["ready at proven venue", "Human accepts when judgment required", "Automated actor only when judgment not required"],
       "exit": ["Exact accepted feature tip and main tip recorded → LAND"],
       "problems": ["Feedback → BUILD then re-prove/re-review", "Main moved → merge main; conflict → BUILD; clean → PROVE and re-ACCEPT", "HEAD move invalidates acceptance"],
@@ -721,47 +857,51 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "enforcement": "already_enforced",
       "inputs": ["Valid acceptance", "Clean worktree", "Closed actionable feedback"],
       "happens": ["Finalization gate per destructive step", "Merge to main", "Archive from feature worktree", "Ordered Solo/project/worktree/branch cleanup"],
-      "exit": ["Merge + archive + cleanup complete → Done (feature loop complete)", "Optional later: release lifecycle (fleet rollout / public release) — not required for Done"],
+      "exit": ["Merge + archive + cleanup complete → Done (feature loop complete)", "Optional later: enter release lifecycle — not required for Done"],
       "problems": ["Dirty files, unresolved feedback, stale acceptance, or failed check → block", "Never run destructive command without FINALIZATION: PASS"],
-      "mini_flow": ["gate → merge → archive → cleanup → Done", "optional separate path → fleet rollout / public release"]
+      "mini_flow": ["gate → merge → archive → cleanup → Done", "optional separate path → release lifecycle"]
     },
     "release": {
       "id": "release",
       "label": "Release path (after LAND)",
       "enforcement": "separate-conditional",
       "mandatory_for_feature": false,
-      "inputs": ["Landed main / origin-main tip", "Already-tested artifacts policy", "Operator decision to roll out or publish"],
+      "inputs": ["Landed / pushed main tip", "Operator decision to enter release lifecycle"],
       "happens": [
-        "Build release artifacts only from clean pushed origin/main",
-        "Optional fleet rollout via update:all (fleet-wide today; not canary)",
-        "Optional public release of already-tested artifacts",
-        "Canary/scoped rollout and proven rollback/downgrade remain future prerequisites before fleet rollout could become a mandatory safety gate"
+        "Build candidate artifacts only from clean pushed origin/main",
+        "Live update:all candidate acceptance (fleet-wide today; not canary) — mandatory within the release lifecycle",
+        "Explicit human approval to publish",
+        "Public release of exact tested artifacts",
+        "Canary/scoped rollout and proven rollback/downgrade remain future prerequisites for safer rollout, not current capabilities"
       ],
-      "exit": ["Operator completes chosen release actions, or skips entirely after feature Done"],
+      "exit": ["Public release complete, or operator never entered the lifecycle after feature Done"],
       "problems": [
         "HEAD not origin/main or dirty tree → block release-candidate build",
+        "Missing live update:all acceptance → block public release",
+        "Missing human publish approval → block public release",
         "Live/fleet failure → stop further action/rollout and diagnose; do not claim rollback exists",
-        "Do not pull fleet/public release into PROVE or treat them as mandatory feature steps"
+        "No LAND → public-release shortcut; no public release that skips fleet-wide update:all acceptance"
       ],
       "mini_flow": [
         "Feature Done on main",
-        "Need fleet install? → update:all (fleet-wide; future: canary + rollback prereqs)",
-        "Need public publish? → publish already-tested artifacts from origin/main policy",
-        "Skip both → remain Done"
+        "Enter release? No → remain Done",
+        "Yes → build candidate (origin/main) → live update:all acceptance → human publish OK → public release"
       ]
     }
   },
   "actors": {
     "harness_generic": [
-      {"id": "feature-owner", "label": "Feature owner", "note": "HARNESS name for the coordinator who owns FRAME→LAND"},
-      {"id": "optional-worker", "label": "Optional worker"},
-      {"id": "general-reviewer", "label": "General reviewer"},
-      {"id": "user", "label": "User"},
-      {"id": "harness", "label": "Orbit harness"}
+      {"id": "feature-owner", "label": "Feature owner", "note": "HARNESS name for the coordinator who owns FRAME→LAND", "source": "HARNESS.md"},
+      {"id": "optional-worker", "label": "Optional worker", "source": "HARNESS.md"},
+      {"id": "general-reviewer", "label": "General reviewer", "source": "HARNESS.md"},
+      {"id": "user", "label": "User", "source": "HARNESS.md"},
+      {"id": "harness", "label": "Orbit harness", "source": "HARNESS.md"}
     ],
     "local_policy": {
       "label": "Current local execution policy",
+      "source": "out-of-repo operator instruction",
       "distinct_from": "generic HARNESS feature-owner naming",
+      "not_sourced_from": ["AGENTS.md"],
       "mapping": [
         {"id": "user", "label": "User", "role": "goal and human judgment"},
         {"id": "codex", "label": "Codex", "role": "frames, coordinates, reviews worker results, verifies", "maps_to_harness": "feature-owner"},
@@ -781,6 +921,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
   "tools": [
     "bin/orbit-prepare-worktree",
     "bin/orbit-feature-acceptance",
+    "bin/orbit-feature-acceptance route",
     "bin/orbit-feature-feedback",
     "bin/orbit-feature-finalization-check",
     "bin/orbit-feature-land",
@@ -789,19 +930,27 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     "orbit update:all"
   ],
   "evidence": [
-    {"path": "HARNESS.md", "covers": ["states", "loops", "venues", "environment axis", "runtime proof", "Feedback And Protections", "LAND"]},
+    {"path": "HARNESS.md", "covers": ["states", "loops", "venues", "environment axis", "runtime proof before PASS", "Feedback And Protections ladder", "LAND"]},
     {"path": "AGENT_FAST_PATH.md", "covers": ["routing", "FRAME→LAND"]},
-    {"path": "AGENTS.md", "covers": ["worktree implementation", "verification duty", "local Codex/Grok role split"]},
+    {"path": "AGENTS.md", "covers": ["worktree implementation", "verification duty"]},
     {"path": ".agents/skills/implementing-features/SKILL.md", "covers": ["compact state route"]},
+    {"path": "bin/orbit-feature-acceptance", "covers": ["route command that derives venue"]},
+    {"path": "bin/orbit-loop-contract.php", "covers": ["orbitLoopAcceptanceVenue and automation-only path rules"]},
     {"path": "bin/orbit-release-candidate", "covers": ["origin/main clean build guard for release artifacts"]},
     {"path": "apps/cli/app/Commands/Operation/UpdateAllCommand.php", "covers": ["update:all fleet-wide signature and description"]},
-    {"path": "PRODUCT_DECISIONS.md", "covers": ["update:all ordering and release promotes tested assets"]}
+    {"path": "PRODUCT_DECISIONS.md", "covers": ["update:all ordering and release promotes tested assets"]},
+    {"path": "out-of-repo operator instruction", "covers": ["local Codex/Grok Solo role split"]}
   ],
   "removed_or_stale": [
-    {"id": "deployment_gate", "reason": "Replaced by conditional live_environment_proof; not a universal mandatory step"},
+    {"id": "deployment_gate", "reason": "Replaced by conditional live_environment_proof language; not a universal mandatory step"},
     {"id": "Final deployment gate", "reason": "Label removed; misleading as mandatory/universal"},
     {"id": "safeguard_promotion seven-criterion gate", "reason": "Replaced by HARNESS Feedback And Protections ladder"},
+    {"id": "Incus as protection ladder rung", "reason": "Incus is outside the ladder; used only via normal diff-routed proof when topology is required"},
     {"id": "live as fifth venue", "reason": "Live is environment axis only"},
+    {"id": "LAND direct to public release", "reason": "Removed; release requires build → live update:all acceptance → human publish approval → public release"},
+    {"id": "public release may skip fleet rollout", "reason": "Removed; update:all acceptance is mandatory inside the release lifecycle"},
+    {"id": "post-review live proof as already_enforced", "reason": "Marked proposed_target; current enforcement requires decisive receipt before PASS"},
+    {"id": "AGENTS.md covers local Codex/Grok role split", "reason": "False; local_policy source is out-of-repo operator instruction"},
     {"id": "promise of existing rollback/canary", "reason": "Marked future_prerequisite; current update:all is fleet-wide"}
   ]
 }
