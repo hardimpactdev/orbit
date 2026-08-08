@@ -497,7 +497,7 @@ final readonly class DeployManager
             return new RemoteShellResult(
                 exitCode: $result->exitCode === 0 ? 1 : $result->exitCode,
                 stdout: '',
-                stderr: $result->stderr !== '' ? $result->stderr : 'Deploy run step response is invalid.',
+                stderr: $this->stepEnvelopeFailure($result),
                 durationMs: $result->durationMs,
             );
         }
@@ -508,6 +508,33 @@ final readonly class DeployManager
             stderr: $data['stderr'],
             durationMs: $data['duration_ms'],
         );
+    }
+
+    /**
+     * Describe why `internal:deploy:run-step` did not return a step result.
+     *
+     * The node answers a refused step with an error envelope on stdout and an
+     * empty stderr, so the envelope message is the only account of the real
+     * cause (a missing working directory, an invalid payload, a rejected
+     * token). Keep the protocol message as the last resort only.
+     */
+    private function stepEnvelopeFailure(RemoteShellResult $result): string
+    {
+        if ($result->stderr !== '') {
+            return $result->stderr;
+        }
+
+        $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+        $message = $error['message'] ?? null;
+        $code = $error['code'] ?? null;
+
+        if (! is_string($message) || trim($message) === '') {
+            return 'Deploy run step response is invalid.';
+        }
+
+        return is_string($code) && trim($code) !== ''
+            ? trim($message).' ('.trim($code).')'
+            : trim($message);
     }
 
     /**

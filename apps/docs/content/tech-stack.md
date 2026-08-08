@@ -128,14 +128,19 @@ remain readable at mode `0644`. Gateway startup and convergence repair these
 modes on existing paths instead of applying them only when a path is first
 created.
 
-When the config root is bind-mounted from the host, container startup must keep
-that tree owned by the host Orbit installation user's numeric `uid:gid`. It must
-never assign the image-internal `orbit` account, because that uid does not match
-the host install user. Ownership comes from the host home view under
+When the config root is bind-mounted from the host, container startup and
+gateway install/update convergence must keep that tree owned by the host Orbit
+installation user's numeric `uid:gid`. Ownership is repaired wherever those
+owner-only modes are repaired: hardening a shared tree to `0700` while it is
+owned by another account locks the host Orbit CLI out of its own config, which
+makes every `force_remote_host` operation fail operation-token verification. It
+must never assign the image-internal `orbit` account, because that uid does not
+match the host install user. Ownership comes from the host home view under
 `ORBIT_HOST_PATH_PREFIX` (host `/home` mounted at `/mnt/orbit-host/home`), so
-the host Orbit CLI can still read config after gateway restarts. When no host
-path prefix is present, image-local or development roots may fall back to the
-image `orbit` user.
+the host Orbit CLI can still read config after gateway restarts. Convergence
+fails closed when a host path prefix is present but that host home view cannot
+be resolved. When no host path prefix is present, image-local or development
+roots may fall back to the image `orbit` user.
 
 Gateway maintenance in production is containerized: migrations and update work
 run through the gateway container entrypoint or durable one-shot runner. The

@@ -88,6 +88,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Captures stdout, stderr, process status, timing, and the rendered command
   for every executed step, so deploy logs show the script that actually
   executed for that run.
+- Records the owning node's own failure reason on the step when
+  `internal:deploy:run-step` answers with an error envelope instead of a step
+  result, so a refused step reports its real cause (for example a working
+  directory that does not exist on the node). The generic
+  `Deploy run step response is invalid.` message is recorded only when the
+  node supplies neither stderr nor an envelope message.
 - Stops at the first failed step and does not execute later steps.
 - When any configured step references `{{ live_path }}` for a PHP app, resolves
   the resulting `live_path` inside the app source boundary, converges the
@@ -176,5 +182,7 @@ deployment status when reporting `instance.latest_deployment_failed` or
 | `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Authorized `202` durable operation creation with caller and target node identity. |
 | `apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php` | Journal-before-WebSocket ordering, terminal operation state, and durable replay events. |
 | `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Structured Agent-push routing for PHP/Composer/Artisan commands, host working-directory and environment context, active-release runtime convergence, built-in warmup steps, HTTP warmup paths, warmup skip on user-step failure, and failed-run status when activation or warmup fails. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerStepFailureVisibilityTest.php` | Node-side error-envelope message and code recorded on the failed step, node stderr preserved for unparsable envelopes, and the protocol message used only when no failure detail exists. |
+| `apps/cli/tests/Feature/InternalDeployRunStepCommandTest.php` | Approved payload execution, payload validation refusals, and the `deploy_run_step_failed` envelope carrying the missing-working-directory reason. |
 
 Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, empty-pipeline failure, run-history creation semantics, timeout enforcement, progress-tree rendering, foreground success summaries beyond the completion footer, exhaustive documented `error.code` values, step-failure stop behavior, history-write failures, latest-deployment status updates, and instance-doctor handoff behavior.

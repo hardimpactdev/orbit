@@ -31,6 +31,7 @@ class GatewaySwarmInstaller
         private readonly CaddyTool $caddyTool = new CaddyTool,
         private readonly GatewayCaddyRouteRenderer $gatewayRouteRenderer = new GatewayCaddyRouteRenderer,
         private readonly GatewayTlsKeyModeRepairer $tlsKeyModeRepairer = new GatewayTlsKeyModeRepairer,
+        private readonly GatewayConfigRootOwnershipRepairer $configRootOwnershipRepairer = new GatewayConfigRootOwnershipRepairer,
     ) {}
 
     public function install(
@@ -376,6 +377,13 @@ class GatewaySwarmInstaller
             ),
         );
         File::chmod($operationsWebSocketApps, 0o600);
+
+        // Last, so every path this method creates or hardens is covered.
+        // Owner-only modes are only safe while the tree belongs to the host
+        // install user, so convergence can never leave the host Orbit CLI
+        // locked out of its own config. Mirrors the container entrypoint,
+        // which chowns after all install/chmod work.
+        $this->configRootOwnershipRepairer->repair($configRoot);
     }
 
     /**
