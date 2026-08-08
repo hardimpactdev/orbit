@@ -53,7 +53,10 @@ driver configuration, runtime requirements, and instance-owned defaults.
 3. Serialize driver config through Laravel Data.
 4. Normalize repeatable PHP extension requirements.
 5. Reuse an unambiguous Laravel Cloud environment; never create one without explicit intent.
-6. Leave the app and sibling instances unchanged.
+6. Copy the app PHP creation template onto the new instance as its own concrete
+   version. The row is never stored empty, so a later change to the app default
+   cannot move this instance.
+7. Leave the app and sibling instances unchanged.
 
 ## Renderer Contracts
 

@@ -599,6 +599,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Live image inspection**
 - **PHP runtime view**
 - **App PHP creation template**
+- **Instance PHP runtime version**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**

@@ -29,7 +29,11 @@ orbit instance:add billing.production-cloud --driver=laravel-cloud --cloud-app=a
 ## What Happens
 
 Orbit validates the driver-specific placement, authorizes the target, and
-creates one instance row without changing the app or sibling instances.
+creates one instance row without changing the app or sibling instances. The new
+instance copies the app PHP creation template as its own concrete version, so a
+later change to the app default never moves it. Use
+[`php:use --instance`](../../14_php/2_php-use/php-use.md) to give it a different
+version.
 
 ## Output
 

@@ -227,6 +227,43 @@ describe('InstanceController', function (): void {
             ->assertJsonPath('success.data.instance.name', 'production');
     });
 
+    it('stamps the app creation template onto an added instance', function (): void {
+        $caller = create_app_instance_caller();
+        $node = createTestAppHostNode(['name' => 'target']);
+        grant_app_instance_access($caller, $node, ['instance:write']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+
+        $this
+            ->call(
+                'POST',
+                '/api/apps/docs/instances',
+                [
+                    'name' => 'production',
+                    'driver' => 'orbit',
+                    'node' => 'target',
+                    'path' => '/srv/docs',
+                    'root' => 'public',
+                ],
+                [],
+                [],
+                [
+                    'HTTP_ACCEPT' => 'application/json',
+                    'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
+                ],
+            )
+            ->assertOk();
+
+        // A null row would resolve through the app at runtime, so changing the
+        // app default later would move an instance that already exists.
+        $instance = Instance::query()->where('app_id', $app->id)->where('name', 'production')->sole();
+
+        expect($instance->php_version)->toBe('8.5');
+
+        $app->forceFill(['php_version' => '8.3'])->save();
+
+        expect($instance->refresh()->php_version)->toBe('8.5');
+    });
+
     it('keeps external instances gateway-only', function (): void {
         $caller = create_app_instance_caller();
         $legacyNode = createTestAppHostNode(['name' => 'legacy']);

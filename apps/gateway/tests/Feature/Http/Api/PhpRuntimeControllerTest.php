@@ -265,7 +265,8 @@ describe('PHP runtime API controllers', function (): void {
         expect($production->refresh()->php_version)
             ->toBe('8.5')
             ->and($development->refresh()->php_version)
-            ->not->toBe('8.5')
+            ->not
+            ->toBe('8.5')
             ->and($app->refresh()->php_version)
             ->toBe('8.4');
     });
