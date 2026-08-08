@@ -54,8 +54,10 @@ instance's serving node; any denial or missing image stops before the write. Nod
 
 For an instance target, the command writes that instance's own version after
 its preflight, then reconciles runtime container, process units, and proxy
-backend. Convergence re-applies every Orbit instance of the parent app, but no
-sibling's PHP version changes: each instance renders from its own stored value.
+backend. Convergence iterates every Orbit instance of the parent app, repairing
+any whose artifacts drifted, while a sibling that already matches keeps its
+running container. No sibling's PHP version changes: each instance renders from
+its own stored value.
 The app-level version is a creation-time template for new instances and is not
 written here. Workspace
 targets update and reconcile only the selected workspace placement. Proxy drift

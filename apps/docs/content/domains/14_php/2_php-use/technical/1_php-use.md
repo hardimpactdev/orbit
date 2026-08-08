@@ -64,9 +64,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   authorization and image preflight. The app-level version is a creation-time
   template for new instances and is never written by this command.
 - Reconciles runtime-container, process-unit, and affected proxy-backend
-  artifacts. Convergence re-applies every Orbit instance of the parent app, so
-  a sibling instance can be re-applied by this run; no sibling's PHP version
-  moves, because each instance renders from its own stored value.
+  artifacts. Convergence iterates every Orbit instance of the parent app and
+  applies each one's rendered artifacts, so a sibling whose artifacts have
+  drifted is repaired by this run. A sibling already matching its own rendered
+  state keeps its running container, and no sibling's PHP version moves,
+  because each instance renders from its own stored value.
 - Returns the selected `app`, `instance`, `node`, `version`, `image`, and
   `changed` result facts.
 
