@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-08T14:10:37+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-php-snapshot-inheritance/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-08-161036-codex-php-snapshot-inheritance",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/php-snapshot-inheritance/PROOF-MANIFEST.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-08T135955Z-5750904266b2.json"
+    ],
+    "entry_digests": {
+        "evidence/php-snapshot-inheritance/PROOF-MANIFEST.md": "877c46af7468866e45951e5f3da4f18a0253391699fb89357bd831a2f902f8f5",
+        "loop.md": "2fff6e746c7c3b1e3ed2752145b7df215e88c962a4183a7ee581c252ac0ac41b",
+        "quality-gates/quality-check-2026-08-08T135955Z-5750904266b2.json": "07f0b4eb2e62e2597c5e5866831885df3ef857a56690a7fa0d5819225fcce777"
+    },
+    "slug": "codex-php-snapshot-inheritance",
+    "requested_slug": "codex-php-snapshot-inheritance",
+    "compatible_slugs": [
+        "codex-php-snapshot-inheritance"
+    ],
+    "branch": "codex/php-snapshot-inheritance",
+    "candidate_commit": "3f13d088a81ef9579a40517d1c1dd8e74cbd86cb",
+    "accepted_feature_tip": "3f13d088a81ef9579a40517d1c1dd8e74cbd86cb",
+    "accepted_main_tip": "7c3d1a8bcc4bf9eea633d6dbbeab2124114a7ad8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
