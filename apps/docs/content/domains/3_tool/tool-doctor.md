@@ -121,6 +121,9 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; reconverge the `s3` role baseline (restore does not create tool rows). |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
+| `tool.cloudflare.credentials_missing` | The `cloudflare` gateway extension is enabled but no `CLOUDFLARE_API_TOKEN` is configured on the gateway. Details carry `env_var`, `config_key`, `required_scopes`, and `remediation`. |
+| `tool.cloudflare.token_rejected` | Cloudflare rejected the gateway's configured API token (HTTP 401/403). Every `cf-*` command fails until the token is rotated. Details carry the provider message alongside the same remediation fields. |
+| `tool.cloudflare.credentials_probe_failed` | The Cloudflare credential check could not complete (provider outage, malformed reply, or network failure), so token health is unverifiable for this run. Never reported as a credential fault. |
 
 The five `tool.dns_*` codes are owned by the DNS tool capability; see
 [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
@@ -170,7 +173,11 @@ credential repair logic.
 `tool.config_probe_failed`, `tool.credentials_probe_failed`,
 `tool.agent_runtime_probe_failed`,
 `tool.agent_orbit_cli_inaccessible`, `tool.agent_consumer_url_unreachable`,
-`tool.seaweedfs.credentials_missing`, or
+`tool.seaweedfs.credentials_missing`,
+`tool.cloudflare.credentials_missing`, `tool.cloudflare.token_rejected`,
+`tool.cloudflare.credentials_probe_failed` (the Cloudflare API token is gateway
+environment state with no rotation command, so restore cannot own it; the
+finding names the env var, required scopes, and dashboard instead), or
 `tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be recreated by
 reconverging the `s3` role baseline; missing credentials remain `runtime_incident`
 until operators re-run S3 configure — ToolsFixer has no credential restorer;

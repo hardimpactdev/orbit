@@ -879,6 +879,7 @@
                 "zone"
             ],
             "options": [
+                "zone",
                 "json"
             ],
             "renderers": {

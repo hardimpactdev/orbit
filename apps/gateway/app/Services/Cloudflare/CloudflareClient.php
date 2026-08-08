@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
+use App\Enums\Cloudflare\CloudflareCredentialFault;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -245,6 +246,18 @@ final readonly class CloudflareClient
     }
 
     /**
+     * Cheapest call that exercises the same credential path every cf-* command
+     * uses. `/user/tokens/verify` is not usable here because it rejects the
+     * global-API-key auth mode that `CLOUDFLARE_API_EMAIL` opts into.
+     *
+     * Throws GatewayApiException on a missing or rejected token.
+     */
+    public function verifyCredentials(): void
+    {
+        $this->request('get', '/zones', ['per_page' => 1]);
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
@@ -270,17 +283,36 @@ final readonly class CloudflareClient
 
         if (! $response->successful() || ! $providerSucceeded) {
             $message = $this->providerMessage(is_array($body) ? $body : []);
+            $providerMeta = array_filter(
+                [
+                    'provider_status' => $response->status(),
+                    'provider_message' => $message,
+                ],
+                fn (mixed $value): bool => $value !== null && $value !== '',
+            );
+
+            // A rejected token is operator-fixable; a 5xx or malformed provider
+            // reply is not. Only the former earns credential remediation.
+            if (in_array($response->status(), [401, 403], true)) {
+                throw new GatewayApiException(
+                    message: sprintf(
+                        'Cloudflare rejected the gateway API token (HTTP %d)%s. %s',
+                        $response->status(),
+                        $message !== null ? ": {$message}" : '',
+                        CloudflareCredentialGuidance::remediation(CloudflareCredentialFault::TokenRejected),
+                    ),
+                    errorCode: 'cloudflare_unavailable',
+                    errorMeta: [
+                        ...$providerMeta,
+                        ...CloudflareCredentialGuidance::meta(CloudflareCredentialFault::TokenRejected),
+                    ],
+                );
+            }
 
             throw new GatewayApiException(
                 message: $message !== null ? "Cloudflare is unavailable: {$message}" : 'Cloudflare is unavailable.',
                 errorCode: 'cloudflare_unavailable',
-                errorMeta: array_filter(
-                    [
-                        'provider_status' => $response->status(),
-                        'provider_message' => $message,
-                    ],
-                    fn (mixed $value): bool => $value !== null && $value !== '',
-                ),
+                errorMeta: $providerMeta,
             );
         }
 
@@ -295,9 +327,10 @@ final readonly class CloudflareClient
     {
         if (! is_string($this->apiToken) || trim($this->apiToken) === '') {
             throw new GatewayApiException(
-                message: 'Cloudflare API token is not configured.',
+                message: 'Cloudflare API token is not configured. '
+                    .CloudflareCredentialGuidance::remediation(CloudflareCredentialFault::TokenMissing),
                 errorCode: 'cloudflare_unavailable',
-                errorMeta: ['reason' => 'token_missing'],
+                errorMeta: CloudflareCredentialGuidance::meta(CloudflareCredentialFault::TokenMissing),
             );
         }
 

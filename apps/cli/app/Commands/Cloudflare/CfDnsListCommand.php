@@ -11,7 +11,10 @@ use function Laravel\Prompts\table;
 final class CfDnsListCommand extends CloudflareGatewayCommand
 {
     #[\Override]
-    protected $signature = 'cf-dns:list {zone? : Cloudflare zone ID or domain} {--json}';
+    // `--zone=` mirrors cf-dns:add / cf-dns:remove / cf-cache:flush, which all
+    // take the zone as an option. Accepting both spellings here removes a
+    // dead-end where the sibling syntax failed with "option does not exist".
+    protected $signature = 'cf-dns:list {zone? : Cloudflare zone ID or domain} {--zone= : Alias for the zone argument} {--json}';
 
     #[\Override]
     protected $description = 'List Cloudflare DNS records for a zone.';
@@ -22,10 +25,14 @@ final class CfDnsListCommand extends CloudflareGatewayCommand
             return $failure;
         }
 
-        $zone = $this->stringArgument('zone');
+        $zone = $this->stringArgument('zone') ?? $this->stringOption('zone');
 
         if ($zone === null) {
-            return $this->renderFailure('validation_failed', 'The zone argument is required.', ['field' => 'zone']);
+            return $this->renderFailure(
+                'validation_failed',
+                'The zone is required. Pass it positionally as `cf-dns:list <zone>` or as `--zone=<zone>`.',
+                ['field' => 'zone'],
+            );
         }
 
         try {

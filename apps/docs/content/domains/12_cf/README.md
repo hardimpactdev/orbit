@@ -16,7 +16,12 @@ The `cf` command domain does not own a state family. Cloudflare provider state s
 [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns Orbit ingress route
 health. [`doctor --family=instance`](../5_app/instance-doctor.md) owns app-domain and
 deployment health that may depend on provider-side DNS, cache, or SSL state.
-There is no `doctor --family=cf` contract.
+There is no `doctor --family=cf` contract. Cloudflare API credential health is
+reported inside the existing `tool` family on the gateway node, as
+`tool.cloudflare.credentials_missing`, `tool.cloudflare.token_rejected`, and
+`tool.cloudflare.credentials_probe_failed`; see
+[`tool-doctor.md`](../3_tool/tool-doctor.md). These findings are report-only,
+because rotating the provider secret is operator work.
 
 ## Domain Rules
 
