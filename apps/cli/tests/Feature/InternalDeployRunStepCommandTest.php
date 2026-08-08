@@ -74,6 +74,33 @@ describe('internal deploy run step command', function (): void {
             ->toBe('validation_failed');
     });
 
+    it('reports the node-side reason when the working directory is missing', function (): void {
+        [$exitCode, $output] = run_internal_deploy_run_step_command(
+            [
+                '--operation-token' => deploy_run_step_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'binary' => '/bin/sh',
+                'arguments' => ['-lc', 'printf ok'],
+                'cwd' => '/tmp/orbit-deploy-run-step-missing-cwd',
+                'environment' => [],
+                'timeout' => 30,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('deploy_run_step_failed')
+            ->and($payload['error']['message'] ?? null)
+            ->toContain('/tmp/orbit-deploy-run-step-missing-cwd')
+            ->and($payload['error']['message'] ?? null)
+            ->toContain('does not exist');
+    });
+
     it('rejects a non-absolute executable', function (): void {
         [$exitCode, $output] = run_internal_deploy_run_step_command(
             [

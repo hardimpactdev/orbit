@@ -2320,9 +2320,11 @@
                 "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
+                "apps/cli/tests/Feature/InternalDeployRunStepCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php",
                 "apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
+                "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployManagerStepFailureVisibilityTest.php"
             ],
             "verification_hints": [
                 {
@@ -2347,6 +2349,13 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php"
                 },
                 {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalDeployRunStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalDeployRunStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalDeployRunStepCommandTest.php"
+                },
+                {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
@@ -2366,6 +2375,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Deploy/DeployManagerStepFailureVisibilityTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Deploy/DeployManagerStepFailureVisibilityTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Deploy/DeployManagerStepFailureVisibilityTest.php"
                 }
             ],
             "p4_mapping": {
