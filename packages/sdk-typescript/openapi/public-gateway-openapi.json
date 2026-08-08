@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orbit Gateway API Public SDK",
-    "version": "0.1.190",
+    "version": "0.1.191",
     "description": "HTTP contract exposed by an Orbit gateway for local nodes, agents, apps, workspaces, processes, and control-plane operations.\n\nFiltered for generated public SDK clients from apps/gateway/openapi-sdk-surface.json."
   },
   "servers": [
@@ -8283,11 +8283,16 @@
                                             },
                                             "app": {
                                               "type": "string"
+                                            },
+                                            "php_version": {
+                                              "type": "string",
+                                              "description": "The instance's own version, which may differ from the app creation template."
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "app"
+                                            "app",
+                                            "php_version"
                                           ]
                                         },
                                         "workspace": {
@@ -8507,11 +8512,16 @@
                                             },
                                             "app": {
                                               "type": "string"
+                                            },
+                                            "php_version": {
+                                              "type": "string",
+                                              "description": "The instance's own version, which may differ from the app creation template."
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "app"
+                                            "app",
+                                            "php_version"
                                           ]
                                         },
                                         "workspace": {
@@ -8678,11 +8688,16 @@
                                             },
                                             "app": {
                                               "type": "string"
+                                            },
+                                            "php_version": {
+                                              "type": "string",
+                                              "description": "The instance's own version, which may differ from the app creation template."
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "app"
+                                            "app",
+                                            "php_version"
                                           ]
                                         },
                                         "workspace": {
@@ -8856,11 +8871,16 @@
                                             },
                                             "app": {
                                               "type": "string"
+                                            },
+                                            "php_version": {
+                                              "type": "string",
+                                              "description": "The instance's own version, which may differ from the app creation template."
                                             }
                                           },
                                           "required": [
                                             "name",
-                                            "app"
+                                            "app",
+                                            "php_version"
                                           ]
                                         },
                                         "workspace": {

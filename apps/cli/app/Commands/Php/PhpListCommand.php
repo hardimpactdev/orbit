@@ -98,10 +98,11 @@ final class PhpListCommand extends GatewayCommand
 
         $projectName = $this->runtimeString($app, 'name');
         $instanceName = $this->runtimeString($instance, 'name');
+        $template = $this->runtimeString($app, 'php_version');
         $version = $this->runtimeString($instance, 'php_version');
 
         if ($version === '—') {
-            $version = $this->runtimeString($app, 'php_version');
+            $version = $template;
         }
 
         if ($projectName === '—' || $instanceName === '—') {
@@ -110,7 +111,13 @@ final class PhpListCommand extends GatewayCommand
 
         $selector = "{$projectName}.{$instanceName}";
 
-        return $version === '—' ? $selector : "{$selector} (PHP {$version})";
+        if ($version === '—') {
+            return $selector;
+        }
+
+        return $template === '—'
+            ? "{$selector} (PHP {$version})"
+            : "{$selector} (PHP {$version}, app template {$template})";
     }
 
     /**

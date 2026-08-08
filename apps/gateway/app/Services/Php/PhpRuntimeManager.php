@@ -103,8 +103,11 @@ final readonly class PhpRuntimeManager
             return new PhpRuntimeOperation(failure: $target);
         }
 
+        // Instance scope writes a single instance row and never fans out to the
+        // app's workspaces, so no sibling workspace can gate it. Only workspace
+        // scope still needs the workspace boundary guard.
         $workspaceBoundaryFailure = $target['scope'] === 'instance'
-            ? $this->appWorkspaceFanoutBoundaryFailure($caller, $target['node'], $target['app'])
+            ? null
             : $this->workspaceBoundaryFailure($caller, $target['workspace']);
 
         if ($workspaceBoundaryFailure instanceof PhpRuntimeFailure) {
@@ -162,62 +165,6 @@ final readonly class PhpRuntimeManager
             }
 
             $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
-        } catch (WorkspaceUnsupportedForProduction $exception) {
-            return new PhpRuntimeFailure(
-                $exception->errorCode(),
-                $exception->getMessage(),
-                $exception->meta,
-            );
-        }
-
-        return null;
-    }
-
-    private function appWorkspaceFanoutBoundaryFailure(
-        ?Node $caller,
-        Node $targetNode,
-        ?App $app,
-    ): ?PhpRuntimeFailure {
-        if (! $app instanceof App) {
-            return null;
-        }
-
-        $workspaces = $app
-            ->workspaces()
-            ->with(['app.node', 'app.instances', 'instance'])
-            ->get();
-
-        if ($workspaces->isEmpty()) {
-            return null;
-        }
-
-        try {
-            if ($caller instanceof Node) {
-                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
-            }
-
-            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($targetNode);
-
-            foreach ($workspaces as $workspace) {
-                if ($workspace instanceof Workspace) {
-                    $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
-
-                    if (! $this->workspaceRoleGuard->allowsWorkspaceTarget($workspace)) {
-                        $exception = new WorkspaceUnsupportedForProduction([
-                            'app' => $app->name,
-                            'workspace' => $workspace->name,
-                            'role' => 'app-dev-required',
-                            'reason' => 'serving_node_unresolved',
-                        ]);
-
-                        return new PhpRuntimeFailure(
-                            code: $exception->errorCode(),
-                            message: $exception->getMessage(),
-                            meta: $exception->meta,
-                        );
-                    }
-                }
-            }
         } catch (WorkspaceUnsupportedForProduction $exception) {
             return new PhpRuntimeFailure(
                 $exception->errorCode(),
@@ -725,8 +672,7 @@ final readonly class PhpRuntimeManager
                 ? [
                     'name' => $instance->name,
                     'app' => $app?->name,
-                    // The instance's own version. The adjacent app value is the
-                    // creation template and does not describe this runtime.
+                    // The instance's own version, which may differ from the app creation template.
                     'php_version' => $instance->php_version ?? $app?->php_version,
                 ] : null,
             'workspace' => $workspace instanceof Workspace

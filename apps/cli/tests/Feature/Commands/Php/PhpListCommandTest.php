@@ -149,6 +149,31 @@ describe('php:list', function (): void {
             ->not->toContain('php: {');
     });
 
+    it('renders the instance own version beside the app template when they diverge', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'php' => [
+                'node' => 'app-1',
+                'supported' => ['8.3', '8.4', '8.5'],
+                'available_images' => ['8.3', '8.5'],
+                'cli' => '8.5',
+                'app' => ['name' => 'docs', 'php_version' => '8.5'],
+                'instance' => ['name' => 'development', 'app' => 'docs', 'php_version' => '8.3'],
+                'workspace' => null,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1']);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('docs.development')
+            ->and($output)
+            ->toContain('PHP 8.3')
+            ->and($output)
+            ->toContain('app template 8.5');
+    });
+
     it('renders em dash for absent runtime context cells in human output', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => [

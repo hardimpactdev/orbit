@@ -45,7 +45,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 4. For an instance target, authorize `php:write` on its serving node and verify
    the approved image there. Refresh stale inventory before rejecting. Any
    denial, unavailable inventory, or missing image stops before the instance
-   write.
+   write. The app's other workspaces are not preconditions for this write,
+   because the write never reaches them.
 5. For a workspace target, authorize and verify only its concrete serving node.
    For CLI scope, accept only PHP 8.5 and use the host toolchain boundary.
 6. Begin side effects only after the complete target-specific preflight passes.

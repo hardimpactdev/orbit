@@ -4948,6 +4948,8 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
+                                        /** @description The instance's own version, which may differ from the app creation template. */
+                                        php_version: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5010,6 +5012,8 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
+                                        /** @description The instance's own version, which may differ from the app creation template. */
+                                        php_version: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5047,6 +5051,8 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
+                                        /** @description The instance's own version, which may differ from the app creation template. */
+                                        php_version: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5085,6 +5091,8 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
+                                        /** @description The instance's own version, which may differ from the app creation template. */
+                                        php_version: string;
                                     } | null;
                                     workspace: {
                                         name: string;

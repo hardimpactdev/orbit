@@ -60,21 +60,31 @@ These terms define the PHP command domain and how PHP runtime selections are tra
 
 These terms define each target scope that a PHP command can read or write.
 
-- **App PHP creation template:** App PHP version copied by new instances stored as gateway
-  app configuration. A write selects one concrete instance, authorizes its
-  serving node, verifies the approved image, changes the policy, and reconciles
-  the app's Orbit-managed runtime artifacts.
+- **App PHP creation template:** App PHP version stored as gateway app
+  configuration and copied onto each new instance at creation. It is read only
+  when an instance is created; changing it never moves an instance or workspace
+  that already exists, and no command writes it after `app:new`.
+- **Instance PHP runtime version:** Concrete PHP version stored on the instance
+  row and used by that instance's runtime container. A write selects one
+  concrete instance, authorizes its serving node, verifies the approved image,
+  stores the version on the instance, and reconciles that instance's
+  Orbit-managed runtime artifacts. It never changes a sibling instance.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
-  workspace row. It overrides the parent app PHP version for that workspace.
-- **Workspace PHP inheritance:** Workspace state where no workspace PHP override
-  is stored and the workspace uses the parent app PHP version.
-- **Effective workspace PHP version:** Version a workspace actually uses after
-  applying workspace override or parent-app inheritance.
+  workspace row. It is copied from the owning instance at creation and can be
+  set explicitly to a different version for that workspace alone.
+- **Workspace PHP inheritance:** Legacy workspace state where no workspace PHP
+  version is stored. Such a row resolves through its owning instance, then the
+  app creation template. New workspaces always store a concrete version.
+- **Effective workspace PHP version:** Version a workspace actually uses: its
+  own stored version, then the owning instance version, then the app creation
+  template for legacy rows.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
-  gateway's own runtime. Instance and workspace setup, deploy commands, and ad-hoc
+  gateway's own runtime. Instance setup, deploy commands, and ad-hoc
   PHP/Composer/Artisan invocations run on the app node's host PHP toolchain,
-  matched to the app's PHP version.
+  matched to the resolved instance PHP version. Workspace setup steps receive
+  the workspace effective version in `ORBIT_PHP_VERSION` while their host
+  toolchain path still follows the app creation template.
 - **Host PHP CLI variant:** The `php-cli` tool persists `coverage` or `standard`
   in `NodeTool.config.variant`. Coverage runtimes statically link PCOV with
   `pcov.enabled=1` for Pest TIA on `app-dev` nodes. Standard runtimes omit PCOV
