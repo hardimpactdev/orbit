@@ -70,8 +70,8 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    not authorized, fail before side effects.
 3. **Result assembly.** Return the app record and the durable gateway configuration
    the app owns:
-   - app registry: name, repository, shared runtime policy, and PHP
-     version, with no placement defaults;
+   - app registry: name, repository, shared runtime policy, and the PHP
+     creation template new instances copy, with no placement defaults;
    - caller-visible instances and their concrete placement fields, ordered
      by instance name;
    - each instance's workspaces, process definitions, and

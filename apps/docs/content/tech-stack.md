@@ -547,8 +547,9 @@ accepted fixed releases are the 3.50.7 backport and mainline 3.51.3 or newer.
 
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated FrankenPHP runtime container
-as well. The PHP version for an app or workspace is gateway-tracked
-configuration; changing it recreates the affected runtime artifact from the
+as well. Each instance and each workspace owns its own gateway-tracked PHP version;
+the app value is only the template new instances copy at creation. Changing an
+instance's or workspace's version recreates that runtime artifact from the
 selected PHP image on the owning node through authenticated Agent push over
 WireGuard. In production installs the CLI/local-
 executor artifact runs in the native CLI binary's embedded PHP; source-mounted

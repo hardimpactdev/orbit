@@ -153,14 +153,22 @@ it('rejects workspace runtime reads when the workspace owner is app-prod', funct
         ]);
 });
 
-it('rejects app runtime writes before fanout when a workspace placement is unresolved', function (): void {
+it('writes an instance runtime even when an unrelated workspace placement is unresolved', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'php_version' => '8.4',
     ]);
-    place_php_runtime_manager_app($app, $node);
+    $instance = place_php_runtime_manager_app($app, $node);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => [
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm'],
+            'versions' => [],
+        ],
+    ]);
     $unresolvedInstance = Instance::factory()->for($app)->create([
         'name' => 'legacy',
         'driver_config' => new OrbitInstanceDriverConfigData,
@@ -169,24 +177,22 @@ it('rejects app runtime writes before fanout when a workspace placement is unres
         'name' => 'legacy-workspace',
         'app_id' => $app->id,
         'instance_id' => $unresolvedInstance->id,
+        'php_version' => '8.4',
     ]);
 
     expect(app(WorkspaceRoleGuard::class)->allowsWorkspaceTarget($workspace))->toBeFalse();
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs.development');
 
+    // The write lands on one instance row, so a sibling instance's unresolved
+    // workspace has nothing to gate.
     expect($result->failed())
-        ->toBeTrue()
-        ->and($result->failure?->code)
-        ->toBe('workspace.unsupported_for_production')
-        ->and($result->failure?->meta)
-        ->toMatchArray([
-            'app' => 'docs',
-            'workspace' => 'legacy-workspace',
-            'role' => 'app-dev-required',
-            'reason' => 'serving_node_unresolved',
-        ])
+        ->toBeFalse()
+        ->and($instance->refresh()->php_version)
+        ->toBe('8.5')
         ->and($app->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($workspace->refresh()->php_version)
         ->toBe('8.4');
 });
 
@@ -202,13 +208,13 @@ it('frankenphp selects app runtime from approved image facts', function (): void
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
-    place_php_runtime_manager_app($app, $node);
+    $instance = place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs');
 
     expect($result->failed())
         ->toBeFalse()
-        ->and($app->refresh()->php_version)
+        ->and($instance->refresh()->php_version)
         ->toBe('8.5')
         ->and($result->payload['result'])
         ->toMatchArray([

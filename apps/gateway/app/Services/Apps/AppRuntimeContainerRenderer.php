@@ -242,6 +242,14 @@ final readonly class AppRuntimeContainerRenderer
             $runtimeApp->setRelation('node', $node);
         }
 
+        // The instance owns its PHP version outright. The app value is only the
+        // template new instances are created from, so it must never override a
+        // stored instance value here. The null fallback covers rows predating
+        // the snapshot migration; it is not live inheritance.
+        $runtimeApp->forceFill(array_filter([
+            'php_version' => $this->filledInstanceValue($instance->php_version),
+        ]));
+
         $config = $instance->driver_config;
 
         if ($config instanceof OrbitInstanceDriverConfigData) {

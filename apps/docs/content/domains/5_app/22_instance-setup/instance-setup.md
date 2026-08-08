@@ -26,7 +26,7 @@ source path.
 
 Setup steps run through the selected instance's app user host tool path from
 that instance's source path. PHP, Composer, and Artisan commands include the
-instance serving node's host PHP toolchain selected by the app's configured PHP
+instance serving node's host PHP toolchain selected by that instance's own PHP
 version.
 
 Setup steps receive the app URL and Laravel Vite development-server environment

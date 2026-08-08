@@ -31,6 +31,9 @@ final class ProcessRuntimeApp
             'path' => self::filledInstanceValue($config->path),
             'document_root' => self::filledInstanceValue($config->document_root),
             'domain' => self::filledInstanceValue($config->domain),
+            // Match runtimeAppForInstance: the instance owns its version, so a
+            // process runtime must not fall back to the app creation template.
+            'php_version' => self::filledInstanceValue($instance->php_version),
         ]));
 
         return $runtimeApp;

@@ -266,6 +266,10 @@ final class InstanceController implements Loggable
                 'driver' => $driver,
                 'adopted' => false,
                 'driver_config' => $driverConfig,
+                // Copy the app creation template onto the new instance. A null
+                // row would resolve through the app at runtime, so a later
+                // change to the app default would move this instance.
+                'php_version' => $targetApp->php_version,
                 'runtime_requirements' => new InstanceRuntimeRequirementsData(php_extensions: $this->phpExtensions(
                     $request,
                 )),

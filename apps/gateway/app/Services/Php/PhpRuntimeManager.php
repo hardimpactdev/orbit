@@ -103,8 +103,11 @@ final readonly class PhpRuntimeManager
             return new PhpRuntimeOperation(failure: $target);
         }
 
+        // Instance scope writes a single instance row and never fans out to the
+        // app's workspaces, so no sibling workspace can gate it. Only workspace
+        // scope still needs the workspace boundary guard.
         $workspaceBoundaryFailure = $target['scope'] === 'instance'
-            ? $this->appWorkspaceFanoutBoundaryFailure($caller, $target['node'], $target['app'])
+            ? null
             : $this->workspaceBoundaryFailure($caller, $target['workspace']);
 
         if ($workspaceBoundaryFailure instanceof PhpRuntimeFailure) {
@@ -162,62 +165,6 @@ final readonly class PhpRuntimeManager
             }
 
             $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
-        } catch (WorkspaceUnsupportedForProduction $exception) {
-            return new PhpRuntimeFailure(
-                $exception->errorCode(),
-                $exception->getMessage(),
-                $exception->meta,
-            );
-        }
-
-        return null;
-    }
-
-    private function appWorkspaceFanoutBoundaryFailure(
-        ?Node $caller,
-        Node $targetNode,
-        ?App $app,
-    ): ?PhpRuntimeFailure {
-        if (! $app instanceof App) {
-            return null;
-        }
-
-        $workspaces = $app
-            ->workspaces()
-            ->with(['app.node', 'app.instances', 'instance'])
-            ->get();
-
-        if ($workspaces->isEmpty()) {
-            return null;
-        }
-
-        try {
-            if ($caller instanceof Node) {
-                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
-            }
-
-            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($targetNode);
-
-            foreach ($workspaces as $workspace) {
-                if ($workspace instanceof Workspace) {
-                    $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
-
-                    if (! $this->workspaceRoleGuard->allowsWorkspaceTarget($workspace)) {
-                        $exception = new WorkspaceUnsupportedForProduction([
-                            'app' => $app->name,
-                            'workspace' => $workspace->name,
-                            'role' => 'app-dev-required',
-                            'reason' => 'serving_node_unresolved',
-                        ]);
-
-                        return new PhpRuntimeFailure(
-                            code: $exception->errorCode(),
-                            message: $exception->getMessage(),
-                            meta: $exception->meta,
-                        );
-                    }
-                }
-            }
         } catch (WorkspaceUnsupportedForProduction $exception) {
             return new PhpRuntimeFailure(
                 $exception->errorCode(),
@@ -521,13 +468,16 @@ final readonly class PhpRuntimeManager
             return new PhpRuntimeOperation(failure: $availabilityFailure);
         }
 
-        $previous = $app->php_version;
+        // Instance scope writes the instance. The app value is the template for
+        // new instances and is deliberately left alone, so sibling instances
+        // and workspaces never move because of this run.
+        $previous = $instance->php_version ?? $app->php_version;
         $changed = $previous !== $version;
-        $app->forceFill(['php_version' => $version])->save();
+        $instance->forceFill(['php_version' => $version])->save();
 
         return $this->selectionOperation(
             node: $node,
-            app: $app->refresh(),
+            app: $app,
             instance: $instance,
             workspace: null,
             result: [
@@ -563,10 +513,14 @@ final readonly class PhpRuntimeManager
         }
 
         $workspace->loadMissing(['app', 'instance']);
-        $previous = $workspace->php_version ?? $workspace->app?->php_version;
+        // Inheritance resolves instance-first, matching effectivePhpVersion().
+        // Preflighting the app template here would verify an image the
+        // workspace will never run and let the real one through unchecked.
+        $inheritedVersion = $workspace->instance?->php_version ?? $workspace->app?->php_version;
+        $previous = $workspace->php_version ?? $inheritedVersion;
         $previousRaw = $workspace->php_version;
         $nextRaw = $inherit ? null : $version;
-        $nextEffective = $nextRaw ?? $workspace->app?->php_version;
+        $nextEffective = $nextRaw ?? $inheritedVersion;
 
         if (is_string($nextEffective)) {
             $availabilityFailure = $this->versionAvailabilityFailure($node, $nextEffective);
@@ -718,6 +672,8 @@ final readonly class PhpRuntimeManager
                 ? [
                     'name' => $instance->name,
                     'app' => $app?->name,
+                    // The instance's own version, which may differ from the app creation template.
+                    'php_version' => $instance->php_version ?? $app?->php_version,
                 ] : null,
             'workspace' => $workspace instanceof Workspace
                 ? [

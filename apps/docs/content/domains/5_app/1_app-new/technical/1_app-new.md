@@ -142,10 +142,12 @@ Apply the source branch resolved before the gateway request:
 In one gateway database transaction, write:
 
 - app identity and shared runtime policy: `name`, repository,
-  `runtime`, `runtime_config`, and `php_version`; and
+  `runtime`, `runtime_config`, and the `php_version` creation template; and
 - one `orbit` instance named `production` when `--domain` is supplied or
   `development` otherwise. Its driver configuration owns `environment`,
-  `node`, `path`, `root`, derived URL, and optional domain. The instance stores
+  `node`, `path`, `root`, derived URL, and optional domain. The instance copies
+  the app creation template into its own `php_version` as it is created, so it
+  never depends on the app value afterwards. The instance stores
   `adopted=false`.
 
 Neither row exists if the transaction fails. The app stores no

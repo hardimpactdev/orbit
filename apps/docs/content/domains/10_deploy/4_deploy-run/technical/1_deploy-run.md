@@ -70,7 +70,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `releases_path`, or explicitly managed shared paths.
 - Executes all steps from the app source path on the host node. Steps that
   invoke `php`, `composer`, or `artisan` use the host PHP toolchain matched to
-  the app's PHP version (`php8.4`/`php8.5`) when `runtime=php`.
+  the deploying instance's own PHP version (`php8.4`/`php8.5`) when
+  `runtime=php`.
 - Renders `{{ key }}` placeholders against the deployment run context before
   execution. Dot notation may address nested context values such as
   `{{ app.name }}`.
@@ -101,8 +102,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   container. A missing or escaping active release fails the deployment before
   warmup.
 - After all configured steps complete successfully for a PHP app, runs built-in
-  production warmup on the host PHP toolchain (matched to the app's PHP
-  version): `composer install --no-dev --optimize-autoloader --no-interaction`
+  production warmup on the host PHP toolchain (matched to the deploying
+  instance's own PHP version): `composer install --no-dev --optimize-autoloader --no-interaction`
   and `php artisan optimize`, against the app source or active release the
   FrankenPHP runtime container serves.
 - When the instance defines `deploy_warmup_paths`, sends HTTP warmup requests to

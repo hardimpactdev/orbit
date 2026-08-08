@@ -143,6 +143,10 @@ final readonly class WorkspaceSetupTargetResolver
             'instance_id' => $instance->id,
             'name' => $workspaceName,
             'path' => $path,
+            // Adoption creates this row after the snapshot migration, so an
+            // empty value would be a brand-new live-inheriting workspace, not a
+            // legacy one: the owning instance could later move it.
+            'php_version' => $instance->php_version ?? $app->php_version,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 

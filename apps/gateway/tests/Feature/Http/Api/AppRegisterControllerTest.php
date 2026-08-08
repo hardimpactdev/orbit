@@ -649,7 +649,7 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('error.meta.field', 'name');
     });
 
-    it('reports sibling instances that follow shared policy changed by re-register', function (): void {
+    it('reports sibling instances that follow app-owned proxy transport changed by re-register', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
         ]);
@@ -674,13 +674,14 @@ describe('AppRegisterController', function (): void {
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
             'php_version' => '8.5',
+            'runtime_config' => null,
             'adopted' => true,
         ]);
         app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
         app_register_instance($app, 'second', $siblingNode, '/srv/docs');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.4', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
@@ -693,7 +694,7 @@ describe('AppRegisterController', function (): void {
                 'name' => 'docs.development',
                 'node' => 'app-1',
                 'path' => '/home/orbit/apps/docs',
-                'php_version' => '8.4',
+                'runtime_proxy_transport' => 'https',
             ],
             [],
             [],
@@ -717,7 +718,7 @@ describe('AppRegisterController', function (): void {
             ->and($fanout[0]['message'])
             ->toContain('beast')
             ->and($fanout[0]['message'])
-            ->toContain('PHP 8.4');
+            ->toContain('proxy transport https');
     });
 
     it('keeps omitted root and php version values on re-register', function (): void {

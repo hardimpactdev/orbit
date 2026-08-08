@@ -152,7 +152,7 @@ describe('PHP runtime API controllers', function (): void {
         expect($workspace->refresh()->php_version)->toBe('8.4');
     });
 
-    it('rejects instance-target PHP writes from app-prod callers before inherited workspace fanout', function (): void {
+    it('writes an instance PHP version for an app-prod caller holding php:write on the target node', function (): void {
         $caller = Node::factory()
             ->appProd()
             ->create([
@@ -197,15 +197,22 @@ describe('PHP runtime API controllers', function (): void {
         );
 
         $response
-            ->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
-            ->assertJsonPath('error.meta.node', 'app-prod-caller')
-            ->assertJsonPath('error.meta.role', 'app-prod');
+            ->assertStatus(200)
+            ->assertJsonPath('success.data.php.instance.name', 'development')
+            ->assertJsonPath('success.data.php.instance.php_version', '8.5')
+            ->assertJsonPath('success.data.php.app.php_version', '8.4')
+            ->assertJsonPath('success.data.result.target', 'instance')
+            ->assertJsonPath('success.data.result.version', '8.5');
 
-        expect($app->refresh()->php_version)->toBe('8.4');
+        // The write lands on the instance alone; the app keeps its creation
+        // template, and workspace-operation rights never gate it.
+        expect($instance->refresh()->php_version)
+            ->toBe('8.5')
+            ->and($app->refresh()->php_version)
+            ->toBe('8.4');
     });
 
-    it('rejects instance-target PHP writes for app-prod targets before cross-instance workspace fanout', function (): void {
+    it('writes an app-prod instance PHP version without gating on a sibling instance workspace', function (): void {
         $caller = createPhpApiCaller();
         $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
         $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
@@ -224,7 +231,7 @@ describe('PHP runtime API controllers', function (): void {
             'node_id' => $productionNode->id,
             'php_version' => '8.4',
         ]);
-        place_php_api_app($app, $productionNode, 'production');
+        $production = place_php_api_app($app, $productionNode, 'production');
         $development = place_php_api_app($app, $developmentNode);
         Workspace::factory()->create([
             'name' => 'feature-docs',
@@ -246,12 +253,22 @@ describe('PHP runtime API controllers', function (): void {
         );
 
         $response
-            ->assertStatus(422)
-            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
-            ->assertJsonPath('error.meta.node', 'app-prod-1')
-            ->assertJsonPath('error.meta.role', 'app-prod');
+            ->assertStatus(200)
+            ->assertJsonPath('success.data.php.instance.name', 'production')
+            ->assertJsonPath('success.data.php.instance.php_version', '8.5')
+            ->assertJsonPath('success.data.php.app.php_version', '8.4')
+            ->assertJsonPath('success.data.result.target', 'instance')
+            ->assertJsonPath('success.data.result.version', '8.5');
 
-        expect($app->refresh()->php_version)->toBe('8.4');
+        // A workspace under the sibling development instance cannot gate a
+        // production instance's own PHP version.
+        expect($production->refresh()->php_version)
+            ->toBe('8.5')
+            ->and($development->refresh()->php_version)
+            ->not
+            ->toBe('8.5')
+            ->and($app->refresh()->php_version)
+            ->toBe('8.4');
     });
 
     it('rejects PHP reads for workspaces owned by app-prod targets', function (): void {
@@ -314,7 +331,7 @@ describe('PHP runtime API controllers', function (): void {
             ->assertJsonPath('success.data.php.workspace.inherits', true);
     });
 
-    it('writes app PHP runtime intent for an authorized caller', function (): void {
+    it('writes instance PHP runtime intent without moving the app default', function (): void {
         $caller = createPhpApiCaller();
         $legacyNode = Node::factory()->appDev()->create(['name' => 'legacy-app-1']);
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
@@ -332,7 +349,7 @@ describe('PHP runtime API controllers', function (): void {
             ],
         ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $legacyNode->id, 'php_version' => '8.4']);
-        place_php_api_app($app, $node);
+        $instance = place_php_api_app($app, $node);
 
         $response = $this->call(
             'POST',
@@ -349,7 +366,12 @@ describe('PHP runtime API controllers', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.result.target', 'instance');
 
-        expect($app->refresh()->php_version)->toBe('8.5');
+        // Instance scope writes the instance; the app default is the template
+        // for new instances and must not move.
+        expect($instance->refresh()->php_version)
+            ->toBe('8.5')
+            ->and($app->refresh()->php_version)
+            ->toBe('8.4');
     });
 
     it('returns authorization failure for hidden nodes', function (): void {

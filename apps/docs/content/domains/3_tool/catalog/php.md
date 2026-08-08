@@ -31,10 +31,10 @@ not delete shared FrankenPHP images that other apps or workspaces may still use.
 
 ## Orbit Notes
 
-The `php` tool owns PHP image capability evidence for app and workspace runtime
-containers. PHP runtime selection is admitted as the separate `php:*` command
-family because it mutates app configuration and workspace overrides rather than
-only tool capability state.
+The `php` tool owns PHP image capability evidence for instance and workspace
+runtime containers. PHP runtime selection is admitted as the separate `php:*`
+command family because it mutates instance and workspace configuration rather
+than only tool capability state.
 
 On both Linux and macOS, this tool remains Docker-isolated and requires a
 Docker-compatible container provider. macOS support does not introduce a

@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `php:write` on the selected instance serving
-  node for an app write, or on the resolved workspace
-  or node-CLI target. Gateway identity remains implicit.
+  node, or on the resolved workspace or node-CLI target. Gateway identity
+  remains implicit.
 
 ## Signature
 
@@ -25,11 +25,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
-| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes the parent app's shared PHP policy. |
+| `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes that instance's own PHP version. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
-| `node` | `--node` | Optional. | App policy target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `node` | `--node` | Optional. | Instance target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -37,15 +37,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve target scope:
    - `--cli` selects node CLI runtime intent.
    - `--workspace` or cwd workspace context selects workspace runtime.
-   - `--instance` or cwd instance context selects the parent app runtime policy.
+   - `--instance` or cwd instance context selects that instance's own runtime version.
    - With no resolved target, interactive mode prompts from authorized instance,
      workspace choices; non-interactive mode fails.
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
 3. Validate mutually exclusive inputs.
 4. For an instance target, authorize `php:write` on its serving node and verify
    the approved image there. Refresh stale inventory before rejecting. Any
-   denial, unavailable inventory, or missing image stops before the shared
-   app-policy write.
+   denial, unavailable inventory, or missing image stops before the instance
+   write. The app's other workspaces are not preconditions for this write,
+   because the write never reaches them.
 5. For a workspace target, authorize and verify only its concrete serving node.
    For CLI scope, accept only PHP 8.5 and use the host toolchain boundary.
 6. Begin side effects only after the complete target-specific preflight passes.
@@ -59,10 +60,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Instance Runtime Selection
 
-- Writes the shared app PHP version after the selected instance has passed
-  authorization and image preflight.
-- Reconciles app runtime-container and affected proxy-backend artifacts for the
-  parent app after changing its shared policy.
+- Writes the selected instance's own PHP version after it has passed
+  authorization and image preflight. The app-level version is a creation-time
+  template for new instances and is never written by this command.
+- Reconciles runtime-container, process-unit, and affected proxy-backend
+  artifacts. Convergence iterates every Orbit instance of the parent app and
+  applies each one's rendered artifacts, so a sibling whose artifacts have
+  drifted is repaired by this run. A sibling already matching its own rendered
+  state keeps its running container, and no sibling's PHP version moves,
+  because each instance renders from its own stored value.
 - Returns the selected `app`, `instance`, `node`, `version`, `image`, and
   `changed` result facts.
 
@@ -133,4 +139,4 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts instance/workspace selections, inherit semantics, mutual exclusion validation, result rendering, and gateway error pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Serving-node authorization, image preflight before mutation, concrete workspace placement, wrong-permission denial, and gateway implicit authority. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Shared app-policy selection, concrete instance results, and workspace selection/inheritance behavior. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Instance-scoped selection that is not gated by a sibling instance's workspace, concrete instance results, and workspace selection/inheritance behavior. |

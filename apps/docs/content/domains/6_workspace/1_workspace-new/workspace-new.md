@@ -51,7 +51,7 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 - `--base=<ref>`: source git ref used to create the worktree. Defaults to
   `main` (not prompted).
 - `--php-version=<version>`: workspace PHP version override. When omitted, the
-  workspace inherits the parent app's PHP version.
+  workspace copies its owning instance's PHP version at creation.
 - `--json`: output structured JSON (forces non-interactive mode).
 - `--stream-json`: stream newline-delimited progress JSON. Mutually exclusive
   with `--json` and forces non-interactive mode.

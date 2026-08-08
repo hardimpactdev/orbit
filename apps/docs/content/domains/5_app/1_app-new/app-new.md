@@ -50,7 +50,8 @@ The steps below describe what the command does during a successful run.
   tokens.
 - **Registry Write:** Atomically writes authoritative logical-app identity and
   shared runtime policy plus one concrete instance. Node, path, root, URL,
-  domain, environment, and `adopted=false` are instance-owned. App names are
+  domain, environment, the instance's own PHP version copied from the app
+  creation template, and `adopted=false` are instance-owned. App names are
   identity slugs and must be globally unique in the gateway app registry.
 - **Registration Pipeline:** Executes the same convergence logic as
   [`instance:register`](../2_instance-register/instance-register.md) to set up runtime container, proxy

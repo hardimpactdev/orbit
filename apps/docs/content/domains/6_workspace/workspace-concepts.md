@@ -71,14 +71,16 @@ The terms below define the core identity vocabulary for the workspace family.
 
 These terms describe how PHP version is resolved for workspaces.
 
-- **Workspace PHP override:** Optional gateway-tracked PHP version stored on the
-  workspace row. When absent, the workspace inherits the parent app PHP version
-  and JSON renderers report `php_inherited=true`. The selected version chooses
-  the workspace runtime container image; it does not install host PHP or render
-  host FPM pools.
+- **Workspace PHP override:** Gateway-tracked PHP version stored on the
+  workspace row, copied from the owning instance at creation unless an explicit
+  version is supplied. When the row keeps no version of its own, the workspace
+  resolves through its owning instance and then the app creation template, and
+  JSON renderers report `php_inherited=true` for exactly those rows. The selected
+  version chooses the workspace runtime container image; it does not install
+  host PHP or render host FPM pools.
 - **Workspace PHP inheritance flag:** Boolean entity field that records whether
-  a workspace's effective PHP version comes from the parent app (`true`) or
-  from its own override (`false`). Exposed in JSON as `php_inherited`.
+  a workspace's effective PHP version is resolved from an owning row (`true`) or
+  stored on the workspace itself (`false`). Exposed in JSON as `php_inherited`.
 
 ## Setup and teardown
 

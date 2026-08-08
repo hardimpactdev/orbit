@@ -218,7 +218,7 @@ Source: [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **Orbit instance serving node**
 - **Development instance**
 - **Production instance**
-- **App PHP version**
+- **App PHP creation template**
 - **App runtime kind**
 - **App runtime container**
 - **Development packages mount**
@@ -598,7 +598,8 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
-- **App PHP runtime policy**
+- **App PHP creation template**
+- **Instance PHP runtime version**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**

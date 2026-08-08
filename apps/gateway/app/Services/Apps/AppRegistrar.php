@@ -211,9 +211,9 @@ final class AppRegistrar
     }
 
     /**
-     * PHP version and runtime proxy transport are app-owned shared policy;
-     * a registration that changes either fans out to every sibling instance,
-     * so each sibling is named instead of changing silently.
+     * Runtime proxy transport is app-owned shared policy: a registration that
+     * changes it fans out to every sibling instance, so each sibling is named
+     * instead of changing silently.
      *
      * @return list<array<string, string>>
      */
@@ -223,11 +223,10 @@ final class AppRegistrar
             return [];
         }
 
+        // PHP version is no longer app-owned: each instance holds its own, so a
+        // register run cannot move a sibling's PHP. Runtime proxy transport is
+        // still app-owned and still fans out, so it keeps its warning.
         $changes = [];
-
-        if ($before->php_version !== $after->php_version) {
-            $changes[] = "PHP {$after->php_version}";
-        }
 
         $transportBefore = $this->proxyTransportLabel($before->runtime_config);
         $transportAfter = $this->proxyTransportLabel($after->runtime_config);
@@ -432,10 +431,16 @@ final class AppRegistrar
         $phpVersion = $input['php_version'] ?? $existingApp?->php_version ?? PhpRuntimeCatalog::DEFAULT;
         $isDefaultInstance = ! $existingApp instanceof App || $selectedName === $existingApp->environment;
 
+        // instance:register is instance-scoped: --php-version writes the
+        // selected instance only. The app default is a creation-time template
+        // and is set when the app is created, never re-stamped from here.
         $attributes = [
             'repository' => $existingApp?->repository,
-            'php_version' => $phpVersion,
         ];
+
+        if (! $existingApp instanceof App) {
+            $attributes['php_version'] = $phpVersion;
+        }
 
         if ($isDefaultInstance) {
             $attributes = [
@@ -466,6 +471,10 @@ final class AppRegistrar
             ['name' => $selectedName],
             [
                 'driver' => InstanceDriver::Orbit,
+                // Instance-scoped: an explicit --php-version writes this
+                // instance only; otherwise keep its stored value, falling back
+                // to the app default when creating the first instance.
+                'php_version' => $input['php_version'] ?? $selected?->php_version ?? $phpVersion,
                 'adopted' => $selected instanceof Instance
                     ? $selected->adopted
                     : ! $existingApp instanceof App,

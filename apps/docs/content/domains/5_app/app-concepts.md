@@ -61,9 +61,11 @@ instance and its driver placement.
   selected ingress placement. Public traffic terminates at
   `ingress`, forwards over WireGuard to `router`, and reaches the instance
   through a private `app-prod` backend artifact.
-- **App PHP version:** Gateway-tracked configuration for the PHP version used by
-  each instance's FrankenPHP runtime container and command execution. Workspaces
-  inherit this value unless they store an override.
+- **App PHP creation template:** Gateway-tracked configuration holding the PHP
+  version that new instances copy at creation. Each instance then owns the
+  concrete version its FrankenPHP runtime container and command execution use,
+  and each workspace copies its owning instance. Changing this template never
+  reaches an instance or workspace that already exists.
 - **App runtime kind:** The runtime shape selected for an app. Instances of `php`
   apps run in a dedicated FrankenPHP container; `static` apps serve files directly
   through `orbit-caddy` without a PHP runtime container and have no PHP image,

@@ -38,11 +38,12 @@ These rules govern all workspace family commands.
 - Workspace names are identity slugs: lowercase letters, digits, and hyphens
   only. They cannot start or end with a hyphen and are limited to 63
   characters.
-- Workspace PHP version is gateway-tracked configuration. A workspace inherits
-  the parent app PHP version unless a workspace override is stored on the
-  workspace row. The effective PHP version selects the workspace FrankenPHP
-  runtime container image; it does not install host PHP or render a host
-  FPM pool.
+- Workspace PHP version is gateway-tracked configuration, copied from the
+  owning instance when the workspace is created or adopted unless an explicit
+  version is supplied. A row that stores no version of its own resolves through
+  its owning instance and then the app template. The effective PHP version
+  selects the workspace FrankenPHP runtime container image; it does not install
+  host PHP or render a host FPM pool.
 - Each workspace owns a Docker runtime container derived from workspace,
   app, and PHP image configuration. The container serves the workspace's web
   route through FrankenPHP and is represented as a process with Docker runtime.
@@ -151,7 +152,7 @@ entity does not define.
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
   "php_version": "8.5",
-  "php_inherited": true,
+  "php_inherited": false,
   "adopted": false,
   "lifecycle_status": "expected"
 }
@@ -165,15 +166,15 @@ entity does not define.
 | `node` | string | Effective workspace node slug resolved from the selected instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
-| `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
+| `php_version` | string \| null | Effective PHP version for the workspace, resolved from its own stored value, then the owning instance, then the app creation template. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
+| `php_inherited` | boolean | `false` whenever the row stores its own concrete version, which is every workspace created or adopted under snapshot inheritance. `true` only for a row that stores no version and resolves through its owning instance. Retained for payload compatibility. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
-whose value is inapplicable, such as a workspace-level `php_version` override
-when the workspace inherits the parent app PHP version (represented here
-through `php_inherited=true` with the effective version still reported flat).
+whose value is genuinely inapplicable, such as `node` when no serving node
+resolves. `php_version` is the effective version and stays populated even when
+`php_inherited=true`, because that row resolves through its owning instance.
 `instance` is applicable to every workspace and is never `null`.
 
 ## Terminology

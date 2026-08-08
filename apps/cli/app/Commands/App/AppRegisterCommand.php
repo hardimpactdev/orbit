@@ -18,7 +18,7 @@ final class AppRegisterCommand extends AppGatewayCommand
         {--node= : Target instance node}
         {--path= : Existing app path on the target node}
         {--root= : Document root relative to app path (default: existing value or public)}
-        {--php-version= : PHP version (default: existing app value or 8.5)}
+        {--php-version= : PHP version for this instance (default: existing instance value, then the app creation template, then 8.5)}
         {--domain= : Production domain}
         {--runtime-proxy-transport= : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}';

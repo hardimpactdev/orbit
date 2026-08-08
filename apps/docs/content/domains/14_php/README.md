@@ -52,9 +52,15 @@ These rules define what PHP runtime commands own and how they operate.
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted
   Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`.
-- App PHP version is gateway-tracked app configuration.
-- Workspace PHP version is gateway-tracked workspace configuration. A workspace
-  inherits the parent app PHP version unless it stores an override.
+- App PHP version is gateway-tracked app configuration and acts as a
+  creation-time template: new instances copy it, and changing it never reaches
+  an instance or workspace that already exists.
+- Instance PHP version is gateway-tracked instance configuration. Each instance
+  owns the concrete version its runtime container uses, independent of its
+  siblings and of the app template.
+- Workspace PHP version is gateway-tracked workspace configuration, copied from
+  the owning instance at creation unless an explicit version is supplied. A row that stores no version of its own resolves through its owning instance,
+  then the app template.
 - Workspace PHP reads and writes are available only when the workspace resolves
   to an active `app-dev` serving node and the caller is not an `app-prod` node.
   Explicit workspace targets fail with
@@ -78,9 +84,16 @@ PHP JSON renderers use this shape for runtime selection results:
   "node": "app-1",
   "supported": ["8.5", "8.4", "8.3"],
   "available_images": ["8.5"],
+  "image_inventory_status": "confirmed",
+  "cli": "8.5",
   "app": {
     "name": "docs",
     "php_version": "8.5"
+  },
+  "instance": {
+    "name": "development",
+    "app": "docs",
+    "php_version": "8.3"
   },
   "workspace": {
     "name": "feature-docs",

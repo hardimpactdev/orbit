@@ -5,7 +5,7 @@
 Show one app's gateway registry details.
 
 Use `app:show` when you need an app's gateway-owned registry record and
-placement breakdown: repository, shared PHP version, visible instances,
+placement breakdown: repository, PHP version template used by new instances, visible instances,
 and each instance's path, workspaces, processes, and
 WebSocket, analytics, or route bindings. Live
 runtime drift, readiness, and repair belong to
@@ -53,7 +53,8 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 2. Validates that the current caller can inspect at least one concrete Orbit app
    instance, unless the caller is the gateway.
 3. Reads the app record from gateway-owned configuration: name,
-   repository, shared runtime policy, and PHP version.
+   repository, shared runtime policy, and the PHP creation template new
+   instances copy.
 4. Aggregates caller-visible instances. Each instance nests only its own
    workspaces, processes, and WebSocket, analytics, and
    route bindings.

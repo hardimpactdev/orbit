@@ -21,6 +21,7 @@ use Override;
  * @property int $id
  * @property int $app_id
  * @property string $name
+ * @property string|null $php_version
  * @property InstanceDriver $driver
  * @property InstanceDriverConfigData|null $driver_config
  * @property bool $adopted
@@ -54,6 +55,7 @@ class Instance extends Model
     protected $fillable = [
         'app_id',
         'name',
+        'php_version',
         'driver',
         'driver_config',
         'adopted',

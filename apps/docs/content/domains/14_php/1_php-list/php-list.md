@@ -39,7 +39,7 @@ Run this command to inspect PHP image support and selection for a node, instance
 `php:list` resolves one node, concrete instance, or workspace context from
 explicit options, caller context, concrete instance placement, or local
 `node:default`. It never chooses one instance to represent an app. It
-reads the shared app PHP policy and the PHP image facts tracked for the selected
+reads the app-level creation template, the selected instance's own version, and the PHP image facts tracked for the selected
 instance serving node.
 
 With `--live`, it also asks the gateway to inspect the target node through its Docker-compatible provider and

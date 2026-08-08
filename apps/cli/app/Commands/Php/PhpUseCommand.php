@@ -21,7 +21,7 @@ final class PhpUseCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'php:use
         {version? : PHP version to select}
-        {--instance= : Instance selector (app.instance); changes the parent app shared PHP policy for all its instances}
+        {--instance= : Instance selector (app.instance); changes only the selected instance own PHP version, never a sibling}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
         {--inherit : Restore workspace PHP inheritance}

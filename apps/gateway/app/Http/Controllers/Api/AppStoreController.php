@@ -302,6 +302,8 @@ final class AppStoreController implements Loggable
             ['name' => $app->environment],
             [
                 'driver' => InstanceDriver::Orbit,
+                // Snapshot the app default at creation; it never tracks it after.
+                'php_version' => $app->php_version,
                 'adopted' => false,
                 'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $node->id,

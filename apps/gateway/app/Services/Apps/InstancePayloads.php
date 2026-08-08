@@ -93,10 +93,13 @@ final readonly class InstancePayloads
         $app = $instance->app;
         $image = null;
         $runtime = $app->runtimeKind();
+        // The instance owns its version; the app value is only the creation
+        // template, so reporting it here would misstate what actually runs.
+        $phpVersion = $instance->php_version ?? $app->php_version;
 
         try {
             if ($runtime === AppRuntimeKind::Php) {
-                $image = $this->phpRuntimeCatalog->imageFor($app->php_version);
+                $image = $this->phpRuntimeCatalog->imageFor($phpVersion);
             }
         } catch (InvalidArgumentException) {
             $image = null;
@@ -105,7 +108,7 @@ final readonly class InstancePayloads
         return [
             'runtime' => $runtime->value,
             'runtime_config' => $app->runtimeConfig()->toArray(),
-            'php_version' => $app->php_version,
+            'php_version' => $phpVersion,
             'frankenphp_image' => $image,
             'mode' => $instance->worker_enabled ? 'worker' : 'classic',
             'configured_mounts' => $instance
