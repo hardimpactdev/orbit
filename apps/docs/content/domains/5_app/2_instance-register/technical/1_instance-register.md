@@ -65,8 +65,11 @@ This command follows the shared
 4. **Resolve PHP version**:
    - Explicit `--php-version`.
    - Existing instance PHP version when registered.
+   - The app PHP creation template when the app already exists, so an instance
+     registered later starts from the app's stored template rather than the
+     global default.
    - Orbit's app runtime default (`8.5`) for first-time registration or
-     adoption.
+     adoption of an app that does not exist yet.
    - Do not read or inherit any host PHP default; app runtime container
      configuration is the architecture concept.
 5. **Resolve runtime proxy transport**:

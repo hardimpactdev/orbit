@@ -72,12 +72,13 @@ These terms define each target scope that a PHP command can read or write.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
   workspace row. It is copied from the owning instance at creation and can be
   set explicitly to a different version for that workspace alone.
-- **Workspace PHP inheritance:** Legacy workspace state where no workspace PHP
-  version is stored. Such a row resolves through its owning instance, then the
-  app creation template. New workspaces always store a concrete version.
+- **Workspace PHP inheritance:** Workspace state where the row stores no PHP
+  version of its own and resolves through its owning instance, then the app
+  creation template. Workspaces created or adopted today always store a
+  concrete version, so this state applies only to rows that predate it.
 - **Effective workspace PHP version:** Version a workspace actually uses: its
   own stored version, then the owning instance version, then the app creation
-  template for legacy rows.
+  template when the row stores none.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
   gateway's own runtime. Instance setup, deploy commands, and ad-hoc
