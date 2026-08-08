@@ -55,26 +55,24 @@ class IncusBaseImagePreparer
             $publicKey = $this->createRemoteSshKey($remotePrivateKey, $runId);
 
             $packages = $this->readPackageList($options->depsScriptPath, '--all');
+            $frankenPhpImageArchive = "{$remoteWorkDir}/frankenphp-1-php8.5-bookworm.tar";
 
-            foreach ($this->frankenPhpImageArchives() as $image => $archiveName) {
-                $this->stageRemoteDockerImageArchive($image, "{$remoteWorkDir}/{$archiveName}");
-            }
+            $this->stageRemoteDockerImageArchive(
+                new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT),
+                $frankenPhpImageArchive,
+            );
 
             $this->launchBaseInstance($instanceName, $options);
             $tempInstance = $instanceName;
 
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
-
-            foreach ($this->frankenPhpImageArchives() as $archiveName) {
-                $this->pushRemoteFileToInstance(
-                    "{$remoteWorkDir}/{$archiveName}",
-                    $instanceName,
-                    "/var/tmp/{$archiveName}",
-                );
-            }
+            $this->pushRemoteFileToInstance(
+                $frankenPhpImageArchive,
+                $instanceName,
+                '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
+            );
             $this->bootstrapBaseInstance($instanceName, $options, $publicKey, $packages);
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
-            $this->loadNonDefaultFrankenPhpImages($instanceName, $options->timeoutSeconds);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
@@ -89,70 +87,6 @@ class IncusBaseImagePreparer
             ];
         } finally {
             $this->cleanupRemote($tempInstance, $remoteWorkDir);
-        }
-    }
-
-    /**
-     * Every supported FrankenPHP runtime image, mapped to its archive filename.
-     *
-     * The base image carries all of them, not just the catalog default: a
-     * topology holding one version can never exercise a PHP version change,
-     * because preflight refuses every other version as `not_installed` before
-     * any write. This mirrors what the Docker lane already prepares.
-     *
-     * @return array<string, string>
-     */
-    private function frankenPhpImageArchives(): array
-    {
-        $archives = [];
-
-        foreach (new PhpRuntimeCatalog()->supportedImages() as $image) {
-            $tag = substr($image, strrpos($image, ':') + 1);
-            $archives[$image] = "frankenphp-{$tag}.tar";
-        }
-
-        return $archives;
-    }
-
-    /**
-     * Load every non-default runtime image outside the bootstrap script.
-     *
-     * Bootstrap runs under the build host's global timeout and already loads
-     * the default image, which the source-artisan Dockerfile builds FROM.
-     * Loading several hundred megabytes more inside that same window pushed
-     * the whole bootstrap past the limit, so each remaining image gets its own
-     * exec and reports its own failure.
-     */
-    private function loadNonDefaultFrankenPhpImages(string $instanceName, int $timeoutSeconds): void
-    {
-        $defaultImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
-
-        foreach ($this->frankenPhpImageArchives() as $image => $archive) {
-            if ($image === $defaultImage) {
-                continue;
-            }
-
-            $script = sprintf(
-                'set -euo pipefail; docker load -i /var/tmp/%s; docker image inspect %s >/dev/null; rm -f /var/tmp/%s',
-                $archive,
-                escapeshellarg($image),
-                $archive,
-            );
-
-            $result = $this->host->run(
-                sprintf(
-                    'incus exec %s -- bash -lc %s',
-                    escapeshellarg($instanceName),
-                    escapeshellarg($script),
-                ),
-                timeoutSeconds: max(900, $timeoutSeconds),
-            );
-
-            if (! $result->successful()) {
-                throw new RuntimeException(
-                    "Could not load {$image} into base instance [{$instanceName}]: {$result->errorOutput()}",
-                );
-            }
         }
     }
 
@@ -317,7 +251,6 @@ class IncusBaseImagePreparer
         $caddyImage = escapeshellarg(OrbitCaddyContainer::Image);
         $frankenPhpDockerfileImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
         $frankenPhpImage = escapeshellarg($frankenPhpDockerfileImage);
-        $defaultArchive = $this->frankenPhpImageArchives()[$frankenPhpDockerfileImage];
         $sourceGatewayArtisanImage = escapeshellarg(DockerTopologyProvider::sourceGatewayArtisanImage());
         $webSocketRuntimeImage = escapeshellarg(DockerTopologyProvider::webSocketRuntimeImage());
         $wgEasyImage = escapeshellarg(WgEasyServiceInstaller::Image);
@@ -420,9 +353,9 @@ class IncusBaseImagePreparer
                 docker pull "\$image"
                 docker image inspect "\$image" >/dev/null
             done
-            docker load -i /var/tmp/{$defaultArchive}
+            docker load -i /var/tmp/frankenphp-1-php8.5-bookworm.tar
             docker image inspect {$frankenPhpImage} >/dev/null
-            rm -f /var/tmp/{$defaultArchive}
+            rm -f /var/tmp/frankenphp-1-php8.5-bookworm.tar
 
             cat > /tmp/orbit-e2e-source-gateway-artisan.Dockerfile <<'DOCKERFILE'
             FROM {$frankenPhpDockerfileImage}
@@ -466,19 +399,11 @@ class IncusBaseImagePreparer
             rm -rf /var/lib/apt/lists/*
             BASH;
 
-        // Bootstrap is the longest single operation in the harness: a full apt
-        // install, the host PHP toolchain, Composer, gh, the Laravel installer,
-        // two Docker builds, and a runtime image load. It does not fit the
-        // default 600s budget on an idle host, so it gets its own floor in the
-        // same style as the Docker topology builder.
-        $result = $this->host->run(
-            sprintf(
-                'incus exec %s -- bash -lc %s',
-                escapeshellarg($instanceName),
-                escapeshellarg($script),
-            ),
-            timeoutSeconds: max(1800, $options->timeoutSeconds),
-        );
+        $result = $this->host->run(sprintf(
+            'incus exec %s -- bash -lc %s',
+            escapeshellarg($instanceName),
+            escapeshellarg($script),
+        ), timeoutSeconds: $options->timeoutSeconds);
 
         if (! $result->successful()) {
             throw new RuntimeException("Failed to bootstrap base instance [{$instanceName}]: {$result->errorOutput()}");
