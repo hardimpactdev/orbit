@@ -31,6 +31,7 @@ class GatewaySwarmInstaller
         private readonly CaddyTool $caddyTool = new CaddyTool,
         private readonly GatewayCaddyRouteRenderer $gatewayRouteRenderer = new GatewayCaddyRouteRenderer,
         private readonly GatewayTlsKeyModeRepairer $tlsKeyModeRepairer = new GatewayTlsKeyModeRepairer,
+        private readonly GatewayConfigRootOwnershipRepairer $configRootOwnershipRepairer = new GatewayConfigRootOwnershipRepairer,
     ) {}
 
     public function install(
@@ -308,6 +309,10 @@ class GatewaySwarmInstaller
         File::chmod("{$configRoot}/certs", 0o700);
         File::chmod("{$configRoot}/operations-websocket", 0o700);
         $this->tlsKeyModeRepairer->repair($configRoot);
+        // Owner-only modes are only safe while the tree belongs to the host
+        // install user. Repair ownership alongside the modes so convergence can
+        // never leave the host Orbit CLI locked out of its own config.
+        $this->configRootOwnershipRepairer->repair($configRoot);
 
         $database = "{$configRoot}/gateway.sqlite";
 

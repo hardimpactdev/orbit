@@ -243,6 +243,9 @@ it('repairs pre-existing gateway-owned TLS private key modes during routine runt
 
     File::ensureDirectoryExists(dirname($configKey));
     File::ensureDirectoryExists(dirname($hostKey));
+    // A bind-mounted config root always has a matching host home view under the
+    // prefix; convergence resolves canonical ownership from it.
+    File::ensureDirectoryExists($hostRoot.dirname($this->configRoot));
     File::put($configKey, 'config private key');
     File::put($hostKey, 'host private key');
     File::chmod($configKey, 0o644);
@@ -261,6 +264,50 @@ it('repairs pre-existing gateway-owned TLS private key modes during routine runt
         ->toBe(0o600)
         ->and(fileperms($hostKey) & 0o777)
         ->toBe(0o600);
+});
+
+it('restores canonical host ownership of the config root during routine runtime convergence', function (): void {
+    $hostRoot = "{$this->configRoot}/host-root";
+    $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+    $chownCommands = [];
+
+    File::ensureDirectoryExists($hostRoot.dirname($this->configRoot));
+    putenv("ORBIT_HOST_PATH_PREFIX={$hostRoot}");
+    Process::fake(function ($process) use (&$chownCommands) {
+        $chownCommands[] = is_array($process->command)
+            ? implode(' ', $process->command)
+            : (string) $process->command;
+
+        return Process::result();
+    });
+
+    try {
+        new GatewaySwarmInstaller()->bootstrapRuntimeConfig();
+    } finally {
+        $previousHostPathPrefix === false
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$previousHostPathPrefix}");
+    }
+
+    $hostIdentityPath = $hostRoot.dirname($this->configRoot);
+    $expectedOwner = fileowner($hostIdentityPath).':'.filegroup($hostIdentityPath);
+
+    expect($chownCommands)
+        ->toContain("chown -R {$expectedOwner} {$this->configRoot}");
+});
+
+it('fails closed when convergence cannot resolve canonical host ownership', function (): void {
+    $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+    putenv("ORBIT_HOST_PATH_PREFIX={$this->configRoot}/absent-host-root");
+
+    try {
+        expect(fn () => new GatewaySwarmInstaller()->bootstrapRuntimeConfig())
+            ->toThrow(RuntimeException::class, 'Unable to resolve host ownership');
+    } finally {
+        $previousHostPathPrefix === false
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$previousHostPathPrefix}");
+    }
 });
 
 it('rejects unsafe gateway host path prefixes during runtime convergence', function (string $prefix): void {
