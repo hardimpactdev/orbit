@@ -23,8 +23,8 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   node artifacts are changed.
 - **Available PHP image:** PHP image version available to the Docker runtime on
   one concrete Orbit instance or workspace serving node through the
-  approved FrankenPHP image family. An app-policy write requires the image
-  on the selected instance serving node before policy is changed.
+  approved FrankenPHP image family. An instance write requires the image on that
+  instance's serving node before the instance row is changed.
 - **PHP runtime catalog:** Tool catalog knowledge that declares the PHP versions
   Orbit can manage and resolves each supported version to the approved
   FrankenPHP image reference that Orbit owns and builds from the upstream Debian/glibc image. Orbit's standard PHP app/workspace

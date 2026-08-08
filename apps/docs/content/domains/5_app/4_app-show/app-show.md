@@ -53,7 +53,8 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 2. Validates that the current caller can inspect at least one concrete Orbit app
    instance, unless the caller is the gateway.
 3. Reads the app record from gateway-owned configuration: name,
-   repository, shared runtime policy, and PHP version.
+   repository, shared runtime policy, and the PHP creation template new
+   instances copy.
 4. Aggregates caller-visible instances. Each instance nests only its own
    workspaces, processes, and WebSocket, analytics, and
    route bindings.

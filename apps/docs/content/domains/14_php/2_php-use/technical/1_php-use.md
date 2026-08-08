@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
-| `node` | `--node` | Optional. | App policy target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `node` | `--node` | Optional. | Instance target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -136,4 +136,4 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts instance/workspace selections, inherit semantics, mutual exclusion validation, result rendering, and gateway error pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Serving-node authorization, image preflight before mutation, concrete workspace placement, wrong-permission denial, and gateway implicit authority. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Shared app-policy selection, concrete instance results, and workspace selection/inheritance behavior. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Instance-scoped selection that is not gated by a sibling instance's workspace, concrete instance results, and workspace selection/inheritance behavior. |

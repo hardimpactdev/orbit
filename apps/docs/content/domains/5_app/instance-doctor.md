@@ -89,7 +89,8 @@ The instance probe reads gateway app and instance records and checks these layer
 9. **Instance runtime targets:** Orbit instances whose driver
    configuration places them on the selected node are probed for instance-owned
    PHP/image requirements, managed config such as
-   `~/.config/orbit/apps/hauser-nmbp.ini`, and instance-scoped app policy.
+   `~/.config/orbit/apps/hauser-nmbp.ini`, and instance-scoped runtime
+   configuration.
 10. **Stale instance configuration:** Managed runtime config whose encoded
    dotted instance identity is absent from active instance records is
    reported as instance drift. Ambiguous or app-only identities are not

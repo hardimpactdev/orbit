@@ -32,7 +32,7 @@ orbit php:use 8.5 --instance=docs --json
   version. Source-mounted Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - `--node=<node>`: Target node for `--cli`, or an optional serving-node
-  assertion for a workspace. It is invalid for an app policy write, which
+  assertion for a workspace. It is invalid for an instance write, which
   selects one concrete instance (dotted selector or unambiguous bare-app
   shorthand) and preflights only that instance's serving node. A mismatched
   workspace node fails with the stable `target_mismatch` reason before any
@@ -46,12 +46,11 @@ orbit php:use 8.5 --instance=docs --json
 
 Run this command to select the PHP image version for an instance or workspace.
 
-`php:use` resolves exactly one target scope: app runtime policy for one
-selected instance, workspace runtime override, workspace inheritance, or node
-CLI default. It validates that app and workspace versions are supported by
-Orbit. Before an app-policy write it authorizes `php:write` and verifies the
-image only on the selected instance's serving node; any denial or missing image
-stops before policy mutation. Node CLI selection only accepts PHP 8.5.
+`php:use` resolves exactly one target scope: one instance's own runtime
+version, a workspace runtime override, workspace inheritance, or the node CLI
+default. It validates that the requested version is supported by Orbit. Before
+an instance write it authorizes `php:write` and verifies the image only on that
+instance's serving node; any denial or missing image stops before the write. Node CLI selection only accepts PHP 8.5.
 
 For an instance target, the command writes that instance's own version after
 its preflight, then reconciles only that instance's runtime container and proxy
@@ -66,7 +65,7 @@ mutate Composer constraints.
 ## Output
 
 Output shows the resolved target, selected version, and the reconciliation
-result for that one instance after the app-policy write.
+result for that one instance after the write.
 
 Human output renders progress and a short result summary. Use `--json` for
 machine-readable output.

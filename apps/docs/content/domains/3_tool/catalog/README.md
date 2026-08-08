@@ -44,8 +44,7 @@ when it owns a distinct Orbit workflow.
 
 Admitted examples:
 
-- `php:*` owns PHP image selection across app configuration and workspace
-  overrides.
+- `php:*` owns PHP image selection across instances and workspaces.
 - Future Valkey data-plane operations may use `valkey:*`, such as a
   Valkey-specific flush command.
 - Database connection inventory, env convergence, schema inspection, audited

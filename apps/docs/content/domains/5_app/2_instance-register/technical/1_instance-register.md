@@ -40,7 +40,7 @@ This command follows the shared
 | `--path` | `text` | Adopting an unmanaged path. | Selected instance path. | Absolute path on the target node. Must not be owned by a different registered instance on the same node. |
 | `--node` | `text` | No default can be resolved. | Selected instance serving node; for first adoption, gateway-resolved default node. | Valid node name. |
 | `--root` | `text` | Optional | Selected instance root; otherwise `public`. | Path relative to instance path. |
-| `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app runtime container version. This is app runtime configuration, not a host PHP default. |
+| `--php-version` | `text` | Optional | Existing instance value, then the app creation template, otherwise `8.5` | Supported runtime container version stored on the selected instance. This is instance runtime configuration, not a host PHP default. |
 | `--runtime-proxy-transport` | `text` | Optional | Existing app value; otherwise `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
 | `--domain`| `text` | Optional | Selected instance domain. | Valid hostname. For first adoption it names the instance `production`; otherwise the first instance is `development`. |
 | `--json` | `flag` | Optional | `false` | n/a |
@@ -106,8 +106,9 @@ This command follows the shared
 `instance:register` converges one instance and its node artifacts:
 
 - **Registry Convergence**: Ensures the app owns only identity,
-  repository, and shared runtime policy. Ensures the selected instance owns
-  node, path, root, URL, domain, environment, and `adopted`. First adoption
+  repository, shared runtime policy, and the PHP creation template. Ensures the
+  selected instance owns node, path, root, URL, domain, environment, its own PHP
+  version, and `adopted`. First adoption
   creates both rows atomically.
 - **Artifact Apply**: Sends typed apply commands to the concrete instance
   node through Agent push to:

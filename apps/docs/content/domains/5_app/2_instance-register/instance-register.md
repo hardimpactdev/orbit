@@ -37,7 +37,7 @@ The following arguments and options shape an `instance:register` invocation.
 - `--path=<path>`: The absolute path to the app on the target node.
 - `--node=<name>`: The target node.
 - `--root=<path>`: The document root relative to the selected instance path. Default: `public`.
-- `--php-version=<version>`: The app runtime container version to store in gateway app configuration.
+- `--php-version=<version>`: The runtime container version to store on the selected instance. It never rewrites the app creation template.
 - `--runtime-proxy-transport=<http|https>`: The app-dev FrankenPHP transport between `orbit-caddy` and the runtime container. Default: existing value or `http`; `https` opts the app into inner TLS.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
 - `--json`: Output JSON.
@@ -53,9 +53,10 @@ it uses the local default node or an interactive prompt.
 
 ### `--php-version` defaults
 
-When `--php-version` is omitted, existing apps keep their shared runtime
-value. A newly adopted app uses Orbit's app runtime default (`8.5`),
-not any host PHP default.
+When `--php-version` is omitted, an already registered instance keeps its own
+stored version, and a newly registered instance copies the app creation
+template. A newly adopted app uses Orbit's app runtime default (`8.5`), not any
+host PHP default.
 
 `--repo` is not accepted. In the current converted app and instance command surface,
 repository URL is metadata that is captured only at creation time by

@@ -102,8 +102,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   container. A missing or escaping active release fails the deployment before
   warmup.
 - After all configured steps complete successfully for a PHP app, runs built-in
-  production warmup on the host PHP toolchain (matched to the app's PHP
-  version): `composer install --no-dev --optimize-autoloader --no-interaction`
+  production warmup on the host PHP toolchain (matched to the deploying
+  instance's own PHP version): `composer install --no-dev --optimize-autoloader --no-interaction`
   and `php artisan optimize`, against the app source or active release the
   FrankenPHP runtime container serves.
 - When the instance defines `deploy_warmup_paths`, sends HTTP warmup requests to
