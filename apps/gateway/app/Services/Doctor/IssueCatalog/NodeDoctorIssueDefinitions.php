@@ -42,6 +42,11 @@ final class NodeDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::blocked('node.gateway_api_unreachable', 'node'),
             self::blocked('node.gateway_ca_mismatch', 'node'),
             self::genuine(
+                'node.gateway_cli_config_unreadable',
+                'node',
+                'restore_node_gateway_cli_config_unreadable',
+            ),
+            self::genuine(
                 'node.gateway_runtime_unready',
                 'node',
                 'restore_node_gateway_runtime_unready',

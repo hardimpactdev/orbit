@@ -101,13 +101,22 @@ The node probe reads gateway node records and checks these layers:
    intentionally use another owner user. Empty owner-user records are drift.
    The `node:new --user` option remains valid as a bootstrap-only SSH user and
    is not itself drift.
-12. **Node update posture:** managed Ubuntu server nodes may expose
+12. **Gateway host CLI config access:** the gateway node's Orbit runtime user
+    can traverse its config root and read `config.json` inside it. This is the
+    precondition for the `force_remote_host` lane, which runs the host CLI as
+    that user with `ORBIT_CONFIG_PATH` unset. The check reads the host view
+    under `ORBIT_HOST_PATH_PREFIX` rather than dispatching through the lane, so
+    an unreadable config is reported as itself instead of surfacing as an opaque
+    downstream transport failure on whichever family happened to probe first.
+    It applies only to the gateway node and only when a host path prefix is
+    present; image-local and development roots are out of scope.
+13. **Node update posture:** managed Ubuntu server nodes may expose
    `node.updates` posture when the operator selects the exact
    `--key=node.updates` filter. The update layer runs only when a registered
    update driver supports the selected target. Unsupported targets are silent:
    node doctor never creates `node.updates_not_applicable` or
    `node.updates_driver_unsupported` findings.
-13. **Node DNS projection:** the shared `dnsmasq.d/10-node-records.conf`
+14. **Node DNS projection:** the shared `dnsmasq.d/10-node-records.conf`
     artifact is verified only on the DNS-serving host (gateway-coupled active
     `vpn` role), not on nodes that only contribute records. Targeted
     (`--node=gateway`) and broad (`--all`) scopes share this consumer gate:
@@ -121,7 +130,7 @@ The node probe reads gateway node records and checks these layers:
     directives. Container, listener, forwarding, and client-DNS checks belong
     to the tool family. Local operator-machine resolver overrides remain the
     `dns:*` command surface, not node doctor.
-14. **Role assignment readiness:** active role assignments have the settings
+15. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
 
@@ -169,7 +178,7 @@ The node probe reads gateway node records and checks these layers:
    family.
 
    `database` and `gateway` assignments have no role settings in v1.
-15. **Node-related defaults:** the issue catalog includes
+16. **Node-related defaults:** the issue catalog includes
    `node.local_default_invalid` for a missing or unauthorized local default.
    A dedicated default-preference probe that actively validates
    `node:default` under `--self` is not implemented as current doctor
@@ -249,6 +258,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |
 | `node.gateway_api_unreachable` | A client or node CLI caller cannot reach the configured gateway API over WireGuard. |
 | `node.gateway_ca_mismatch` | The gateway API presents a certificate chain that does not match the configured gateway trust. |
+| `node.gateway_cli_config_unreadable` | The gateway host's Orbit runtime user cannot traverse its config root or read `config.json` inside it, so the host CLI cannot resolve a gateway URL and every `force_remote_host` operation fails operation-token verification. Checked from the host view under `ORBIT_HOST_PATH_PREFIX`, never by exercising the lane it guards. |
 | `node.wireguard_peer_missing` | An active node record has no matching gateway-managed WireGuard peer. |
 | `node.wireguard_peer_extra` | Gateway-managed WireGuard state contains a peer that does not belong to an active node record. |
 | `node.wireguard_address_mismatch` | A gateway-managed WireGuard peer address differs from the node record's WireGuard address. |
@@ -285,6 +295,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | --- | --- |
 | `node.gateway_api_unreachable` | Restart or restore gateway service only when running on the gateway node; otherwise leave the issue for gateway-side repair. |
 | `node.gateway_ca_mismatch` | Restore local gateway trust from gateway-owned trust material when the caller is authorized to receive it. |
+| `node.gateway_cli_config_unreadable` | Restore canonical host ownership of the gateway config root so the host runtime user can read its own CLI config. Owner-only modes are preserved. |
 | `node.wireguard_peer_missing` | Reserved for gateway-managed peer recreation; private key material is not read from nodes. Compatible live peer attachment belongs to `doctor --family=node --adopt`. |
 | `node.wireguard_address_mismatch` | Rewrite gateway-managed peer material to the WireGuard address recorded on the active node record. |
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |

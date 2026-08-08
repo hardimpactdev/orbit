@@ -49,6 +49,7 @@ final readonly class NodesProbe
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
         private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
+        private ?GatewayCliConfigAccessProbe $gatewayCliConfigAccessProbe = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
         private ?NodeRoleActivator $nodeRoleActivator = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
@@ -91,6 +92,7 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkAppRuntime($node));
         $drift = array_merge($drift, $this->checkCliPhpDefault($node));
         $drift = array_merge($drift, $this->nodeSecurityPostureProbe()->diff($node));
+        $drift = array_merge($drift, $this->gatewayCliConfigAccessProbe()->diff($node));
 
         if ($key === 'node.updates') {
             $drift = array_merge($drift, $this->checkUpdates($node));
@@ -972,6 +974,7 @@ final readonly class NodesProbe
             'node.security.public_ssh_deny',
             'node.security.sysctl',
             'node.security.home_perms',
+            'node.gateway_cli_config_unreadable',
         ]);
 
         // Emitted as key node.updates with detail.code variants; one restorer.
@@ -1012,6 +1015,12 @@ final readonly class NodesProbe
 
         if (str_starts_with($entry->key, 'node.security.')) {
             $this->nodeSecurityPostureProbe()->restore($node, $entry);
+
+            return;
+        }
+
+        if ($entry->key === 'node.gateway_cli_config_unreadable') {
+            $this->gatewayCliConfigAccessProbe()->restore($node, $entry);
 
             return;
         }
@@ -1557,6 +1566,11 @@ final readonly class NodesProbe
     private function nodeSecurityPostureProbe(): NodeSecurityPostureProbe
     {
         return $this->nodeSecurityPostureProbe ?? new NodeSecurityPostureProbe($this->localExecutor());
+    }
+
+    private function gatewayCliConfigAccessProbe(): GatewayCliConfigAccessProbe
+    {
+        return $this->gatewayCliConfigAccessProbe ?? new GatewayCliConfigAccessProbe;
     }
 
     private function updateDriverRegistry(): UpdateDriverRegistry
