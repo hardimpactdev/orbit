@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 236,
-    "unique_candidate_commit_count": 132,
+    "record_count": 237,
+    "unique_candidate_commit_count": 133,
     "orphan_count": 4,
     "records": [
         {
@@ -6524,6 +6524,29 @@
                 "status": "absent",
                 "event_count": 0,
                 "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-08-235637-codex-feature-proof-flow",
+            "slug": "codex-feature-proof-flow",
+            "timestamp": "2026-08-08-235637",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "32984ae6e0053f51925f868b55fae40bf888d563",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 1,
+            "feedback": {
+                "status": "valid",
+                "event_count": 1,
+                "raw_count": 1,
                 "promoted_count": 0,
                 "waived_count": 0,
                 "protection_failures": 0

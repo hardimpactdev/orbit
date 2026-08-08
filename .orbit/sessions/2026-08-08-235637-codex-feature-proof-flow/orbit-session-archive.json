@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-08T21:56:37+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-feature-proof-flow/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-08-235637-codex-feature-proof-flow",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-08T213905Z-1e17cf71f055.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "15493193cdedd4ea4b4bb340636eb88e9d47011e31c721e6a745b2364bbef661",
+        "loop.md": "7f9f5bc4d4b90b0acaa2eb91989905378cc8b1336fd9b58af7332bbe3bf7b0cc",
+        "quality-gates/quality-check-2026-08-08T213905Z-1e17cf71f055.json": "cc2cbed89f70acffa6d50c240f1c2afc4d75ad58672140f6eb5db87429721c96"
+    },
+    "slug": "codex-feature-proof-flow",
+    "requested_slug": "codex-feature-proof-flow",
+    "compatible_slugs": [
+        "codex-feature-proof-flow"
+    ],
+    "branch": "codex/feature-proof-flow",
+    "candidate_commit": "32984ae6e0053f51925f868b55fae40bf888d563",
+    "accepted_feature_tip": "32984ae6e0053f51925f868b55fae40bf888d563",
+    "accepted_main_tip": "fdae738ca6ec65f614033bb564e03829edbd4fdb",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
