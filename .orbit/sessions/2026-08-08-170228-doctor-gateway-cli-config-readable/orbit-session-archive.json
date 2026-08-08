@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-08T15:02:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/doctor-gateway-cli-config-readable/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-08-170228-doctor-gateway-cli-config-readable",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-gateway-cli-config-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-08T145228Z-723a04ace10e.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-gateway-cli-config-retained-incus.md": "9b953818fce3ba699ddfdb69d012d3b750be0ba88dfa7aaab9a4accbba74c09f",
+        "loop.md": "f730eca598ccfdc640f43f58b355481fa1b066b22873e6745d3e7e9831dd5b7b",
+        "quality-gates/quality-check-2026-08-08T145228Z-723a04ace10e.json": "ece054c693ea25a96f7eab7199cce5bd30142b6a21b24e81f6d0b1f8f9a3e16e"
+    },
+    "slug": "doctor-gateway-cli-config-readable",
+    "requested_slug": "doctor-gateway-cli-config-readable",
+    "compatible_slugs": [
+        "doctor-gateway-cli-config-readable"
+    ],
+    "branch": "doctor-gateway-cli-config-readable",
+    "candidate_commit": "2350b6d7c4e06853606aa23a10680d92955583af",
+    "accepted_feature_tip": "2350b6d7c4e06853606aa23a10680d92955583af",
+    "accepted_main_tip": "4324103ae6ab2f0a8d01d66d8cab327386e90c0e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
