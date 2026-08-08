@@ -166,15 +166,15 @@ entity does not define.
 | `node` | string | Effective workspace node slug resolved from the selected instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
-| `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
+| `php_version` | string \| null | Effective PHP version for the workspace, resolved from its own stored value, then the owning instance, then the app creation template. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `php_inherited` | boolean | `false` whenever the row stores its own concrete version, which is every workspace created or adopted under snapshot inheritance. `true` only for a row that stores no version and resolves through its owning instance. Retained for payload compatibility. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
-whose value is inapplicable, such as the stored `php_version` on a row that
-keeps no version of its own (represented here through `php_inherited=true` with
-the effective version still reported flat).
+whose value is genuinely inapplicable, such as `node` when no serving node
+resolves. `php_version` is the effective version and stays populated even when
+`php_inherited=true`, because that row resolves through its owning instance.
 `instance` is applicable to every workspace and is never `null`.
 
 ## Terminology

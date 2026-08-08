@@ -84,6 +84,8 @@ PHP JSON renderers use this shape for runtime selection results:
   "node": "app-1",
   "supported": ["8.5", "8.4", "8.3"],
   "available_images": ["8.5"],
+  "image_inventory_status": "confirmed",
+  "cli": "8.5",
   "app": {
     "name": "docs",
     "php_version": "8.5"
