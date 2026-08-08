@@ -227,6 +227,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
   as process-family warnings such as `process.runtime_backend_unavailable` or
   `process.runtime_unit_missing`.
+- **Production runtime user:** a production app's runtime user is derived from
+  its `/home/<user>/app` path. When that user does not yet exist on the serving
+  node, the command provisions it in place (the same idempotent repair
+  `doctor --restore` runs for `instance.security.system_user`) and retries the
+  runtime apply once, so creating a production app converges instead of handing
+  the operator a warning to chase. Only when that provisioning or the retry
+  still fails does the command emit `instance.security.system_user` with the
+  `doctor --family=instance --instance=<app.instance> --restore` handoff.
 
 ## Doctor Relationship
 

@@ -27,8 +27,15 @@ final readonly class AppsFixer
     ) {}
 
     /**
-     * Codes AppsFixer / removeRuntimeConfigExtra can restore. Production-user
-     * findings are report-only (no safe restorer) and must not appear here.
+     * Codes AppsFixer / removeRuntimeConfigExtra can restore.
+     *
+     * `app.security.*` is restorable through RemoteAppSecurityRepair. The
+     * report-only findings that have no safe restorer are the separate
+     * `instance.production_user_missing` / `instance.production_user_mismatch`
+     * codes, which are deliberately absent from this map.
+     *
+     * DoctorRestoreSupport mirrors every entry here under the public
+     * `instance.` prefix via instanceAliases().
      *
      * @return array<string, string> code => restore_action
      */
@@ -79,6 +86,15 @@ final readonly class AppsFixer
 
         if (! $node instanceof Node) {
             return null;
+        }
+
+        if (in_array($entry->key, ['app.security.system_user', 'app.security.fs_permissions'], true)) {
+            return $this->reapplyAppSecurity(
+                $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance),
+                $node,
+                $entry,
+                $instance,
+            );
         }
 
         if (! in_array($entry->key, ['app.runtime_config_missing', 'app.runtime_config_mismatch'], true)) {
@@ -179,16 +195,19 @@ final readonly class AppsFixer
      *
      * @return array<string, mixed>
      */
-    private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry): array
-    {
+    private function reapplyAppSecurity(
+        App $app,
+        Node $node,
+        DriftEntry $entry,
+        ?Instance $instance = null,
+    ): array {
         $user = $this->appRuntimeUser->forApp($app);
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
         $appPath = rtrim($app->path, '/');
 
         $this->securityRepair()->repair(
             node: $node,
             user: $user,
-            home: $home,
+            home: $this->appRuntimeUser->homeFor($user),
             path: $appPath,
         );
 
@@ -204,6 +223,7 @@ final readonly class AppsFixer
                 'app' => $app->name,
                 'runtime_user' => $user,
                 'path' => $app->path,
+                ...($instance instanceof Instance ? ['instance' => $instance->name] : []),
             ],
         ];
     }

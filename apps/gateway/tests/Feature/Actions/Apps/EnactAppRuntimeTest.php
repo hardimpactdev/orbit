@@ -155,6 +155,12 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
     }
 }
 
+function enact_app_runtime_security_repair_script(EnactAppRuntimeRecordingShell $shell): ?string
+{
+    return collect($shell->scripts)
+        ->first(fn (string $script): bool => str_contains($script, 'internal:app-security:repair'));
+}
+
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
     app()->instance(OrbitCaService::class, new EnactAppRuntimeTestCa);
@@ -325,7 +331,41 @@ it('returns process.runtime_unit_missing when installing the container fails', f
         ->toBeTrue();
 });
 
-it('returns instance.security.system_user when production runtime user resolution fails before creating the container', function (): void {
+it('provisions the missing production runtime user in place instead of warning', function (): void {
+    $app = makeAppOnProdNode(AppRuntimeKind::Php);
+
+    $shell = new EnactAppRuntimeRecordingShell(
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect: present
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // runtime user lookup fails -- the user does not exist yet
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'id: docs: no such user', durationMs: 1),
+        // app-security repair succeeds, then the retry resolves the user
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+    app()->instance(RemoteShell::class, $shell);
+
+    $drift = app(EnactAppRuntime::class)->handle($app);
+
+    $repairScript = enact_app_runtime_security_repair_script($shell);
+
+    expect(collect($drift)->firstWhere('code', 'instance.security.system_user'))
+        ->toBeNull()
+        ->and($repairScript)
+        ->not
+        ->toBeNull()
+        ->and($repairScript)
+        ->toContain("'docs'")
+        ->and($repairScript)
+        ->toContain("'/home/docs'")
+        ->and($repairScript)
+        ->toContain("'/home/docs/app'");
+});
+
+it('returns instance.security.system_user when the runtime user cannot be provisioned', function (): void {
     $app = makeAppOnProdNode(AppRuntimeKind::Php);
 
     $shell = new EnactAppRuntimeRecordingShell(
@@ -337,6 +377,8 @@ it('returns instance.security.system_user when production runtime user resolutio
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
         // runtime user lookup fails
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'id: docs: no such user', durationMs: 1),
+        // app-security repair itself fails -- nothing left to converge on
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'useradd: permission denied', durationMs: 1),
     );
     app()->instance(RemoteShell::class, $shell);
 
@@ -350,7 +392,7 @@ it('returns instance.security.system_user when production runtime user resolutio
         ->and($systemUser['family'])
         ->toBe('instance')
         ->and($systemUser['next_command'])
-        ->toBe('doctor --family=instance --restore')
+        ->toBe('doctor --family=instance --instance=docs.production --restore')
         ->and($systemUser['message'])
         ->toContain("Production runtime user 'docs'")
         ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))

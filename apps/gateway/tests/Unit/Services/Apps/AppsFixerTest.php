@@ -488,6 +488,63 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
         ->toBe('production');
 });
 
+// Regression: node-scoped doctor restores go through fixInstance(), which used
+// to drop every app.security.* code on the floor, so the documented public
+// command could never create a missing production runtime user.
+it('repairs the production runtime user when handed app.security.system_user for an instance', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'app-1',
+        'wireguard_address' => '10.6.0.64',
+        'managed' => true,
+    ], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/docs/app',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    fake_apps_fixer_security_repair();
+
+    $result = buildAppsFixer(new AppsFixerRecordingRemoteShell)
+        ->fixInstance(
+            $app,
+            $instance,
+            new DriftEntry(
+                family: 'app',
+                key: 'app.security.system_user',
+                kind: DriftKind::Missing,
+                summary: 'missing',
+            ),
+        );
+
+    expect($result['status'])
+        ->toBe('completed')
+        ->and($result['key'])
+        ->toBe('app.security.system_user')
+        ->and($result['details']['instance'])
+        ->toBe('production')
+        ->and($result['details']['runtime_user'])
+        ->toBe('docs')
+        ->and(apps_fixer_security_repair_was_sent(
+            user: 'docs',
+            home: '/home/docs',
+            path: '/home/docs/app',
+        ))
+        ->toBeTrue();
+});
+
 it('repairs the production runtime user when handed app.security.system_user', function (): void {
     $node = createTestAppHostNode([
         'name' => 'app-1',
