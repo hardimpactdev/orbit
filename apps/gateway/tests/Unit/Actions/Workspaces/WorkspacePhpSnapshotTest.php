@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Actions\Workspaces\CreateWorkspace;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Workspaces\WorkspaceProvisionResult;
-use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
