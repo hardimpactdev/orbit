@@ -23,7 +23,7 @@ use RuntimeException;
  * image-internal `orbit` account is never used for a bind-mounted tree: its
  * uid does not match the host install user.
  */
-final class GatewayConfigRootOwnershipRepairer
+class GatewayConfigRootOwnershipRepairer
 {
     /**
      * Repair ownership of the config root tree.

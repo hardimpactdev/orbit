@@ -95,9 +95,13 @@ final readonly class GatewayCliConfigAccessProbe
             return;
         }
 
-        [$hostConfigRoot, $configRoot] = $paths;
+        [, $configRoot] = $paths;
 
-        $this->ownershipRepairer->repair($hostConfigRoot, $configRoot);
+        // Chown the writable container path. The host view under
+        // ORBIT_HOST_PATH_PREFIX is mounted read-only in production, so using it
+        // as the target fails with EROFS; repair() prepends the prefix itself
+        // when resolving canonical ownership.
+        $this->ownershipRepairer->repair($configRoot);
     }
 
     /**
@@ -189,8 +193,6 @@ final readonly class GatewayCliConfigAccessProbe
 
     private function hostHome(Node $node): string
     {
-        $user = trim((string) $node->user);
-
-        return '/home/'.($user !== '' ? $user : 'orbit');
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 }

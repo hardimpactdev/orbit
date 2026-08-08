@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Models\Node;
+use App\Services\Gateway\GatewayConfigRootOwnershipRepairer;
 use App\Services\Nodes\GatewayCliConfigAccessProbe;
 use App\Services\Nodes\PosixReadAccess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\TestCase;
 
@@ -27,11 +31,14 @@ function gatewayCliConfigNode(bool $gateway = true): Node
 beforeEach(function (): void {
     $this->root = sys_get_temp_dir().'/orbit-gateway-cli-config-'.bin2hex(random_bytes(6));
     File::ensureDirectoryExists($this->root);
+    $this->previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
     putenv('ORBIT_HOST_PATH_PREFIX');
 });
 
 afterEach(function (): void {
-    putenv('ORBIT_HOST_PATH_PREFIX');
+    ($this->previousHostPathPrefix ?? false) === false
+        ? putenv('ORBIT_HOST_PATH_PREFIX')
+        : putenv("ORBIT_HOST_PATH_PREFIX={$this->previousHostPathPrefix}");
 
     if (isset($this->root)) {
         new SymfonyProcess(['chmod', '-R', 'u+rwX', $this->root])->run();
@@ -196,4 +203,34 @@ it('reports no drift when the gateway host config root is absent', function (): 
     putenv("ORBIT_HOST_PATH_PREFIX={$hostPrefix}");
 
     expect(new GatewayCliConfigAccessProbe()->diff(gatewayCliConfigNode()))->toBe([]);
+});
+
+it('restores by chowning the writable config root, never the read-only host view', function (): void {
+    $hostPrefix = "{$this->root}/mnt/orbit-host";
+    File::ensureDirectoryExists("{$hostPrefix}/home/orbit/.config/orbit");
+    putenv("ORBIT_HOST_PATH_PREFIX={$hostPrefix}");
+
+    $repairer = new class extends GatewayConfigRootOwnershipRepairer {
+        /** @var list<array{0: string, 1: ?string}> */
+        public array $calls = [];
+
+        #[\Override]
+        public function repair(string $configRoot, ?string $hostConfigRoot = null): void
+        {
+            $this->calls[] = [$configRoot, $hostConfigRoot];
+        }
+    };
+
+    new GatewayCliConfigAccessProbe($repairer)->restore(gatewayCliConfigNode(), new DriftEntry(
+        family: 'node',
+        key: 'node.gateway_cli_config_unreadable',
+        kind: DriftKind::Divergent,
+        summary: 'unreadable',
+        detail: [],
+    ));
+
+    // The host view under ORBIT_HOST_PATH_PREFIX is mounted read-only in
+    // production, so chowning it fails with EROFS. Only the writable container
+    // path is a valid target; repair() re-derives the host view for ownership.
+    expect($repairer->calls)->toBe([['/home/orbit/.config/orbit', null]]);
 });
