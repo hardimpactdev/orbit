@@ -74,6 +74,7 @@ class IncusBaseImagePreparer
             }
             $this->bootstrapBaseInstance($instanceName, $options, $publicKey, $packages);
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
+            $this->loadNonDefaultFrankenPhpImages($instanceName);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
             $this->waitForSsh($ipv4, $remotePrivateKey, $options->bootstrapUser, $options->timeoutSeconds);
 
@@ -111,6 +112,45 @@ class IncusBaseImagePreparer
         }
 
         return $archives;
+    }
+
+    /**
+     * Load every non-default runtime image outside the bootstrap script.
+     *
+     * Bootstrap runs under the build host's global timeout and already loads
+     * the default image, which the source-artisan Dockerfile builds FROM.
+     * Loading several hundred megabytes more inside that same window pushed
+     * the whole bootstrap past the limit, so each remaining image gets its own
+     * exec and reports its own failure.
+     */
+    private function loadNonDefaultFrankenPhpImages(string $instanceName): void
+    {
+        $defaultImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
+
+        foreach ($this->frankenPhpImageArchives() as $image => $archive) {
+            if ($image === $defaultImage) {
+                continue;
+            }
+
+            $script = sprintf(
+                'set -euo pipefail; docker load -i /var/tmp/%s; docker image inspect %s >/dev/null; rm -f /var/tmp/%s',
+                $archive,
+                escapeshellarg($image),
+                $archive,
+            );
+
+            $result = $this->host->run(sprintf(
+                'incus exec %s -- bash -lc %s',
+                escapeshellarg($instanceName),
+                escapeshellarg($script),
+            ), timeoutSeconds: 900);
+
+            if (! $result->successful()) {
+                throw new RuntimeException(
+                    "Could not load {$image} into base instance [{$instanceName}]: {$result->errorOutput()}",
+                );
+            }
+        }
     }
 
     private function newRunId(): string
@@ -273,16 +313,8 @@ class IncusBaseImagePreparer
         $publicKeyValue = escapeshellarg($publicKey);
         $caddyImage = escapeshellarg(OrbitCaddyContainer::Image);
         $frankenPhpDockerfileImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
-        $frankenPhpLoads = implode("\n            ", array_map(
-            static fn (string $archive, string $image): string => sprintf(
-                'docker load -i /var/tmp/%s && docker image inspect %s >/dev/null && rm -f /var/tmp/%s',
-                $archive,
-                escapeshellarg($image),
-                $archive,
-            ),
-            $this->frankenPhpImageArchives(),
-            array_keys($this->frankenPhpImageArchives()),
-        ));
+        $frankenPhpImage = escapeshellarg($frankenPhpDockerfileImage);
+        $defaultArchive = $this->frankenPhpImageArchives()[$frankenPhpDockerfileImage];
         $sourceGatewayArtisanImage = escapeshellarg(DockerTopologyProvider::sourceGatewayArtisanImage());
         $webSocketRuntimeImage = escapeshellarg(DockerTopologyProvider::webSocketRuntimeImage());
         $wgEasyImage = escapeshellarg(WgEasyServiceInstaller::Image);
@@ -385,7 +417,9 @@ class IncusBaseImagePreparer
                 docker pull "\$image"
                 docker image inspect "\$image" >/dev/null
             done
-            {$frankenPhpLoads}
+            docker load -i /var/tmp/{$defaultArchive}
+            docker image inspect {$frankenPhpImage} >/dev/null
+            rm -f /var/tmp/{$defaultArchive}
 
             cat > /tmp/orbit-e2e-source-gateway-artisan.Dockerfile <<'DOCKERFILE'
             FROM {$frankenPhpDockerfileImage}

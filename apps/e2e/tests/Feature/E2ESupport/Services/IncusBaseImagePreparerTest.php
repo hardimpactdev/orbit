@@ -138,12 +138,14 @@ it('bakes every supported frankenphp runtime image into the base image', functio
     $bootstrapScript = null;
     $savedArchives = [];
     $pushedArchives = [];
+    $imageLoads = [];
 
     $host->shouldReceive('run')
         ->andReturnUsing(function (string $command) use (
             &$bootstrapScript,
             &$savedArchives,
             &$pushedArchives,
+            &$imageLoads,
         ): ProcessResult {
             if (str_contains($command, 'mktemp -d')) {
                 return fakeProcessResult(output: "/tmp/orbit-prep-base\n");
@@ -175,6 +177,12 @@ it('bakes every supported frankenphp runtime image into the base image', functio
                 return fakeProcessResult();
             }
 
+            if (str_contains($command, 'docker load -i')) {
+                $imageLoads[] = $command;
+
+                return fakeProcessResult();
+            }
+
             if (str_contains($command, 'ip -o -4 addr show scope global')) {
                 return fakeProcessResult(output: "10.0.0.5\n");
             }
@@ -195,13 +203,24 @@ it('bakes every supported frankenphp runtime image into the base image', functio
 
     foreach ($supportedImages as $image) {
         expect(implode("\n", $savedArchives))->toContain($image);
-        expect($bootstrapScript)->toContain($image);
     }
 
     expect($pushedArchives)->toHaveCount(count($supportedImages));
+
+    // The default image loads inside bootstrap because the source-artisan
+    // Dockerfile builds FROM it; the rest load in their own exec so the
+    // bootstrap window does not have to absorb them.
     expect($bootstrapScript)->toContain('frankenphp-2-php8.5-bookworm.tar');
-    expect($bootstrapScript)->toContain('frankenphp-1-php8.4-bookworm.tar');
-    expect($bootstrapScript)->toContain('frankenphp-1-php8.3-bookworm.tar');
+    expect($bootstrapScript)->not->toContain('frankenphp-1-php8.4-bookworm.tar');
+
+    $loads = implode("\n", $imageLoads);
+
+    expect($loads)
+        ->toContain('frankenphp-1-php8.4-bookworm.tar')
+        ->toContain('frankenphp-1-php8.3-bookworm.tar')
+        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm')
+        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm')
+        ->not->toContain('frankenphp-2-php8.5-bookworm.tar');
 });
 
 it('bootstraps the runtime image without guest user-data', function (): void {
