@@ -38,6 +38,10 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         ['docs/orbit-feature-development-graph.html'],
         'automated',
     ],
+    'apps docs resources html stays browser' => [
+        ['apps/docs/resources/index.html'],
+        'browser',
+    ],
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
     'repository tooling' => [['bin/orbit-example'], 'automated'],
     'generated session index' => [['.orbit/sessions/index.json'], 'automated'],
