@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 233,
-    "unique_candidate_commit_count": 129,
+    "record_count": 234,
+    "unique_candidate_commit_count": 130,
     "orphan_count": 4,
     "records": [
         {
@@ -6445,6 +6445,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "cf00e3e2a71c6a04886d75c8e18a7e5815c0e232",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-08-101346-gateway-config-root-host-ownership",
+            "slug": "gateway-config-root-host-ownership",
+            "timestamp": "2026-08-08-101346",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "647ba6cb560d02a1269d14683e197698836fb272",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

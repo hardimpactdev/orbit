@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-08T08:13:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/gateway-config-root-host-ownership/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-08-101346-gateway-config-root-host-ownership",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/config-root-host-ownership-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-08T081030Z-8376dbc72947.json"
+    ],
+    "entry_digests": {
+        "evidence/config-root-host-ownership-retained-incus.md": "2e74825d3b79f286672ef5e104b0733ee008b170d2473ebe7b6745f7aad63e13",
+        "loop.md": "d686ab3603e62e059c32c347f330ad476cd046be3688f0f68daf99e850dff17a",
+        "quality-gates/quality-check-2026-08-08T081030Z-8376dbc72947.json": "949f04e94bd449ad86e6e8c463d3affb74304a65ac482061ef3297f5f05eccb1"
+    },
+    "slug": "gateway-config-root-host-ownership",
+    "requested_slug": "gateway-config-root-host-ownership",
+    "compatible_slugs": [
+        "gateway-config-root-host-ownership"
+    ],
+    "branch": "gateway-config-root-host-ownership",
+    "candidate_commit": "647ba6cb560d02a1269d14683e197698836fb272",
+    "accepted_feature_tip": "647ba6cb560d02a1269d14683e197698836fb272",
+    "accepted_main_tip": "179ffa90c9ee445af910d806d5065808af125dad",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
