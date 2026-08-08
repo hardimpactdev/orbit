@@ -463,11 +463,19 @@ class IncusBaseImagePreparer
             rm -rf /var/lib/apt/lists/*
             BASH;
 
-        $result = $this->host->run(sprintf(
-            'incus exec %s -- bash -lc %s',
-            escapeshellarg($instanceName),
-            escapeshellarg($script),
-        ), timeoutSeconds: $options->timeoutSeconds);
+        // Bootstrap is the longest single operation in the harness: a full apt
+        // install, the host PHP toolchain, Composer, gh, the Laravel installer,
+        // two Docker builds, and a runtime image load. It does not fit the
+        // default 600s budget on an idle host, so it gets its own floor in the
+        // same style as the Docker topology builder.
+        $result = $this->host->run(
+            sprintf(
+                'incus exec %s -- bash -lc %s',
+                escapeshellarg($instanceName),
+                escapeshellarg($script),
+            ),
+            timeoutSeconds: max(1800, $options->timeoutSeconds),
+        );
 
         if (! $result->successful()) {
             throw new RuntimeException("Failed to bootstrap base instance [{$instanceName}]: {$result->errorOutput()}");
