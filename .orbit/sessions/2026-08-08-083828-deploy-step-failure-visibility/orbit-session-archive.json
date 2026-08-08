@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-08T06:38:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/deploy-step-failure-visibility/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-08-083828-deploy-step-failure-visibility",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/deploy-step-refusal-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-08T063726Z-2d742119c2e6.json"
+    ],
+    "entry_digests": {
+        "evidence/deploy-step-refusal-retained-incus.md": "63acd5471c612f825f81599eba9bacab878e3736515221ec1698aec35d5ef4d9",
+        "loop.md": "29700ec161d5933ff247107aa92515bea47f6454789666118550f71f3a0a44ae",
+        "quality-gates/quality-check-2026-08-08T063726Z-2d742119c2e6.json": "73cafab1b92c2861a19cc7d7c6405492e3c6f73db0b957bfacf3c82343528b12"
+    },
+    "slug": "deploy-step-failure-visibility",
+    "requested_slug": "deploy-step-failure-visibility",
+    "compatible_slugs": [
+        "deploy-step-failure-visibility"
+    ],
+    "branch": "deploy-step-failure-visibility",
+    "candidate_commit": "cf00e3e2a71c6a04886d75c8e18a7e5815c0e232",
+    "accepted_feature_tip": "cf00e3e2a71c6a04886d75c8e18a7e5815c0e232",
+    "accepted_main_tip": "017a7b4b657dc6574644052c7fff1a8bb4e893e3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
