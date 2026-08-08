@@ -939,6 +939,9 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
+        // Repository-root static documentation HTML only (docs/**.html). Does not
+        // reclassify apps/docs runtime, resources, or other product frontend paths.
+        || (str_starts_with($path, 'docs/') && str_ends_with($path, '.html'))
         // TypeScript SDK is repository packaging only. PHP packages/sdk is a
         // production require of CLI/gateway and stays retained-incus by default.
         // packages/core/src remains retained-incus.

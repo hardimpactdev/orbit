@@ -34,6 +34,10 @@ it('derives the minimum acceptance venue from changed files', function (array $f
     expect(orbitLoopAcceptanceVenue($files))->toBe($venue);
 })->with([
     'docs only' => [['apps/docs/content/mission.md'], 'automated'],
+    'repository static documentation html' => [
+        ['docs/orbit-feature-development-graph.html'],
+        'automated',
+    ],
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
     'repository tooling' => [['bin/orbit-example'], 'automated'],
     'generated session index' => [['.orbit/sessions/index.json'], 'automated'],

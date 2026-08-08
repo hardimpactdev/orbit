@@ -284,12 +284,12 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
             <text x="645" y="334" text-anchor="middle">Public release</text>
             <text class="l" x="645" y="348" text-anchor="middle">exact tested artifacts</text>
 
-            <path class="af" d="M640 60V300"/><path class="af" d="M640 300H100"/><path class="af" d="M100 300V318"/>
+            <path class="af" d="M640 60V280"/><path class="af" d="M640 280H700"/><path class="af" d="M700 280V308"/><path class="af" d="M700 308H100"/><path class="af" d="M100 308V318"/>
             <path class="af" d="M160 336H200"/><path class="af" d="M350 336H390"/><path class="af" d="M530 336H570"/>
 
             <text class="l" x="8" y="380">No LAND → public-release shortcut. Canary and proven rollback/downgrade are future safety prerequisites, not current capabilities.</text>
-            <text class="l" x="8" y="396">Live proof (in PROVE) ≠ fleet rollout (release) ≠ public release (publish). Root docs/*.html currently routes retained-incus, not automated.</text>
-            <text class="l" x="8" y="412">Derived by bin/orbit-feature-acceptance route. This HTML graph file does not derive automated under current path rules.</text>
+            <text class="l" x="8" y="396">Live proof (in PROVE) ≠ fleet rollout (release) ≠ public release (publish). Repository-root docs/**.html routes automated.</text>
+            <text class="l" x="8" y="412">Derived by bin/orbit-feature-acceptance route. This HTML graph candidate is automation-only under current path rules.</text>
         </svg>
     </figure>
     <p class="muted">Open <strong>Detailed</strong> for phase inputs/exits. Open <strong>Venues &amp; proof</strong> for axes, current vs proposed PROVE order, and the protection ladder.</p>
@@ -315,12 +315,12 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
             <strong>Proof venue</strong>
             <span class="muted">Derived by <code>bin/orbit-feature-acceptance route</code></span>
             <ul>
-                <li><code>automated</code> — Markdown (<code>*.md</code>), tests, <code>bin/</code>, <code>.agents/</code>, <code>.github/</code>, and specifically allowlisted repo-only paths (for example TypeScript SDK packaging and a short root allowlist)</li>
-                <li><code>retained-incus</code> — default for other non-browser/non-macOS paths, including root <code>docs/*.html</code> today</li>
+                <li><code>automated</code> — Markdown (<code>*.md</code>), repository-root static documentation HTML (<code>docs/**.html</code>), tests, <code>bin/</code>, <code>.agents/</code>, <code>.github/</code>, and specifically allowlisted repo-only paths (for example TypeScript SDK packaging and a short root allowlist)</li>
+                <li><code>retained-incus</code> — default for other non-browser/non-macOS paths (not <code>apps/docs</code> runtime/frontend; those keep their own rules)</li>
                 <li><code>browser</code> — gateway or docs web UI resources</li>
                 <li><code>host-macos</code> — native macOS Agent</li>
             </ul>
-            <p class="muted" style="margin:0.4rem 0 0">This HTML candidate is <strong>not</strong> claimed as automated under current routing.</p>
+            <p class="muted" style="margin:0.4rem 0 0">This HTML candidate derives <strong>automated</strong> under current routing (<code>docs/**.html</code> only; not <code>apps/docs</code>).</p>
         </div>
         <div class="axis">
             <strong>Proof environment</strong>
@@ -410,7 +410,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 
 <script type="application/json" id="orbit-feature-graph-data">
 {
-  "version": "3.1.0",
+  "version": "3.1.1",
   "scope": "feature-development-loop-current-and-proposed",
   "title": "Orbit feature-development graph",
   "model_status": "mixed-current-and-proposed",
@@ -522,6 +522,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
         "action": "repository checks only; no Incus/runtime surface",
         "includes": [
           "Markdown files (*.md)",
+          "repository-root static documentation HTML (docs/**.html only)",
           "tests paths",
           "bin/",
           ".agents/",
@@ -536,7 +537,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
         "required_runtime": true,
         "action": "default for other non-browser/non-macOS paths; verify exact candidate in retained Incus including terminal/runtime",
         "default_environment": "dev-fixture",
-        "includes_today": ["root docs/*.html and other non-allowlisted paths"]
+        "does_not_include": ["repository-root docs/**.html", "apps/docs/resources (browser)", "apps/docs runtime PHP stays retained-incus when not automation-only"]
       },
       {"id": "browser", "required_runtime": true, "action": "use exact candidate browser surface; do not force Incus", "includes": ["apps/gateway/resources/", "apps/docs/resources/"]},
       {"id": "host-macos", "required_runtime": true, "action": "use exact candidate host-macos surface; do not force Incus", "includes": ["apps/macos/"]}
@@ -546,7 +547,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       {"id": "live", "summary": "Real managed environment; use only when Goal claims live reachability/convergence; receipt field environment=live"}
     ],
     "not_venues": ["live"],
-    "this_candidate_note": "docs/orbit-feature-development-graph.html is root docs/*.html and currently derives retained-incus, not automated. Do not claim this HTML candidate is automated.",
+    "this_candidate_note": "docs/orbit-feature-development-graph.html is repository-root docs/**.html and derives automated via bin/orbit-feature-acceptance route. apps/docs runtime and frontend paths are unchanged.",
     "note": "Venue is the proof surface derived from changed files by bin/orbit-feature-acceptance route. Environment is an orthogonal axis on the receipt. Live is never a fifth venue."
   },
   "concepts": {
@@ -951,7 +952,8 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
     {"id": "public release may skip fleet rollout", "reason": "Removed; update:all acceptance is mandatory inside the release lifecycle"},
     {"id": "post-review live proof as already_enforced", "reason": "Marked proposed_target; current enforcement requires decisive receipt before PASS"},
     {"id": "AGENTS.md covers local Codex/Grok role split", "reason": "False; local_policy source is out-of-repo operator instruction"},
-    {"id": "promise of existing rollback/canary", "reason": "Marked future_prerequisite; current update:all is fleet-wide"}
+    {"id": "promise of existing rollback/canary", "reason": "Marked future_prerequisite; current update:all is fleet-wide"},
+    {"id": "root docs/*.html routes retained-incus", "reason": "Superseded: repository-root docs/**.html is automation-only; apps/docs paths unchanged"}
   ]
 }
 </script>
