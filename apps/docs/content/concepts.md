@@ -218,7 +218,7 @@ Source: [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **Orbit instance serving node**
 - **Development instance**
 - **Production instance**
-- **App PHP version**
+- **App PHP creation template**
 - **App runtime kind**
 - **App runtime container**
 - **Development packages mount**

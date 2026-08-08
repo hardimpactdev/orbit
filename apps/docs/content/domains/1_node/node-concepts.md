@@ -375,9 +375,10 @@ lanes; in those lanes `/usr/local/bin/orbit` points directly at
 
 Host PHP and Composer are production prerequisites only on nodes with `app-dev`
 or `app-prod` roles. Those nodes carry a host PHP command-line toolchain: PHP 8.4
-and 8.5 plus Composer on both; the Laravel installer on `app-dev` only. App setup,
+and 8.5 plus Composer on both; the Laravel installer on `app-dev` only. Instance setup,
 deployment, and ad-hoc app CLI run Composer and Artisan on the host, matched to
-the app's PHP version, against the app source the FrankenPHP container serves.
+the resolved instance PHP version, against the instance source the FrankenPHP
+container serves.
 
 This host PHP toolchain is distinct from the Orbit CLI binary's embedded PHP,
 which only runs the CLI itself. Host Caddy and host PHP-FPM remain

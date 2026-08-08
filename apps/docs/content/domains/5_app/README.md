@@ -63,11 +63,11 @@ These rules govern all instance family commands.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
   app configuration. The concrete FrankenPHP runtime, managed through the
   process lifecycle, is represented as a process with Docker runtime. Changing
-  `php_version` recreates the app runtime artifact from the selected PHP image;
-  it does not install host PHP or render host FPM pools.
+  an instance's `php_version` recreates that instance's runtime artifact from
+  the selected PHP image; it does not install host PHP or render host FPM pools.
 - Ad-hoc PHP, Composer, or Artisan for an instance runs on that instance's
-  serving node host PHP toolchain (matched to the app's PHP version), against
-  the instance source path the FrankenPHP container serves. Orbit ships no
+  serving node host PHP toolchain (matched to the resolved instance PHP
+  version), against the instance source path the FrankenPHP container serves. Orbit ships no
   command-`exec` surface; deploy steps use the same host toolchain.
 - Instance setup is lifecycle-specific, not a generic exec surface.
   `instance-setup-step:*` records ordered setup commands for one instance, and
@@ -226,7 +226,7 @@ app workspace fallback. Workspace expansion includes only active
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
 | `runtime` | string | Runtime for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
 | `runtime_config` | object \| null | Runtime-specific gateway configuration. PHP/FrankenPHP apps expose `proxy_transport`, which is `http` by default and may be `https` for app-dev inner TLS; static apps report `null`. |
-| `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
+| `php_version` | string | PHP creation template recorded in gateway app configuration. New instances copy it; it does not describe what any existing instance runs. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `dependency_audit_status` | string | Aggregate dependency posture for the app. |
 | `dependency_warning_count` | integer | Number of warning-severity dependency findings in the latest summaries. |
 | `dependency_danger_count` | integer | Number of danger-severity dependency findings in the latest summaries. |
@@ -279,7 +279,7 @@ Instance renderers return this shape under `success.data.instance`, or under
 | `adopted` | boolean | Whether this concrete path was adopted through `instance:register`. It never belongs to the app. |
 | `runtime` | object | Effective runtime metadata for this instance. |
 | `runtime.runtime` | string | App runtime. |
-| `runtime.php_version` | string | PHP version recorded for the app runtime. |
+| `runtime.php_version` | string | The instance's own PHP version, which its runtime container uses. It may differ from the app creation template and from a sibling instance. |
 | `runtime.frankenphp_image` | string \| null | Resolved FrankenPHP image for PHP apps. |
 | `runtime.mode` | string | `classic` or `worker` for PHP apps. |
 | `runtime.configured_mounts` | array | Instance-scoped runtime mounts rendered into Orbit PHP runtimes for the selected instance. |

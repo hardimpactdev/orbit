@@ -29,7 +29,7 @@ These terms describe the units of work that make up a deployment pipeline.
 - **Deployment step command:** Shell script executed during `deploy:run` from
   the instance source path tracked by the gateway, on the instance's owning node. For
   PHP apps, steps that invoke `php`, `composer`, or `artisan` run on the host
-  PHP toolchain matched to the app's PHP version. All steps execute on the host
+  PHP toolchain matched to the deploying instance's own PHP version. All steps execute on the host
   node through a typed internal command carrying `/bin/sh` plus a structured
   argument vector. Step commands may be single-line commands or multiline
   scripts. Deployment has no Orbit-managed SSH fallback.

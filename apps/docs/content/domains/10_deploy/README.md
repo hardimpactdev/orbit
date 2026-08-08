@@ -39,8 +39,8 @@ These rules define what the deploy command family owns and how it behaves.
   deployment is a zero-downtime release flow.
 - Deployment steps execute from the instance source path tracked by its driver
   configuration on the instance's owning node. PHP, Composer, and Artisan deployment commands run on
-  the host PHP toolchain (matched to the app's PHP version); the app's
-  FrankenPHP container serves the deployed source.
+  the host PHP toolchain (matched to the deploying instance's own PHP version);
+  that instance's FrankenPHP container serves the deployed source.
 - Release-aware deployment steps may create versioned release directories and
   switch the active `live_path`. When a pipeline references `live_path`, Orbit
   resolves that symlink after the configured steps and fails the deployment if
