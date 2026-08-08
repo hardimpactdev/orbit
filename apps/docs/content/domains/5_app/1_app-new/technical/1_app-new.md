@@ -146,8 +146,8 @@ In one gateway database transaction, write:
 - one `orbit` instance named `production` when `--domain` is supplied or
   `development` otherwise. Its driver configuration owns `environment`,
   `node`, `path`, `root`, derived URL, and optional domain. The instance copies
-  the app creation template into its own `php_version` in the same transaction,
-  so it never depends on the app value afterwards. The instance stores
+  the app creation template into its own `php_version` as it is created, so it
+  never depends on the app value afterwards. The instance stores
   `adopted=false`.
 
 Neither row exists if the transaction fails. The app stores no

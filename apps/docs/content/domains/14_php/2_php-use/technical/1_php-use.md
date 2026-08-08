@@ -63,9 +63,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Writes the selected instance's own PHP version after it has passed
   authorization and image preflight. The app-level version is a creation-time
   template for new instances and is never written by this command.
-- Reconciles runtime-container and affected proxy-backend artifacts for that
-  instance. Sibling instances and workspaces are not touched, because each owns
-  its version outright.
+- Reconciles runtime-container, process-unit, and affected proxy-backend
+  artifacts. Convergence re-applies every Orbit instance of the parent app, so
+  a sibling instance can be re-applied by this run; no sibling's PHP version
+  moves, because each instance renders from its own stored value.
 - Returns the selected `app`, `instance`, `node`, `version`, `image`, and
   `changed` result facts.
 

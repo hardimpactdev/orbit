@@ -74,8 +74,9 @@ These terms define each target scope that a PHP command can read or write.
   set explicitly to a different version for that workspace alone.
 - **Workspace PHP inheritance:** Workspace state where the row stores no PHP
   version of its own and resolves through its owning instance, then the app
-  creation template. Workspaces created or adopted today always store a
-  concrete version, so this state applies only to rows that predate it.
+  creation template. Workspaces created or adopted today store a concrete
+  version, so this state arises from `php:use --inherit`, which clears a
+  workspace override, and from rows written before the snapshot model.
 - **Effective workspace PHP version:** Version a workspace actually uses: its
   own stored version, then the owning instance version, then the app creation
   template when the row stores none.

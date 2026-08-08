@@ -53,9 +53,11 @@ an instance write it authorizes `php:write` and verifies the image only on that
 instance's serving node; any denial or missing image stops before the write. Node CLI selection only accepts PHP 8.5.
 
 For an instance target, the command writes that instance's own version after
-its preflight, then reconciles only that instance's runtime container and proxy
-backend. No sibling instance and no workspace changes. The app-level version is
-a creation-time template for new instances and is not written here. Workspace
+its preflight, then reconciles runtime container, process units, and proxy
+backend. Convergence re-applies every Orbit instance of the parent app, but no
+sibling's PHP version changes: each instance renders from its own stored value.
+The app-level version is a creation-time template for new instances and is not
+written here. Workspace
 targets update and reconcile only the selected workspace placement. Proxy drift
 remains a `proxy` family concern.
 
