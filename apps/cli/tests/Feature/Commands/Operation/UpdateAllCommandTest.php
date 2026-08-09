@@ -1482,6 +1482,32 @@ it('renders a friendly fleet lease conflict without local waiting rows in human 
         )->and($this->localUpdater->calls)->toBe([]);
 });
 
+it('renders a friendly fleet lease conflict when the gateway rejects the start request', function (): void {
+    fakeGateway(fakeUpdateAllLeaseConflictEnvelope(), 409);
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/gateway\s+Failed: update:all is still being performed by another node/')
+        ->and($output)
+        ->not->toContain('already leased')->and($output)
+        ->not->toMatch('/local\s+Waiting/')->and($output)
+        ->not->toContain('update_lease_conflict:')->and($this->localUpdater->calls)->toBe([]);
+});
+
+it('preserves the gateway start lease conflict envelope in json mode', function (): void {
+    fakeGateway(fakeUpdateAllLeaseConflictEnvelope(), 409);
+
+    [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe(fakeUpdateAllLeaseConflictEnvelope());
+});
+
 it('falls back to another node when fleet lease conflict data omits conflicting_node in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
@@ -2470,6 +2496,26 @@ function fakeUpdateAllStartEnvelope(): array
         ],
         'events_url' => '/api/operations/run-1/events',
     ]);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function fakeUpdateAllLeaseConflictEnvelope(): array
+{
+    return [
+        'error' => [
+            'code' => 'update_lease_conflict',
+            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+            'meta' => [
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'conflicting_operation_id' => 'other-run',
+                'expires_at' => '2026-06-21T12:00:00+00:00',
+            ],
+        ],
+    ];
 }
 
 /**

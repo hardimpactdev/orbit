@@ -64,6 +64,15 @@ final class UpdateAllCommand extends GatewayCommand
         try {
             $response = $this->gatewayPostWithIdleTicks('/api/update/all/start', $payload);
         } catch (GatewayApiException $exception) {
+            $leaseConflictMessage = $this->humanGatewayLeaseConflictMessage($exception);
+
+            if ($leaseConflictMessage !== null) {
+                $progress->fleetLeaseConflictFailed($this->output, $leaseConflictMessage);
+                $progress->finishFailure($this->output);
+
+                return self::FAILURE;
+            }
+
             $progress->gatewayFailed($this->output, $exception->getMessage());
             $progress->finishFailure($this->output);
 
@@ -661,6 +670,14 @@ final class UpdateAllCommand extends GatewayCommand
         $nodeName = $this->frameString($data, 'conflicting_node') ?? 'another node';
 
         return "Failed: update:all is still being performed by {$nodeName}";
+    }
+
+    private function humanGatewayLeaseConflictMessage(GatewayApiException $exception): ?string
+    {
+        return $this->humanOperationLeaseConflictMessage([
+            'code' => $exception->gatewayErrorCode(),
+            'data' => array_merge($exception->gatewayErrorMeta(), $exception->gatewayErrorData()),
+        ]);
     }
 
     /**

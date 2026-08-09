@@ -302,6 +302,30 @@ it('clears revealed fan-out rows from a decorated fleet lease conflict screen', 
         ->not->toContain('beast');
 });
 
+it('settles a decorated start-time fleet lease conflict to one final frame', function (): void {
+    $output = new BufferedOutput(decorated: true);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->checkingForUpdates($output);
+    $renderer->fleetLeaseConflictFailed($output, 'Failed: update:all is still being performed by another node');
+    $renderer->finishFailure($output);
+
+    $screen = new VirtualTerminalScreen;
+    $screen->feed($output->fetch());
+    $lines = $screen->lines();
+    $text = implode("\n", $lines);
+
+    expect($text)
+        ->toContain('gateway                  Failed: update:all is still being performed by another node')
+        ->and($text)
+        ->not->toContain('Checking for updates     Checking')->and($text)
+        ->not->toContain('Working...')->and(array_filter($lines, fn (string $line): bool => str_contains(
+            $line,
+            '└',
+        )))->toHaveCount(1);
+});
+
 it('keeps local and workload rows on Waiting when the gateway row fails', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new UpdateAllHumanProgressRenderer;

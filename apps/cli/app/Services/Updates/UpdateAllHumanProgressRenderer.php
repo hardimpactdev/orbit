@@ -192,6 +192,7 @@ final class UpdateAllHumanProgressRenderer
     {
         $previousRowCount = count($this->order);
 
+        $this->resetActiveCheckRows();
         $this->stripFanOutTargets();
         $this->registerTarget('gateway');
 
@@ -211,6 +212,21 @@ final class UpdateAllHumanProgressRenderer
 
         $this->repaintRow($output, 'gateway');
         $this->syncTicker();
+    }
+
+    private function resetActiveCheckRows(): void
+    {
+        foreach ([self::ROW_CHECK_UPDATES, self::ROW_CHECK_FLEET] as $target) {
+            if (($this->rows[$target]['state'] ?? null) !== self::STATE_ACTIVE) {
+                continue;
+            }
+
+            $this->rows[$target] = [
+                'state' => self::STATE_WAITING,
+                'stage' => self::STAGE_WAITING,
+                'message' => '',
+            ];
+        }
     }
 
     private function stripFanOutTargets(): void
@@ -976,9 +992,10 @@ final class UpdateAllHumanProgressRenderer
         $this->finished = true;
         $this->stopTicker();
 
-        $line = $this->footerLine($footer, $success, $output->isDecorated());
+        $supportsLiveRepaint = $this->outputSupportsLiveRepaint($output);
+        $line = $this->footerLine($footer, $success, $supportsLiveRepaint);
 
-        if (! $output->isDecorated()) {
+        if (! $supportsLiveRepaint) {
             $output->writeln($line);
 
             return;
