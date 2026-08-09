@@ -1,9 +1,9 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 237,
-    "unique_candidate_commit_count": 133,
-    "orphan_count": 4,
+    "record_count": 238,
+    "unique_candidate_commit_count": 134,
+    "orphan_count": 0,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -6552,24 +6552,30 @@
                 "protection_failures": 0
             },
             "legacy": null
+        },
+        {
+            "archive": "2026-08-09-123040-self-hosting-land-validation",
+            "slug": "self-hosting-land-validation",
+            "timestamp": "2026-08-09-123040",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "46a6506dc649cc05f9278e487e3ee928577ddc27",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
         }
     ],
-    "orphans": [
-        {
-            "archive": "2026-07-13-004810-agent-push-transports",
-            "reason": "empty"
-        },
-        {
-            "archive": "2026-07-15-133249-docs-drift-alignment",
-            "reason": "empty"
-        },
-        {
-            "archive": "2026-07-16-011102-codex-loop-prevention-closure",
-            "reason": "missing_loop_md"
-        },
-        {
-            "archive": "2026-07-19-112810-postgres-multi-process",
-            "reason": "missing_loop_md"
-        }
-    ]
+    "orphans": []
 }

@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-09T10:30:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/self-hosting-land-validation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-09-123040-self-hosting-land-validation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/tdd-red-candidate-venue.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-09T102737Z-e29e6a5a0774.json"
+    ],
+    "entry_digests": {
+        "evidence/tdd-red-candidate-venue.txt": "05ab98f28cfd1ccdd5ca976fb8fbad5f611afb1daf7ebd537873bbdc9e88ae87",
+        "loop.md": "b78e10a26bc50eed5db8652fd11e08927e35f8f8cad049786d45e0207521f27b",
+        "quality-gates/quality-check-2026-08-09T102737Z-e29e6a5a0774.json": "cdc26459b3c954bf69b8e7796debdab2a8e008371f0ccd97daf58f476a7a3a79"
+    },
+    "slug": "self-hosting-land-validation",
+    "requested_slug": "self-hosting-land-validation",
+    "compatible_slugs": [
+        "self-hosting-land-validation"
+    ],
+    "branch": "self-hosting-land-validation",
+    "candidate_commit": "46a6506dc649cc05f9278e487e3ee928577ddc27",
+    "accepted_feature_tip": "46a6506dc649cc05f9278e487e3ee928577ddc27",
+    "accepted_main_tip": "83b8e67027f4d8b2c697ace1ea2cd3144dc3ab14",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
