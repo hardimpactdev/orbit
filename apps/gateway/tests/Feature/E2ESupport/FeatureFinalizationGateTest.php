@@ -44,9 +44,8 @@ it('documents clean candidate review escalation and landed archive ordering', fu
         ->toContain('After the archive/index commit:')
         ->toContain('Validate each cleanup mutation with')
         ->toContain('After `FINALIZATION: PASS`, execute that exact cleanup command separately.')
-        ->toContain('Merge-time minimum acceptance venue classification comes from the exact')
-        ->toContain('accepted candidate contract in an isolated subprocess; all other finalization')
-        ->toContain('checks remain main-owned')
+        ->toContain('LAND gets minimum venue from the exact accepted candidate contract')
+        ->toContain('isolated subprocess; all other finalization checks stay main-owned')
         ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')->toContain(
             'After merge, keep the accepted feature worktree open',
         )->and(strpos($harness, 'Validate the exact merge mutation with'))->toBeLessThan(strpos(

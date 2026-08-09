@@ -263,9 +263,8 @@ session archive/index, and Solo state. Solo ownership is exact: the project
 path equals the feature worktree path; the tool refuses primary/root projects,
 self-cwd, and unsafe deletion flags.
 
-Merge-time minimum acceptance venue classification comes from the exact
-accepted candidate contract in an isolated subprocess; all other finalization
-checks remain main-owned.
+LAND gets minimum venue from the exact accepted candidate contract in an
+isolated subprocess; all other finalization checks stay main-owned.
 
 Manual LAND remains validate-then-execute for each destructive mutation:
 
