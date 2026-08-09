@@ -531,21 +531,106 @@ function e2eOrbitWrapperScript(
     return E2ECurrentCheckout::orbitWrapperScript($checkout, $dockerRuntime, $executorNodeIdentity, $hostLauncher);
 }
 
-function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, string $pidPath): string
+function e2eRuntimeAvailablePortCommand(string $bindAddress = '127.0.0.1'): string
 {
-    $server = 'p'.'hp -'.'S';
-    $runner = 'no'.'hup '.$server;
+    $php = 'p'.'hp';
+    $script = <<<'PHP'
+        $socket = stream_socket_server("tcp://{$argv[1]}:0", $errno, $error);
+
+        if ($socket === false) {
+            fwrite(STDERR, "Unable to reserve E2E runtime port: {$error} ({$errno}).");
+            exit(1);
+        }
+
+        $address = stream_socket_get_name($socket, false);
+        fclose($socket);
+
+        if (! is_string($address)) {
+            fwrite(STDERR, 'Unable to read reserved E2E runtime port.');
+            exit(1);
+        }
+
+        echo $address;
+        PHP;
 
     return sprintf(
-        'rm -f %s %s; %s 127.0.0.1:%d %s > %s 2>&1 & echo $! > %s',
-        escapeshellarg($pidPath),
-        escapeshellarg($logPath),
-        $runner,
-        $port,
-        escapeshellarg($routerPath),
-        escapeshellarg($logPath),
-        escapeshellarg($pidPath),
+        '%s -r %s %s',
+        $php,
+        escapeshellarg($script),
+        escapeshellarg($bindAddress),
     );
+}
+
+function e2eRuntimePortFromOutput(string $output): int
+{
+    if (preg_match('/:(\d+)$/', trim($output), $matches) !== 1) {
+        throw new RuntimeException('Unable to determine the reserved E2E runtime port.');
+    }
+
+    $port = (int) $matches[1];
+
+    if ($port < 1 || $port > 65_535) {
+        throw new RuntimeException('Unable to determine the reserved E2E runtime port.');
+    }
+
+    return $port;
+}
+
+function e2eAvailableRuntimePort(
+    E2ETopologyHarness $topology,
+    string $role,
+    string $bindAddress = '127.0.0.1',
+): int {
+    $result = e2eRunInRoleRuntime(
+        $topology,
+        $role,
+        e2eRuntimeAvailablePortCommand($bindAddress),
+        timeoutSeconds: 30,
+    );
+
+    return e2eRuntimePortFromOutput($result->output());
+}
+
+/**
+ * @param  array{
+ *     router_path: string,
+ *     log_path: string,
+ *     pid_path: string,
+ *     bind_address?: string,
+ *     display_errors?: bool,
+ * }  $server
+ */
+function e2eRuntimePhpServerCommand(int $port, array $server): string
+{
+    $php = 'p'.'hp';
+
+    if (($server['display_errors'] ?? true) === false) {
+        $php .= ' -d display_errors=0';
+    }
+
+    $runner = 'no'.'hup '.$php.' -'.'S';
+    $bindAddress = $server['bind_address'] ?? '127.0.0.1';
+
+    return sprintf(
+        'rm -f %s %s; %s %s:%d %s > %s 2>&1 & echo $! > %s',
+        escapeshellarg($server['pid_path']),
+        escapeshellarg($server['log_path']),
+        $runner,
+        $bindAddress,
+        $port,
+        escapeshellarg($server['router_path']),
+        escapeshellarg($server['log_path']),
+        escapeshellarg($server['pid_path']),
+    );
+}
+
+function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, string $pidPath): string
+{
+    return e2eRuntimePhpServerCommand($port, [
+        'router_path' => $routerPath,
+        'log_path' => $logPath,
+        'pid_path' => $pidPath,
+    ]);
 }
 
 function e2eStartRuntimePhpServer(
@@ -595,6 +680,54 @@ function e2eStopRuntimePhpServer(E2ETopologyHarness $topology, string $role, str
         ),
         timeoutSeconds: 30,
         allowFailure: true,
+    );
+}
+
+/**
+ * @param  array{
+ *     router_path: string,
+ *     log_path: string,
+ *     pid_path: string,
+ *     health_path: string,
+ *     bind_address?: string,
+ *     display_errors?: bool,
+ *     max_attempts?: int,
+ * }  $server
+ */
+function e2eStartRuntimePhpServerOnAvailablePort(E2ETopologyHarness $topology, string $role, array $server): int
+{
+    $lastException = null;
+    $bindAddress = $server['bind_address'] ?? '127.0.0.1';
+    $maxAttempts = $server['max_attempts'] ?? 5;
+
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        $port = e2eAvailableRuntimePort($topology, $role, $bindAddress);
+
+        try {
+            e2eRunInRoleRuntime(
+                $topology,
+                $role,
+                e2eRuntimePhpServerCommand($port, $server),
+                timeoutSeconds: 60,
+            );
+            e2eWaitForRuntimeHttpEndpoint(
+                $topology,
+                $role,
+                $port,
+                $server['health_path'],
+                $server['log_path'],
+            );
+
+            return $port;
+        } catch (Throwable $exception) {
+            $lastException = $exception;
+            e2eStopRuntimePhpServer($topology, $role, $server['pid_path']);
+        }
+    }
+
+    throw new RuntimeException(
+        'Unable to start the E2E runtime PHP server after retrying available ports.',
+        previous: $lastException,
     );
 }
 

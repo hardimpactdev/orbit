@@ -10,9 +10,9 @@ it('follows a durable update all operation from an operator through gateway even
     try {
         $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
 
-        $port = random_int(18900, 19900);
         $routerPath = '/tmp/orbit-update-all-durable-router.php';
         $logPath = '/tmp/orbit-update-all-durable-requests.log';
+        $serverLogPath = '/tmp/orbit-update-all-durable-router.out';
         $pidPath = '/tmp/orbit-update-all-durable-router.pid';
 
         e2ePutRuntimeFile(
@@ -22,28 +22,23 @@ it('follows a durable update all operation from an operator through gateway even
             updateAllDurableOperationRouter($logPath),
             timeoutSeconds: 60,
         );
-        $phpServer = 'p'.'hp -d display_errors=0 -'.'S';
         e2eRunInRoleRuntime(
             $topology,
             'gateway',
-            sprintf(
-                'rm -f %s %s %s; nohup %s 0.0.0.0:%d %s > /tmp/orbit-update-all-durable-router.out 2>&1 & echo $! > %s',
-                escapeshellarg($pidPath),
-                escapeshellarg($logPath),
-                escapeshellarg('/tmp/orbit-update-all-durable-router.out'),
-                $phpServer,
-                $port,
-                escapeshellarg($routerPath),
-                escapeshellarg($pidPath),
-            ),
-            timeoutSeconds: 60,
+            'rm -f '.escapeshellarg($logPath),
+            timeoutSeconds: 30,
         );
-        e2eWaitForRuntimeHttpEndpoint(
-            $topology,
-            'gateway',
-            $port,
-            '/api/update/all/start',
-            '/tmp/orbit-update-all-durable-router.out',
+        $port = e2eStartRuntimePhpServerOnAvailablePort(
+            topology: $topology,
+            role: 'gateway',
+            server: [
+                'router_path' => $routerPath,
+                'log_path' => $serverLogPath,
+                'pid_path' => $pidPath,
+                'health_path' => '/api/update/all/start',
+                'bind_address' => '0.0.0.0',
+                'display_errors' => false,
+            ],
         );
 
         $gatewayUrl = e2eUsesDockerDnsAliasTopology()
@@ -144,9 +139,9 @@ it('uses topology candidate cli artifacts for the local update all fan-out', fun
         $version = trim((string) file_get_contents(repo_path('VERSION')));
         expect($version)->not->toBe('');
 
-        $port = random_int(19901, 20900);
         $routerPath = '/tmp/orbit-update-all-candidate-router.php';
         $logPath = '/tmp/orbit-update-all-candidate-requests.log';
+        $serverLogPath = '/tmp/orbit-update-all-candidate-router.out';
         $pidPath = '/tmp/orbit-update-all-candidate-router.pid';
         $candidateBinaryPath = '/tmp/orbit-update-all-candidate-binary';
 
@@ -167,28 +162,23 @@ it('uses topology candidate cli artifacts for the local update all fan-out', fun
             timeoutSeconds: 60,
         );
 
-        $phpServer = 'p'.'hp -d display_errors=0 -'.'S';
         e2eRunInRoleRuntime(
             $topology,
             'gateway',
-            sprintf(
-                'rm -f %s %s %s; nohup %s 0.0.0.0:%d %s > /tmp/orbit-update-all-candidate-router.out 2>&1 & echo $! > %s',
-                escapeshellarg($pidPath),
-                escapeshellarg($logPath),
-                escapeshellarg('/tmp/orbit-update-all-candidate-router.out'),
-                $phpServer,
-                $port,
-                escapeshellarg($routerPath),
-                escapeshellarg($pidPath),
-            ),
-            timeoutSeconds: 60,
+            'rm -f '.escapeshellarg($logPath),
+            timeoutSeconds: 30,
         );
-        e2eWaitForRuntimeHttpEndpoint(
-            $topology,
-            'gateway',
-            $port,
-            '/api/update/all/start',
-            '/tmp/orbit-update-all-candidate-router.out',
+        $port = e2eStartRuntimePhpServerOnAvailablePort(
+            topology: $topology,
+            role: 'gateway',
+            server: [
+                'router_path' => $routerPath,
+                'log_path' => $serverLogPath,
+                'pid_path' => $pidPath,
+                'health_path' => '/api/update/all/start',
+                'bind_address' => '0.0.0.0',
+                'display_errors' => false,
+            ],
         );
 
         $gatewayUrl = e2eUsesDockerDnsAliasTopology()

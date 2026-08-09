@@ -26,15 +26,9 @@ uses(TestCase::class, RefreshDatabase::class);
  */
 function phpCliLegacyNullConfigTool(string $role): array
 {
-    $token = bin2hex(random_bytes(3));
-    $suffix = random_int(20, 250);
-
     $node = Node::factory()->create([
         'status' => NodeStatus::Active,
         'platform' => 'ubuntu',
-        'host' => "10.0.0.{$suffix}",
-        'tld' => "phpcli-legacy-{$token}",
-        'wireguard_address' => "10.10.0.{$suffix}",
     ]);
 
     NodeRoleAssignment::factory()->create([

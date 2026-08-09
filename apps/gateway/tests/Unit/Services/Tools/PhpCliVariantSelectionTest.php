@@ -22,15 +22,9 @@ uses(TestCase::class, RefreshDatabase::class);
 
 function phpCliVariantNode(string $role): Node
 {
-    $suffix = random_int(20, 250);
-    $token = bin2hex(random_bytes(3));
-
     $node = Node::factory()->create([
         'status' => NodeStatus::Active,
         'platform' => 'ubuntu',
-        'host' => "10.0.0.{$suffix}",
-        'tld' => "phpcli-{$token}",
-        'wireguard_address' => "10.10.0.{$suffix}",
     ]);
 
     NodeRoleAssignment::factory()->create([
@@ -183,9 +177,6 @@ it('manual install without a role may keep an explicit stored or requested varia
     $node = Node::factory()->create([
         'status' => NodeStatus::Active,
         'platform' => 'ubuntu',
-        'host' => '10.0.0.'.random_int(20, 250),
-        'tld' => 'phpcli-'.bin2hex(random_bytes(3)),
-        'wireguard_address' => '10.10.0.'.random_int(20, 250),
     ]);
 
     $installer = app(ToolInstaller::class);
