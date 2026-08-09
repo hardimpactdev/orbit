@@ -6,10 +6,13 @@ namespace Orbit\Core\Operations;
 
 use InvalidArgumentException;
 
+/** @mago-expect lint:cyclomatic-complexity -- This class validates the complete six-field operation stream frame contract. */
 final readonly class OperationStreamFrameDraft
 {
     /**
      * @param  array<string, mixed>  $payload
+     *
+     * @mago-expect lint:excessive-parameter-list -- The constructor mirrors the six required wire fields.
      */
     private function __construct(
         public string $operationUuid,
@@ -38,6 +41,8 @@ final readonly class OperationStreamFrameDraft
 
     /**
      * @param  array<string, mixed>  $payload
+     *
+     * @mago-expect lint:excessive-parameter-list -- Gateway producers must provide every required wire field explicitly.
      */
     public static function forGateway(
         string $operationUuid,
@@ -65,6 +70,8 @@ final readonly class OperationStreamFrameDraft
 
     /**
      * @param  array<array-key, mixed>  $payload
+     *
+     * @mago-expect lint:excessive-parameter-list -- Node producers must provide every required wire field explicitly.
      */
     public static function forNode(
         string $operationUuid,
