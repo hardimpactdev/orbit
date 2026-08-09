@@ -38,10 +38,13 @@ These terms describe the update workflow and its components.
   The caller-local CLI and selected active workload Orbit installations then
   update as fan-out targets through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
-  operation. Each persisted event carries a monotonic journal cursor.
-  Subscribers replay events after that cursor before following live frames
-  through the private operations WebSocket/Reverb plane until a terminal
-  `complete` or `error` event is persisted.
+  operation. The gateway stores each complete operation stream frame and its
+  monotonic journal cursor together before publishing the frame live. The
+  journal cursor is the authority for replay and duplicate removal; a
+  publisher's local `sequence` records publisher order only. Subscribers replay
+  events after the journal cursor before following live frames through the
+  private operations WebSocket/Reverb plane until a terminal `complete` or
+  `error` event is persisted.
 - **Immutable update plan:** Persisted plan keyed by `operation_run_id`.
   Captures target version, gateway image digest, manifest snapshot, CLI artifact
   hashes, platform/architecture-specific Orbit Agent artifact hashes for

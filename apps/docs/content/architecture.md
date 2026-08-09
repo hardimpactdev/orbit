@@ -141,10 +141,10 @@ happen only on the gateway.
 A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. The `gateway` role is the singleton authority role described above.
 
 The `gateway` role also owns the operations WebSocket/Reverb surface for Orbit
-operation streams. The gateway persists each progress frame in the operation
-journal before publishing it, and subscribers replay gaps by journal cursor
-before following live frames. The gateway Swarm stack renders a single
-`orbit-operations-reverb` service on the gateway role, using the same
+operation streams. The gateway persists each operation stream frame in the
+operation event journal before publishing it, and subscribers replay gaps by
+journal cursor before following live frames. The gateway Swarm stack renders a
+single `orbit-operations-reverb` service on the gateway role, using the same
 `orbit-reverb` runtime image as the workload websocket role. This service is
 separate from app WebSocket bindings and `websocket.orbit`: it has its own
 operations app config path, does not depend on Valkey or a database-role node,
@@ -218,8 +218,8 @@ that header (including opaque redirects from awake applications) means Caddy has
 handed off to the application and the browser navigates once to the original
 URI. Mode, steps, and determinate progress remain internal to the
 operation. A failed or partially completed prune remains cold. Each detached
-runner atomically claims its operation once and heartbeats the operation journal
-while it works.
+runner atomically claims its operation once and heartbeats the operation event
+journal while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
 once. A dependency waiter uses the full bounded activation-fence duration
