@@ -9,10 +9,13 @@ use App\Services\Operations\OperationStreamWebSocketConnection;
 use App\Services\Operations\OperationStreamWebSocketTransport;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Operations\OperationStreamFrameEvents;
 use Orbit\Core\Progress\ProgressEventType;
 
 it('subscribes to a private operation stream and backfills after the last durable cursor', function (): void {
     $history = [];
+    $backfillFrame = operation_stream_durable_node_frame(11, 11, 101, 'backfill');
+    $liveFrame = operation_stream_durable_node_frame(12, 12, 102, 'live');
     $transport = new FakeOperationStreamWebSocketTransport([
         [
             'event' => 'pusher:connection_established',
@@ -20,14 +23,9 @@ it('subscribes to a private operation stream and backfills after the last durabl
         ],
         ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
         [
-            'event' => 'operation.stream.frame',
+            'event' => OperationStreamFrameEvents::Live,
             'channel' => 'private-operations.run-1',
-            'data' => json_encode([
-                'operation_uuid' => 'run-1',
-                'sequence' => 12,
-                'durable_replay_cursor' => ['event_sequence' => 12, 'event_id' => 102],
-                'payload' => ['line' => 'live'],
-            ], JSON_THROW_ON_ERROR),
+            'data' => json_encode($liveFrame, JSON_THROW_ON_ERROR),
         ],
         null,
     ], $history);
@@ -37,13 +35,8 @@ it('subscribes to a private operation stream and backfills after the last durabl
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'backfill'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $backfillFrame,
                 ],
             ],
         ],
@@ -149,20 +142,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
             'close',
         ])
         ->and($frames)
-        ->toBe([
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'backfill'],
-            ],
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 12,
-                'durable_replay_cursor' => ['event_sequence' => 12, 'event_id' => 102],
-                'payload' => ['line' => 'live'],
-            ],
-        ]);
+        ->toBe([$backfillFrame, $liveFrame]);
 });
 
 it('renews subscriber leases on keepalive pings and refreshes expired subscriber tokens', function (): void {
@@ -244,6 +224,7 @@ it('renews subscriber leases on keepalive pings and refreshes expired subscriber
 });
 
 it('replays frames published after descriptor fetch but before subscription confirmation', function (): void {
+    $postDescriptorFrame = operation_stream_durable_node_frame(11, 11, 101, 'post-descriptor');
     $transport = new FakeOperationStreamWebSocketTransport([
         [
             'event' => 'pusher:connection_established',
@@ -258,13 +239,8 @@ it('replays frames published after descriptor fetch but before subscription conf
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'post-descriptor'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $postDescriptorFrame,
                 ],
             ],
         ],
@@ -304,17 +280,11 @@ it('replays frames published after descriptor fetch but before subscription conf
             ['/api/operations/run-1/events?once=1', 101],
         ])
         ->and($frames)
-        ->toBe([
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'post-descriptor'],
-            ],
-        ]);
+        ->toBe([$postDescriptorFrame]);
 });
 
 it('replays frames missed between initial replay and websocket close', function (): void {
+    $finalReplayFrame = operation_stream_durable_node_frame(11, 11, 101, 'final-replay');
     $transport = new FakeOperationStreamWebSocketTransport([
         [
             'event' => 'pusher:connection_established',
@@ -330,13 +300,8 @@ it('replays frames missed between initial replay and websocket close', function 
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'final-replay'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $finalReplayFrame,
                 ],
             ],
         ],
@@ -376,17 +341,14 @@ it('replays frames missed between initial replay and websocket close', function 
             ['/api/operations/run-1/events?once=1', null],
         ])
         ->and($frames)
-        ->toBe([
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'final-replay'],
-            ],
-        ]);
+        ->toBe([$finalReplayFrame]);
 });
 
 it('dedupes live frames and falls back to durable replay on websocket protocol failure', function (): void {
+    $backfillFrame = operation_stream_durable_node_frame(11, 11, 101, 'backfill');
+    $duplicateLiveFrame = operation_stream_durable_node_frame(11, 11, 101, 'duplicate-live');
+    $duplicateFallbackFrame = operation_stream_durable_node_frame(11, 11, 101, 'duplicate-fallback');
+    $fallbackFrame = operation_stream_durable_node_frame(12, 12, 102, 'fallback');
     $transport = new FakeOperationStreamWebSocketTransport([
         [
             'event' => 'pusher:connection_established',
@@ -394,14 +356,9 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
         ],
         ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
         [
-            'event' => 'operation.stream.frame',
+            'event' => OperationStreamFrameEvents::Live,
             'channel' => 'private-operations.run-1',
-            'data' => json_encode([
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'duplicate-live'],
-            ], JSON_THROW_ON_ERROR),
+            'data' => json_encode($duplicateLiveFrame, JSON_THROW_ON_ERROR),
         ],
         ['event' => 'pusher:error', 'data' => json_encode(['message' => 'subscription lost'], JSON_THROW_ON_ERROR)],
     ]);
@@ -411,13 +368,8 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'backfill'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $backfillFrame,
                 ],
             ],
         ],
@@ -426,26 +378,16 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'duplicate-fallback'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $duplicateFallbackFrame,
                 ],
             ],
             [
                 'id' => 102,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 12,
-                        'durable_replay_cursor' => ['event_sequence' => 12, 'event_id' => 102],
-                        'payload' => ['line' => 'fallback'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $fallbackFrame,
                 ],
             ],
         ],
@@ -485,24 +427,12 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
             ['/api/operations/run-1/events?once=1', 101],
         ])
         ->and($frames)
-        ->toBe([
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'backfill'],
-            ],
-            [
-                'operation_uuid' => 'run-1',
-                'sequence' => 12,
-                'durable_replay_cursor' => ['event_sequence' => 12, 'event_id' => 102],
-                'payload' => ['line' => 'fallback'],
-            ],
-        ]);
+        ->toBe([$backfillFrame, $fallbackFrame]);
 });
 
 it('durably replays frames when the websocket fails before the descriptor cursor advances', function (): void {
     $history = [];
+    $fallbackFrame = operation_stream_durable_node_frame(11, 11, 101, 'fallback-after-connect-failure');
     $transport = new FailingOperationStreamWebSocketTransport($history);
     $events = new FakeOperationStreamBackfillClient([
         [
@@ -510,13 +440,8 @@ it('durably replays frames when the websocket fails before the descriptor cursor
                 'id' => 101,
                 'type' => ProgressEventType::Step,
                 'payload' => [
-                    'event' => 'operation_stream.frame',
-                    'frame' => [
-                        'operation_uuid' => 'run-1',
-                        'sequence' => 11,
-                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                        'payload' => ['line' => 'fallback-after-connect-failure'],
-                    ],
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $fallbackFrame,
                 ],
             ],
         ],
@@ -548,14 +473,86 @@ it('durably replays frames when the websocket fails before the descriptor cursor
             'close',
         ])
         ->and($frames)
-        ->toBe([
+        ->toBe([$fallbackFrame]);
+});
+
+it('rejects a live frame without a durable replay cursor', function (): void {
+    $transport = new FakeOperationStreamWebSocketTransport([
+        [
+            'event' => 'pusher:connection_established',
+            'data' => json_encode(['socket_id' => '1234.5678'], JSON_THROW_ON_ERROR),
+        ],
+        ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
+        [
+            'event' => OperationStreamFrameEvents::Live,
+            'channel' => 'private-operations.run-1',
+            'data' => json_encode(operation_stream_cursorless_node_frame(), JSON_THROW_ON_ERROR),
+        ],
+    ]);
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+        'https://gateway.test/api/operations/run-1/stream/auth' => Http::response([
+            'success' => ['data' => ['auth' => 'gateway-reverb-key:signed-subscribe-payload']],
+        ]),
+        'https://gateway.test/api/operations/run-1/stream/leave' => Http::response([
+            'success' => ['data' => ['lease' => ['active_subscribers' => 0]]],
+        ]),
+    ]);
+
+    try {
+        new GatewayOperationStreamSubscriber(
+            baseUrl: 'https://gateway.test',
+            timeout: 30,
+            events: new FakeOperationStreamBackfillClient([[]]),
+            transport: $transport,
+        )->subscribe('run-1', null, fn () => null);
+
+        test()->fail('Expected a malformed live operation stream frame.');
+    } catch (GatewayApiException $exception) {
+        expect($exception->failureKind())->toBe(App\Exceptions\GatewayApiFailureKind::StreamMalformed);
+    }
+});
+
+it('keeps cursorless frames compatible when they come from the operation event journal', function (): void {
+    $legacyFrame = operation_stream_cursorless_node_frame();
+    $frames = [];
+    $events = new FakeOperationStreamBackfillClient([
+        [
             [
-                'operation_uuid' => 'run-1',
-                'sequence' => 11,
-                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
-                'payload' => ['line' => 'fallback-after-connect-failure'],
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $legacyFrame,
+                ],
             ],
-        ]);
+        ],
+    ]);
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: new FailingOperationStreamWebSocketTransport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([['/api/operations/run-1/events?once=1', null]])
+        ->and($frames)
+        ->toBe([$legacyFrame]);
 });
 
 /**
@@ -569,6 +566,57 @@ function operation_stream_subscriber_token(): string
 function operation_stream_refreshed_subscriber_token(): string
 {
     return implode('-', ['refreshed-subscriber', 'token']);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function operation_stream_durable_node_frame(
+    int $sequence,
+    int $eventSequence,
+    int $eventId,
+    string $data,
+): array {
+    $frame = operation_stream_node_fixture('node-durable-frame.json');
+    $frame['sequence'] = $sequence;
+    $frame['payload'] = ['line' => $data];
+    $frame['durable_replay_cursor'] = [
+        'operation_uuid' => 'run-1',
+        'event_sequence' => $eventSequence,
+        'event_id' => $eventId,
+    ];
+
+    return $frame;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function operation_stream_cursorless_node_frame(): array
+{
+    $frame = operation_stream_node_fixture('node-durable-frame.json');
+    unset($frame['durable_replay_cursor']);
+
+    return $frame;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function operation_stream_node_fixture(string $name): array
+{
+    $contents = file_get_contents(
+        dirname(__DIR__, 5)."/packages/core/tests/Fixtures/Operations/{$name}",
+    );
+
+    if ($contents === false) {
+        throw new RuntimeException("Unable to read the operation stream frame fixture [{$name}].");
+    }
+
+    /** @var array<string, mixed> $frame */
+    $frame = json_decode($contents, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $frame;
 }
 
 function operation_stream_descriptor(

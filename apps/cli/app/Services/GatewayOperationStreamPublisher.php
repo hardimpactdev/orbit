@@ -10,6 +10,8 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameType;
 
 final readonly class GatewayOperationStreamPublisher
 {
@@ -22,23 +24,25 @@ final readonly class GatewayOperationStreamPublisher
     public function publishProcessLogChunk(
         LocalProcessLogsOperationStream $stream,
         int $sequence,
-        string $type,
+        OperationStreamFrameType $type,
         string $output,
     ): void {
+        $frame = OperationStreamFrameDraft::forNode(
+            operationUuid: $stream->operationUuid,
+            channel: $stream->channel,
+            sequence: $sequence,
+            emittedAt: Carbon::now()->toIso8601String(),
+            type: $type,
+            payload: [
+                'data' => $output,
+                'encoding' => 'utf-8',
+            ],
+        );
+
         try {
             $response = $this->pendingRequest($stream)->post($stream->publishEndpoint, [
                 'publisher_token' => $stream->publisherToken,
-                'frame' => [
-                    'operation_uuid' => $stream->operationUuid,
-                    'channel' => $stream->channel,
-                    'sequence' => $sequence,
-                    'emitted_at' => Carbon::now()->toIso8601String(),
-                    'type' => $type,
-                    'payload' => [
-                        'data' => $output,
-                        'encoding' => 'utf-8',
-                    ],
-                ],
+                'frame' => $frame->toArray(),
             ]);
         } catch (ConnectionException $exception) {
             throw GatewayApiException::networkError($exception);

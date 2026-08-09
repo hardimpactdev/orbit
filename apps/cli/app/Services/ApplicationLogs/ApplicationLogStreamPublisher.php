@@ -7,6 +7,7 @@ namespace App\Services\ApplicationLogs;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationStreamPublisher;
 use App\Services\Processes\LocalProcessLogsOperationStream;
+use Orbit\Core\Operations\OperationStreamFrameType;
 use Symfony\Component\Process\Process;
 
 final readonly class ApplicationLogStreamPublisher
@@ -100,13 +101,13 @@ final readonly class ApplicationLogStreamPublisher
         $stdout = $process->getIncrementalOutput();
 
         if ($stdout !== '') {
-            $this->publishChunk($input, 'stdout', $stdout, $onOutput, $sequence);
+            $this->publishChunk($input, OperationStreamFrameType::Stdout, $stdout, $onOutput, $sequence);
         }
 
         $stderr = $process->getIncrementalErrorOutput();
 
         if ($stderr !== '') {
-            $this->publishChunk($input, 'stderr', $stderr, $onOutput, $sequence);
+            $this->publishChunk($input, OperationStreamFrameType::Stderr, $stderr, $onOutput, $sequence);
         }
     }
 
@@ -115,7 +116,7 @@ final readonly class ApplicationLogStreamPublisher
      */
     private function publishChunk(
         LocalApplicationLogPayload $input,
-        string $type,
+        OperationStreamFrameType $type,
         string $buffer,
         callable $onOutput,
         int &$sequence,

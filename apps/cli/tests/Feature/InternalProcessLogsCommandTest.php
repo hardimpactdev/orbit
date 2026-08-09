@@ -164,15 +164,18 @@ describe('internal process logs command', function (): void {
 
             $frame = $request['frame'];
 
+            if (! is_array($frame) || ! is_string($frame['emitted_at'] ?? null)) {
+                return false;
+            }
+
+            $expectedFrame = process_logs_operation_stream_fixture();
+            $expectedFrame['sequence'] = 1;
+            $expectedFrame['emitted_at'] = $frame['emitted_at'];
+            $expectedFrame['payload']['data'] = "Vite ready\n";
+
             return (
                 hash_equals(process_logs_publisher_token(), (string) $request['publisher_token'])
-                && is_array($frame)
-                && $frame['operation_uuid'] === 'run-1'
-                && $frame['channel'] === 'private-operations.run-1'
-                && $frame['sequence'] === 1
-                && $frame['type'] === 'stdout'
-                && $frame['payload']['data'] === "Vite ready\n"
-                && $frame['payload']['encoding'] === 'utf-8'
+                && $frame === $expectedFrame
             );
         });
     });
@@ -334,6 +337,25 @@ describe('internal process logs command', function (): void {
         }
     });
 });
+
+/**
+ * @return array<string, mixed>
+ */
+function process_logs_operation_stream_fixture(): array
+{
+    $contents = file_get_contents(
+        dirname(__DIR__, 4).'/packages/core/tests/Fixtures/Operations/node-draft-frame.json',
+    );
+
+    if ($contents === false) {
+        throw new RuntimeException('Unable to read the node operation stream frame fixture.');
+    }
+
+    /** @var array<string, mixed> $frame */
+    $frame = json_decode($contents, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $frame;
+}
 
 function process_logs_signed_operation_token(
     string $id = 'process-logs',

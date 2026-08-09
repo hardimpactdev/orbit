@@ -12,6 +12,9 @@ use App\Services\Operations\RawOperationStreamWebSocketTransport;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
+use Orbit\Core\Operations\OperationStreamFrameEvents;
 use Orbit\Core\Progress\ProgressEventType;
 use RuntimeException;
 
@@ -133,7 +136,7 @@ class GatewayOperationStreamSubscriber
             ): void {
                 $frame = $payload['frame'] ?? null;
 
-                if (($payload['event'] ?? null) !== 'operation_stream.frame' || ! is_array($frame)) {
+                if (($payload['event'] ?? null) !== OperationStreamFrameEvents::Journal || ! is_array($frame)) {
                     return;
                 }
 
@@ -307,7 +310,7 @@ class GatewayOperationStreamSubscriber
                 throw GatewayApiException::streamMalformed(new RuntimeException('Operations websocket stream failed.'));
             }
 
-            if (($message['event'] ?? null) !== 'operation.stream.frame') {
+            if (($message['event'] ?? null) !== OperationStreamFrameEvents::Live) {
                 continue;
             }
 
@@ -357,6 +360,13 @@ class GatewayOperationStreamSubscriber
 
     private function shouldReplayFallback(GatewayApiException $exception): bool
     {
+        if (
+            $exception->failureKind() === GatewayApiFailureKind::StreamMalformed
+            && $exception->getPrevious() instanceof InvalidArgumentException
+        ) {
+            return false;
+        }
+
         return in_array(
             $exception->failureKind(),
             [
@@ -381,26 +391,32 @@ class GatewayOperationStreamSubscriber
         ?int &$lastEventId,
         ?int $eventId = null,
     ): void {
-        $eventSequence = $this->optionalIntegerValue($frame, 'durable_replay_cursor.event_sequence');
-        $frameEventId = $this->optionalIntegerValue($frame, 'durable_replay_cursor.event_id') ?? $eventId;
-
-        if ($eventSequence !== null) {
-            if (array_key_exists($eventSequence, $seenSequences)) {
-                if ($frameEventId !== null) {
-                    $lastEventId = max($lastEventId ?? 0, $frameEventId);
-                }
+        try {
+            $durableFrame = DurableOperationStreamFrame::fromArray($frame);
+        } catch (InvalidArgumentException $exception) {
+            if ($eventId !== null && data_get($frame, 'durable_replay_cursor') === null) {
+                $lastEventId = max($lastEventId ?? 0, $eventId);
+                $onFrame($frame);
 
                 return;
             }
 
-            $seenSequences[$eventSequence] = true;
+            throw GatewayApiException::streamMalformed($exception);
         }
 
-        if ($frameEventId !== null) {
+        $eventSequence = $durableFrame->cursor()->eventSequence;
+        $frameEventId = $durableFrame->cursor()->eventId;
+
+        if (array_key_exists($eventSequence, $seenSequences)) {
             $lastEventId = max($lastEventId ?? 0, $frameEventId);
+
+            return;
         }
 
-        $onFrame($frame);
+        $seenSequences[$eventSequence] = true;
+        $lastEventId = max($lastEventId ?? 0, $frameEventId);
+
+        $onFrame($durableFrame->toArray());
     }
 
     /**
@@ -509,20 +525,6 @@ class GatewayOperationStreamSubscriber
             throw GatewayApiException::streamMalformed(
                 new RuntimeException("Operation stream descriptor [{$path}] must be numeric."),
             );
-        }
-
-        return (int) $value;
-    }
-
-    /**
-     * @param  array<string, mixed>  $source
-     */
-    private function optionalIntegerValue(array $source, string $path): ?int
-    {
-        $value = data_get($source, $path);
-
-        if ($value === null || ! is_numeric($value)) {
-            return null;
         }
 
         return (int) $value;
