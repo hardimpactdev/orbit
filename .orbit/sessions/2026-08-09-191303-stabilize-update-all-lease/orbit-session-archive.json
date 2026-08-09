@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-09T17:13:04+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/stabilize-update-all-lease/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-09-191303-stabilize-update-all-lease",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/update-all-lease-retained-incus-2026-08-09.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/update-all-lease-retained-incus-2026-08-09.txt": "c4a9765d13bcfea7eb9c192284200ed642b18b8a1386164cf68677926ec5b6c5",
+        "loop.md": "f6b97fa4686b29d3eef8dde638e68abb12fdd8e55f3b5f06ad656248d088f8ab"
+    },
+    "slug": "stabilize-update-all-lease",
+    "requested_slug": "stabilize-update-all-lease",
+    "compatible_slugs": [
+        "stabilize-update-all-lease"
+    ],
+    "branch": "stabilize-update-all-lease",
+    "candidate_commit": "eba25a9c3809a993935dd03cf1e3af61d51ee927",
+    "accepted_feature_tip": "eba25a9c3809a993935dd03cf1e3af61d51ee927",
+    "accepted_main_tip": "4f659b57ae23ea34c85489f045fe3e4a5e10bb5a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

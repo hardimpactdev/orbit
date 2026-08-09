@@ -1,0 +1,39 @@
+Orbit update:all lease/liveness retained-Incus proof
+Date: 2026-08-09
+Candidate: eba25a9c3809a993935dd03cf1e3af61d51ee927
+Venue: retained-incus
+Environment: dev-fixture
+Topology: dev-ec2895 (operator, gateway, app-dev)
+Host route: nckrtl@10.6.0.7
+Solo terminal: process 2255 (update-all-retained-ec2895)
+
+Candidate identity
+- Runtime checkout: /home/orbit/orbit-run
+- Orbit launcher: /home/orbit/orbit-run/apps/cli/orbit
+- Candidate file: apps/gateway/app/Services/Operations/UpdateLeaseHeartbeatProcess.php
+- Local/runtime SHA-256: af7e873129e082496036da55bab674ff4930c6b3e13f42cc30b6a649d4b63753
+
+Heartbeat and nested-lease observation
+- Controlled running operation: 64ada24c-e0e3-4d98-9dce-fb2c31372b1d
+- Fleet expiry before/after: 2026-08-09T16:49:11+00:00 -> 2026-08-09T16:49:16+00:00
+- Nested node expiry before/after: 2026-08-09T16:49:11+00:00 -> 2026-08-09T16:49:16+00:00
+- The candidate heartbeat sidecar renewed both leases to the same later expiry.
+- The operation then became terminal and both leases were released.
+
+Concurrent-start observation
+- Controlled active fleet holder: 024bed9a-09a2-4e85-a5ec-71e16c88c0df
+- While its candidate heartbeat sidecar was running, a human `orbit update:all` start exited 1 with one settled final frame:
+    gateway  Failed: update:all is still being performed by another node
+    Failed
+- The frame omitted local/workload waiting rows and raw lease exception output.
+- A concurrent `orbit update:all --json` start exited 1 and preserved the `update_lease_conflict` envelope with resource `fleet:update-all`, lease id, conflicting operation id, and expiry metadata.
+- After the holder terminated, a new start passed reservation instead of returning `update_lease_conflict`; its runner launch then failed for the fixture limitation below.
+- Final retained database check: active lease count 0; both controlled proof operations succeeded.
+
+Fixture limitation (not candidate behavior)
+- The source-mounted gateway API executed the reviewed candidate.
+- The retained child-runner target `orbit-gateway:prepared-current` predates this candidate and does not expose the new `--fleet-lease-id` option.
+- The prepared gateway VM also lacks the runner's expected `/etc/caddy` host bind source.
+- Therefore the prepared child image could not execute the full runner. Its launch failure still exercised reservation cleanup: the failed operation's fleet lease had `active_resource_key=null` and a populated `released_at`.
+
+Result: PASS. The retained candidate renewed the fleet and nested leases behind the operation fence, rejected concurrent human and JSON starts before a second runner, settled the PTY failure frame, released terminal leases, and admitted a later retry without stale exclusion.
