@@ -1,0 +1,20 @@
+{
+  "operation_uuid": "run-1",
+  "channel": "private-operations.run-1",
+  "sequence": 7,
+  "emitted_at": "2026-08-09T12:00:00+00:00",
+  "source_node": {
+    "id": 42,
+    "name": "app-dev-1"
+  },
+  "type": "stdout",
+  "payload": {
+    "data": "published\n",
+    "encoding": "utf-8"
+  },
+  "durable_replay_cursor": {
+    "operation_uuid": "run-1",
+    "event_sequence": 11,
+    "event_id": 101
+  }
+}

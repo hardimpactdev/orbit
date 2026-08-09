@@ -1,0 +1,11 @@
+{
+  "operation_uuid": "run-1",
+  "channel": "private-operations.run-1",
+  "sequence": 7,
+  "emitted_at": "2026-08-09T12:00:00+00:00",
+  "type": "stdout",
+  "payload": {
+    "data": "published\n",
+    "encoding": "utf-8"
+  }
+}

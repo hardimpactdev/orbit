@@ -1,0 +1,17 @@
+{
+  "operation_uuid": "run-2",
+  "channel": "private-operations.run-2",
+  "sequence": 1,
+  "emitted_at": "2026-08-09T12:00:00+00:00",
+  "source": "gateway",
+  "type": "step",
+  "payload": {
+    "key": "gateway.update",
+    "status": "done"
+  },
+  "durable_replay_cursor": {
+    "operation_uuid": "run-2",
+    "event_sequence": 3,
+    "event_id": 33
+  }
+}
