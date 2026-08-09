@@ -394,7 +394,7 @@ class GatewayOperationStreamSubscriber
         try {
             $durableFrame = DurableOperationStreamFrame::fromArray($frame);
         } catch (InvalidArgumentException $exception) {
-            if ($eventId !== null && data_get($frame, 'durable_replay_cursor') === null) {
+            if ($eventId !== null && $this->isLegacyCursorlessJournalFrame($frame)) {
                 $lastEventId = max($lastEventId ?? 0, $eventId);
                 $onFrame($frame);
 
@@ -417,6 +417,30 @@ class GatewayOperationStreamSubscriber
         $lastEventId = max($lastEventId ?? 0, $frameEventId);
 
         $onFrame($durableFrame->toArray());
+    }
+
+    /**
+     * @param  array<string, mixed>  $frame
+     */
+    private function isLegacyCursorlessJournalFrame(array $frame): bool
+    {
+        $cursor = $frame['durable_replay_cursor'] ?? null;
+
+        if ($cursor === null) {
+            return true;
+        }
+
+        if (! is_array($cursor)) {
+            return false;
+        }
+
+        return (
+            ($cursor['operation_uuid'] ?? null) === ($frame['operation_uuid'] ?? null)
+            && array_key_exists('event_sequence', $cursor)
+            && $cursor['event_sequence'] === null
+            && array_key_exists('event_id', $cursor)
+            && $cursor['event_id'] === null
+        );
     }
 
     /**

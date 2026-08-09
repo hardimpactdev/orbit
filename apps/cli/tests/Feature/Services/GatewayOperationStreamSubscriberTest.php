@@ -555,6 +555,49 @@ it('keeps cursorless frames compatible when they come from the operation event j
         ->toBe([$legacyFrame]);
 });
 
+it('keeps old incomplete cursor frames compatible during operation event journal replay', function (): void {
+    $legacyFrame = operation_stream_node_fixture('node-durable-frame.json');
+    $legacyFrame['durable_replay_cursor'] = [
+        'operation_uuid' => 'run-1',
+        'event_sequence' => null,
+        'event_id' => null,
+    ];
+    $frames = [];
+    $events = new FakeOperationStreamBackfillClient([
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => OperationStreamFrameEvents::Journal,
+                    'frame' => $legacyFrame,
+                ],
+            ],
+        ],
+    ]);
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: new FailingOperationStreamWebSocketTransport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([['/api/operations/run-1/events?once=1', null]])
+        ->and($frames)
+        ->toBe([$legacyFrame]);
+});
+
 /**
  * @return array<string, mixed>
  */
