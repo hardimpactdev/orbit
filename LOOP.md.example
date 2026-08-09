@@ -46,11 +46,11 @@ Allowed states are `frame`, `build`, `prove`, `accept`, `accepted`, `land`, and
 `pending`, `accepted`, `not-applicable`, or `changes-requested`. A terminal
 review PASS must record `human-judgment=required|not-required` and the exact
 committed HEAD in `Reviewed feature tip`. Blast radius must be `not-required -
-<reason>` or `complete - evidence=<repository-wide search, inventory, or
-lintable check>; result=<summary>` before acceptance; `gaps` returns to BUILD.
+concrete reason` or `complete - evidence=repository-wide search, inventory, or
+lintable check; result=summary` before acceptance; `gaps` returns to BUILD.
 For stateful, lifecycle, or concrete UX work, optionally append one compact
 clause on the existing Scope `Owned` row (do not add a permanent new row):
-`primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
+`primitive=exact requested primitive; transitions=success:terminal success|failure:terminal failure|retry:retry behavior|stop-restart:stop or restart|stale:stale-state or n/a`.
 Omit the clause for ordinary/local changes. When `primitive=` or `transitions=`
 is present, deterministic lint requires both fields, the five known transition
 keys without duplicates or empty values, and rejects template placeholders; it

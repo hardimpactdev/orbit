@@ -75,6 +75,61 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
+it('lints a completed packet copied from the loop template without editing its guidance', function (): void {
+    $template = (string) file_get_contents(repo_path('LOOP.md.example'));
+    $packet = str_replace(
+        [
+            '- Scratchpad:',
+            '- Worktree:',
+            '- Branch:',
+            '<one verifiable outcome>',
+            '- Owned:',
+            '- Constraints:',
+            '- Out of scope:',
+            '- focused: pending',
+            '- broader: pending',
+            '- Blast radius: pending',
+            '- Review: pending',
+            '- Reviewed feature tip: none',
+            '- Acceptance: pending',
+            '- Accepted feature tip: none',
+            '- Accepted main tip: none',
+            '- State: frame',
+        ],
+        [
+            '- Scratchpad: solo://proj/4/scratchpad/example--1',
+            '- Worktree: .worktrees/fix-loop-template-placeholders',
+            '- Branch: fix-loop-template-placeholders',
+            'Prove a completed generated loop packet passes finalization lint.',
+            '- Owned: LOOP.md.example and focused finalization coverage',
+            '- Constraints: preserve strict placeholder detection',
+            '- Out of scope: acceptance and LAND behavior',
+            '- focused: passed - focused finalization test',
+            '- broader: passed - composer quality-check',
+            '- Blast radius: not-required - local template correction',
+            '- Review: passed - general reviewer - human-judgment=not-required',
+            '- Reviewed feature tip: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            '- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment',
+            '- Accepted feature tip: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            '- Accepted main tip: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            '- State: accepted',
+        ],
+        $template,
+    );
+    $packetDir = make_finalization_lint_dir($packet);
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('documents optional compact Scope transition framing without a new row or ceremony', function (): void {
     $template = (string) file_get_contents(repo_path('LOOP.md.example'));
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
