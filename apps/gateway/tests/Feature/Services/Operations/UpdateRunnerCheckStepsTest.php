@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Models\UpdateLease;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
@@ -246,11 +247,6 @@ it('clears the deferred start payload from the operation result when manifest re
 it('resolves the release manifest during check-updates when no plan was persisted at start', function (): void {
     config()->set('app.version', '2.0.0');
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
-
     $manifest = [
         'schema_version' => 1,
         'version' => '2.0.0',
@@ -276,10 +272,6 @@ it('resolves the release manifest during check-updates when no plan was persiste
         ],
     ];
 
-    Http::fake([
-        'github.com/*' => Http::response($manifest, 200),
-    ]);
-
     app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
         'agent-1' => '2.0.0',
     ]));
@@ -291,6 +283,34 @@ it('resolves the release manifest during check-updates when no plan was persiste
         operationType: 'update:all',
         result: ['update_start_request' => []],
     );
+
+    Http::fake(function () use ($manifest, $run) {
+        expect(
+            UpdateLease::query()
+                ->where('operation_run_id', $run->id)
+                ->where('active_resource_key', 'fleet:update-all')
+                ->exists(),
+        )
+            ->toBeTrue();
+
+        return Http::response($manifest, 200);
+    });
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturnUsing(function () use ($run): int {
+            expect(
+                UpdateLease::query()
+                    ->where('operation_run_id', $run->id)
+                    ->where('active_resource_key', 'fleet:update-all')
+                    ->exists(),
+            )
+                ->toBeTrue();
+
+            return 0;
+        });
+
     Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
     Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
 

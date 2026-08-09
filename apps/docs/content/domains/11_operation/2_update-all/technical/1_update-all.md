@@ -46,7 +46,9 @@ envelope (`meta.fields = ["json", "stream-json"]`,
 2. Call the gateway to authorize gateway-admin authority and resolve active
    non-gateway role-bearing nodes that are Agent-eligible.
 3. Submit a start request to the gateway. The gateway persists an operation row,
-   returns the durable event stream URL promptly, and launches a one-shot runner.
+   atomically reserves the `fleet:update-all` lease, returns the durable event
+   stream URL promptly, and launches a one-shot runner. A concurrent start is
+   rejected with `update_lease_conflict` before another runner is launched.
    When the request omits an inline manifest, the gateway defers release-manifest
    resolution to the runner's `Checking for updates` step so the CLI can keep
    visible progress while the latest version is resolved.
@@ -86,7 +88,8 @@ execution details live in the renderer contracts.
 - The start POST response is sent before the durable update runner is launched.
   This lets the CLI connect to the operation event stream before any runner-side
   gateway restart can interrupt the start response. Runner launch failures after
-  the response are recorded as operation journal errors.
+  the response are recorded as operation journal errors and release the
+  unclaimed fleet reservation.
 - After the plan is persisted, the runner must read only that immutable plan for
   the remainder of the run. It must not fetch or substitute a fresh manifest
   during gateway, workload, or verification phases.
@@ -190,9 +193,19 @@ The expected target shape per calling context:
 
 - Every update entry point that mutates fleet state must acquire an expiring
   update lease before side effects.
-- After the read-only check steps settle and update work is required, the runner
-  holds the `fleet:update-all` lease across gateway replacement, scheduler
+- The start request atomically reserves `fleet:update-all` before returning 202.
+  An active reservation or runner lease rejects a concurrent start before a
+  second runner is launched.
+- The launched runner claims that exact reservation by rotating its owner token
+  once. A duplicate runner cannot claim or release the active lease.
+- The runner holds `fleet:update-all` across deferred schema preparation,
+  release-manifest resolution, both check steps, gateway replacement, scheduler
   update, workload node updates, and final verification.
+- A dedicated heartbeat process renews the fleet lease and every active nested
+  lease belonging to the same operation behind the fleet owner-token fence. It
+  stops when the runner exits or the operation becomes terminal. Heartbeat
+  failure terminates the runner; if both processes disappear, the bounded lease
+  lifetime allows a later start to recover.
 - Gateway and scheduler leases are scoped to the gateway phase.
 - Node leases are scoped per workload node fan-out task.
 - Lease acquisition must map active-lease conflicts, including

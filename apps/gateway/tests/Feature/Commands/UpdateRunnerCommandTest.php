@@ -5,12 +5,16 @@ declare(strict_types=1);
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Models\UpdateLease;
+use App\Services\Operations\FleetUpdateLease;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
+use App\Services\Operations\UpdateLeaseHeartbeatProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 
@@ -30,6 +34,10 @@ beforeEach(function (): void {
             //
         }
     });
+});
+
+afterEach(function (): void {
+    Carbon::setTestNow();
 });
 
 it('loads the immutable update plan and writes runner start events', function (): void {
@@ -71,6 +79,102 @@ it('loads the immutable update plan and writes runner start events', function ()
             'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'manifest_version' => '1.2.3',
         ]);
+});
+
+it('claims the reserved fleet lease passed by the launcher and releases it after the run', function (): void {
+    $run = updateRunnerCommandRun();
+    $reservation = app(FleetUpdateLease::class)->reserve($run);
+    $reservationOwnerToken = $reservation->owner_token;
+    $heartbeat = new class extends UpdateLeaseHeartbeatProcess {
+        public ?string $operationRunId = null;
+
+        public ?int $fleetLeaseId = null;
+
+        #[Override]
+        public function whileRunning(
+            OperationRun $operationRun,
+            UpdateLease $fleetLease,
+            int $ttlSeconds,
+            callable $callback,
+        ): mixed {
+            $this->operationRunId = $operationRun->id;
+            $this->fleetLeaseId = $fleetLease->id;
+
+            return $callback();
+        }
+    };
+    app()->instance(UpdateLeaseHeartbeatProcess::class, $heartbeat);
+    app()->instance(GatewayServiceUpdater::class, new UpdateRunnerCommandNoopGatewayUpdater);
+    app()->instance(FleetUpdateVerifier::class, new UpdateRunnerCommandNoopFleetVerifier);
+
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
+
+    $this
+        ->artisan('orbit:update-runner', [
+            '--operation-run-id' => $run->id,
+            '--fleet-lease-id' => $reservation->id,
+        ])
+        ->assertSuccessful();
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($heartbeat->operationRunId)
+        ->toBe($run->id)
+        ->and($heartbeat->fleetLeaseId)
+        ->toBe($reservation->id)
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0)
+        ->and($reservation->refresh()->owner_token)
+        ->not->toBe($reservationOwnerToken);
+});
+
+it('does not mutate the operation when a duplicate runner cannot claim the reservation', function (): void {
+    $run = updateRunnerCommandRun();
+    $fleetLease = app(FleetUpdateLease::class);
+    $reservation = $fleetLease->reserve($run);
+    $claimed = $fleetLease->claim($run, $reservation->id);
+
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
+
+    $this
+        ->artisan('orbit:update-runner', [
+            '--operation-run-id' => $run->id,
+            '--fleet-lease-id' => $reservation->id,
+        ])
+        ->expectsOutputToContain('Update lease owner token mismatch.')
+        ->assertFailed();
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Queued)
+        ->and($run->events()->count())
+        ->toBe(0)
+        ->and($claimed->refresh()->active_resource_key)
+        ->toBe('fleet:update-all')
+        ->and($claimed->owner_token)
+        ->not->toBe($reservation->owner_token);
+});
+
+it('fails the operation after its unclaimed fleet reservation expires', function (): void {
+    Carbon::setTestNow('2026-06-02 10:00:00');
+
+    $run = updateRunnerCommandRun();
+    $reservation = app(FleetUpdateLease::class)->reserve($run);
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
+
+    Carbon::setTestNow('2026-06-02 10:02:01');
+
+    $this
+        ->artisan('orbit:update-runner', [
+            '--operation-run-id' => $run->id,
+            '--fleet-lease-id' => $reservation->id,
+        ])
+        ->expectsOutputToContain('Fleet update reservation expired before the runner claimed it.')
+        ->assertFailed();
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($reservation->refresh()->active_resource_key)
+        ->toBeNull();
 });
 
 it('fails fast when the operation run has no persisted update plan or deferred start payload', function (): void {

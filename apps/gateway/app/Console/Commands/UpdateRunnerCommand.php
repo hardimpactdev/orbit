@@ -11,7 +11,8 @@ use Illuminate\Console\Command;
 use RuntimeException;
 
 #[Signature('orbit:update-runner
-    {--operation-run-id= : Operation run UUID to execute}')]
+    {--operation-run-id= : Operation run UUID to execute}
+    {--fleet-lease-id= : Reserved fleet update lease id to claim}')]
 #[Description('Run a durable gateway update operation from its persisted update plan')]
 class UpdateRunnerCommand extends Command
 {
@@ -28,8 +29,16 @@ class UpdateRunnerCommand extends Command
             return self::FAILURE;
         }
 
+        $fleetLeaseId = $this->fleetLeaseId();
+
+        if ($this->option('fleet-lease-id') !== null && $fleetLeaseId === null) {
+            $this->error('The --fleet-lease-id option must be a positive integer.');
+
+            return self::FAILURE;
+        }
+
         try {
-            $runner->run($operationRunId);
+            $runner->run($operationRunId, $fleetLeaseId);
         } catch (RuntimeException $exception) {
             $this->error($exception->getMessage());
 
@@ -50,5 +59,22 @@ class UpdateRunnerCommand extends Command
         }
 
         return trim($value);
+    }
+
+    private function fleetLeaseId(): ?int
+    {
+        $value = $this->option('fleet-lease-id');
+
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (! is_string($value) || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $fleetLeaseId = (int) $value;
+
+        return $fleetLeaseId > 0 ? $fleetLeaseId : null;
     }
 }

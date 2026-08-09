@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Models\OperationRun;
+use App\Models\UpdateLease;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -31,9 +32,10 @@ final readonly class UpdateRunnerLauncher
         private UpdateRunnerImageResolver $images,
     ) {}
 
-    public function launch(OperationRun|string $operationRun): ProcessResult
+    public function launch(OperationRun|string $operationRun, UpdateLease|int|null $fleetLease = null): ProcessResult
     {
         $operationRunId = $this->operationRunId($operationRun);
+        $fleetLeaseId = $this->fleetLeaseId($fleetLease);
         $image = $this->images->resolve($operationRun);
 
         $configRoot = $this->configRoot();
@@ -41,6 +43,7 @@ final readonly class UpdateRunnerLauncher
 
         $result = Process::timeout(60)->run($this->dockerRunCommand(
             operationRunId: $operationRunId,
+            fleetLeaseId: $fleetLeaseId,
             image: $image,
             hostConfigRoot: $configRoot,
         ));
@@ -54,6 +57,17 @@ final readonly class UpdateRunnerLauncher
         throw new RuntimeException("Failed to launch update runner for operation run [{$operationRunId}]: {$message}");
     }
 
+    private function fleetLeaseId(UpdateLease|int|null $fleetLease): ?int
+    {
+        $fleetLeaseId = $fleetLease instanceof UpdateLease ? $fleetLease->id : $fleetLease;
+
+        if ($fleetLeaseId !== null && $fleetLeaseId < 1) {
+            throw new RuntimeException('Update runner fleet lease id must be positive.');
+        }
+
+        return $fleetLeaseId;
+    }
+
     private function operationRunId(OperationRun|string $operationRun): string
     {
         $operationRunId = $operationRun instanceof OperationRun ? $operationRun->id : trim($operationRun);
@@ -65,8 +79,12 @@ final readonly class UpdateRunnerLauncher
         return $operationRunId;
     }
 
-    private function dockerRunCommand(string $operationRunId, string $image, string $hostConfigRoot): string
-    {
+    private function dockerRunCommand(
+        string $operationRunId,
+        ?int $fleetLeaseId,
+        string $image,
+        string $hostConfigRoot,
+    ): string {
         return implode(' ', [
             'docker run',
             '--rm',
@@ -107,6 +125,7 @@ final readonly class UpdateRunnerLauncher
             $this->escape('artisan'),
             $this->escape('orbit:update-runner'),
             $this->escape("--operation-run-id={$operationRunId}"),
+            ...($fleetLeaseId === null ? [] : [$this->escape("--fleet-lease-id={$fleetLeaseId}")]),
         ]);
     }
 

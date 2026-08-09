@@ -6,8 +6,10 @@ namespace App\Services\Operations;
 
 use App\Data\Operations\FleetVersionReport;
 use App\Exceptions\UpdateLeaseConflict;
+use App\Exceptions\UpdateLeaseReservationExpired;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Models\UpdateLease;
 use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Artisan;
 use RuntimeException;
@@ -15,8 +17,6 @@ use Throwable;
 
 final readonly class UpdateRunner
 {
-    private const string FleetResourceKey = 'update-all';
-
     private const string GatewayResourceKey = 'orbit-gateway';
 
     private const string SchedulerResourceKey = 'orbit-scheduler';
@@ -26,6 +26,8 @@ final readonly class UpdateRunner
         private OperationUpdatePlanStore $updatePlans,
         private UpdatePlanBuilder $updatePlanBuilder,
         private UpdateLeaseManager $leases,
+        private FleetUpdateLease $fleetLease,
+        private UpdateLeaseHeartbeatProcess $leaseHeartbeat,
         private UpdateRunnerPipeline $pipeline,
         private FleetVersionProbe $fleetVersions,
         private ActivityLogger $activityLogger,
@@ -45,97 +47,124 @@ final readonly class UpdateRunner
         return $plan;
     }
 
-    public function run(string $operationRunId): OperationUpdatePlan
+    public function run(string $operationRunId, ?int $reservedFleetLeaseId = null): OperationUpdatePlan
     {
         [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
+        $fleetLease = $this->claimFleetLease($operationRun, $reservedFleetLeaseId);
 
-        $allCurrent = false;
         $stagedArtifacts = false;
+        $execute = function () use ($operationRun, $plan, &$stagedArtifacts): OperationUpdatePlan {
+            return $this->execute($operationRun, $plan, $stagedArtifacts);
+        };
 
         try {
-            if ($plan instanceof OperationUpdatePlan) {
-                $this->markStarted($operationRun, $plan);
-            }
-
-            [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
-
-            if ($report->outdatedCount === 0) {
-                // All-current short-circuit: skip gateway, workload, and verification phases.
-                $allCurrent = true;
-            } else {
-                $this->leases->withLease(
-                    resourceType: 'fleet',
-                    resourceKey: self::FleetResourceKey,
-                    operationRun: $operationRun,
-                    ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
-                    ttlSeconds: $this->leaseTtlSeconds(),
-                    callback: function () use ($operationRun, $plan): void {
-                        $this->operationRuns->appendStep(
-                            $operationRun->id,
-                            'lease.fleet',
-                            'done',
-                            'Fleet update lease acquired',
-                        );
-
-                        $this->runPhase(
-                            $operationRun,
-                            'update-artifacts',
-                            'Staging update artifacts on gateway',
-                            'Update artifacts staged on gateway',
-                            function () use ($operationRun, $plan, &$stagedArtifacts): null {
-                                $stagedArtifacts = true;
-                                $this->cliArtifacts->stage($operationRun, $plan);
-
-                                return null;
-                            },
-                        );
-                        $this->runPhase(
-                            $operationRun,
-                            'gateway',
-                            'Updating gateway services',
-                            'Gateway services updated',
-                            function () use ($operationRun, $plan): null {
-                                $this->updateGateway($operationRun, $plan);
-
-                                return null;
-                            },
-                        );
-                        $this->runPhase(
-                            $operationRun,
-                            'workload-nodes',
-                            'Updating workload nodes',
-                            'Workload nodes updated',
-                            function () use ($operationRun, $plan): null {
-                                $this->pipeline->updateWorkloads($operationRun, $plan);
-
-                                return null;
-                            },
-                        );
-                        $this->runPhase(
-                            $operationRun,
-                            'verification',
-                            'Verifying fleet update',
-                            'Fleet update verified',
-                            function () use ($operationRun, $plan): null {
-                                $this->pipeline->verifyFleet($operationRun, $plan);
-
-                                return null;
-                            },
-                        );
-                    },
-                );
-            }
+            return $this->leaseHeartbeat->whileRunning(
+                operationRun: $operationRun,
+                fleetLease: $fleetLease,
+                ttlSeconds: $this->fleetLease->runtimeTtlSeconds(),
+                callback: $execute,
+            );
         } catch (Throwable $exception) {
             $this->markFailed($operationRun, $exception);
+
+            throw $exception;
+        } finally {
             $this->cleanupStagedArtifacts($operationRun, $stagedArtifacts);
+            $this->fleetLease->releaseRunner($fleetLease);
+        }
+    }
+
+    private function claimFleetLease(OperationRun $operationRun, ?int $reservedFleetLeaseId): UpdateLease
+    {
+        try {
+            return $reservedFleetLeaseId === null
+                ? $this->fleetLease->acquireForRunner($operationRun)
+                : $this->fleetLease->claim($operationRun, $reservedFleetLeaseId);
+        } catch (UpdateLeaseReservationExpired|UpdateLeaseConflict $exception) {
+            $this->markFailed($operationRun, $exception);
 
             throw $exception;
         }
+    }
+
+    private function execute(
+        OperationRun $operationRun,
+        ?OperationUpdatePlan $plan,
+        bool &$stagedArtifacts,
+    ): OperationUpdatePlan {
+        if ($plan instanceof OperationUpdatePlan) {
+            $this->markStarted($operationRun, $plan);
+        }
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            'lease.fleet',
+            'done',
+            'Fleet update lease acquired',
+        );
+
+        [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
+        $allCurrent = $report->outdatedCount === 0;
+
+        if (! $allCurrent) {
+            $this->runUpdatePhases($operationRun, $plan, $stagedArtifacts);
+        }
 
         $this->markSucceeded($operationRun, $plan, $allCurrent);
-        $this->cleanupStagedArtifacts($operationRun, $stagedArtifacts);
 
         return $plan;
+    }
+
+    private function runUpdatePhases(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        bool &$stagedArtifacts,
+    ): void {
+        $this->runPhase(
+            $operationRun,
+            'update-artifacts',
+            'Staging update artifacts on gateway',
+            'Update artifacts staged on gateway',
+            function () use ($operationRun, $plan, &$stagedArtifacts): null {
+                $stagedArtifacts = true;
+                $this->cliArtifacts->stage($operationRun, $plan);
+
+                return null;
+            },
+        );
+        $this->runPhase(
+            $operationRun,
+            'gateway',
+            'Updating gateway services',
+            'Gateway services updated',
+            function () use ($operationRun, $plan): null {
+                $this->updateGateway($operationRun, $plan);
+
+                return null;
+            },
+        );
+        $this->runPhase(
+            $operationRun,
+            'workload-nodes',
+            'Updating workload nodes',
+            'Workload nodes updated',
+            function () use ($operationRun, $plan): null {
+                $this->pipeline->updateWorkloads($operationRun, $plan);
+
+                return null;
+            },
+        );
+        $this->runPhase(
+            $operationRun,
+            'verification',
+            'Verifying fleet update',
+            'Fleet update verified',
+            function () use ($operationRun, $plan): null {
+                $this->pipeline->verifyFleet($operationRun, $plan);
+
+                return null;
+            },
+        );
     }
 
     /**

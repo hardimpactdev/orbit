@@ -93,6 +93,7 @@ return [
         'gateway_image' => env('ORBIT_GATEWAY_IMAGE'),
         'gateway_image_archive' => env('ORBIT_GATEWAY_IMAGE_ARCHIVE'),
         'lease_ttl_seconds' => env(key: 'ORBIT_UPDATE_LEASE_TTL_SECONDS', default: 300),
+        'reservation_ttl_seconds' => env(key: 'ORBIT_UPDATE_RESERVATION_TTL_SECONDS', default: 120),
         'manifest_snapshot' => [],
     ],
 

@@ -589,11 +589,11 @@ it('emits terminal success only after runner verification passes', function (): 
         ->and(fleetVerifierStepEvents($run))
         ->toBe([
             ['runner',               'running'],
+            ['lease.fleet',          'done'],
             ['check-updates',        'running'],
             ['check-updates',        'done'],
             ['check-fleet-versions', 'running'],
             ['check-fleet-versions', 'done'],
-            ['lease.fleet',          'done'],
             ['update-artifacts',     'running'],
             ['update-artifacts',     'done'],
             ['gateway',              'running'],

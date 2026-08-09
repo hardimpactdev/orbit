@@ -142,10 +142,7 @@ it('reports the conflicting operation caller node when the fleet lease is alread
             ],
         ]);
 
-    expect($eventMarkers)
-        ->toContain('check-updates:done', 'check-fleet-versions:done', 'error')
-        ->and(array_search('check-fleet-versions:done', $eventMarkers, true))
-        ->toBeLessThan(array_search('error', $eventMarkers, true));
+    expect($eventMarkers)->toBe(['error']);
 });
 
 it('omits conflicting_node when the conflicting operation has no caller node', function (): void {

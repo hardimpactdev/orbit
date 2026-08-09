@@ -13,6 +13,9 @@ use App\Models\NodeAccess;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Models\UpdateLease;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\UpdateLeaseManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -96,7 +99,9 @@ it('starts a durable update all operation and stores its immutable plan', functi
         ->and($plan->agent_artifacts)
         ->toBe($agentArtifacts)
         ->and($run->events()->pluck('event_type')->all())
-        ->toBe(['tree', 'step']);
+        ->toBe(['tree', 'step'])
+        ->and(UpdateLease::query()->where('active_resource_key', 'fleet:update-all')->count())
+        ->toBe(1);
 
     Process::assertRan(function ($process) use ($operationRunId): bool {
         $command = (string) $process->command;
@@ -164,6 +169,41 @@ it('allows non-gateway callers with gateway admin authority', function (): void 
     ], remoteAddress: '10.6.0.90')
         ->assertStatus(202)
         ->assertJsonPath('success.data.operation_run.status', 'queued');
+});
+
+it('rejects a concurrent start before launching another runner', function (): void {
+    $activeRunnerOwner = hash(algo: 'sha256', data: 'active-runner');
+    $activeRun = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+    );
+    $activeLease = app(UpdateLeaseManager::class)->acquire(
+        resourceType: 'fleet',
+        resourceKey: 'update-all',
+        operationRun: $activeRun,
+        ownerToken: $activeRunnerOwner,
+        ttlSeconds: 300,
+    );
+
+    $response = updateAllStartRequest([
+        'target_version' => '1.2.3',
+        'manifest' => updateAllStartManifest(),
+    ]);
+
+    $response
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'update_lease_conflict')
+        ->assertJsonPath('error.meta.resource', 'fleet:update-all')
+        ->assertJsonPath('error.meta.conflicting_operation_id', $activeRun->id)
+        ->assertJsonPath('error.meta.lease_id', $activeLease->id);
+
+    expect(OperationRun::query()->where('id', '!=', $activeRun->id)->firstOrFail()->status)
+        ->toBe(OperationStatus::Rejected)
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(1);
+
+    Process::assertNothingRan();
 });
 
 it('rejects raw request gateway image overrides when overrides are disabled', function (): void {
@@ -305,7 +345,9 @@ it('returns the event stream before recording a deferred runner launch failure',
         ])
         ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))
         ->not->toContain('docker denied')->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))
-        ->not->toContain('Failed to launch update runner');
+        ->not->toContain('Failed to launch update runner')->and(
+            UpdateLease::query()->whereNotNull('active_resource_key')->count(),
+        )->toBe(0);
 });
 
 it('returns validation errors before creating an operation run', function (): void {

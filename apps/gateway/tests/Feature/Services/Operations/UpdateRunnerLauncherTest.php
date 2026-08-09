@@ -42,7 +42,7 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
         'docker run *' => Process::result(output: "runner\n"),
     ]);
 
-    app(UpdateRunnerLauncher::class)->launch($run);
+    app(UpdateRunnerLauncher::class)->launch($run, 42);
 
     Process::assertRan(function ($process) use ($plan, $run): bool {
         $command = (string) $process->command;
@@ -67,6 +67,7 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
             ->toContain("'{$plan->gateway_image}'")
             ->toContain("'orbit:update-runner'")
             ->toContain("'--operation-run-id={$run->id}'")
+            ->toContain("'--fleet-lease-id=42'")
             ->not->toContain('--target-image')
             ->not->toContain('docker service inspect');
 

@@ -41,19 +41,24 @@ orbit update:all --stream-json
 `update:all` performs a fleet update authorized through the gateway:
 
 1. Ask the gateway to authorize gateway-admin authority (`*` on the active gateway node). The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
-2. Start a gateway operation. The gateway creates an operation row and returns
-   the durable event stream URL promptly. When the request includes an inline
-   manifest, the gateway also persists an immutable update plan keyed by
+2. Start a gateway operation. The gateway creates an operation row and
+   atomically reserves the fleet update lease before returning the durable
+   event stream URL. A concurrent start is rejected before a second runner is
+   launched. When the request includes an inline manifest, the gateway also
+   persists an immutable update plan keyed by
    `operation_run_id` in the start response. When the request omits an inline
    manifest, plan persistence is deferred to the runner so the CLI can keep
    visible progress while the latest release is resolved.
-3. The gateway launches a one-shot runner. Deferred starts boot from the
+3. The gateway launches a one-shot runner, which claims the reservation exactly
+   once and continuously renews every lease owned by the operation. Deferred
+   starts boot from the
    configured digest-pinned `orbit-gateway` image, or from the currently running
    digest-pinned `orbit_orbit-gateway` service image when no explicit bootstrap
    image is configured. Inline-manifest starts use the target digest from the
    persisted plan. The runner resolves and persists the immutable plan during
    `Checking for updates` when needed, then compares the desired artifact
-   identity against the gateway database before any update side effects.
+   identity against the gateway database before any update side effects. Schema
+   preparation and both check steps run while the fleet lease is held.
 
    If the tracked gateway image digest and the recorded CLI and Orbit Agent
    artifact hashes already match the desired manifest artifacts, it skips the

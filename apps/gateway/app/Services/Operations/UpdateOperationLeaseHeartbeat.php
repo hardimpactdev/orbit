@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Operations;
+
+use App\Models\OperationRun;
+use App\Models\UpdateLease;
+use Illuminate\Support\Carbon;
+use RuntimeException;
+use SensitiveParameter;
+
+final readonly class UpdateOperationLeaseHeartbeat
+{
+    public function __construct(
+        private DatabaseLockRetry $databaseLockRetry,
+    ) {}
+
+    public function renew(
+        OperationRun|string $operationRun,
+        UpdateLease|int $fleetLease,
+        #[SensitiveParameter]
+        string $fleetOwnerToken,
+        int $ttlSeconds,
+    ): int {
+        $operationRunId = $operationRun instanceof OperationRun ? $operationRun->id : trim($operationRun);
+        $fleetOwnerToken = trim($fleetOwnerToken);
+
+        if ($operationRunId === '' || $fleetOwnerToken === '') {
+            throw new RuntimeException('Update lease heartbeat identifiers cannot be empty.');
+        }
+
+        if ($ttlSeconds < 1) {
+            throw new RuntimeException('Update lease TTL must be positive.');
+        }
+
+        return $this->databaseLockRetry->transaction(function () use (
+            $operationRunId,
+            $fleetLease,
+            $fleetOwnerToken,
+            $ttlSeconds,
+        ): int {
+            $fleet = $this->leaseForUpdate($fleetLease);
+
+            if ($fleet->active_resource_key === null || $fleet->released_at !== null) {
+                throw new RuntimeException('Fleet update lease is not active.');
+            }
+
+            if ($fleet->operation_run_id !== $operationRunId) {
+                throw new RuntimeException('Fleet update lease operation run mismatch.');
+            }
+
+            if (! hash_equals($fleet->owner_token, $fleetOwnerToken)) {
+                throw new RuntimeException('Fleet update lease owner token mismatch.');
+            }
+
+            $now = Carbon::now();
+            $activeLeases = UpdateLease::query()
+                ->where('operation_run_id', $operationRunId)
+                ->whereNotNull('active_resource_key')
+                ->whereNull('released_at');
+            $hasExpiredLease = (clone $activeLeases)
+                ->where('expires_at', '<=', $now)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($hasExpiredLease) {
+                (clone $activeLeases)
+                    ->where('expires_at', '<=', $now)
+                    ->update([
+                        'active_resource_key' => null,
+                        'released_at' => $now,
+                    ]);
+
+                return 0;
+            }
+
+            return $activeLeases->update([
+                'expires_at' => $now->copy()->addSeconds($ttlSeconds),
+            ]);
+        });
+    }
+
+    private function leaseForUpdate(UpdateLease|int $lease): UpdateLease
+    {
+        $id = $lease instanceof UpdateLease ? $lease->id : $lease;
+        /** @var int|null $lockedId */
+        $lockedId = UpdateLease::query()->whereKey($id)->lockForUpdate()->value('id');
+
+        if (! is_int($lockedId)) {
+            throw new RuntimeException("Update lease [{$id}] not found.");
+        }
+
+        return UpdateLease::query()->findOrFail($lockedId);
+    }
+}

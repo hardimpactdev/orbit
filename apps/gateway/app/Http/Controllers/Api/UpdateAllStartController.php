@@ -6,16 +6,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\UpdateLeaseConflict;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\UpdateAllStartApiRequest;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Models\UpdateLease;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdatePlanBuilder;
-use App\Services\Operations\UpdateRunnerLauncher;
+use App\Services\Operations\UpdateRunnerDispatcher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
@@ -37,7 +39,7 @@ class UpdateAllStartController implements Loggable
         OperationRunRecorder $operationRuns,
         UpdatePlanBuilder $updatePlanBuilder,
         OperationUpdatePlanStore $updatePlans,
-        UpdateRunnerLauncher $updateRunnerLauncher,
+        UpdateRunnerDispatcher $runnerDispatcher,
     ): JsonResponse {
         $this->captureActivitySubject($request);
 
@@ -53,6 +55,12 @@ class UpdateAllStartController implements Loggable
         );
         $this->activityOperationRun = $operationRun;
 
+        $reservation = $this->reserveFleet($operationRun, $operationRuns, $runnerDispatcher);
+
+        if ($reservation instanceof JsonResponse) {
+            return $reservation;
+        }
+
         $plan = null;
 
         if ($hasInlineManifest) {
@@ -60,6 +68,7 @@ class UpdateAllStartController implements Loggable
                 $snapshot = $updatePlanBuilder->fromRequest($operationRun, $request);
                 $plan = $updatePlans->create($operationRun, $snapshot);
             } catch (InvalidArgumentException|RuntimeException $exception) {
+                $runnerDispatcher->releaseReservation($operationRun, $reservation);
                 $this->activityOperationRun = $operationRuns->rejected($operationRun->id, [
                     'code' => 'update_plan_invalid',
                     'message' => $exception->getMessage(),
@@ -88,7 +97,20 @@ class UpdateAllStartController implements Loggable
         ]);
         $operationRuns->appendStep($operationRun->id, 'plan', 'done', 'Update plan persisted');
 
-        $this->launchRunnerAfterResponse($operationRun, $operationRuns, $updateRunnerLauncher);
+        $runnerDispatcher->dispatchAfterResponse(
+            $operationRun,
+            $reservation,
+            function (RuntimeException $exception) use ($operationRun, $operationRuns): void {
+                $operationRuns->appendStep($operationRun->id, 'runner', 'failed', 'Update runner launch failed');
+                $operationRuns->appendError($operationRun->id, 'Update runner launch failed', 1, [
+                    'reason' => 'update_runner_launch_failed',
+                ]);
+                $this->activityOperationRun = $operationRuns->failed($operationRun->id, error: [
+                    'code' => 'update_runner_launch_failed',
+                    'message' => $exception->getMessage(),
+                ]);
+            },
+        );
 
         return response()->json([
             'success' => [
@@ -106,25 +128,34 @@ class UpdateAllStartController implements Loggable
         ], 202);
     }
 
-    private function launchRunnerAfterResponse(
+    private function reserveFleet(
         OperationRun $operationRun,
         OperationRunRecorder $operationRuns,
-        UpdateRunnerLauncher $updateRunnerLauncher,
-    ): void {
-        app()->terminating(function () use ($operationRun, $operationRuns, $updateRunnerLauncher): void {
-            try {
-                $updateRunnerLauncher->launch($operationRun);
-            } catch (RuntimeException $exception) {
-                $operationRuns->appendStep($operationRun->id, 'runner', 'failed', 'Update runner launch failed');
-                $operationRuns->appendError($operationRun->id, 'Update runner launch failed', 1, [
-                    'reason' => 'update_runner_launch_failed',
-                ]);
-                $this->activityOperationRun = $operationRuns->failed($operationRun->id, error: [
-                    'code' => 'update_runner_launch_failed',
+        UpdateRunnerDispatcher $runnerDispatcher,
+    ): UpdateLease|JsonResponse {
+        try {
+            return $runnerDispatcher->reserve($operationRun);
+        } catch (UpdateLeaseConflict $exception) {
+            $this->activityOperationRun = $operationRuns->rejected($operationRun->id, [
+                'code' => 'update_lease_conflict',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => [
+                    'code' => 'update_lease_conflict',
                     'message' => $exception->getMessage(),
-                ]);
-            }
-        });
+                    'meta' => [
+                        'resource' => "{$exception->resourceType}:{$exception->resourceKey}",
+                        'resource_type' => $exception->resourceType,
+                        'resource_key' => $exception->resourceKey,
+                        'lease_id' => $exception->leaseId,
+                        'conflicting_operation_id' => $exception->operationRunId,
+                        'expires_at' => $exception->expiresAt->toIso8601String(),
+                    ],
+                ],
+            ], 409);
+        }
     }
 
     public function effect(): ActivityLogType
