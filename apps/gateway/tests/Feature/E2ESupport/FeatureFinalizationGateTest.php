@@ -578,6 +578,110 @@ it('derives the minimum acceptance venue from the exact candidate contract', fun
     }
 });
 
+it('fails closed when candidate changed-file inventory derivation fails', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+    $fakeBin = sys_get_temp_dir().'/orbit-finalization-git-'.bin2hex(random_bytes(6));
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Changed harness\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        mkdir($fakeBin, recursive: true);
+        $gitBinary = trim(new Process(['which', 'git'])->mustRun()->getOutput());
+        file_put_contents(
+            "{$fakeBin}/git",
+            "#!/bin/sh\nif [ \"\$1\" = diff ]; then exit 23; fi\nexec ".escapeshellarg($gitBinary)." \"\$@\"\n",
+        );
+        chmod("{$fakeBin}/git", 0o755);
+
+        $process = run_finalization_gate(
+            $repo,
+            'git merge feature',
+            ['PATH' => $fakeBin.PATH_SEPARATOR.getenv('PATH')],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('unable to derive candidate changed-file inventory for acceptance venue resolution');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+        new Process(['rm', '-rf', $fakeBin])->run();
+    }
+});
+
+it('preserves unchanged candidate venue enforcement at the finalization boundary', function (
+    array $changedFiles,
+    string $minimumVenue,
+    string $recordedVenue,
+    bool $passes,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        foreach ($changedFiles as $changedFile) {
+            commit_finalization_gate_file($worktree, $changedFile, "changed\n");
+        }
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $runtime = $recordedVenue === 'automated'
+            ? 'not applicable - no runtime proof venue'
+            : finalization_structured_runtime($worktree, $featureTip, $recordedVenue);
+
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree, $recordedVenue, $runtime);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        if ($passes) {
+            expect($process->getExitCode())
+                ->toBe(0, $process->getErrorOutput())
+                ->and($process->getOutput())
+                ->toContain('FINALIZATION: PASS');
+
+            return;
+        }
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain("acceptance venue {$recordedVenue} does not satisfy the diff-routed {$minimumVenue} venue");
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'retained-incus matching' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus', 'retained-incus', true],
+    'retained-incus rejects automated' => [
+        ['apps/cli/app/Commands/FooCommand.php'],
+        'retained-incus',
+        'automated',
+        false,
+    ],
+    'browser matching' => [['apps/gateway/resources/js/app.js'], 'browser', 'browser', true],
+    'browser rejects retained-incus' => [['apps/gateway/resources/js/app.js'], 'browser', 'retained-incus', false],
+    'host-macos matching' => [['apps/macos/src/main.rs'], 'host-macos', 'host-macos', true],
+    'host-macos rejects browser' => [['apps/macos/src/main.rs'], 'host-macos', 'browser', false],
+    'mixed escalation matching' => [
+        [
+            'apps/gateway/resources/js/app.js',
+            'apps/macos/src/main.rs',
+        ],
+        'host-macos',
+        'host-macos',
+        true,
+    ],
+    'mixed escalation rejects browser' => [
+        [
+            'apps/gateway/resources/js/app.js',
+            'apps/macos/src/main.rs',
+        ],
+        'host-macos',
+        'browser',
+        false,
+    ],
+]);
+
 it('fails closed when candidate acceptance venue resolution times out', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 

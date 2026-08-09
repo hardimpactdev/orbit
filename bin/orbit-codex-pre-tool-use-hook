@@ -1939,7 +1939,16 @@ function compact_feature_check(
     $compactDiffBase = $allowLandedMain
         ? (string) orbitLoopLabel($contents, 'Proof', 'Accepted main tip')
         : 'main';
-    $compactChangedFiles = branch_changed_files($worktree, 'HEAD', $compactDiffBase);
+
+    try {
+        $compactChangedFiles = orbitLoopExactProofRoute($worktree, $compactDiffBase, 'HEAD')['changed_files'];
+    } catch (Throwable) {
+        return block_result(
+            $subject,
+            'unable to derive candidate changed-file inventory for acceptance venue resolution',
+        );
+    }
+
     $candidateVenue = candidate_acceptance_venue(
         $worktree,
         $branchTip,
@@ -2221,7 +2230,7 @@ function candidate_acceptance_venue_state_problem(
     }
 
     try {
-        $resolvedChangedFiles = branch_changed_files($worktree, 'HEAD', $baseRef);
+        $resolvedChangedFiles = orbitLoopExactProofRoute($worktree, $baseRef, 'HEAD')['changed_files'];
     } catch (Throwable) {
         return 'unable to validate candidate changed-file inventory for acceptance venue resolution';
     }
