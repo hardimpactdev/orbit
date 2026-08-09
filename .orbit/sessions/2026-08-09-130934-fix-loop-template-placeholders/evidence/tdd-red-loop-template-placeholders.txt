@@ -1,0 +1,4 @@
+Command: bin/orbit-gateway-pest --compact --filter='lints a completed packet copied from the loop template without editing its guidance' tests/Feature/E2ESupport/FeatureFinalizationGateTest.php
+Result: failed as expected; 1 test, 1 assertion.
+Failure: BLOCKED: contains an unexpanded template placeholder: <reason>
+Assertion: expected finalization lint exit 0, observed exit 2.

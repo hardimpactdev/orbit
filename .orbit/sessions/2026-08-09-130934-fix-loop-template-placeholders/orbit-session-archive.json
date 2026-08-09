@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-09T11:09:34+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-loop-template-placeholders/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-09-130934-fix-loop-template-placeholders",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/tdd-red-loop-template-placeholders.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-09T110620Z-f77e50cec435.json"
+    ],
+    "entry_digests": {
+        "evidence/tdd-red-loop-template-placeholders.txt": "7d63c9bff545f4f3930b7f9a5f6cb130c4536cfacc654789010236ddec7808d3",
+        "loop.md": "c3874a4163f2b3dbac34331f49bb8243006c53ee198d5de5c8810af6a5ec8077",
+        "quality-gates/quality-check-2026-08-09T110620Z-f77e50cec435.json": "98cd3a99869383a316df132a83a1d30c9c6dcceecfb3bb097e34a6df28c15538"
+    },
+    "slug": "fix-loop-template-placeholders",
+    "requested_slug": "fix-loop-template-placeholders",
+    "compatible_slugs": [
+        "fix-loop-template-placeholders"
+    ],
+    "branch": "fix-loop-template-placeholders",
+    "candidate_commit": "70fd14a062b14298d398d53cfeee58ca477220cb",
+    "accepted_feature_tip": "70fd14a062b14298d398d53cfeee58ca477220cb",
+    "accepted_main_tip": "5c232fd1878dde2aed24934f251973457a19f855",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
