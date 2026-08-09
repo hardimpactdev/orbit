@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit current graph</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--fg:#1a1d23;--muted:#5c6570;--box:#fff;--edge:#3b4a5a;--br:#8a4b08;--note:#e8eef5}
+@media(prefers-color-scheme:dark){:root{--bg:#12151a;--fg:#e8eaed;--muted:#9aa3ad;--box:#1c2128;--edge:#9fb0c0;--br:#e0a35a;--note:#243040}}
+body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg);padding:1rem;max-width:52rem}
+h1{font-size:1.2rem;margin:0 0 .3rem}h2{font-size:1rem;margin:1.1rem 0 .4rem}
+.note{background:var(--note);border-left:3px solid var(--edge);padding:.5rem .7rem;margin:0 0 .8rem;font-size:.9rem}
+.muted{color:var(--muted);font-size:.88rem}
+figure{margin:0 0 1rem;padding:.6rem;background:var(--box);border:1px solid color-mix(in srgb,var(--edge) 28%,transparent);border-radius:6px}
+figcaption{font-weight:600;margin-bottom:.4rem}
+svg{display:block;width:100%;height:auto}
+text{font:11px system-ui,sans-serif;fill:var(--fg)}
+.b{fill:var(--box);stroke:var(--edge);stroke-width:1.4}
+.a{stroke:var(--edge);stroke-width:1.5;fill:none;marker-end:url(#m)}
+.ab{stroke:var(--br);stroke-width:1.6;fill:none;marker-end:url(#mb)}
+.l{font-size:10px;fill:var(--muted)}
+#llm-reading-guide{margin-top:1.2rem;padding-top:.8rem;border-top:1px solid color-mix(in srgb,var(--edge) 30%,transparent)}
+code{font-size:.86em}
+</style>
+</head>
+<body>
+<header>
+<h1>Orbit current graph</h1>
+<p class="note"><strong>Simplified current-state map</strong> — not every class or command. Product docs under <code>apps/docs/content/</code> remain authoritative.</p>
+<p class="muted">Callers → CLI/client → Gateway → managed nodes (roles, apps, services).</p>
+</header>
+
+<figure aria-labelledby="map-cap">
+<figcaption id="map-cap">1. Orbit system map</figcaption>
+<svg viewBox="0 0 700 240" role="img" aria-labelledby="mt md">
+<title id="mt">Orbit system map</title>
+<desc id="md">Human, AI agent, and CI call Orbit CLI/client; Gateway is hub; managed nodes host roles, apps, services.</desc>
+<defs>
+<marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker>
+<marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--br)"/></marker>
+</defs>
+<rect class="b" x="16" y="16" width="88" height="34" rx="5"/><text x="60" y="37" text-anchor="middle">Human</text>
+<rect class="b" x="16" y="70" width="88" height="34" rx="5"/><text x="60" y="91" text-anchor="middle">AI agent</text>
+<rect class="b" x="16" y="124" width="88" height="34" rx="5"/><text x="60" y="145" text-anchor="middle">CI</text>
+<rect class="b" x="180" y="70" width="120" height="34" rx="5"/><text x="240" y="91" text-anchor="middle">Orbit CLI / client</text>
+<rect class="b" x="360" y="70" width="100" height="34" rx="5"/><text x="410" y="91" text-anchor="middle">Gateway</text>
+<rect class="b" x="520" y="30" width="160" height="130" rx="5"/>
+<text x="600" y="55" text-anchor="middle">Managed nodes</text>
+<text class="l" x="600" y="80" text-anchor="middle">roles · apps · services</text>
+<text class="l" x="600" y="100" text-anchor="middle">Agent · private VPN</text>
+<path class="a" d="M104 33H155V87H180"/><path class="a" d="M104 87H180"/><path class="a" d="M104 141H155V87"/>
+<path class="a" d="M300 87H360"/><path class="a" d="M460 87H520"/>
+</svg>
+</figure>
+
+<figure aria-labelledby="flow-cap">
+<figcaption id="flow-cap">2. One command moving through Orbit</figcaption>
+<svg viewBox="0 0 700 280" role="img" aria-labelledby="ft fd">
+<title id="ft">One command through Orbit</title>
+<desc id="fd">Caller to CLI to Gateway to identity check to operation, then branch gateway-local or node Agent, then result to caller.</desc>
+<rect class="b" x="12" y="16" width="80" height="32" rx="5"/><text x="52" y="36" text-anchor="middle">Caller</text>
+<rect class="b" x="120" y="16" width="90" height="32" rx="5"/><text x="165" y="36" text-anchor="middle">CLI / client</text>
+<rect class="b" x="240" y="16" width="80" height="32" rx="5"/><text x="280" y="36" text-anchor="middle">Gateway</text>
+<rect class="b" x="350" y="16" width="110" height="32" rx="5"/><text x="405" y="36" text-anchor="middle">Identity / grants</text>
+<rect class="b" x="490" y="16" width="100" height="32" rx="5"/><text x="540" y="36" text-anchor="middle">Operation</text>
+<path class="a" d="M92 32H120"/><path class="a" d="M210 32H240"/><path class="a" d="M320 32H350"/><path class="a" d="M460 32H490"/>
+<path class="ab" d="M540 48V78"/><text class="l" x="550" y="70">branch</text>
+<rect class="b" x="340" y="100" width="130" height="40" rx="5"/><text x="405" y="118" text-anchor="middle">Gateway-local</text><text class="l" x="405" y="132" text-anchor="middle">work stays here</text>
+<rect class="b" x="510" y="100" width="110" height="40" rx="5"/><text x="565" y="118" text-anchor="middle">Node Agent</text><text class="l" x="565" y="132" text-anchor="middle">push + token</text>
+<path class="ab" d="M520 78H405V100"/><path class="ab" d="M540 78V100"/>
+<rect class="b" x="250" y="180" width="120" height="34" rx="5"/><text x="310" y="201" text-anchor="middle">Result / events</text>
+<rect class="b" x="12" y="180" width="80" height="34" rx="5"/><text x="52" y="201" text-anchor="middle">Caller</text>
+<path class="a" d="M405 140V160H310V180"/><path class="a" d="M565 140V160H310"/><path class="a" d="M250 197H92"/>
+<text class="l" x="300" y="240">Decision: gateway-owned work vs Agent-push to a node.</text>
+</svg>
+</figure>
+
+<section id="llm-reading-guide">
+<h2>LLM reading guide</h2>
+<ol>
+<li>Parse <code>#orbit-graph-data</code> JSON for nodes, edges, sources.</li>
+<li>IDs are stable; views are layouts of the same graph.</li>
+<li>If this map conflicts with product docs, prefer docs: <code>apps/docs/content/mission.md</code>, <code>architecture.md</code>, <code>concepts.md</code>.</li>
+<li>Scope: current architecture only, not proposals.</li>
+</ol>
+</section>
+
+<script type="application/json" id="orbit-graph-data">
+{
+  "version": "1.0.0",
+  "scope": "current-state-simplified",
+  "authority": [
+    "apps/docs/content/mission.md",
+    "apps/docs/content/architecture.md",
+    "apps/docs/content/concepts.md"
+  ],
+  "views": [
+    {"id": "system-map", "title": "Orbit system map", "node_ids": ["caller-human", "caller-ai", "caller-ci", "cli-client", "gateway", "managed-nodes"]},
+    {"id": "command-flow", "title": "One command moving through Orbit", "node_ids": ["flow-caller", "flow-cli", "flow-gateway", "flow-auth", "flow-operation", "flow-gateway-local", "flow-node-agent", "flow-result", "flow-caller-return"]}
+  ],
+  "nodes": [
+    {"id": "caller-human", "label": "Human", "kind": "caller"},
+    {"id": "caller-ai", "label": "AI agent", "kind": "caller"},
+    {"id": "caller-ci", "label": "CI", "kind": "caller"},
+    {"id": "cli-client", "label": "Orbit CLI / client", "kind": "client"},
+    {"id": "gateway", "label": "Gateway", "kind": "control-plane"},
+    {"id": "managed-nodes", "label": "Managed nodes", "kind": "fleet", "hosts": ["roles", "apps", "services", "Agent"]},
+    {"id": "flow-caller", "label": "Caller", "kind": "caller"},
+    {"id": "flow-cli", "label": "CLI / client", "kind": "client"},
+    {"id": "flow-gateway", "label": "Gateway", "kind": "control-plane"},
+    {"id": "flow-auth", "label": "Identity / grants", "kind": "auth"},
+    {"id": "flow-operation", "label": "Operation record", "kind": "operation"},
+    {"id": "flow-gateway-local", "label": "Gateway-local work", "kind": "execution"},
+    {"id": "flow-node-agent", "label": "Node Agent", "kind": "execution"},
+    {"id": "flow-result", "label": "Result / events", "kind": "result"},
+    {"id": "flow-caller-return", "label": "Caller", "kind": "caller"}
+  ],
+  "edges": [
+    {"id": "e-human-cli", "from": "caller-human", "to": "cli-client", "label": "runs"},
+    {"id": "e-ai-cli", "from": "caller-ai", "to": "cli-client", "label": "runs"},
+    {"id": "e-ci-cli", "from": "caller-ci", "to": "cli-client", "label": "runs"},
+    {"id": "e-cli-gw", "from": "cli-client", "to": "gateway", "label": "HTTPS over VPN"},
+    {"id": "e-gw-nodes", "from": "gateway", "to": "managed-nodes", "label": "manages / Agent push"},
+    {"id": "e-flow-1", "from": "flow-caller", "to": "flow-cli", "label": "invokes"},
+    {"id": "e-flow-2", "from": "flow-cli", "to": "flow-gateway", "label": "typed API"},
+    {"id": "e-flow-3", "from": "flow-gateway", "to": "flow-auth", "label": "check"},
+    {"id": "e-flow-4", "from": "flow-auth", "to": "flow-operation", "label": "record"},
+    {"id": "e-flow-branch-local", "from": "flow-operation", "to": "flow-gateway-local", "label": "gateway-owned", "branch": true},
+    {"id": "e-flow-branch-agent", "from": "flow-operation", "to": "flow-node-agent", "label": "agent-push", "branch": true},
+    {"id": "e-flow-local-result", "from": "flow-gateway-local", "to": "flow-result", "label": "outcome"},
+    {"id": "e-flow-agent-result", "from": "flow-node-agent", "to": "flow-result", "label": "outcome"},
+    {"id": "e-flow-return", "from": "flow-result", "to": "flow-caller-return", "label": "render / stream"}
+  ],
+  "evidence": [
+    {"path": "apps/docs/content/mission.md", "covers": ["CLI", "gateway", "VPN", "audit"]},
+    {"path": "apps/docs/content/architecture.md", "covers": ["hub-spoke", "Agent push", "authz", "roles"]},
+    {"path": "apps/docs/content/concepts.md", "covers": ["client", "roles", "operation token", "lanes"]}
+  ]
+}
+</script>
+</body>
+</html>
