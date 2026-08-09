@@ -7,14 +7,13 @@ namespace App\Services\Operations;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
+use Orbit\Core\Operations\OperationStreamFrameEvents;
 use RuntimeException;
 
 class OperationStreamFrameBroadcaster
 {
-    /**
-     * @param  array<string, mixed>  $frame
-     */
-    public function broadcast(string $channel, array $frame): void
+    public function broadcast(string $channel, DurableOperationStreamFrame $frame): void
     {
         $appId = Config::string('orbit.operations.reverb.app_id');
         $appKey = Config::string('orbit.operations.reverb.app_key');
@@ -25,9 +24,9 @@ class OperationStreamFrameBroadcaster
         $timeoutSeconds = $this->integerConfig('orbit.operations.reverb.timeout_seconds', 2);
 
         $body = [
-            'name' => 'operation.stream.frame',
+            'name' => OperationStreamFrameEvents::Live,
             'channel' => $channel,
-            'data' => json_encode($frame, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+            'data' => json_encode($frame->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
         ];
 
         $encodedBody = json_encode($body, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);

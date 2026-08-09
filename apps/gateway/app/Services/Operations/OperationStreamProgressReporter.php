@@ -6,6 +6,7 @@ namespace App\Services\Operations;
 
 use App\Contracts\ProgressReporter;
 use App\Models\OperationRun;
+use Orbit\Core\Operations\OperationStreamFrameType;
 
 final readonly class OperationStreamProgressReporter implements ProgressReporter
 {
@@ -21,7 +22,7 @@ final readonly class OperationStreamProgressReporter implements ProgressReporter
 
     public function tree(string $title, array $steps): void
     {
-        $this->publisher->publish('tree', [
+        $this->publisher->publish(OperationStreamFrameType::Tree, [
             'title' => $title,
             'steps' => $steps,
         ]);
@@ -43,7 +44,7 @@ final readonly class OperationStreamProgressReporter implements ProgressReporter
             $payload['message'] = $message;
         }
 
-        $this->publisher->publish('step', $payload);
+        $this->publisher->publish(OperationStreamFrameType::Step, $payload);
     }
 
     public function stepDone(string $key, ?string $message = null): void
@@ -66,7 +67,7 @@ final readonly class OperationStreamProgressReporter implements ProgressReporter
      */
     public function complete(int $exitCode, array $data): void
     {
-        $this->publisher->publish('complete', [
+        $this->publisher->publish(OperationStreamFrameType::Complete, [
             'exit_code' => $exitCode,
             'data' => $data,
         ]);
@@ -77,7 +78,7 @@ final readonly class OperationStreamProgressReporter implements ProgressReporter
      */
     public function error(string $message, int $exitCode, array $data): void
     {
-        $this->publisher->publish('error', [
+        $this->publisher->publish(OperationStreamFrameType::Error, [
             'exit_code' => $exitCode,
             'message' => $message,
             'data' => $data,

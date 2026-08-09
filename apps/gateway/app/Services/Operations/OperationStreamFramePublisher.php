@@ -7,6 +7,11 @@ namespace App\Services\Operations;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use Illuminate\Support\Carbon;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameSource;
+use Orbit\Core\Operations\OperationStreamFrameType;
+use RuntimeException;
 use Throwable;
 
 final class OperationStreamFramePublisher
@@ -20,32 +25,22 @@ final class OperationStreamFramePublisher
     ) {}
 
     /** @param array<string, mixed> $payload */
-    public function publish(string $type, array $payload): void
+    public function publish(OperationStreamFrameType $type, array $payload): void
     {
-        $frame = [
-            'operation_uuid' => $this->operationRun->id,
-            'channel' => $this->channel(),
-            'sequence' => ++$this->sequence,
-            'emitted_at' => Carbon::now()->toIso8601String(),
-            'source' => 'gateway',
-            'type' => $type,
-            'payload' => $payload,
-            'durable_replay_cursor' => [
-                'operation_uuid' => $this->operationRun->id,
-                'event_sequence' => null,
-                'event_id' => null,
-            ],
-        ];
-
-        $event = $this->operationRuns->appendEvent($this->operationRun->id, 'operation_stream.frame', [
-            'frame' => $frame,
-        ]);
-        $frame['durable_replay_cursor'] = [
-            'operation_uuid' => $this->operationRun->id,
-            'event_sequence' => $event->sequence,
-            'event_id' => $event->id,
-        ];
-        $this->persistCursor($event, $frame);
+        $draft = OperationStreamFrameDraft::forGateway(
+            operationUuid: $this->operationRun->id,
+            channel: $this->channel(),
+            sequence: ++$this->sequence,
+            emittedAt: Carbon::now()->toIso8601String(),
+            type: $type,
+            payload: $payload,
+        );
+        $event = $this->operationRuns->appendOperationStreamFrame(
+            $this->operationRun->id,
+            $draft,
+            OperationStreamFrameSource::gateway(),
+        );
+        $frame = DurableOperationStreamFrame::fromArray($this->frameArray($event));
 
         try {
             $this->broadcaster->broadcast($this->channel(), $frame);
@@ -54,14 +49,22 @@ final class OperationStreamFramePublisher
         }
     }
 
-    /** @param array<string, mixed> $frame */
-    private function persistCursor(OperationEvent $event, array $frame): void
-    {
-        $event->forceFill(['payload' => ['frame' => $frame]])->save();
-    }
-
     private function channel(): string
     {
         return "private-operations.{$this->operationRun->id}";
+    }
+
+    /**
+     * @return array<array-key, mixed>
+     */
+    private function frameArray(OperationEvent $event): array
+    {
+        $frame = $event->payload['frame'] ?? null;
+
+        if (! is_array($frame)) {
+            throw new RuntimeException('Recorded operation stream frame payload is invalid.');
+        }
+
+        return $frame;
     }
 }

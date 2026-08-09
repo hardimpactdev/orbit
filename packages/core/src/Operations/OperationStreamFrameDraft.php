@@ -53,11 +53,18 @@ final readonly class OperationStreamFrameDraft
             );
         }
 
-        return new self($operationUuid, $channel, $sequence, $emittedAt, $type, $payload);
+        return new self(
+            $operationUuid,
+            $channel,
+            $sequence,
+            $emittedAt,
+            $type,
+            self::payloadFrom($payload),
+        );
     }
 
     /**
-     * @param  array<string, mixed>  $payload
+     * @param  array<array-key, mixed>  $payload
      */
     public static function forNode(
         string $operationUuid,
@@ -73,11 +80,18 @@ final readonly class OperationStreamFrameDraft
             );
         }
 
-        return new self($operationUuid, $channel, $sequence, $emittedAt, $type, $payload);
+        return new self(
+            $operationUuid,
+            $channel,
+            $sequence,
+            $emittedAt,
+            $type,
+            self::payloadFrom($payload),
+        );
     }
 
     /**
-     * @param  array<string, mixed>  $frame
+     * @param  array<array-key, mixed>  $frame
      */
     public static function fromArray(array $frame): self
     {

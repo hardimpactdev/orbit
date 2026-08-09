@@ -41,7 +41,7 @@ final readonly class DurableOperationStreamFrame
     }
 
     /**
-     * @param  array<string, mixed>  $frame
+     * @param  array<array-key, mixed>  $frame
      */
     public static function fromArray(array $frame): self
     {

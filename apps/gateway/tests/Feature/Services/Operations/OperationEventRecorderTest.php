@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Services\Operations\DatabaseLockRetry;
@@ -11,7 +12,11 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\ResultBoundaryRedactionPolicy;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameSource;
+use Orbit\Core\Operations\OperationStreamFrameType;
 
 uses(RefreshDatabase::class);
 
@@ -19,6 +24,74 @@ beforeEach(function (): void {
     $this->operationRuns = app(OperationRunRecorder::class);
     $this->recorder = app(OperationEventRecorder::class);
     $this->run = $this->operationRuns->queued((string) Str::uuid(), 'gateway', operationType: 'update:all');
+    $this->node = Node::factory()->create(['name' => 'app-dev-1']);
+});
+
+it('records complete cursor-bearing operation stream frames', function (): void {
+    $draft = OperationStreamFrameDraft::forNode(
+        operationUuid: $this->run->id,
+        channel: "private-operations.{$this->run->id}",
+        sequence: 7,
+        emittedAt: '2026-08-09T12:00:00+00:00',
+        type: OperationStreamFrameType::Stdout,
+        payload: ['data' => "published\n", 'encoding' => 'utf-8'],
+    );
+
+    $event = $this->recorder->operationStreamFrame(
+        $this->run,
+        $draft,
+        OperationStreamFrameSource::node($this->node->id, $this->node->name),
+    );
+
+    $expected = gateway_operation_stream_fixture('node-durable-frame.json');
+    $expected['operation_uuid'] = $this->run->id;
+    $expected['channel'] = "private-operations.{$this->run->id}";
+    $expected['source_node']['id'] = $this->node->id;
+    $expected['durable_replay_cursor'] = [
+        'operation_uuid' => $this->run->id,
+        'event_sequence' => $event->sequence,
+        'event_id' => $event->id,
+    ];
+
+    expect($event->event_type)
+        ->toBe('operation_stream.frame')
+        ->and($event->payload['frame'])
+        ->toBe($expected)
+        ->and($event->refresh()->payload['frame'])
+        ->toBe($expected);
+});
+
+it('rolls back the journal insert when completing the durable frame fails', function (): void {
+    $draft = OperationStreamFrameDraft::forNode(
+        operationUuid: $this->run->id,
+        channel: "private-operations.{$this->run->id}",
+        sequence: 1,
+        emittedAt: '2026-08-09T12:00:00+00:00',
+        type: OperationStreamFrameType::Stdout,
+        payload: ['data' => "published\n", 'encoding' => 'utf-8'],
+    );
+    $source = OperationStreamFrameSource::node($this->node->id, $this->node->name);
+
+    Event::listen(
+        'eloquent.updating: '.OperationEvent::class,
+        static function (): never {
+            throw new RuntimeException('forced durable frame save failure');
+        },
+    );
+
+    expect(fn (): OperationEvent => $this->recorder->operationStreamFrame(
+        $this->run,
+        $draft,
+        $source,
+    ))
+        ->toThrow(RuntimeException::class, 'forced durable frame save failure');
+
+    expect(
+        OperationEvent::query()
+            ->where('operation_run_id', $this->run->id)
+            ->count(),
+    )
+        ->toBe(0);
 });
 
 it('appends ordered durable operation events', function (): void {
@@ -360,4 +433,26 @@ function operation_event_unique_sequence_exception(): QueryException
         [],
         $previous,
     );
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function gateway_operation_stream_fixture(string $name): array
+{
+    $contents = file_get_contents(
+        dirname(__DIR__, 6).'/packages/core/tests/Fixtures/Operations/'.$name,
+    );
+
+    if (! is_string($contents)) {
+        throw new RuntimeException("Unable to read operation stream fixture [{$name}].");
+    }
+
+    $decoded = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($decoded)) {
+        throw new RuntimeException("Operation stream fixture [{$name}] must be an object.");
+    }
+
+    return $decoded;
 }

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
 
 uses(RefreshDatabase::class);
 
@@ -498,12 +499,9 @@ final class RecordingOperationStreamFrameBroadcaster extends OperationStreamFram
     /** @var list<array<string, mixed>> */
     public array $frames = [];
 
-    /**
-     * @param  array<string, mixed>  $frame
-     */
-    public function broadcast(string $channel, array $frame): void
+    public function broadcast(string $channel, DurableOperationStreamFrame $frame): void
     {
-        $this->frames[] = $frame;
+        $this->frames[] = $frame->toArray();
     }
 }
 
@@ -512,10 +510,7 @@ final class RecordingOperationStreamFrameBroadcaster extends OperationStreamFram
  */
 final class FailingOperationStreamFrameBroadcaster extends OperationStreamFrameBroadcaster
 {
-    /**
-     * @param  array<string, mixed>  $frame
-     */
-    public function broadcast(string $channel, array $frame): void
+    public function broadcast(string $channel, DurableOperationStreamFrame $frame): void
     {
         throw new RuntimeException('Reverb publish service unavailable');
     }

@@ -6,6 +6,11 @@ namespace App\Services\Operations;
 
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
+use Orbit\Core\Operations\OperationStreamFrameCursor;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameEvents;
+use Orbit\Core\Operations\OperationStreamFrameSource;
 use RuntimeException;
 
 final readonly class OperationEventRecorder
@@ -57,6 +62,64 @@ final readonly class OperationEventRecorder
                 'payload' => $payload,
                 'metadata' => $metadata === [] ? null : $metadata,
             ]);
+        });
+    }
+
+    public function operationStreamFrame(
+        OperationRun|string $operationRun,
+        OperationStreamFrameDraft $draft,
+        OperationStreamFrameSource $source,
+    ): OperationEvent {
+        $this->redaction->assertSafe([
+            'payload' => [
+                'frame' => [
+                    ...$draft->toArray(),
+                    ...$source->toArray(),
+                ],
+            ],
+            'metadata' => [],
+        ], 'progress');
+
+        return $this->databaseLockRetry->transactionRetryingUniqueConstraints(function () use (
+            $operationRun,
+            $draft,
+            $source,
+        ): OperationEvent {
+            $operationRun = $this->findOrFail($operationRun);
+
+            $sequence =
+                (int) OperationEvent::query()
+                    ->where('operation_run_id', $operationRun->id)
+                    ->lockForUpdate()
+                    ->max('sequence') + 1;
+
+            $event = OperationEvent::query()->create([
+                'operation_run_id' => $operationRun->id,
+                'sequence' => $sequence,
+                'event_type' => OperationStreamFrameEvents::Journal,
+                'payload' => ['frame' => $draft->toArray()],
+                'metadata' => null,
+            ]);
+
+            $frame = DurableOperationStreamFrame::promote(
+                draft: $draft,
+                source: $source,
+                cursor: new OperationStreamFrameCursor(
+                    operationUuid: $operationRun->id,
+                    eventSequence: $event->sequence,
+                    eventId: $event->id,
+                ),
+            );
+            $payload = ['frame' => $frame->toArray()];
+
+            $this->redaction->assertSafe([
+                'payload' => $payload,
+                'metadata' => [],
+            ], 'progress');
+
+            $event->forceFill(['payload' => $payload])->save();
+
+            return $event->refresh();
         });
     }
 

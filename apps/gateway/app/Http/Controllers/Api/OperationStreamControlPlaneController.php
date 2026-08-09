@@ -17,7 +17,12 @@ use App\Services\Operations\OperationStreamTokens;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Validation\Rule;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameSource;
+use Orbit\Core\Operations\OperationStreamFrameType;
 use Throwable;
 
 /**
@@ -127,7 +132,7 @@ final readonly class OperationStreamControlPlaneController
             'frame.channel' => ['required', 'string'],
             'frame.sequence' => ['required', 'integer', 'min:1'],
             'frame.emitted_at' => ['required', 'date'],
-            'frame.type' => ['required', 'string', 'in:stdout,stderr,status,control,error,terminal'],
+            'frame.type' => ['required', 'string', Rule::in(OperationStreamFrameType::nodeValues())],
             'frame.payload' => ['required', 'array'],
         ]);
 
@@ -178,39 +183,22 @@ final readonly class OperationStreamControlPlaneController
             );
         }
 
-        $frame = [
-            'operation_uuid' => $operationRun->id,
-            'channel' => $channel,
-            'sequence' => $sequence,
-            'emitted_at' => $emittedAt,
-            'source_node' => [
-                'id' => $caller->id,
-                'name' => $caller->name,
-            ],
-            'type' => $type,
-            'payload' => $payload,
-            'durable_replay_cursor' => [
-                'operation_uuid' => $operationRun->id,
-                'event_sequence' => null,
-                'event_id' => null,
-            ],
-        ];
-
-        $event = $this->events->append($operationRun, 'operation_stream.frame', [
-            'frame' => $frame,
-        ]);
-
-        $frame['durable_replay_cursor'] = [
-            'operation_uuid' => $operationRun->id,
-            'event_sequence' => $event->sequence,
-            'event_id' => $event->id,
-        ];
-
-        $event->forceFill([
-            'payload' => [
-                'frame' => $frame,
-            ],
-        ])->save();
+        $draft = OperationStreamFrameDraft::forNode(
+            operationUuid: $operationRun->id,
+            channel: $channel,
+            sequence: $sequence,
+            emittedAt: $emittedAt,
+            type: OperationStreamFrameType::from($type),
+            payload: $payload,
+        );
+        $event = $this->events->operationStreamFrame(
+            $operationRun,
+            $draft,
+            OperationStreamFrameSource::node($caller->id, $caller->name),
+        );
+        $frame = DurableOperationStreamFrame::fromArray(
+            $this->arrayInput($event->payload, 'frame'),
+        );
 
         $broadcast = [
             'delivered' => true,
@@ -234,7 +222,7 @@ final readonly class OperationStreamControlPlaneController
                 'uuid' => $operationRun->id,
                 'operation_id' => $operationRun->operation_id,
             ],
-            'frame' => $frame,
+            'frame' => $frame->toArray(),
             'broadcast' => $broadcast,
         ]));
     }

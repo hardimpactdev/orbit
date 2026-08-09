@@ -11,6 +11,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
+use Orbit\Core\Operations\OperationStreamFrameDraft;
+use Orbit\Core\Operations\OperationStreamFrameSource;
 use Orbit\Core\Security\SecretSummaryRedactor;
 use RuntimeException;
 
@@ -205,6 +207,14 @@ final readonly class OperationRunRecorder
         array $metadata = [],
     ): OperationEvent {
         return $this->events->append($operationRunId, $eventType, $payload, $metadata);
+    }
+
+    public function appendOperationStreamFrame(
+        string $operationRunId,
+        OperationStreamFrameDraft $draft,
+        OperationStreamFrameSource $source,
+    ): OperationEvent {
+        return $this->events->operationStreamFrame($operationRunId, $draft, $source);
     }
 
     /**

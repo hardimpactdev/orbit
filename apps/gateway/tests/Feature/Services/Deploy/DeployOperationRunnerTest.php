@@ -15,6 +15,7 @@ use App\Services\Operations\OperationStreamFrameBroadcaster;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Operations\DurableOperationStreamFrame;
 
 uses(RefreshDatabase::class);
 
@@ -72,16 +73,20 @@ it('persists deploy progress frames before WebSocket publication and supports jo
         /** @var list<array<string, mixed>> */
         public array $frames = [];
 
-        public function broadcast(string $channel, array $frame): void
+        public function broadcast(string $channel, DurableOperationStreamFrame $frame): void
         {
-            $eventId = data_get($frame, 'durable_replay_cursor.event_id');
+            $frameArray = $frame->toArray();
+            $eventId = $frame->cursor()->eventId;
+            $event = OperationEvent::query()->findOrFail($eventId);
 
             expect($eventId)
                 ->toBeInt()
-                ->and(OperationEvent::query()->whereKey($eventId)->exists())
-                ->toBeTrue();
+                ->and($frame->cursor()->eventSequence)
+                ->toBe($event->sequence)
+                ->and($event->payload['frame'])
+                ->toBe($frameArray);
 
-            $this->frames[] = $frame;
+            $this->frames[] = $frameArray;
         }
     };
     app()->instance(OperationStreamFrameBroadcaster::class, $broadcaster);
