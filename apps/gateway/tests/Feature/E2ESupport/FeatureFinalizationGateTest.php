@@ -44,6 +44,9 @@ it('documents clean candidate review escalation and landed archive ordering', fu
         ->toContain('After the archive/index commit:')
         ->toContain('Validate each cleanup mutation with')
         ->toContain('After `FINALIZATION: PASS`, execute that exact cleanup command separately.')
+        ->toContain('Merge-time minimum acceptance venue classification comes from the exact')
+        ->toContain('accepted candidate contract in an isolated subprocess; all other finalization')
+        ->toContain('checks remain main-owned')
         ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')->toContain(
             'After merge, keep the accepted feature worktree open',
         )->and(strpos($harness, 'Validate the exact merge mutation with'))->toBeLessThan(strpos(
@@ -542,6 +545,236 @@ it('routes deleted production files through observable acceptance', function ():
         remove_finalization_gate_fixture($repo, $worktree);
     }
 });
+
+it('derives the minimum acceptance venue from the exact candidate contract', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file(
+            $worktree,
+            'bin/orbit-loop-contract.php',
+            <<<'PHP'
+                <?php
+
+                declare(strict_types=1);
+
+                function orbitLoopAcceptanceVenue(array $changedFiles): string
+                {
+                    return 'automated';
+                }
+                PHP,
+        );
+        commit_finalization_gate_file($worktree, 'apps/cli/runtime.php', "<?php\n\n// Updated runtime.\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('fails closed when candidate acceptance venue resolution times out', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file(
+            $worktree,
+            'bin/orbit-loop-contract.php',
+            <<<'PHP'
+                <?php
+
+                declare(strict_types=1);
+
+                usleep(500_000);
+
+                function orbitLoopAcceptanceVenue(array $changedFiles): string
+                {
+                    return 'automated';
+                }
+                PHP,
+        );
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate(
+            $repo,
+            'git merge feature',
+            ['ORBIT_FINALIZATION_CANDIDATE_VENUE_TIMEOUT_MS' => '50'],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('candidate acceptance venue')
+            ->toContain('timed out');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('fails closed when candidate identity changes during venue resolution', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file(
+            $worktree,
+            'bin/orbit-loop-contract.php',
+            <<<'PHP'
+                <?php
+
+                declare(strict_types=1);
+
+                exec('git commit --allow-empty --quiet -m candidate-identity-drift');
+
+                function orbitLoopAcceptanceVenue(array $changedFiles): string
+                {
+                    return 'automated';
+                }
+                PHP,
+        );
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('candidate identity changed during acceptance venue resolution');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('reports precise candidate acceptance venue subprocess failures', function (
+    string $contract,
+    string $errorNeedle,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'bin/orbit-loop-contract.php', $contract);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain(strtolower($errorNeedle));
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'non-zero exit' => [
+        <<<'PHP'
+            <?php
+
+            fwrite(STDERR, "contract failed\n");
+            exit(23);
+            PHP,
+        'exited with code 23: contract failed',
+    ],
+    'extra output' => [
+        <<<'PHP'
+            <?php
+
+            echo "unexpected output\n";
+
+            function orbitLoopAcceptanceVenue(array $changedFiles): string
+            {
+                return 'automated';
+            }
+            PHP,
+        'returned unexpected extra or multiple output',
+    ],
+    'unknown venue' => [
+        <<<'PHP'
+            <?php
+
+            function orbitLoopAcceptanceVenue(array $changedFiles): string
+            {
+                return 'spaceship';
+            }
+            PHP,
+        'returned unknown venue `spaceship`',
+    ],
+    'multiple venues' => [
+        <<<'PHP'
+            <?php
+
+            echo "browser\n";
+
+            function orbitLoopAcceptanceVenue(array $changedFiles): string
+            {
+                return 'automated';
+            }
+            PHP,
+        'returned unexpected extra or multiple output',
+    ],
+]);
+
+it('fails closed when the candidate acceptance venue subprocess cannot spawn', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate(
+            $repo,
+            'git merge feature',
+            ['ORBIT_FINALIZATION_PHP_BINARY' => '/missing/orbit-php'],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('candidate acceptance venue subprocess')
+            ->toContain('unable to start');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('requires a regular non-symlink candidate acceptance venue contract', function (bool $replaceWithSymlink): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        run_fixture_command($worktree, ['git', 'rm', 'bin/orbit-loop-contract.php']);
+
+        if ($replaceWithSymlink) {
+            mkdir("{$worktree}/bin", recursive: true);
+            symlink('../HARNESS.md', "{$worktree}/bin/orbit-loop-contract.php");
+            run_fixture_command($worktree, ['git', 'add', 'bin/orbit-loop-contract.php']);
+        }
+
+        run_fixture_command($worktree, ['git', 'commit', '-m', 'Replace candidate contract']);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput())
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('regular non-symlink file')
+            ->toContain('bin/orbit-loop-contract.php');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'missing contract' => false,
+    'symlinked contract' => true,
+]);
 
 it('requires runtime proof for retained automated acceptance before finalization', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
@@ -3778,9 +4011,11 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
     );
 
     mkdir("{$repo}/apps/cli", recursive: true);
+    mkdir("{$repo}/bin", recursive: true);
     file_put_contents(filename: "{$repo}/apps/cli/runtime.php", data: "<?php\n");
+    copy(repo_path('bin/orbit-loop-contract.php'), "{$repo}/bin/orbit-loop-contract.php");
 
-    run_fixture_command(cwd: $repo, command: ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps']);
+    run_fixture_command(cwd: $repo, command: ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps', 'bin']);
     run_fixture_command(cwd: $repo, command: ['git', 'commit', '-m', 'Initial commit']);
     run_fixture_command(cwd: $repo, command: ['git', 'branch', 'feature']);
     run_fixture_command(cwd: $repo, command: ['git', 'worktree', 'add', $worktree, 'feature']);

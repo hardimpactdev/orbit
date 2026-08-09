@@ -172,6 +172,50 @@ it('completes a clean full land and is idempotent at done', function (): void {
     }
 });
 
+it('completes LAND when the exact candidate contract lowers the main-derived venue', function (): void {
+    [$repo, $worktree] = land_create_fixture();
+    $solo = land_write_fake_solo_cli($repo);
+
+    try {
+        file_put_contents(
+            "{$worktree}/bin/orbit-loop-contract.php",
+            <<<'PHP'
+                <?php
+
+                declare(strict_types=1);
+
+                function orbitLoopAcceptanceVenue(array $changedFiles): string
+                {
+                    return 'automated';
+                }
+                PHP,
+        );
+        file_put_contents("{$worktree}/apps/cli/runtime.php", "<?php\n\n// Candidate-routed runtime.\n");
+        land_run($worktree, ['git', 'add', 'bin/orbit-loop-contract.php', 'apps/cli/runtime.php']);
+        land_run($worktree, ['git', 'commit', '-m', 'Change candidate acceptance routing']);
+        land_write_accepted_loop($repo, $worktree, 'quality-check');
+        land_fake_solo_state($solo, [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
+            ],
+            'processes' => [],
+        ]);
+
+        $full = land_run_land($repo, land_args($worktree, $solo));
+
+        expect($full->getExitCode())
+            ->toBe(0, $full->getErrorOutput().$full->getOutput())
+            ->and($full->getOutput())
+            ->toContain('phase=done')
+            ->and(is_dir($worktree))
+            ->toBeFalse()
+            ->and(land_branch_exists($repo, 'feature'))
+            ->toBeFalse();
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
+
 it('refuses dirty feature worktrees and unmerged identity for cleanup mutations', function (): void {
     [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: false);
 
@@ -855,9 +899,11 @@ function land_create_fixture(): array
         "/.orbit/*\n!/.orbit/sessions/\n!/.orbit/sessions/**\n",
     );
     mkdir("{$repo}/apps/cli", recursive: true);
+    mkdir("{$repo}/bin", recursive: true);
     file_put_contents("{$repo}/apps/cli/runtime.php", "<?php\n");
+    copy(repo_path('bin/orbit-loop-contract.php'), "{$repo}/bin/orbit-loop-contract.php");
 
-    land_run($repo, ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps']);
+    land_run($repo, ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps', 'bin']);
     land_run($repo, ['git', 'commit', '-m', 'Initial commit']);
     land_run($repo, ['git', 'branch', 'feature']);
     land_run($repo, ['git', 'worktree', 'add', $worktree, 'feature']);
@@ -873,7 +919,7 @@ function land_commit_feature_change(string $worktree): void
     land_run($worktree, ['git', 'commit', '-m', 'Feature change']);
 }
 
-function land_write_accepted_loop(string $repo, string $worktree): void
+function land_write_accepted_loop(string $repo, string $worktree, string $gate = 'docs-lint'): void
 {
     $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
@@ -882,9 +928,9 @@ function land_write_accepted_loop(string $repo, string $worktree): void
     mkdir($artifactDir, recursive: true);
     $endedAt = '2026-08-05T12:00:00+00:00';
     $payload = [
-        'gate' => 'docs-lint',
-        'producer' => 'quality-gate-run',
-        'command' => 'composer docs-lint',
+        'gate' => $gate,
+        'producer' => $gate === 'quality-check' ? 'quality-check.sh' : 'quality-gate-run',
+        'command' => "composer {$gate}",
         'mode' => 'check',
         'exit_code' => 0,
         'duration_ms' => 10,
@@ -895,10 +941,10 @@ function land_write_accepted_loop(string $repo, string $worktree): void
             'commit' => $featureTip,
             'dirty' => false,
         ],
-        'subgates' => [],
+        'subgates' => $gate === 'quality-check' ? land_quality_check_subgates() : [],
     ];
     file_put_contents(
-        "{$artifactDir}/docs-lint-2026-08-05T120000Z.json",
+        "{$artifactDir}/{$gate}-2026-08-05T120000Z.json",
         json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 
@@ -942,6 +988,22 @@ function land_write_accepted_loop(string $repo, string $worktree): void
 
         - Events: .orbit/feedback.jsonl
         MARKDOWN);
+}
+
+/** @return array<string, int> */
+function land_quality_check_subgates(): array
+{
+    $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    $constant = [];
+
+    if (preg_match('/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s', $hook, $constant) !== 1) {
+        throw new RuntimeException('Unable to read finalization quality-check subgates.');
+    }
+
+    $matches = [];
+    preg_match_all("/'([a-z0-9_]+)'/", $constant[1], $matches);
+
+    return array_fill_keys($matches[1], 0);
 }
 
 function land_merge_feature(string $repo): void
