@@ -1,0 +1,26 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-09T12:14:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/bounded-test-randomness-audit/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-09-141444-bounded-test-randomness-audit",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "4a0b8b76036e7c2d7fe553a0ff750821872596bd4cffef11a8d7670c9b613ffb"
+    },
+    "slug": "bounded-test-randomness-audit",
+    "requested_slug": "bounded-test-randomness-audit",
+    "compatible_slugs": [
+        "bounded-test-randomness-audit"
+    ],
+    "branch": "bounded-test-randomness-audit",
+    "candidate_commit": "8bfb9a5a44fc825862581d9d842b48e8172ed4f2",
+    "accepted_feature_tip": "8bfb9a5a44fc825862581d9d842b48e8172ed4f2",
+    "accepted_main_tip": "7123a42f45075a4c2fa9de8d3e048b32ef8ba800",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

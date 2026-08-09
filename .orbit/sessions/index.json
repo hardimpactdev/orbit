@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 239,
-    "unique_candidate_commit_count": 135,
+    "record_count": 240,
+    "unique_candidate_commit_count": 136,
     "orphan_count": 0,
     "records": [
         {
@@ -6583,6 +6583,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "70fd14a062b14298d398d53cfeee58ca477220cb",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-09-141444-bounded-test-randomness-audit",
+            "slug": "bounded-test-randomness-audit",
+            "timestamp": "2026-08-09-141444",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "8bfb9a5a44fc825862581d9d842b48e8172ed4f2",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
