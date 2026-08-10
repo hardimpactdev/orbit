@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 241,
-    "unique_candidate_commit_count": 137,
+    "record_count": 242,
+    "unique_candidate_commit_count": 138,
     "orphan_count": 0,
     "records": [
         {
@@ -6629,6 +6629,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "eba25a9c3809a993935dd03cf1e3af61d51ee927",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-10-105552-stabilize-operation-stream-contract",
+            "slug": "stabilize-operation-stream-contract",
+            "timestamp": "2026-08-10-105552",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "49a120e5c3a8084d3c675d4a63696d6704d535d0",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

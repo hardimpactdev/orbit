@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T08:55:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/stabilize-operation-stream-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-105552-stabilize-operation-stream-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/operation-stream-retained-incus-2026-08-10-49a120e5c3a8.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T083540Z-0853aace477a.json"
+    ],
+    "entry_digests": {
+        "evidence/operation-stream-retained-incus-2026-08-10-49a120e5c3a8.json": "6244ca11e05a085d2dc53f0b21e3677538beca0bf213b96fec27fa79f1859608",
+        "loop.md": "c4001d7f8013915b40ea2e8e77ef17aa74c612f58656de1a49e786dc554e1539",
+        "quality-gates/quality-check-2026-08-10T083540Z-0853aace477a.json": "40c7c8b38a1d68db4b2ff08e80a402e7e4c9cabab4aec92e74dccb630f670f5f"
+    },
+    "slug": "stabilize-operation-stream-contract",
+    "requested_slug": "stabilize-operation-stream-contract",
+    "compatible_slugs": [
+        "stabilize-operation-stream-contract"
+    ],
+    "branch": "stabilize-operation-stream-contract",
+    "candidate_commit": "49a120e5c3a8084d3c675d4a63696d6704d535d0",
+    "accepted_feature_tip": "49a120e5c3a8084d3c675d4a63696d6704d535d0",
+    "accepted_main_tip": "9d75ac0f9e2179795b78f63b9b301ae88531ca4a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

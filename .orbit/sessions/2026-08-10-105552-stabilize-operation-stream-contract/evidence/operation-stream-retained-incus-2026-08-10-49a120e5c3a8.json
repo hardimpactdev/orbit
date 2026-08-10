@@ -1,0 +1,56 @@
+{
+  "candidate": "49a120e5c3a8084d3c675d4a63696d6704d535d0",
+  "captured_at": "2026-08-10T08:46:48Z",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "host": {
+    "name": "beast",
+    "lan_address": "192.168.6.20",
+    "connection": "SSH over LAN",
+    "incus_version": "6.0.0"
+  },
+  "topology": {
+    "id": "dev-607eb3",
+    "kind": "operator_gateway_app-dev_app-prod",
+    "provider": "incus",
+    "gateway_instance": "orbit-e2e-dev-607eb3-gateway",
+    "production_instance": "orbit-e2e-dev-607eb3-prod",
+    "source_path": "/tmp/orbit-e2e-sources/stabilize-operation-stream-contract-incus-6c697c4fde79/retained/dev-607eb3",
+    "release_command": "composer e2e:incus -- --stop --id=dev-607eb3"
+  },
+  "fixture": {
+    "operations_reverb": "Started from the candidate source mount on gateway port 8080 with disposable credentials.",
+    "app": "stream-proof.production",
+    "target_node": "app-prod-1",
+    "target_path": "/tmp/orbit-stream-proof"
+  },
+  "command": "orbit deploy:run stream-proof.production --stream-json",
+  "expected": "The CLI streams a successful production deployment and the gateway saves every operation stream frame with a complete journal cursor whose operation UUID, journal sequence, and journal row ID match the saved event.",
+  "observed": {
+    "deployment_status": "completed",
+    "exit_code": 0,
+    "stdout": "frame-contract-ok",
+    "operation_uuid": "0787bb0f-eb5a-4268-8285-d954b6cad7ca",
+    "operation_status": "succeeded",
+    "operation_stream_frame_count": 10,
+    "frame_types": [
+      "tree",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "step",
+      "complete"
+    ],
+    "journal_event_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "journal_sequences": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "publisher_sequences": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "source": "gateway",
+    "complete_cursor_count": 10,
+    "cursor_mismatch_count": 0
+  },
+  "result": "passed"
+}
