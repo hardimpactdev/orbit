@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 HOOK="$ROOT/bin/orbit-codex-pre-tool-use-hook"
+HOOK_ENTRY_POINT_MAX_LINES=171
 GIT_PROCESS_MODULE="$ROOT/bin/orbit-git-process.php"
 COMMAND_CLASSIFY_MODULE="$ROOT/bin/orbit-command-classify.php"
 ARCHIVE_RECEIPT_MODULE="$ROOT/bin/orbit-session-archive-receipt.php"
@@ -29,6 +30,15 @@ trap cleanup EXIT
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1
+}
+
+expect_hook_entry_point_non_growth() {
+    local actual_lines
+
+    actual_lines="$(wc -l < "$HOOK" | tr -d '[:space:]')"
+
+    [ "$actual_lines" -le "$HOOK_ENTRY_POINT_MAX_LINES" ] \
+        || fail "hook entry point grew to $actual_lines lines; baseline is $HOOK_ENTRY_POINT_MAX_LINES"
 }
 
 run_hook() {
@@ -666,6 +676,7 @@ commit_docs_fixture() {
 
 REPO="$TMP/repo"
 
+expect_hook_entry_point_non_growth
 expect_git_process_module_boundary
 expect_command_classify_module_boundary
 expect_archive_receipt_module_boundary
