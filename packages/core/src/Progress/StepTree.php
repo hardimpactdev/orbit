@@ -235,23 +235,33 @@ final class StepTree
      */
     private function forkTicker(array $indices, int $total, array $labels): void
     {
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
+        if (
+            ! function_exists('pcntl_fork')
+            || ! function_exists('posix_kill')
+            || ! function_exists('pcntl_signal')
+            || ! function_exists('pcntl_async_signals')
+            || ! function_exists('pcntl_sigprocmask')
+        ) {
             return;
         }
 
+        $previousSignalMask = [];
+        pcntl_sigprocmask(SIG_BLOCK, [SIGTERM], $previousSignalMask);
         $pid = pcntl_fork();
+        $discardedSignalMask = [];
 
         if ($pid === -1) {
+            pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
+
             return;
         }
 
         if ($pid === 0) {
-            if (function_exists('pcntl_signal') && function_exists('pcntl_async_signals')) {
-                pcntl_async_signals(true);
-                pcntl_signal(SIGTERM, static function (): void {
-                    exit(0);
-                });
-            }
+            pcntl_async_signals(true);
+            pcntl_signal(SIGTERM, static function (): void {
+                exit(0);
+            });
+            pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
 
             while (true) {
                 if (posix_getppid() === 1) {
@@ -263,6 +273,7 @@ final class StepTree
             }
         }
 
+        pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
         $this->tickerPid = $pid;
     }
 

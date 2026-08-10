@@ -170,3 +170,51 @@ it('marks no phase done when an atomic operation fails', function (): void {
         ->not->toContain('Validated removal')->and($text)
         ->not->toContain('Removed node record');
 });
+
+it('arms the spinner child stop handler before immediate work completes', function (): void {
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('pcntl_waitpid')
+        || ! function_exists('posix_kill')
+        || ! function_exists('pcntl_signal')
+        || ! function_exists('pcntl_async_signals')
+        || ! function_exists('pcntl_sigprocmask')
+    ) {
+        $this->markTestSkipped('pcntl signal masking is required to verify spinner startup.');
+    }
+
+    $sandboxPid = pcntl_fork();
+
+    if ($sandboxPid === -1) {
+        $this->markTestSkipped('pcntl_fork is required to verify spinner startup.');
+    }
+
+    if ($sandboxPid === 0) {
+        $selfPid = getmypid();
+
+        pcntl_async_signals(true);
+        pcntl_signal(SIGTERM, static function () use ($selfPid): never {
+            if (getmypid() !== $selfPid) {
+                posix_kill($selfPid, SIGTERM);
+            }
+
+            exit(143);
+        });
+
+        for ($attempt = 0; $attempt < 64; $attempt++) {
+            $output = new BufferedOutput(decorated: true);
+            new StepTree($output)->runOperation(
+                'Checking Orbit',
+                [['label' => 'Check version']],
+                work: static fn (): null => null,
+                doneFooter: 'Checked Orbit',
+            );
+        }
+
+        exit(0);
+    }
+
+    pcntl_waitpid($sandboxPid, $status);
+
+    expect(pcntl_wifexited($status))->toBeTrue()->and(pcntl_wexitstatus($status))->toBe(0);
+});

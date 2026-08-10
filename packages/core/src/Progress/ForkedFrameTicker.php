@@ -101,9 +101,14 @@ final class ForkedFrameTicker
             self::invokeIdleCallback();
         });
 
+        $previousSignalMask = [];
+        pcntl_sigprocmask(SIG_BLOCK, [SIGTERM], $previousSignalMask);
         $pid = pcntl_fork();
+        $discardedSignalMask = [];
 
         if ($pid === -1) {
+            pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
+
             return;
         }
 
@@ -112,6 +117,7 @@ final class ForkedFrameTicker
             pcntl_signal(SIGTERM, static function (): void {
                 exit(0);
             });
+            pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
 
             while (true) {
                 $parentPid = posix_getppid();
@@ -130,6 +136,7 @@ final class ForkedFrameTicker
             }
         }
 
+        pcntl_sigprocmask(SIG_SETMASK, $previousSignalMask, $discardedSignalMask);
         $this->pid = $pid;
     }
 
@@ -190,6 +197,7 @@ final class ForkedFrameTicker
             && function_exists('posix_getppid')
             && function_exists('pcntl_async_signals')
             && function_exists('pcntl_signal')
+            && function_exists('pcntl_sigprocmask')
         );
     }
 }
