@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Core\Progress\ForkedChildProcess;
 use Orbit\Core\Progress\ForkedFrameTicker;
 
 it('registers an idle callback for stream polling even when pcntl fork support exists', function (): void {
@@ -89,4 +90,35 @@ it('can register an idle callback without forking a signal child', function (): 
     });
 
     expect($tickCount)->toBe(1)->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
+});
+
+it('does not signal a pid that is no longer its child', function (): void {
+    if (
+        ! function_exists('pcntl_async_signals')
+        || ! function_exists('pcntl_signal')
+        || ! function_exists('pcntl_signal_get_handler')
+        || ! function_exists('pcntl_waitpid')
+        || ! function_exists('posix_kill')
+    ) {
+        $this->markTestSkipped('PCNTL and POSIX signal support are required to guard a reused ticker pid.');
+    }
+
+    $receivedSignal = false;
+    $previousHandler = pcntl_signal_get_handler(SIGTERM);
+    pcntl_async_signals(true);
+    pcntl_signal(SIGTERM, function () use (&$receivedSignal): void {
+        $receivedSignal = true;
+    });
+
+    try {
+        $pid = getmypid();
+
+        expect($pid)->toBeInt();
+
+        new ForkedChildProcess($pid)->stop();
+    } finally {
+        pcntl_signal(SIGTERM, $previousHandler);
+    }
+
+    expect($receivedSignal)->toBeFalse();
 });

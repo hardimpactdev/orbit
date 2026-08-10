@@ -16,8 +16,6 @@ final class ForkedFrameTicker
 
     public const int DEFAULT_INTERVAL_US = 300_000;
 
-    private const int STOP_TIMEOUT_MICROSECONDS = 500_000;
-
     /** @var (callable(): void)|null */
     private static $idleCallback = null;
 
@@ -27,7 +25,7 @@ final class ForkedFrameTicker
 
     private static int $forkingSuppressionDepth = 0;
 
-    private ?int $pid = null;
+    private ?ForkedChildProcess $child = null;
 
     private bool $usesIdleCallback = false;
 
@@ -130,7 +128,7 @@ final class ForkedFrameTicker
             }
         }
 
-        $this->pid = $pid;
+        $this->child = new ForkedChildProcess($pid);
     }
 
     public function stop(): void
@@ -141,40 +139,10 @@ final class ForkedFrameTicker
             $this->usesIdleCallback = false;
         }
 
-        $pid = $this->pid;
-        $this->pid = null;
-
-        if ($pid === null || ! function_exists('posix_kill')) {
-            $this->pid = null;
-
-            return;
-        }
-
-        posix_kill($pid, SIGTERM);
-
-        if (function_exists('pcntl_waitpid')) {
-            $deadline = hrtime(true) + (self::STOP_TIMEOUT_MICROSECONDS * 1000);
-            $result = 0;
-
-            do {
-                $result = pcntl_waitpid($pid, $status, WNOHANG);
-
-                if ($result === $pid || $result === -1) {
-                    break;
-                }
-
-                usleep(10_000);
-            } while (hrtime(true) < $deadline);
-
-            if ($result === 0 && defined('SIGKILL')) {
-                posix_kill($pid, SIGKILL);
-                pcntl_waitpid($pid, $status, WNOHANG);
-            }
-        }
-
-        if (function_exists('pcntl_signal')) {
-            pcntl_signal(SIGUSR1, SIG_DFL);
-        }
+        $child = $this->child;
+        $this->child = null;
+        $child?->stop();
+        $this->restoreParentSignalHandler();
     }
 
     public function __destruct()
@@ -191,5 +159,12 @@ final class ForkedFrameTicker
             && function_exists('pcntl_async_signals')
             && function_exists('pcntl_signal')
         );
+    }
+
+    private function restoreParentSignalHandler(): void
+    {
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGUSR1, SIG_DFL);
+        }
     }
 }
