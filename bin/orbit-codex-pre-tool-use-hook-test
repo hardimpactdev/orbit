@@ -12,6 +12,7 @@ ACCEPTANCE_CONTRACT_MODULE="$ROOT/bin/orbit-feature-acceptance-contract.php"
 PROOF_REQUIREMENTS_MODULE="$ROOT/bin/orbit-feature-proof-requirements.php"
 QUALITY_ARTIFACTS_MODULE="$ROOT/bin/orbit-quality-gate-artifacts.php"
 LOOP_LINT_MODULE="$ROOT/bin/orbit-loop-lint.php"
+CLEANUP_CHECKS_MODULE="$ROOT/bin/orbit-cleanup-checks.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -509,6 +510,47 @@ expect_loop_lint_module_boundary() {
     done
 }
 
+expect_cleanup_checks_module_boundary() {
+    local function_name
+
+    [ -f "$CLEANUP_CHECKS_MODULE" ] || fail 'cleanup checks module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-cleanup-checks.php';" "$HOOK" \
+        || fail 'hook does not load the cleanup checks module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$CLEANUP_CHECKS_MODULE" \
+        || fail 'cleanup checks module emitted output while loading'
+
+    for function_name in \
+        check_merge \
+        check_worktree_remove \
+        check_branch_delete \
+        worktree_cleanliness_problem \
+        landed_feature_problem \
+        session_archive_problem \
+        session_archive_tracked_problem \
+        relative_repo_path \
+        tracked_files_under \
+        session_archive_required_relative_entries \
+        path_has_uncommitted_changes \
+        matching_session_archive_dirs \
+        session_archive_receipt_matches_branch_slug \
+        archive_slug \
+        final_distillation_check \
+        compact_feature_check \
+        normalize_branch \
+        ok \
+        block_result \
+        block_message
+    do
+        grep -q "^function $function_name(" "$CLEANUP_CHECKS_MODULE" \
+            || fail "$function_name is missing from the cleanup checks module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -632,6 +674,7 @@ expect_acceptance_contract_module_boundary
 expect_proof_requirements_module_boundary
 expect_quality_artifacts_module_boundary
 expect_loop_lint_module_boundary
+expect_cleanup_checks_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
