@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T18:58:40+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-loop-lint/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-205840-extract-pre-tool-hook-loop-lint",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T185112Z-9cb9a088ac2d.json"
+    ],
+    "entry_digests": {
+        "loop.md": "c699ded901b5e9fff6de3626bbc2f4aebc364ed50b4bd720b9ace66f53667dc9",
+        "quality-gates/quality-check-2026-08-10T185112Z-9cb9a088ac2d.json": "baef965aacff2b4ae8b29ba0f12af0bf83afa89f9abc717f61e7ba982e7f2c67"
+    },
+    "slug": "extract-pre-tool-hook-loop-lint",
+    "requested_slug": "extract-pre-tool-hook-loop-lint",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-loop-lint"
+    ],
+    "branch": "extract-pre-tool-hook-loop-lint",
+    "candidate_commit": "68a0af7edfabcc3bfc80d99acb60be21037308f1",
+    "accepted_feature_tip": "68a0af7edfabcc3bfc80d99acb60be21037308f1",
+    "accepted_main_tip": "9fdd7c8566483334e08f328fd9f6e8b194524c0c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
