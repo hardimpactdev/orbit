@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 248,
-    "unique_candidate_commit_count": 144,
+    "record_count": 249,
+    "unique_candidate_commit_count": 145,
     "orphan_count": 0,
     "records": [
         {
@@ -6790,6 +6790,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "83bf4496b043d6d366ca8d2565fc75ceb89adfc0",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-10-182358-extract-pre-tool-hook-proof-requirements",
+            "slug": "extract-pre-tool-hook-proof-requirements",
+            "timestamp": "2026-08-10-182358",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "8dc698536f47be5fdc1aa9ace8037915c966d547",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

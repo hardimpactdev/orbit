@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T16:23:58+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-proof-requirements/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-182358-extract-pre-tool-hook-proof-requirements",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T161947Z-04504e5b85a1.json"
+    ],
+    "entry_digests": {
+        "loop.md": "1d02aa0d54e5c01d95e32360f8c7f2efdab527811bf097010b9668d723a45558",
+        "quality-gates/quality-check-2026-08-10T161947Z-04504e5b85a1.json": "1a438ee401c8c67b64c55b4864315beb81e25ee004acff92e7f0845fb197ddaa"
+    },
+    "slug": "extract-pre-tool-hook-proof-requirements",
+    "requested_slug": "extract-pre-tool-hook-proof-requirements",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-proof-requirements"
+    ],
+    "branch": "extract-pre-tool-hook-proof-requirements",
+    "candidate_commit": "8dc698536f47be5fdc1aa9ace8037915c966d547",
+    "accepted_feature_tip": "8dc698536f47be5fdc1aa9ace8037915c966d547",
+    "accepted_main_tip": "088702e486f47d83ab7b1f89a0a6ce55fd99b9aa",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
