@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 246,
-    "unique_candidate_commit_count": 142,
+    "record_count": 247,
+    "unique_candidate_commit_count": 143,
     "orphan_count": 0,
     "records": [
         {
@@ -6744,6 +6744,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "94dc9ac6a5072cd0a323e49bd7c90367596596a9",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-10-175738-extract-pre-tool-hook-capture-health",
+            "slug": "extract-pre-tool-hook-capture-health",
+            "timestamp": "2026-08-10-175738",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "0a82608cd83c89ddc598754fe896a6b91632147e",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

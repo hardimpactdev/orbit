@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T15:57:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-capture-health/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-175738-extract-pre-tool-hook-capture-health",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T155331Z-296d0077f090.json"
+    ],
+    "entry_digests": {
+        "loop.md": "5a77d5fa6016186ebce93bf1cc8758c4cbe8ba78ede941e99128e146395015d3",
+        "quality-gates/quality-check-2026-08-10T155331Z-296d0077f090.json": "a2052380fd68b6733995b823e6d9f3807b318863ddd392ccc37e5a38c1744b51"
+    },
+    "slug": "extract-pre-tool-hook-capture-health",
+    "requested_slug": "extract-pre-tool-hook-capture-health",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-capture-health"
+    ],
+    "branch": "extract-pre-tool-hook-capture-health",
+    "candidate_commit": "0a82608cd83c89ddc598754fe896a6b91632147e",
+    "accepted_feature_tip": "0a82608cd83c89ddc598754fe896a6b91632147e",
+    "accepted_main_tip": "cd6e4bb3bd4ea4762a74d3757e168672775d9f4d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
