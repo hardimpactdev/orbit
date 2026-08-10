@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T16:12:04+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-acceptance-checks/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-181204-extract-pre-tool-hook-acceptance-checks",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T160806Z-a014e2b37a15.json"
+    ],
+    "entry_digests": {
+        "loop.md": "df98a93c9d2ca0c75f06e194172eface4f1621759565cfd289f2826bf86c2608",
+        "quality-gates/quality-check-2026-08-10T160806Z-a014e2b37a15.json": "155833fe16e81a87b75e64f9d867ecb1d9d984350001465593b262b388b3a678"
+    },
+    "slug": "extract-pre-tool-hook-acceptance-checks",
+    "requested_slug": "extract-pre-tool-hook-acceptance-checks",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-acceptance-checks"
+    ],
+    "branch": "extract-pre-tool-hook-acceptance-checks",
+    "candidate_commit": "83bf4496b043d6d366ca8d2565fc75ceb89adfc0",
+    "accepted_feature_tip": "83bf4496b043d6d366ca8d2565fc75ceb89adfc0",
+    "accepted_main_tip": "da49f8d893d51f60a0d0a53159d6b98bdf6fc705",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
