@@ -1243,12 +1243,15 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     }
 
     // The pre-tool-use hook is the one default gate script allowed to name
-    // `composer test:e2e` — solely to deny it. It must carry the dedicated
-    // guard and stay free of every executable E2E vector, and it must remain
-    // wired as the PreToolUse hook in both agent configurations.
+    // `composer test:e2e` — solely to deny it. Its command module must carry
+    // the dedicated guard and stay free of every executable E2E vector, and
+    // the entry point must remain wired in both agent configurations.
     $preToolUseHook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    $commandClassifier = (string) file_get_contents(repo_path('bin/orbit-command-classify.php'));
 
     expect($preToolUseHook)
+        ->toContain("require_once __DIR__.'/orbit-command-classify.php';")
+        ->and($commandClassifier)
         ->toContain('Orbit E2E guard blocked')
         ->toContain('human-only')
         ->not->toContain('orbit-e2e-artisan')
