@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T16:38:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-quality-artifacts/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-183852-extract-pre-tool-hook-quality-artifacts",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T163215Z-a88692e23eaf.json"
+    ],
+    "entry_digests": {
+        "loop.md": "fe0854a4df74cc1ed0ec3eae5fab47bf609987e5bd9033d513205209f9f5a8ad",
+        "quality-gates/quality-check-2026-08-10T163215Z-a88692e23eaf.json": "c50f89a55d4be816ed339d22b2190b8ee276e4a5146adbf5fe3796bbb6aa3b2e"
+    },
+    "slug": "extract-pre-tool-hook-quality-artifacts",
+    "requested_slug": "extract-pre-tool-hook-quality-artifacts",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-quality-artifacts"
+    ],
+    "branch": "extract-pre-tool-hook-quality-artifacts",
+    "candidate_commit": "a335b14bc250e64b8e78943a460c84c3b3cb049e",
+    "accepted_feature_tip": "a335b14bc250e64b8e78943a460c84c3b3cb049e",
+    "accepted_main_tip": "d1e57dd44822261ba1a795975351781a7f1a2d5c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
