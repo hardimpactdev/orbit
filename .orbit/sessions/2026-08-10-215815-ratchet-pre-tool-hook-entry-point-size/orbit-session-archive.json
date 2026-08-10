@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T19:58:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/ratchet-pre-tool-hook-entry-point-size/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-215815-ratchet-pre-tool-hook-entry-point-size",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T195556Z-22b71361ca91.json"
+    ],
+    "entry_digests": {
+        "loop.md": "0d2b79767f2a4611ccf96bb30a091d6f6e208c8b50cc9c97972fa3591648b005",
+        "quality-gates/quality-check-2026-08-10T195556Z-22b71361ca91.json": "44de8c65c32c4c1b197624a5efefaf6b92e635212c64b206caf8a4c930135a07"
+    },
+    "slug": "ratchet-pre-tool-hook-entry-point-size",
+    "requested_slug": "ratchet-pre-tool-hook-entry-point-size",
+    "compatible_slugs": [
+        "ratchet-pre-tool-hook-entry-point-size"
+    ],
+    "branch": "ratchet-pre-tool-hook-entry-point-size",
+    "candidate_commit": "a348228463b2e8741a21b6267e38c9a8f05a3fa8",
+    "accepted_feature_tip": "a348228463b2e8741a21b6267e38c9a8f05a3fa8",
+    "accepted_main_tip": "8e322dc3333f6b0bdde34bbee168e5f04564c522",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
