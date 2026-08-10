@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T15:45:51+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-archive-checks/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-174551-extract-pre-tool-hook-archive-checks",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T154235Z-5d893c146037.json"
+    ],
+    "entry_digests": {
+        "loop.md": "c23e89ffecefdbbdf42f00a05b61969e913de646c642952d44873691a5022ba6",
+        "quality-gates/quality-check-2026-08-10T154235Z-5d893c146037.json": "0da54a8253fef053f48f1e06a1fddc1e495f2732ba684d32da33be8d18c5e004"
+    },
+    "slug": "extract-pre-tool-hook-archive-checks",
+    "requested_slug": "extract-pre-tool-hook-archive-checks",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-archive-checks"
+    ],
+    "branch": "extract-pre-tool-hook-archive-checks",
+    "candidate_commit": "94dc9ac6a5072cd0a323e49bd7c90367596596a9",
+    "accepted_feature_tip": "94dc9ac6a5072cd0a323e49bd7c90367596596a9",
+    "accepted_main_tip": "8d57e21e4eecc755ff7fc978e0d8149a7e13fe64",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
