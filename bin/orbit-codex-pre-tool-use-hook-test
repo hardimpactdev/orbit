@@ -8,6 +8,7 @@ GIT_PROCESS_MODULE="$ROOT/bin/orbit-git-process.php"
 COMMAND_CLASSIFY_MODULE="$ROOT/bin/orbit-command-classify.php"
 ARCHIVE_RECEIPT_MODULE="$ROOT/bin/orbit-session-archive-receipt.php"
 CAPTURE_HEALTH_MODULE="$ROOT/bin/orbit-session-capture-health.php"
+ACCEPTANCE_CONTRACT_MODULE="$ROOT/bin/orbit-feature-acceptance-contract.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -359,6 +360,32 @@ expect_capture_health_module_boundary() {
     done
 }
 
+expect_acceptance_contract_module_boundary() {
+    local function_name
+
+    [ -f "$ACCEPTANCE_CONTRACT_MODULE" ] || fail 'acceptance contract module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-feature-acceptance-contract.php';" "$HOOK" \
+        || fail 'hook does not load the acceptance contract module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$ACCEPTANCE_CONTRACT_MODULE" \
+        || fail 'acceptance contract module emitted output while loading'
+
+    for function_name in \
+        compact_acceptance_provenance_problem \
+        candidate_acceptance_venue \
+        candidate_acceptance_venue_state_problem \
+        candidate_acceptance_venue_php_binary \
+        candidate_acceptance_venue_timeout_ms
+    do
+        grep -q "^function $function_name(" "$ACCEPTANCE_CONTRACT_MODULE" \
+            || fail "$function_name is missing from the acceptance contract module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -478,6 +505,7 @@ expect_git_process_module_boundary
 expect_command_classify_module_boundary
 expect_archive_receipt_module_boundary
 expect_capture_health_module_boundary
+expect_acceptance_contract_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
