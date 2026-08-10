@@ -318,6 +318,7 @@ it('budgets aggregate quality gate CPU pressure by host size', function (): void
         ->toContain('echo $((detected_jobs - 1))')
         ->toContain('echo 14')
         ->toContain('GATEWAY_PEST_PROCESSES')
+        ->toContain('CLI_COMPONENT_DEMAND=6')
         ->toContain('MAX_CLI_COMPONENT_DEMAND=$((CPU_BUDGET - CORE_COMPONENT_DEMAND))')
         ->toContain('CLI_COMPONENT_DEMAND="$MAX_CLI_COMPONENT_DEMAND"')
         ->toContain('wait_for_cpu_capacity')
@@ -440,6 +441,7 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
 
 it('keeps the aggregate quality gate Pest lanes complete', function (): void {
     $script = quality_check_script_source();
+    $cliPestScript = file_get_contents(repo_path('bin/orbit-cli-pest-quality')) ?: '';
 
     expect($script)
         ->toContain('bin/orbit-cli-pest-quality')
@@ -459,6 +461,11 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
         ->not->toContain('cd apps/e2e && vendor/bin/pest')
         ->not->toContain('run_bg e2e_pest')
         ->not->toContain('PRE_E2E_PEST_LABELS=(');
+
+    expect($cliPestScript)
+        ->toContain('GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)')
+        ->toContain('services_files+=("$file")')
+        ->toContain('run_group services "${services_files[@]}"');
 });
 
 it('keeps aggregate quality gate labels complete and ordered', function (): void {

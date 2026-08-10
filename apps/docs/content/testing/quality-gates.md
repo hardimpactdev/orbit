@@ -78,8 +78,9 @@ visible in the per-subgate logs. Each run retains those logs under
 `.orbit/quality-gates/profiles/` before temporary scheduler state is removed.
 The CLI Pest subgate runs through
 `bin/orbit-cli-pest-quality`: top-level feature files and the command,
-architecture, support, suite-root, and service surfaces are distributed across
-five stable mixed shards.
+architecture, support, and suite-root surfaces are distributed across five
+stable mixed shards. Service tests run in a sixth service shard so that their
+larger process state cannot make a mixed shard unreliable.
 This is a file-surface split, not Pest or ParaTest
 `--parallel`. On
 successful profiled runs the wrapper records each surface log before its final

@@ -55,14 +55,15 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)
-PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)
+GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)
+PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)
 
 mixed_1_files=()
 mixed_2_files=()
 mixed_3_files=()
 mixed_4_files=()
 mixed_5_files=()
+services_files=()
 
 assign_mixed_file() {
     local group="$1"
@@ -112,7 +113,7 @@ done
 if [ "${#service_dirs[@]}" -gt 0 ]; then
     for directory in "${service_dirs[@]}"; do
         while IFS= read -r file; do
-            mixed_3_files+=("$file")
+            services_files+=("$file")
         done < <(find "$directory" -type f -name '*Test.php' | sort)
     done
 fi
@@ -139,6 +140,7 @@ validate_coverage() {
         [ "${#mixed_3_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_3_files[@]}"
         [ "${#mixed_4_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_4_files[@]}"
         [ "${#mixed_5_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_5_files[@]}"
+        [ "${#services_files[@]}" -eq 0 ] || printf '%s\n' "${services_files[@]}"
 
     } | sort >"$covered_tests_file"
 
@@ -232,6 +234,8 @@ for group_number in 1 2 3 4 5; do
     esac
 done
 
+run_group services "${services_files[@]}"
+
 overall_exit=0
 
 collect_group_exit() {
@@ -278,7 +282,7 @@ fi
 
 php -r '
 $directory = $argv[1];
-$labels = ["mixed_1", "mixed_2", "mixed_3", "mixed_4", "mixed_5"];
+$labels = ["mixed_1", "mixed_2", "mixed_3", "mixed_4", "mixed_5", "services"];
 $groups = [];
 $tests = 0;
 $assertions = 0;
