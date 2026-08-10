@@ -1,0 +1,26 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T15:14:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-git-process/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-171457-extract-pre-tool-hook-git-process",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "87aa848ef31d72bd4a1f6d8a10d885d3f9ff982d16a308e6a0dedb0c6364645b"
+    },
+    "slug": "extract-pre-tool-hook-git-process",
+    "requested_slug": "extract-pre-tool-hook-git-process",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-git-process"
+    ],
+    "branch": "extract-pre-tool-hook-git-process",
+    "candidate_commit": "01148db6c644970483f395f8cb8cf17a4bf2fa5a",
+    "accepted_feature_tip": "01148db6c644970483f395f8cb8cf17a4bf2fa5a",
+    "accepted_main_tip": "ea9102d996ca57cc4fce0cd5efb96d2ff21da087",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
