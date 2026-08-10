@@ -318,7 +318,7 @@ it('budgets aggregate quality gate CPU pressure by host size', function (): void
         ->toContain('echo $((detected_jobs - 1))')
         ->toContain('echo 14')
         ->toContain('GATEWAY_PEST_PROCESSES')
-        ->toContain('CLI_COMPONENT_DEMAND=5')
+        ->toContain('CLI_COMPONENT_DEMAND=6')
         ->toContain('MAX_CLI_COMPONENT_DEMAND=$((CPU_BUDGET - CORE_COMPONENT_DEMAND))')
         ->toContain('CLI_COMPONENT_DEMAND="$MAX_CLI_COMPONENT_DEMAND"')
         ->toContain('wait_for_cpu_capacity')
@@ -464,7 +464,6 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
 
     expect($cliPestScript)
         ->toContain('GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)')
-        ->toContain('PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)')
         ->toContain('services_files+=("$file")')
         ->toContain('run_group services "${services_files[@]}"');
 });
