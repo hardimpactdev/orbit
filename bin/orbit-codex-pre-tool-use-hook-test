@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 HOOK="$ROOT/bin/orbit-codex-pre-tool-use-hook"
+GIT_PROCESS_MODULE="$ROOT/bin/orbit-git-process.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -226,6 +227,36 @@ expect_exact_lint() {
     expect_empty_file "$ERR" "lint stderr for [$path]"
 }
 
+expect_git_process_module_boundary() {
+    local function_name
+
+    [ -f "$GIT_PROCESS_MODULE" ] || fail 'git/process module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-git-process.php';" "$HOOK" \
+        || fail 'hook does not load the git/process module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$GIT_PROCESS_MODULE" \
+        || fail 'git/process module emitted output while loading'
+
+    for function_name in \
+        git_root \
+        local_branch_exists \
+        worktree_for_branch \
+        branch_for_worktree \
+        worktrees \
+        absolute_path \
+        run_git \
+        run_process \
+        run_process_with_timeout
+    do
+        grep -q "^function $function_name(" "$GIT_PROCESS_MODULE" \
+            || fail "$function_name is missing from the git/process module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -340,6 +371,8 @@ commit_docs_fixture() {
 }
 
 REPO="$TMP/repo"
+
+expect_git_process_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
