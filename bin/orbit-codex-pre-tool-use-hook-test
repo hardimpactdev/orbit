@@ -6,6 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 HOOK="$ROOT/bin/orbit-codex-pre-tool-use-hook"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
+OUT="$TMP/hook.out"
+ERR="$TMP/hook.err"
+EXPECTED_OUT="$TMP/expected.out"
+EXPECTED_ERR="$TMP/expected.err"
 
 cleanup() {
     rm -rf "$TMP"
@@ -22,14 +26,28 @@ run_hook() {
     local repo="$1"
     local command="$2"
 
-    printf '{"tool_input":{"command":"%s"}}' "$command" | (cd "$repo" && "$HOOK") >/tmp/orbit-hook-test.out 2>/tmp/orbit-hook-test.err
+    printf '{"tool_input":{"command":"%s"}}' "$command" | (cd "$repo" && "$HOOK") >"$OUT" 2>"$ERR"
+}
+
+run_hook_argv() {
+    local repo="$1"
+    local command="$2"
+
+    (cd "$repo" && "$HOOK" "$command") >"$OUT" 2>"$ERR"
+}
+
+run_lint() {
+    local repo="$1"
+    local path="$2"
+
+    (cd "$repo" && "$HOOK" --lint "$path") >"$OUT" 2>"$ERR"
 }
 
 run_check() {
     local repo="$1"
     shift
 
-    (cd "$repo" && "$CHECK" "$@") >/tmp/orbit-hook-test.out 2>/tmp/orbit-hook-test.err
+    (cd "$repo" && "$CHECK" "$@") >"$OUT" 2>"$ERR"
 }
 
 expect_pass() {
@@ -37,7 +55,7 @@ expect_pass() {
     local command="$2"
 
     if ! run_hook "$repo" "$command"; then
-        cat /tmp/orbit-hook-test.err >&2
+        cat "$ERR" >&2
         fail "expected pass for [$command]"
     fi
 }
@@ -55,7 +73,7 @@ expect_block() {
 
     [ "$status" -eq 2 ] || fail "expected block exit code 2 for [$command], got $status"
 
-    grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err \
+    grep -q 'Orbit finalization gate blocked' "$ERR" \
         || fail "block message missing for [$command]"
 }
 
@@ -72,13 +90,13 @@ expect_e2e_block() {
 
     [ "$status" -eq 2 ] || fail "expected e2e block exit code 2 for [$command], got $status"
 
-    grep -q 'Orbit E2E guard blocked' /tmp/orbit-hook-test.err \
+    grep -q 'Orbit E2E guard blocked' "$ERR" \
         || fail "dedicated e2e block message missing for [$command]"
 
-    grep -q 'human-only' /tmp/orbit-hook-test.err \
+    grep -q 'human-only' "$ERR" \
         || fail "human-only teaching missing for [$command]"
 
-    if grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err; then
+    if grep -q 'Orbit finalization gate blocked' "$ERR"; then
         fail "e2e block for [$command] must use the dedicated e2e message, not the finalization gate message"
     fi
 }
@@ -96,8 +114,116 @@ expect_check_block() {
 
     [ "$status" -eq 2 ] || fail "expected explicit check exit code 2 for [$*], got $status"
 
-    grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err \
+    grep -q 'Orbit finalization gate blocked' "$ERR" \
         || fail "explicit check block message missing for [$*]"
+}
+
+expect_empty_file() {
+    local path="$1"
+    local label="$2"
+
+    [ ! -s "$path" ] || {
+        cat "$path" >&2
+        fail "$label must be empty"
+    }
+}
+
+expect_exact_file() {
+    local expected="$1"
+    local actual="$2"
+    local label="$3"
+
+    if ! cmp -s "$expected" "$actual"; then
+        diff -u "$expected" "$actual" >&2 || true
+        fail "$label changed"
+    fi
+}
+
+write_expected_finalization_block() {
+    local subject="$1"
+    local reason="$2"
+
+    cat >"$EXPECTED_ERR" <<EOF
+FINALIZATION: BLOCKED $reason
+
+Orbit finalization gate blocked this merge/cleanup boundary.
+
+Subject: $subject
+Reason: $reason
+
+Before landing, complete the compact \`.orbit/loop.md\` Proof and Status: exact
+diff-routed verification, one independent review PASS, accepted venue and
+actor, exact accepted feature HEAD, and the actual current main tip. Commit,
+ignore, or remove every nonignored worktree file so the accepted HEAD is the
+tested surface. Resolve any merge-preview conflict and repeat affected proof
+and acceptance.
+
+Before cleanup, run \`bin/orbit-session-archive\`. A compact archive requires
+\`loop.md\` plus its schema-v2 or schema-v3 receipt; historical/full archives retain their
+manifest compatibility.
+
+Dry-run the packet shape first with:
+bin/orbit-feature-finalization-check --lint <worktree>/.orbit/loop.md
+
+Then rerun the same git command.
+EOF
+}
+
+expect_exact_e2e_block() {
+    local repo="$1"
+    local command='composer test:e2e'
+    local status=0
+
+    run_hook_argv "$repo" "$command" || status=$?
+
+    [ "$status" -eq 2 ] || fail "expected exact E2E block exit code 2, got $status"
+    expect_empty_file "$OUT" 'E2E block stdout'
+
+    cat >"$EXPECTED_ERR" <<'EOF'
+Orbit E2E guard blocked `composer test:e2e`.
+
+The `composer test:e2e*` lanes are human-only: they run only when the
+user personally decides to type the Composer command in a shell they
+operate directly. Agents never run, delegate, background, schedule,
+hook, script, or trigger these lanes, and never hand them off as a
+feature-completion step. For integrated runtime behavior, use retained
+topology proof per `HARNESS.md` Acceptance Venues; existing E2E
+artifacts may be read and triaged without execution.
+
+Blocked command: composer test:e2e
+EOF
+    expect_exact_file "$EXPECTED_ERR" "$ERR" 'E2E block stderr'
+}
+
+expect_exact_boundary_block() {
+    local repo="$1"
+    local command="$2"
+    local subject="$3"
+    local reason="$4"
+    local status=0
+
+    run_hook_argv "$repo" "$command" || status=$?
+
+    [ "$status" -eq 2 ] || fail "expected exact boundary block exit code 2 for [$command], got $status"
+    expect_empty_file "$OUT" "boundary block stdout for [$command]"
+    write_expected_finalization_block "$subject" "$reason"
+    expect_exact_file "$EXPECTED_ERR" "$ERR" "boundary block stderr for [$command]"
+}
+
+expect_exact_lint() {
+    local repo="$1"
+    local path="$2"
+    local expected_status="$3"
+    local expected_output="$4"
+    local status=0
+
+    run_lint "$repo" "$path" || status=$?
+
+    [ "$status" -eq "$expected_status" ] \
+        || fail "expected lint exit code $expected_status for [$path], got $status"
+    printf '%s\n' "$expected_output" >"$EXPECTED_OUT"
+    expect_exact_file "$EXPECTED_OUT" "$OUT" "lint stdout for [$path]"
+    expect_empty_file "$ERR" "lint stderr for [$path]"
 }
 
 write_loop() {
@@ -217,6 +343,7 @@ REPO="$TMP/repo"
 
 mkdir -p "$REPO"
 cd "$REPO"
+REPO="$(pwd -P)"
 
 git init -b main >/dev/null
 git config user.name 'Orbit Hook Test'
@@ -257,6 +384,8 @@ git branch missing-loop
 git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
 expect_pass "$REPO" 'composer quality-check'
+expect_empty_file "$OUT" 'unrelated command stdout'
+expect_empty_file "$ERR" 'unrelated command stderr'
 
 # The composer test:e2e* lanes are human-only; the hook denies every agent
 # tool form deterministically (exit 2, dedicated teaching message).
@@ -276,6 +405,7 @@ expect_e2e_block "$REPO" '/usr/bin/env bash -lc \"composer test:e2e\"'
 expect_e2e_block "$REPO" 'php composer.phar test:e2e'
 e2e_heredoc_command='bash <<EOF\ncomposer test:e2e\nEOF'
 expect_e2e_block "$REPO" "$e2e_heredoc_command"
+expect_exact_e2e_block "$REPO"
 
 # Non-e2e composer scripts and quoted prose mentions must not false-positive.
 expect_pass "$REPO" 'composer test'
@@ -300,12 +430,29 @@ expect_pass "$REPO" 'git merge --ff-only finalized'
 git -C "$REPO" merge --ff-only finalized >/dev/null
 expect_pass "$REPO" 'git merge --ff-only historical-pending'
 expect_block "$REPO" 'git merge --ff-only templated'
+templated_merge_reason='feature branch `templated` tip equals the merge base, so there are no commits to merge; commit the feature worktree work first (or drop the merge if nothing should land)'
+templated_reason="$REPO/.worktrees/templated/.orbit/loop.md still contains template placeholders in \`Final Distillation\`: - <why local cleanup, existing guardrails, or rejection was enough>"
+expect_exact_boundary_block "$REPO" 'git merge --ff-only templated' 'templated' "$templated_merge_reason"
 expect_block "$REPO" 'git merge --ff-only pending-outcome'
 expect_block "$REPO" 'git merge --ff-only custom-outcome-heading'
 expect_block "$REPO" 'git merge --ff-only bare-outcome-labels'
 expect_block "$REPO" 'git merge --ff-only missing-loop'
 expect_block "$REPO" 'git worktree remove .worktrees/templated && git branch -d templated'
+expect_exact_boundary_block "$REPO" 'git worktree remove .worktrees/templated' 'templated' "$templated_reason"
 expect_check_block "$REPO" git merge --ff-only templated
+
+expect_exact_lint \
+    "$REPO" \
+    "$REPO/.worktrees/finalized/.orbit/loop.md" \
+    0 \
+    "PASS: $REPO/.worktrees/finalized/.orbit/loop.md Final Distillation packet shape is valid"
+
+printf '# invalid loop packet\n' >"$TMP/invalid-loop.md"
+expect_exact_lint \
+    "$REPO" \
+    "$TMP/invalid-loop.md" \
+    2 \
+    "BLOCKED: $TMP/invalid-loop.md has no \`Final Distillation\` section"
 
 mkdir -p "$REPO/.orbit/sessions/2026-07-10-180000-finalized/agent-sessions"
 cp "$REPO/.worktrees/finalized/.orbit/loop.md" "$REPO/.orbit/sessions/2026-07-10-180000-finalized/loop.md"
@@ -320,5 +467,8 @@ printf '%s\n' '{
 git -C "$REPO" add .orbit/sessions/2026-07-10-180000-finalized .orbit/sessions/index.json
 git -C "$REPO" commit -m 'Archive finalized session' >/dev/null
 expect_pass "$REPO" 'git branch -d finalized'
+printf 'FINALIZATION: PASS git branch delete finalized\n' >"$EXPECTED_OUT"
+expect_exact_file "$EXPECTED_OUT" "$OUT" 'branch delete stdout'
+expect_empty_file "$ERR" 'branch delete stderr'
 
 printf 'orbit-codex-pre-tool-use-hook tests passed\n'

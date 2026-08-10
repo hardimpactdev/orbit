@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('runs the pre-tool hook output contract in the normal test gate', function (): void {
+    $process = new Process(['bash', repo_path('bin/orbit-codex-pre-tool-use-hook-test')], repo_path());
+    $process->setTimeout(60);
+    $process->run();
+
+    expect($process->getExitCode())
+        ->toBe(0, $process->getErrorOutput().$process->getOutput())
+        ->and($process->getOutput())
+        ->toBe("orbit-codex-pre-tool-use-hook tests passed\n")
+        ->and($process->getErrorOutput())
+        ->toBe('');
+});
+
 it('writes authentic quality-check evidence with required producer, command, mode, subgates, timing, and git metadata', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-'.bin2hex(random_bytes(6));
 
