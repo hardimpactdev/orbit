@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T19:48:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-cleanup-checks/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-214801-extract-pre-tool-hook-cleanup-checks",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T194035Z-d8cb99e95f23.json"
+    ],
+    "entry_digests": {
+        "loop.md": "01f2410281b686e70b40ef69363a47351030a20ffa04dbb11d7b4dbf679c8a9a",
+        "quality-gates/quality-check-2026-08-10T194035Z-d8cb99e95f23.json": "f69cf17c58714853433a561433d7bfe37dabc0198d6c2e903e09dca50367029e"
+    },
+    "slug": "extract-pre-tool-hook-cleanup-checks",
+    "requested_slug": "extract-pre-tool-hook-cleanup-checks",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-cleanup-checks"
+    ],
+    "branch": "extract-pre-tool-hook-cleanup-checks",
+    "candidate_commit": "d08f4c74ba2febed03ddda877ad80bec5949033a",
+    "accepted_feature_tip": "d08f4c74ba2febed03ddda877ad80bec5949033a",
+    "accepted_main_tip": "76fc2b7935be37f6a38d34e2a43f88fe6674ba58",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
