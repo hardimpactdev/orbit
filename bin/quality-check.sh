@@ -146,7 +146,7 @@ GATEWAY_PEST_PROCESSES=$((CPU_BUDGET / 2))
 [ "$GATEWAY_PEST_PROCESSES" -gt 8 ] && GATEWAY_PEST_PROCESSES=8
 
 GATEWAY_COMPONENT_DEMAND="$GATEWAY_PEST_PROCESSES"
-CLI_COMPONENT_DEMAND=6
+CLI_COMPONENT_DEMAND=5
 DOCS_COMPONENT_DEMAND=1
 E2E_COMPONENT_DEMAND=1
 REVERB_COMPONENT_DEMAND=1
@@ -1243,7 +1243,7 @@ cli_component() {
     else
         run_static_subgates cli_mago_analyze_subgate cli_mago_lint_subgate cli_rector_subgate cli_mago_format_subgate
     fi
-    if [ "$CLI_COMPONENT_DEMAND" -lt 6 ]; then
+    if [ "$CLI_COMPONENT_DEMAND" -lt 5 ]; then
         run_subgate cli_pest bin/orbit-cli-pest --exclude-group=slow --profile --compact
     else
         run_subgate cli_pest bin/orbit-cli-pest-quality --exclude-group=slow --profile --compact

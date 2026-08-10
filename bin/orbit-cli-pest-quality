@@ -56,7 +56,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)
-PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5 services)
+PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)
 
 mixed_1_files=()
 mixed_2_files=()
@@ -234,8 +234,6 @@ for group_number in 1 2 3 4 5; do
     esac
 done
 
-run_group services "${services_files[@]}"
-
 overall_exit=0
 
 collect_group_exit() {
@@ -254,6 +252,9 @@ collect_group_exit() {
 for label in "${PARALLEL_GROUP_LABELS[@]}"; do
     collect_group_exit "$label"
 done
+
+run_group services "${services_files[@]}"
+collect_group_exit services
 
 elapsed_seconds "$overall_start" >"$LOG_DIR/overall.duration"
 

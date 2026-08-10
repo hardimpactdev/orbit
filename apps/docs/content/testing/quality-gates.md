@@ -80,7 +80,8 @@ The CLI Pest subgate runs through
 `bin/orbit-cli-pest-quality`: top-level feature files and the command,
 architecture, support, and suite-root surfaces are distributed across five
 stable mixed shards. Service tests run in a sixth service shard so that their
-larger process state cannot make a mixed shard unreliable.
+larger process state cannot make a mixed shard unreliable. The service shard
+starts after the five mixed shards finish.
 This is a file-surface split, not Pest or ParaTest
 `--parallel`. On
 successful profiled runs the wrapper records each surface log before its final
