@@ -7,6 +7,7 @@ HOOK="$ROOT/bin/orbit-codex-pre-tool-use-hook"
 GIT_PROCESS_MODULE="$ROOT/bin/orbit-git-process.php"
 COMMAND_CLASSIFY_MODULE="$ROOT/bin/orbit-command-classify.php"
 ARCHIVE_RECEIPT_MODULE="$ROOT/bin/orbit-session-archive-receipt.php"
+CAPTURE_HEALTH_MODULE="$ROOT/bin/orbit-session-capture-health.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -330,6 +331,34 @@ expect_archive_receipt_module_boundary() {
     done
 }
 
+expect_capture_health_module_boundary() {
+    local function_name
+
+    [ -f "$CAPTURE_HEALTH_MODULE" ] || fail 'capture health module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-session-capture-health.php';" "$HOOK" \
+        || fail 'hook does not load the capture health module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$CAPTURE_HEALTH_MODULE" \
+        || fail 'capture health module emitted output while loading'
+
+    for function_name in \
+        capture_health_problem_for_worktree \
+        capture_health_problem_for_loop \
+        capture_health_problem_for_sources \
+        packet_names_agent_lanes \
+        packet_has_agent_session_capture_waiver \
+        healthy_agent_session_count \
+        agent_session_manifest_paths
+    do
+        grep -q "^function $function_name(" "$CAPTURE_HEALTH_MODULE" \
+            || fail "$function_name is missing from the capture health module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -448,6 +477,7 @@ REPO="$TMP/repo"
 expect_git_process_module_boundary
 expect_command_classify_module_boundary
 expect_archive_receipt_module_boundary
+expect_capture_health_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
