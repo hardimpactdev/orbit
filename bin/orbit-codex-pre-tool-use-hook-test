@@ -10,6 +10,7 @@ ARCHIVE_RECEIPT_MODULE="$ROOT/bin/orbit-session-archive-receipt.php"
 CAPTURE_HEALTH_MODULE="$ROOT/bin/orbit-session-capture-health.php"
 ACCEPTANCE_CONTRACT_MODULE="$ROOT/bin/orbit-feature-acceptance-contract.php"
 PROOF_REQUIREMENTS_MODULE="$ROOT/bin/orbit-feature-proof-requirements.php"
+QUALITY_ARTIFACTS_MODULE="$ROOT/bin/orbit-quality-gate-artifacts.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -422,6 +423,33 @@ expect_proof_requirements_module_boundary() {
     done
 }
 
+expect_quality_artifacts_module_boundary() {
+    local function_name
+
+    [ -f "$QUALITY_ARTIFACTS_MODULE" ] || fail 'quality artifacts module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-quality-gate-artifacts.php';" "$HOOK" \
+        || fail 'hook does not load the quality artifacts module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$QUALITY_ARTIFACTS_MODULE" \
+        || fail 'quality artifacts module emitted output while loading'
+
+    for function_name in \
+        docs_only_artifact_problem \
+        quality_gate_artifact_problem \
+        reserved_quality_artifact_problem \
+        latest_quality_gate_artifact \
+        artifact_exit_code \
+        artifact_timestamp
+    do
+        grep -q "^function $function_name(" "$QUALITY_ARTIFACTS_MODULE" \
+            || fail "$function_name is missing from the quality artifacts module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -543,6 +571,7 @@ expect_archive_receipt_module_boundary
 expect_capture_health_module_boundary
 expect_acceptance_contract_module_boundary
 expect_proof_requirements_module_boundary
+expect_quality_artifacts_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
