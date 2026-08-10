@@ -11,6 +11,7 @@ CAPTURE_HEALTH_MODULE="$ROOT/bin/orbit-session-capture-health.php"
 ACCEPTANCE_CONTRACT_MODULE="$ROOT/bin/orbit-feature-acceptance-contract.php"
 PROOF_REQUIREMENTS_MODULE="$ROOT/bin/orbit-feature-proof-requirements.php"
 QUALITY_ARTIFACTS_MODULE="$ROOT/bin/orbit-quality-gate-artifacts.php"
+LOOP_LINT_MODULE="$ROOT/bin/orbit-loop-lint.php"
 CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 OUT="$TMP/hook.out"
@@ -450,6 +451,64 @@ expect_quality_artifacts_module_boundary() {
     done
 }
 
+expect_loop_lint_module_boundary() {
+    local constant_name
+    local function_name
+
+    [ -f "$LOOP_LINT_MODULE" ] || fail 'loop lint module is missing'
+    grep -Fq "require_once __DIR__.'/orbit-loop-lint.php';" "$HOOK" \
+        || fail 'hook does not load the loop lint module'
+    php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
+        "$LOOP_LINT_MODULE" \
+        || fail 'loop lint module emitted output while loading'
+
+    for constant_name in LOOP_OUTCOME_ENUM PLACEHOLDER_TOKENS
+    do
+        grep -q "^const $constant_name =" "$LOOP_LINT_MODULE" \
+            || fail "$constant_name is missing from the loop lint module"
+
+        if grep -q "^const $constant_name =" "$HOOK"; then
+            fail "$constant_name remains in the hook entry point"
+        fi
+    done
+
+    for function_name in \
+        compact_loop_problems \
+        run_compact_lint \
+        run_lint \
+        branch_name_from_loop \
+        markdown_section \
+        section_placeholder_line \
+        loop_outcome \
+        is_mergeable_loop_outcome \
+        has_required_verification_row \
+        required_verification_row \
+        is_blocked_verification_value \
+        is_placeholder_row_value \
+        is_placeholder_text \
+        is_passed_verification_value \
+        is_release_acceptance_topology_deferral \
+        final_outcome_values \
+        signal_outcome_problem \
+        fresh_analyzer_problem \
+        fresh_analyzer_deferred_value \
+        reconstruction_smell_warning \
+        candidate_signals_are_empty \
+        markdown_list_values \
+        markdown_label_exists \
+        is_meaningful_outcome \
+        normalize_outcome_value \
+        normalize_markdown_label
+    do
+        grep -q "^function $function_name(" "$LOOP_LINT_MODULE" \
+            || fail "$function_name is missing from the loop lint module"
+
+        if grep -q "^function $function_name(" "$HOOK"; then
+            fail "$function_name remains in the hook entry point"
+        fi
+    done
+}
+
 write_loop() {
     local path="$1"
     local loop_outcome="$2"
@@ -572,6 +631,7 @@ expect_capture_health_module_boundary
 expect_acceptance_contract_module_boundary
 expect_proof_requirements_module_boundary
 expect_quality_artifacts_module_boundary
+expect_loop_lint_module_boundary
 
 mkdir -p "$REPO"
 cd "$REPO"
