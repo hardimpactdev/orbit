@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-10T15:34:34+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/extract-pre-tool-hook-command-classify/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-10-173434-extract-pre-tool-hook-command-classify",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-10T152637Z-de1b16220ffe.json"
+    ],
+    "entry_digests": {
+        "loop.md": "4f45a7c0ecd033ad17bd229b99e843e6595a21fafac700523893849439d01135",
+        "quality-gates/quality-check-2026-08-10T152637Z-de1b16220ffe.json": "b11ad08ca4a031b473609e8c5664082aa87ad40295659dfa391d1c6f06c93054"
+    },
+    "slug": "extract-pre-tool-hook-command-classify",
+    "requested_slug": "extract-pre-tool-hook-command-classify",
+    "compatible_slugs": [
+        "extract-pre-tool-hook-command-classify"
+    ],
+    "branch": "extract-pre-tool-hook-command-classify",
+    "candidate_commit": "4d8b4badae094b89f145e15dfcf220f613af2f0c",
+    "accepted_feature_tip": "4d8b4badae094b89f145e15dfcf220f613af2f0c",
+    "accepted_main_tip": "c8e05e124141f20e7103a4e19cc11b5c7e36d762",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
