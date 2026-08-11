@@ -79,3 +79,28 @@ it('delegates bootstrap reservation as one focused boundary', function (): void 
         ->toContain('WIREGUARD_RESERVATION_LOCK')
         ->toContain('private function prepareWithReservationLock(');
 });
+
+it('delegates agent grants and tools to one setup boundary', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $agentSetup = (string) file_get_contents($services.'/NodeAgentProvisioning.php');
+
+    expect($creator)
+        ->toContain('private readonly NodeAgentProvisioning $agentProvisioning')
+        ->toContain('$this->agentProvisioning->preflight(');
+
+    foreach ([
+        'private function setupAgentSelfGrant(',
+        'private function setupGrantTo(',
+        'private function setupGrantFrom(',
+        'private function resolveGrantTargets(',
+        'private function resolveGrantPermissions(',
+        'private function setupAgentTools(',
+    ] as $oldMethod) {
+        expect($creator)->not->toContain($oldMethod);
+    }
+
+    expect($agentSetup)
+        ->toContain('public function preflight(')
+        ->toContain('public function apply(');
+});
