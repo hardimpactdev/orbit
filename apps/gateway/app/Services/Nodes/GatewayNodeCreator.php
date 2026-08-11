@@ -59,15 +59,17 @@ final readonly class GatewayNodeCreator
             $input,
             fn (
                 string $name,
-                array $_roles,
+                array $roles,
                 WorkloadNodeProvisioningInput $inputs,
                 ?int $_ingressNodeId,
-            ): GatewayActionResult => $this->bootstrapReservation->prepare(
+            ): GatewayActionResult => $this->bootstrapReservation->prepare(new NodeBootstrapReservationInput(
                 name: $name,
+                roles: $roles,
                 inputs: $inputs,
                 caller: $caller,
                 request: $request,
-            ),
+                creationInput: $input,
+            )),
             requireObservedPlatform: true,
         );
     }

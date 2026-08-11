@@ -829,6 +829,37 @@ it('reserves one retryable bootstrap without gateway target SSH', function (): v
     );
 });
 
+it('rejects invalid app grant input before reserving the target node', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'app-dev-invalid-grant',
+            'roles' => ['app-dev'],
+            'host' => '192.0.2.21',
+            'user' => 'root',
+            'tld' => 'invalid-grant',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+            'self_grant' => 'custom',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.fields', ['preset', 'permissions']);
+
+    expect(Node::query()->where('name', 'app-dev-invalid-grant')->exists())
+        ->toBeFalse()
+        ->and(NodeBootstrap::query()->exists())
+        ->toBeFalse()
+        ->and(
+            WireGuardPeer::query()
+                ->whereHas('node', fn ($query) => $query->where('name', 'app-dev-invalid-grant'))
+                ->exists(),
+        )
+        ->toBeFalse();
+});
+
 it('supports metrics bootstrap and persists the client-observed target platform', function (): void {
     [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
 

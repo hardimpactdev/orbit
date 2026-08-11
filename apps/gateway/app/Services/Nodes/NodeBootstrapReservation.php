@@ -43,28 +43,17 @@ final readonly class NodeBootstrapReservation
         private VpnDnsSwarmInstaller $vpnInstaller,
         private WgEasyAddressReservationProbe $addressReservationProbe,
         private NodeRoleAssignments $roleAssignments,
+        private NodeAgentProvisioning $agentProvisioning,
     ) {}
 
-    /**
-     * @param  array<string, mixed>  $request
-     */
-    public function prepare(
-        string $name,
-        WorkloadNodeProvisioningInput $inputs,
-        Node $caller,
-        array $request,
-    ): GatewayActionResult {
+    public function prepare(NodeBootstrapReservationInput $reservation): GatewayActionResult
+    {
         for ($attempt = 1; $attempt <= self::WIREGUARD_RESERVATION_ATTEMPTS; $attempt++) {
             try {
                 /** @var GatewayActionResult */
                 return Cache::lock(self::WIREGUARD_RESERVATION_LOCK, 120)->block(
                     30,
-                    fn (): GatewayActionResult => $this->prepareWithReservationLock(
-                        $name,
-                        $inputs,
-                        $caller,
-                        $request,
-                    ),
+                    fn (): GatewayActionResult => $this->prepareWithReservationLock($reservation),
                 );
             } catch (QueryException $exception) {
                 if (
@@ -78,7 +67,7 @@ final readonly class NodeBootstrapReservation
                     code: 'node.provisioning_incomplete',
                     message: 'WireGuard identity reservation is busy; retry node bootstrap.',
                     meta: [
-                        'node' => $name,
+                        'node' => $reservation->name,
                         'step' => 'wireguard_allocation',
                     ],
                 );
@@ -88,15 +77,18 @@ final readonly class NodeBootstrapReservation
         throw new RuntimeException('WireGuard identity reservation attempts were exhausted.');
     }
 
-    /**
-     * @param  array<string, mixed>  $request
-     */
-    private function prepareWithReservationLock(
-        string $name,
-        WorkloadNodeProvisioningInput $inputs,
-        Node $caller,
-        array $request,
-    ): GatewayActionResult {
+    private function prepareWithReservationLock(NodeBootstrapReservationInput $reservation): GatewayActionResult
+    {
+        $preflight = $this->agentProvisioning->preflight($reservation->roles, $reservation->creationInput);
+
+        if ($preflight instanceof GatewayActionResult) {
+            return $preflight;
+        }
+
+        $name = $reservation->name;
+        $inputs = $reservation->inputs;
+        $caller = $reservation->caller;
+        $request = $reservation->request;
         $existing = Node::query()->where('name', $name)->first();
         $bootstrap = $existing instanceof Node
             ? NodeBootstrap::query()->where('node_id', $existing->id)->first()
