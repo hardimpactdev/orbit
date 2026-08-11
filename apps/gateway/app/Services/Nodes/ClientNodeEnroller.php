@@ -32,6 +32,16 @@ final readonly class ClientNodeEnroller
         bool $operator,
         NodeCreationInput $input,
     ): GatewayActionResult {
+        $forbiddenInput = $this->forbiddenIdentityInput($input);
+
+        if ($forbiddenInput !== null) {
+            return GatewayActionResult::error(
+                code: 'validation_failed',
+                message: 'Client identities do not use workload or SSH/bootstrap-only input.',
+                meta: ['field' => $forbiddenInput],
+            );
+        }
+
         $existing = Node::query()->where('name', $name)->first();
 
         if ($existing instanceof Node && ! $existing->isOperator()) {
@@ -221,6 +231,48 @@ final readonly class ClientNodeEnroller
         }
 
         return $gateway->wireguard_address ?? $gateway->gateway_endpoint ?? $gateway->host;
+    }
+
+    private function forbiddenIdentityInput(NodeCreationInput $input): ?string
+    {
+        foreach ([
+            'host',
+            'operator-name',
+            'operator-tld',
+            'ingress',
+            'valkey-node',
+            'postgres-node',
+            'postgres-process',
+            'clickhouse-node',
+            's3-data-path',
+            'gateway-endpoint',
+            'host-key-fingerprint',
+        ] as $option) {
+            if ($input->stringOption($option) !== null) {
+                return $option;
+            }
+        }
+
+        foreach (['agent-tool', 'grant-to', 'grant-from'] as $option) {
+            if ($input->arrayOption($option) !== []) {
+                return $option;
+            }
+        }
+
+        foreach ([
+            'self-grant',
+            'self-grant-permissions',
+            'grant-to-preset',
+            'grant-to-permissions',
+            'grant-from-preset',
+            'grant-from-permissions',
+        ] as $option) {
+            if ($input->stringOption($option) !== null) {
+                return $option;
+            }
+        }
+
+        return $input->optionWasSupplied('user') ? 'user' : null;
     }
 
     private function nextWireguardAddress(): string

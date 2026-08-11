@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Nodes\NodeCreationIngressPlacement;
 use App\Services\Nodes\NodeCreationInput;
+use App\Services\Nodes\WorkloadNodeCreationRequest;
 use App\Services\Nodes\WorkloadNodeProvisioningInput;
 
 it('reads node creation arguments without mutable service state', function (): void {
@@ -80,4 +81,32 @@ it('holds ordered roles and the resolved private ingress node', function (): voi
         ->toBe(42)
         ->and($placement->ingressNodeName)
         ->toBe('edge-1');
+});
+
+it('holds one resolved workload creation request', function (): void {
+    $inputs = new WorkloadNodeProvisioningInput(
+        host: '192.168.6.20',
+        tld: 'beast',
+        sshUser: 'orbit',
+        gatewayEndpoint: '192.168.6.10',
+        hostKeyFingerprint: null,
+        platform: 'ubuntu_24-04',
+        architecture: 'amd64',
+        postgresNodeId: null,
+        postgresProcessId: null,
+        clickhouseNodeId: null,
+        s3DataPath: null,
+    );
+    $request = new WorkloadNodeCreationRequest(
+        roles: ['agent'],
+        inputs: $inputs,
+        ingressNodeId: null,
+    );
+
+    expect($request->roles)
+        ->toBe(['agent'])
+        ->and($request->inputs)
+        ->toBe($inputs)
+        ->and($request->ingressNodeId)
+        ->toBeNull();
 });

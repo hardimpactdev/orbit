@@ -161,3 +161,29 @@ it('delegates gateway convergence and client enrollment', function (): void {
     expect($gateway)->toContain('public function converge(');
     expect($client)->toContain('public function enroll(');
 });
+
+it('delegates workload request validation to a typed resolver', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $resolver = (string) file_get_contents($services.'/WorkloadNodeCreationResolver.php');
+
+    expect($creator)
+        ->toContain('private readonly WorkloadNodeCreationResolver $workloadResolver')
+        ->toContain('$this->workloadResolver->resolve(');
+
+    foreach ([
+        'private function resolveWorkloadRoleInputs(',
+        'private function resolveS3DataPath(',
+        'private function resolveAnalyticsDatabaseNodes(',
+        'private function resolveIngressPlacement(',
+        'private function findActiveIngressNodeByName(',
+        'private function findActiveDatabaseNodeByName(',
+        'private function isValidHost(',
+    ] as $oldMethod) {
+        expect($creator)->not->toContain($oldMethod);
+    }
+
+    expect($resolver)
+        ->toContain('public function resolve(')
+        ->toContain('WorkloadNodeCreationRequest');
+});
