@@ -6,8 +6,8 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Doctor\DoctorFleetNodeProjection;
 use App\Services\Doctor\DoctorProgressReportFactory;
-use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -49,11 +49,7 @@ it('exposes complete roles on fleet node summaries while keeping role=fleet on f
         'status' => NodeRoleStatus::Active,
     ]);
 
-    $runner = app(DoctorReportRunner::class);
-    $method = new ReflectionMethod(DoctorReportRunner::class, 'fleetNodeSummary');
-    $method->setAccessible(true);
-
-    $summary = $method->invoke($runner, $node, [
+    $summary = app(DoctorFleetNodeProjection::class)->nodeSummary($node, [
         'healthy' => true,
         'summary' => ['issues' => 0],
         'scope' => ['families' => ['node']],

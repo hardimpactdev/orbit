@@ -198,6 +198,7 @@ final readonly class DoctorReportRunner
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private DoctorFleetNodeProjection $fleetNodeProjection,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3DoctorProbe $s3DoctorProbe,
@@ -626,8 +627,14 @@ final readonly class DoctorReportRunner
             }
         }
 
-        $state->nodes = $this->orderedFleetNodeSummaries($state->scope->targets, $state->nodesByIndex);
-        $state->issues = $this->orderedFleetIssues($state->scope->targets, $state->issuesByIndex);
+        $state->nodes = $this->fleetNodeProjection->orderedNodeSummaries(
+            $state->scope->targets,
+            $state->nodesByIndex,
+        );
+        $state->issues = $this->fleetNodeProjection->orderedIssues(
+            $state->scope->targets,
+            $state->issuesByIndex,
+        );
     }
 
     private function probeFleetTarget(
@@ -697,13 +704,19 @@ final readonly class DoctorReportRunner
         FleetProbeRunState $state,
         array $report,
     ): void {
-        $nodeSummary = $this->fleetNodeSummary($node, $report);
-        $nodeIssues = $this->fleetNodeIssues($report);
+        $nodeSummary = $this->fleetNodeProjection->nodeSummary($node, $report);
+        $nodeIssues = $this->fleetNodeProjection->nodeIssues($report);
 
         $state->issuesByIndex[$nodeIndex] = $nodeIssues;
-        $state->issues = $this->orderedFleetIssues($state->scope->targets, $state->issuesByIndex);
+        $state->issues = $this->fleetNodeProjection->orderedIssues(
+            $state->scope->targets,
+            $state->issuesByIndex,
+        );
         $state->nodesByIndex[$nodeIndex] = $nodeSummary;
-        $state->nodes = $this->orderedFleetNodeSummaries($state->scope->targets, $state->nodesByIndex);
+        $state->nodes = $this->fleetNodeProjection->orderedNodeSummaries(
+            $state->scope->targets,
+            $state->nodesByIndex,
+        );
         $state->nodeProgressStatuses[$nodeIndex]['status'] = 'done';
 
         if ($state->scope->onNodeProgress !== null) {
@@ -722,88 +735,6 @@ final readonly class DoctorReportRunner
                 ),
             );
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $report
-     * @return array<string, mixed>
-     */
-    private function fleetNodeSummary(Node $node, array $report): array
-    {
-        $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
-        $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
-
-        return [
-            'node' => $node->name,
-            'role' => $node->displayRole(),
-            'roles' => $this->nodeRoles($node),
-            'healthy' => ($report['healthy'] ?? false) === true,
-            'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
-            'summary' => $reportSummary,
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $report
-     * @return list<array<string, mixed>>
-     */
-    private function fleetNodeIssues(array $report): array
-    {
-        $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
-        $issues = [];
-
-        foreach ($reportIssues as $reportIssue) {
-            if (! is_array($reportIssue)) {
-                continue;
-            }
-
-            /** @var array<string, mixed> $reportIssue */
-            $issues[] = $reportIssue;
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param  Collection<int, Node>  $targets
-     * @param  array<int, array<string, mixed>>  $nodesByIndex
-     * @return list<array<string, mixed>>
-     */
-    private function orderedFleetNodeSummaries(Collection $targets, array $nodesByIndex): array
-    {
-        $nodes = [];
-
-        foreach ($targets->values() as $index => $target) {
-            if (! isset($nodesByIndex[$index])) {
-                continue;
-            }
-
-            $nodes[] = $nodesByIndex[$index];
-        }
-
-        return $nodes;
-    }
-
-    /**
-     * @param  Collection<int, Node>  $targets
-     * @param  array<int, list<array<string, mixed>>>  $issuesByIndex
-     * @return list<array<string, mixed>>
-     */
-    private function orderedFleetIssues(Collection $targets, array $issuesByIndex): array
-    {
-        $issues = [];
-
-        foreach ($targets->values() as $index => $_target) {
-            if (! isset($issuesByIndex[$index])) {
-                continue;
-            }
-
-            foreach ($issuesByIndex[$index] as $issue) {
-                $issues[] = $issue;
-            }
-        }
-
-        return $issues;
     }
 
     private function canRunFleetProbeProcessWorkers(): bool
