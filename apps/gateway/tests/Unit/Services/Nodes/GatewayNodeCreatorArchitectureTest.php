@@ -104,3 +104,33 @@ it('delegates agent grants and tools to one setup boundary', function (): void {
         ->toContain('public function preflight(')
         ->toContain('public function apply(');
 });
+
+it('delegates bootstrap completion and ordered convergence as one boundary', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $completion = (string) file_get_contents($services.'/NodeBootstrapCompletion.php');
+
+    expect($creator)
+        ->toContain('private readonly NodeBootstrapCompletion $bootstrapCompletion')
+        ->toContain('$this->bootstrapCompletion->complete(')
+        ->toContain('$this->bootstrapCompletion->convergePrepared(');
+
+    foreach ([
+        'private function completeBootstrapWhileLocked(',
+        'private function syncActiveS3ServiceRoute(',
+        'private function refreshCompletedBootstrap(',
+        'private function completePreparedWorkloadNode(',
+        'private function completedNodePayload(',
+        'private function completedBootstrapResult(',
+        'private function ensureInitialWorkloadRoles(',
+        'private function setupManagedNode(',
+        'private function finalizeNodeSecurityBaseline(',
+    ] as $oldMethod) {
+        expect($creator)->not->toContain($oldMethod);
+    }
+
+    expect($completion)
+        ->toContain('public function complete(')
+        ->toContain('public function convergePrepared(')
+        ->toContain('NodeBootstrapCompletionLock $completionLock');
+});
