@@ -61,3 +61,21 @@ it('does not store raw request arguments between requests', function (): void {
         expect($source)->not->toContain($requestState);
     }
 });
+
+it('delegates bootstrap reservation as one focused boundary', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $reservation = (string) file_get_contents($services.'/NodeBootstrapReservation.php');
+
+    expect($creator)
+        ->toContain('private readonly NodeBootstrapReservation $bootstrapReservation')
+        ->toContain('$this->bootstrapReservation->prepare(');
+
+    expect($creator)->not->toContain('private function prepareHostBootstrap(');
+    expect($creator)->not->toContain('private function prepareHostBootstrapWithReservationLock(');
+    expect($creator)->not->toContain('WIREGUARD_RESERVATION_LOCK');
+
+    expect($reservation)
+        ->toContain('WIREGUARD_RESERVATION_LOCK')
+        ->toContain('private function prepareWithReservationLock(');
+});
