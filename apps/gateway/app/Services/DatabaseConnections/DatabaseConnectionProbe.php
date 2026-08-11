@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Data\Doctor\DoctorIssue;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\DatabaseConnection;
@@ -12,6 +13,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -24,16 +26,18 @@ final readonly class DatabaseConnectionProbe
 
     private const array SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
 
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private DatabaseConnectionEnvInspection $envInspection,
         private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
         private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
         private WorkspacePlacement $workspacePlacement,
+        private DoctorIssueFactory $doctorIssueFactory,
     ) {}
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<DoctorIssue>
      */
     public function probe(Node $node, ?DoctorTargetScope $scope = null): array
     {
@@ -96,7 +100,13 @@ final readonly class DatabaseConnectionProbe
             $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedWorkspace, $scannedTargets)];
         }
 
-        return $issues;
+        return array_map(
+            fn (array $issue): DoctorIssue => $this->doctorIssueFactory->fromArray([
+                ...$issue,
+                'node' => $node->name,
+            ]),
+            $issues,
+        );
     }
 
     private function readEnvContents(Node $node, DatabaseConnectionTarget $target): ?string

@@ -127,6 +127,11 @@ describe('NodeConverger', function (): void {
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.capability_missing',
+                'code' => 'tool.capability_missing',
+                'disposition' => 'genuine_drift',
+                'restore_action' => 'restore_tool_capability_missing',
+                'restorable' => true,
+                'adoptable' => false,
             ]);
     });
 });

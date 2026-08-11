@@ -17,11 +17,12 @@ final class DatabaseConnectionDoctorIssueDefinitions implements DoctorIssueDefin
     public function definitions(): array
     {
         return [
-            self::invalid('database_connection.env_extra', 'database_connection'),
+            self::invalid('database_connection.env_extra', 'database_connection', adoptable: true),
             self::genuine(
                 'database_connection.env_mismatch',
                 'database_connection',
                 'restore_database_connection_env_mismatch',
+                adoptable: true,
             ),
             self::genuine(
                 'database_connection.env_missing',
@@ -29,7 +30,7 @@ final class DatabaseConnectionDoctorIssueDefinitions implements DoctorIssueDefin
                 'restore_database_connection_env_missing',
             ),
             self::blocked('database_connection.remote_shell_probe_failed', 'database_connection'),
-            self::invalid('database_connection.target_extra', 'database_connection'),
+            self::invalid('database_connection.target_extra', 'database_connection', adoptable: true),
             self::genuine(
                 'database_connection.target_missing',
                 'database_connection',

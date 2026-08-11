@@ -11,6 +11,7 @@ use App\Models\NodeTool;
 use App\Services\Apps\AppsFixer;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Doctor\DoctorIssueCatalog;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProcessRestoreSupport;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorRestoreActionId;
@@ -164,12 +165,15 @@ it('binds schedule gateway codes to SchedulesFixer support and apply routing', f
             $node,
             $code,
             [],
-            [
+            app(DoctorIssueFactory::class)->fromArray([
                 'family' => 'schedule',
+                'node' => 'gateway',
                 'key' => $code,
                 'code' => $code,
                 'kind' => DriftKind::Missing->value,
-            ],
+                'summary' => $code,
+                'detail' => [],
+            ]),
         );
 
         expect($result)
@@ -186,12 +190,15 @@ it('binds schedule gateway codes to SchedulesFixer support and apply routing', f
         $node,
         'schedule.heartbeat_stale',
         [],
-        [
+        app(DoctorIssueFactory::class)->fromArray([
             'family' => 'schedule',
+            'node' => 'gateway',
             'key' => 'schedule.heartbeat_stale',
             'code' => 'schedule.heartbeat_stale',
             'kind' => DriftKind::Divergent->value,
-        ],
+            'summary' => 'schedule.heartbeat_stale',
+            'detail' => [],
+        ]),
     );
 
     expect($unsupported)->toBeNull();
@@ -297,11 +304,7 @@ it('does not treat unsupported findings as restore candidates that poison multi-
         'status' => 'active',
     ]);
 
-    $runner = app(DoctorReportRunner::class);
-    $annotate = new ReflectionMethod(DoctorReportRunner::class, 'annotateIssue');
-    $annotate->setAccessible(true);
-
-    $issue = $annotate->invoke($runner, [
+    $issue = app(DoctorIssueFactory::class)->fromArray([
         'family' => 'workspace',
         'node' => $node->name,
         'key' => 'workspace.path_missing',
@@ -309,7 +312,7 @@ it('does not treat unsupported findings as restore candidates that poison multi-
         'kind' => DriftKind::Missing->value,
         'summary' => 'Workspace path missing.',
         'detail' => ['workspace' => 'x', 'app' => 'y'],
-    ]);
+    ])->toArray();
 
     expect($issue['restorable'] ?? null)
         ->toBeFalse()

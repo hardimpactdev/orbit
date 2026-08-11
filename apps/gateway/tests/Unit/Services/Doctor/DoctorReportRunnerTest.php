@@ -34,6 +34,7 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -3258,15 +3259,14 @@ describe('DoctorReportRunner', function (): void {
 
     it('does not mark app.runtime_config_probe_failed as restorable', function (): void {
         $node = createDoctorRunnerAppHostNode();
-        $method = new \ReflectionMethod(DoctorReportRunner::class, 'annotateIssue');
-        $issue = $method->invoke(app(DoctorReportRunner::class), [
+        $issue = app(DoctorIssueFactory::class)->fromArray([
             'family' => 'app',
             'node' => $node->name,
             'key' => 'app.runtime_config_probe_failed',
             'kind' => 'unverifiable',
             'summary' => 'Managed runtime config directory probe failed.',
             'detail' => ['error' => 'permission denied'],
-        ]);
+        ])->toArray();
 
         expect($issue)
             ->toMatchArray([
@@ -3283,19 +3283,23 @@ describe('DoctorReportRunner', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
 
-        $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [[
-            'family' => 'app',
-            'node' => $node->name,
-            'key' => 'app.runtime_config_probe_failed',
-            'kind' => 'unverifiable',
-            // Stale/crafted client payload: force restorable even though annotateIssue denies it.
-            'restorable' => true,
-            'summary' => 'Managed runtime config directory probe failed.',
-            'detail' => [
-                'app' => 'docs',
-                'error' => 'permission denied',
-            ],
-        ]]);
+        $actions = app(DoctorReportRunner::class)->apply(
+            $node,
+            'restore',
+            [app(DoctorIssueFactory::class)->fromClientArray([
+                'family' => 'app',
+                'node' => $node->name,
+                'key' => 'app.runtime_config_probe_failed',
+                'kind' => 'unverifiable',
+                // Stale/crafted client payload: the catalog still denies restore.
+                'restorable' => true,
+                'summary' => 'Managed runtime config directory probe failed.',
+                'detail' => [
+                    'app' => 'docs',
+                    'error' => 'permission denied',
+                ],
+            ])],
+        );
 
         expect($actions)
             ->toBeEmpty()
@@ -4624,26 +4628,33 @@ describe('DoctorReportRunner metrics role categories', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
 
+        $issueFactory = app(DoctorIssueFactory::class);
         $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [
-            [
+            $issueFactory->fromClientArray([
                 'family' => 'process',
                 'key' => 'process.runtime_unit_missing',
+                'kind' => 'missing',
+                'summary' => 'Runtime unit is missing.',
                 'restorable' => true,
                 'detail' => [
                     'process' => 'workspace-runtime',
                     'app' => $app->name,
                     'instance' => $instance->name,
                 ],
-            ],
-            [
+            ]),
+            $issueFactory->fromClientArray([
                 'family' => 'proxy',
                 'key' => 'proxy.route_missing',
+                'kind' => 'missing',
+                'summary' => 'Proxy route is missing.',
                 'restorable' => true,
                 'detail' => ['domain' => 'feature.docs.example.test'],
-            ],
-            [
+            ]),
+            $issueFactory->fromClientArray([
                 'family' => 'database_connection',
                 'key' => 'database_connection.target_missing',
+                'kind' => 'missing',
+                'summary' => 'Database connection target is missing.',
                 'restorable' => true,
                 'detail' => [
                     'target_type' => 'workspace',
@@ -4651,7 +4662,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                     'env_prefix' => 'DB',
                     'database_connection_id' => $connection->id,
                 ],
-            ],
+            ]),
         ]);
 
         expect($actions)

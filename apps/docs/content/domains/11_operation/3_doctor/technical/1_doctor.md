@@ -183,6 +183,21 @@ an authorization concern, not repairable drift in that record.
   catalog with disposition and family ownership. Genuine drift must declare a
   restore action. Unknown codes fail closed and never invent classification
   from name or substring heuristics.
+- Doctor uses one canonical issue contract from probe through resolution.
+  Probes supply observation identity, kind, summary, and detail. The issue
+  catalog alone supplies disposition, restore action, and whether the issue is
+  restorable or adoptable. Convergence context can select which actions run,
+  but it must not change issue classification.
+- Selected issues received from a client are untrusted observations. Orbit
+  ignores client-supplied `disposition`, `restore_action`, `restorable`, and
+  `adoptable` values and rebuilds them from the issue catalog before resolution.
+  A resource-scoped key can carry a separate catalog code. A catalogued key
+  cannot claim an unrelated code. The documented `node.updates` group key may
+  carry its specific `node.updates_*` codes. Unknown or mismatched identities
+  fail validation before any action runs.
+- Fleet subprocess reports cross the same contract boundary. The parent process
+  rebuilds every issue from observation fields and the catalog before it uses
+  or publishes the report.
 
 ### Issue Dispositions
 

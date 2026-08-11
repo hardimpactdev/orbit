@@ -12,6 +12,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use Throwable;
@@ -22,6 +23,7 @@ final readonly class NodeConverger
         private NodesProbe $nodesProbe,
         private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
+        private DoctorIssueFactory $doctorIssueFactory,
     ) {}
 
     /**
@@ -249,7 +251,7 @@ final readonly class NodeConverger
                 continue;
             }
 
-            $issues[] = $this->nodeIssuePayload($entry, $node, $context);
+            $issues[] = $this->nodeIssuePayload($entry, $node);
         }
 
         return $issues;
@@ -302,18 +304,9 @@ final readonly class NodeConverger
     /**
      * @return array<string, mixed>
      */
-    private function nodeIssuePayload(DriftEntry $entry, Node $node, NodeConvergenceContext $context): array
+    private function nodeIssuePayload(DriftEntry $entry, Node $node): array
     {
-        return [
-            'family' => $entry->family,
-            'node' => $node->name,
-            'key' => $entry->key,
-            'code' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => $entry->detail ?? [],
-            'restorable' => $context === NodeConvergenceContext::Restore,
-        ];
+        return $this->doctorIssueFactory->fromDriftEntry($entry, $node->name)->toArray();
     }
 
     /**
@@ -323,18 +316,16 @@ final readonly class NodeConverger
     {
         $tool->loadMissing('node');
 
-        return [
-            'family' => $entry->family,
-            'node' => $tool->node?->name,
-            'key' => $entry->key,
-            'code' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
-                ...($entry->detail ?? []),
-                'tool' => $tool->name,
-            ],
-        ];
+        return $this->doctorIssueFactory
+            ->fromDriftEntry(
+                $entry,
+                $tool->node?->name,
+                detail: [
+                    ...($entry->detail ?? []),
+                    'tool' => $tool->name,
+                ],
+            )
+            ->toArray();
     }
 
     /**

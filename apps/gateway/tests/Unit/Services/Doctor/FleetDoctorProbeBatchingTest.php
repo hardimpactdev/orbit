@@ -133,7 +133,13 @@ it('preserves fleet node and issue ordering when subprocess workers complete out
             ->and(collect(fleetDoctorProbeReportList($report, 'issues'))->pluck('node')->all())
             ->toBe(['fleet-order-02', 'fleet-order-04'])
             ->and(collect(fleetDoctorProbeReportList($report, 'issues'))->pluck('key')->all())
-            ->toBe(['proxy.worker_fake_issue', 'proxy.worker_fake_issue']);
+            ->toBe(['proxy.worker_fake_issue', 'proxy.worker_fake_issue'])
+            ->and(collect(fleetDoctorProbeReportList($report, 'issues'))->pluck('code')->unique()->all())
+            ->toBe(['proxy.route_missing'])
+            ->and(collect(fleetDoctorProbeReportList($report, 'issues'))->pluck('restorable')->unique()->all())
+            ->toBe([true])
+            ->and(collect(fleetDoctorProbeReportList($report, 'issues'))->pluck('restore_action')->unique()->all())
+            ->toBe(['restore_proxy_route_missing']);
 
         Process::assertRanTimes(
             fn (PendingProcess $process): bool => fleetDoctorProbeIsWorkerLaunchCommand(fleetDoctorProbeCommand(
@@ -476,6 +482,20 @@ function fleetDoctorProbeWorkerJson(
     bool $healthy = true,
     array $issues = [],
 ): string {
+    $issues = array_map(
+        static fn (array $issue): array => [
+            'family' => 'proxy',
+            'node' => $nodeName,
+            'key' => 'proxy.worker_fake_issue',
+            'code' => 'proxy.route_missing',
+            'kind' => 'missing',
+            'summary' => 'Worker fixture issue.',
+            'detail' => ['domain' => 'worker.example.test'],
+            ...$issue,
+        ],
+        $issues,
+    );
+
     return json_encode([
         'report' => [
             'healthy' => $healthy,

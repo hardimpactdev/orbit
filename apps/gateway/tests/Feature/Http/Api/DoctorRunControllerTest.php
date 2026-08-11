@@ -1253,6 +1253,43 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.issues.0.family', 'tool');
     });
 
+    it('rejects a selected issue that claims another catalog code', function (): void {
+        createDoctorRunCallerNode();
+        createTestAppHostNode(['name' => 'app-selected-invalid', 'status' => 'active']);
+        $shell = new DoctorRunRemoteShell('');
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'restore',
+                'families' => ['tool'],
+                'node' => 'app-selected-invalid',
+                'issues' => [[
+                    'family' => 'tool',
+                    'node' => 'app-selected-invalid',
+                    'key' => 'tool.version_mismatch',
+                    'code' => 'node.access_permission_invalid',
+                    'kind' => 'divergent',
+                    'summary' => 'Crafted issue.',
+                    'detail' => ['tool' => 'caddy'],
+                    'restorable' => true,
+                ]],
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.fields', ['issues']);
+
+        expect($shell->runs)->toBe(0);
+    });
+
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);

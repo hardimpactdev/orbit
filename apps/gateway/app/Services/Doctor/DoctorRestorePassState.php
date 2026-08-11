@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Data\Doctor\DoctorRestoreProbe;
+
 /**
  * Mutable-looking value object for one multi-pass restore loop position.
  */
 final readonly class DoctorRestorePassState
 {
     /**
-     * @param  array{issues?: list<array<string, mixed>>}  $probe
      * @param  list<array<string, mixed>>  $actions
      */
     public function __construct(
-        public array $probe,
+        public DoctorRestoreProbe $probe,
         public array $actions,
         public int $passes,
         public ?string $previousSignature,
@@ -33,10 +34,7 @@ final readonly class DoctorRestorePassState
         );
     }
 
-    /**
-     * @param  array{issues?: list<array<string, mixed>>}  $probe
-     */
-    public function withProbe(array $probe): self
+    public function withProbe(DoctorRestoreProbe $probe): self
     {
         return new self(
             probe: $probe,
@@ -80,7 +78,7 @@ final readonly class DoctorRestorePassState
     /**
      * @param  'converged'|'no_progress'|'max_passes'|'no_restorable'  $stopReason
      * @return array{
-     *     probe: array{issues?: list<array<string, mixed>>},
+     *     probe: DoctorRestoreProbe,
      *     actions: list<array<string, mixed>>,
      *     passes: int,
      *     stop_reason: 'converged'|'no_progress'|'max_passes'|'no_restorable'

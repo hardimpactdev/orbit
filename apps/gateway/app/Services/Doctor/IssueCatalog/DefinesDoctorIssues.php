@@ -9,13 +9,18 @@ use App\Enums\DoctorIssueDisposition;
 
 trait DefinesDoctorIssues
 {
-    private static function genuine(string $code, string $family, string $restoreAction): DoctorIssueDefinition
-    {
+    private static function genuine(
+        string $code,
+        string $family,
+        string $restoreAction,
+        bool $adoptable = false,
+    ): DoctorIssueDefinition {
         return new DoctorIssueDefinition(
             code: $code,
             family: $family,
             disposition: DoctorIssueDisposition::GenuineDrift,
             restoreAction: $restoreAction,
+            adoptable: $adoptable,
         );
     }
 
@@ -29,13 +34,14 @@ trait DefinesDoctorIssues
         );
     }
 
-    private static function invalid(string $code, string $family): DoctorIssueDefinition
+    private static function invalid(string $code, string $family, bool $adoptable = false): DoctorIssueDefinition
     {
         return new DoctorIssueDefinition(
             code: $code,
             family: $family,
             disposition: DoctorIssueDisposition::InvalidIntent,
             restoreAction: null,
+            adoptable: $adoptable,
         );
     }
 

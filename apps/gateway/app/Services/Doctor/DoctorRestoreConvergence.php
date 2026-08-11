@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Data\Doctor\DoctorIssue;
+use App\Data\Doctor\DoctorRestoreProbe;
+
 /**
  * Bounded multi-pass restore loop for node-scoped Doctor convergence.
  */
@@ -12,11 +15,11 @@ final class DoctorRestoreConvergence
     public const int MAX_PASSES = 8;
 
     /**
-     * @param  callable(): array{issues?: list<array<string, mixed>>}  $probe
-     * @param  callable(list<array<string, mixed>>): list<array<string, mixed>>  $apply
-     * @param  callable(array<string, mixed>): bool  $isRestorable
+     * @param  callable(): DoctorRestoreProbe  $probe
+     * @param  callable(list<DoctorIssue>): list<array<string, mixed>>  $apply
+     * @param  callable(DoctorIssue): bool  $isRestorable
      * @return array{
-     *     probe: array{issues?: list<array<string, mixed>>},
+     *     probe: DoctorRestoreProbe,
      *     actions: list<array<string, mixed>>,
      *     passes: int,
      *     stop_reason: 'converged'|'no_progress'|'max_passes'|'no_restorable'
@@ -46,9 +49,9 @@ final class DoctorRestoreConvergence
     }
 
     /**
-     * @param  list<array<string, mixed>>  $restorable
+     * @param  list<DoctorIssue>  $restorable
      * @return array{
-     *     probe: array{issues?: list<array<string, mixed>>},
+     *     probe: DoctorRestoreProbe,
      *     actions: list<array<string, mixed>>,
      *     passes: int,
      *     stop_reason: 'converged'|'no_progress'|'max_passes'|'no_restorable'
@@ -68,7 +71,7 @@ final class DoctorRestoreConvergence
                 return $state->toResult($preStop);
             }
 
-            $passActions = ($callbacks->apply)($this->allIssues($state->probe));
+            $passActions = ($callbacks->apply)($state->probe->issues);
             $state = $state->afterApply($passActions, $signature);
             $state = $state->withProbe(($callbacks->probe)());
             $restorable = $this->restorableIssues($state->probe, $callbacks->isRestorable);
@@ -84,23 +87,11 @@ final class DoctorRestoreConvergence
     }
 
     /**
-     * @param  array{issues?: list<array<string, mixed>>}  $probe
-     * @param  callable(array<string, mixed>): bool  $isRestorable
-     * @return list<array<string, mixed>>
+     * @param  callable(DoctorIssue): bool  $isRestorable
+     * @return list<DoctorIssue>
      */
-    private function restorableIssues(array $probe, callable $isRestorable): array
+    private function restorableIssues(DoctorRestoreProbe $probe, callable $isRestorable): array
     {
-        return array_values(array_filter($this->allIssues($probe), $isRestorable));
-    }
-
-    /**
-     * @param  array{issues?: list<array<string, mixed>>}  $probe
-     * @return list<array<string, mixed>>
-     */
-    private function allIssues(array $probe): array
-    {
-        $issues = $probe['issues'] ?? [];
-
-        return array_values(array_filter($issues, is_array(...)));
+        return array_values(array_filter($probe->issues, $isRestorable));
     }
 }

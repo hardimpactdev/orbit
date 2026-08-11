@@ -110,6 +110,7 @@ final class ProxyDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'proxy.route_extra',
                 'proxy',
                 'restore_proxy_route_extra',
+                adoptable: true,
             ),
             self::genuine(
                 'proxy.route_mismatch',

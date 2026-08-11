@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Data\Doctor\DoctorIssue;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
@@ -136,10 +137,21 @@ describe('DatabaseConnectionProbe', function (): void {
 
         expect($issues)
             ->toHaveCount(2)
+            ->and($issues[0])
+            ->toBeInstanceOf(DoctorIssue::class)
             ->and(collect($issues)->pluck('key')->all())
             ->toBe([
                 'database_connection.env_missing',
                 'database_connection.env_mismatch',
+            ])
+            ->and($issues[0]->toArray())
+            ->toMatchArray([
+                'node' => 'gateway-1',
+                'code' => 'database_connection.env_missing',
+                'disposition' => 'genuine_drift',
+                'restore_action' => 'restore_database_connection_env_missing',
+                'restorable' => true,
+                'adoptable' => false,
             ]);
     });
 
@@ -177,10 +189,13 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.env_mismatch');
 
         expect($issue)
-            ->not->toBeNull()->and($issue['detail']['mismatched_keys']['DB_PASSWORD'] ?? null)->toBe(
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->detail['mismatched_keys']['DB_PASSWORD'] ?? null)
+            ->toBe(
                 'masked',
-            )->and(json_encode($issue, JSON_THROW_ON_ERROR))
-            ->not->toContain('stored-secret')->and(json_encode($issue, JSON_THROW_ON_ERROR))
+            )
+            ->and(json_encode($issue->toArray(), JSON_THROW_ON_ERROR))
+            ->not->toContain('stored-secret')->and(json_encode($issue->toArray(), JSON_THROW_ON_ERROR))
             ->not->toContain('observed-secret');
     });
 
@@ -348,9 +363,8 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.unverifiable');
 
         expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue['detail']['reason'] ?? null)
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->detail['reason'] ?? null)
             ->toBe('partial_env_group');
     });
 
@@ -512,11 +526,10 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.wireguard_self_route_unavailable');
 
         expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue['kind'])
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->kind->value)
             ->toBe('unverifiable')
-            ->and($issue['detail'])
+            ->and($issue->detail)
             ->toMatchArray([
                 'target_type' => 'instance',
                 'app' => 'docs',
@@ -706,9 +719,8 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.env_extra');
 
         expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue['detail']['env_prefix'] ?? null)
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->detail['env_prefix'] ?? null)
             ->toBe('REPORTING_DB');
     });
 
@@ -778,11 +790,10 @@ describe('DatabaseConnectionProbe', function (): void {
             ->firstWhere('key', 'database_connection.target_missing');
 
         expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue['detail']['database_connection_id'] ?? null)
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->detail['database_connection_id'] ?? null)
             ->toBe($connection->id)
-            ->and($issue['detail']['connection'] ?? null)
+            ->and($issue->detail['connection'] ?? null)
             ->toBe('docs');
     });
 
@@ -825,9 +836,11 @@ describe('DatabaseConnectionProbe', function (): void {
 
         $issue = $issues->firstWhere('key', 'database_connection.target_missing');
 
-        expect($issue['detail']['database_connection_id'] ?? null)
+        expect($issue)
+            ->toBeInstanceOf(DoctorIssue::class)
+            ->and($issue->detail['database_connection_id'] ?? null)
             ->toBe($connection->id)
-            ->and($issue['detail']['connection'] ?? null)
+            ->and($issue->detail['connection'] ?? null)
             ->toBe('docs');
     });
 

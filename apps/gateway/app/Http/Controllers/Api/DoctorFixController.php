@@ -6,13 +6,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Data\Doctor\DoctorInstanceTarget;
+use App\Data\Doctor\DoctorIssue;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
+use App\Exceptions\DoctorIssueIdentityMismatch;
+use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
 use App\Services\Doctor\DoctorInstanceTargetResolver;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorPublicVocabulary;
 use App\Services\Doctor\DoctorReportRunner;
@@ -46,6 +50,7 @@ final class DoctorFixController implements Loggable
         ProgressEventStreamResponseFactory $streams,
         DoctorInstanceTargetResolver $appTargets,
         WorkspaceRoleGuard $workspaceRoleGuard,
+        DoctorIssueFactory $issueFactory,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
@@ -158,7 +163,27 @@ final class DoctorFixController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $issues = $vocabulary->internalIssues($this->issues($request));
+        $issueValues = $vocabulary->internalIssues($this->issues($request));
+
+        try {
+            $issues = $issueValues === null
+                ? null
+                : array_map(
+                    $issueFactory->fromClientArray(...),
+                    $issueValues,
+                );
+        } catch (DoctorIssueIdentityMismatch|DoctorUncataloguedIssueException $exception) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Selected Doctor issues do not match the Doctor issue catalog.',
+                    'meta' => [
+                        'fields' => ['issues'],
+                        'reason' => $exception->getMessage(),
+                    ],
+                ],
+            ], 422);
+        }
 
         if ($this->wantsEventStream($request)) {
             return $this->stream(
@@ -197,7 +222,7 @@ final class DoctorFixController implements Loggable
 
     /**
      * @param  list<string>  $families
-     * @param  list<array<string, mixed>>|null  $issues
+     * @param  list<DoctorIssue>|null  $issues
      * @mago-expect lint:halstead
      * @mago-expect lint:excessive-parameter-list
      * @mago-expect lint:no-boolean-flag-parameter
@@ -379,7 +404,7 @@ final class DoctorFixController implements Loggable
 
     /**
      * @param  list<string>  $families
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @return array<string, mixed>
      */
     private function applySelectedIssues(

@@ -67,6 +67,22 @@ it('marks codes restorable only when catalog genuine and DoctorRestoreSupport ag
     }
 });
 
+it('declares adoption support in the issue catalog', function (): void {
+    $adoptableCodes = array_keys(array_filter(
+        DoctorIssueCatalog::definitions(),
+        static fn ($definition): bool => $definition->adoptable,
+    ));
+    sort($adoptableCodes);
+
+    expect($adoptableCodes)->toBe([
+        'database_connection.env_extra',
+        'database_connection.env_mismatch',
+        'database_connection.target_extra',
+        'firewall_rule.rule_extra',
+        'proxy.route_extra',
+    ]);
+});
+
 it('fails closed for uncatalogued issue codes instead of inventing a disposition', function (): void {
     expect(fn () => DoctorIssueCatalog::require('doctor.not_a_real_issue_code'))
         ->toThrow(DoctorUncataloguedIssueException::class);

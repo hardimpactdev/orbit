@@ -11,6 +11,7 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\NodeDnsmasqRecordsBuilder;
 use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Doctor\DnsRuntimeProbe;
+use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -146,7 +147,7 @@ it('routes node DNS restore to only the node-owned projection', function (): voi
     File::put($this->root.'/dnsmasq.d/10-node-records.conf', "stale node bytes\n");
     File::put($this->root.'/dnsmasq.d/20-proxy-records.conf', "proxy owner sentinel\n");
 
-    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [[
+    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [app(DoctorIssueFactory::class)->fromArray([
         'family' => 'node',
         'node' => $node->name,
         'key' => 'node.dns_mapping_mismatch',
@@ -156,7 +157,7 @@ it('routes node DNS restore to only the node-owned projection', function (): voi
         'detail' => ['record_kind' => 'node_host'],
         'restorable' => true,
         'adoptable' => false,
-    ]]);
+    ])]);
 
     expect($actions)
         ->toHaveCount(1)
@@ -190,7 +191,7 @@ it('routes proxy DNS restore to only the proxy-owned projection', function (): v
     File::put($this->root.'/dnsmasq.d/10-node-records.conf', "node owner sentinel\n");
     File::put($this->root.'/dnsmasq.d/20-proxy-records.conf', "stale proxy bytes\n");
 
-    $actions = app(DoctorReportRunner::class)->apply($router, 'restore', [[
+    $actions = app(DoctorReportRunner::class)->apply($router, 'restore', [app(DoctorIssueFactory::class)->fromArray([
         'family' => 'proxy',
         'node' => $router->name,
         'key' => 'proxy.dns_mapping_mismatch',
@@ -200,7 +201,7 @@ it('routes proxy DNS restore to only the proxy-owned projection', function (): v
         'detail' => [],
         'restorable' => true,
         'adoptable' => false,
-    ]]);
+    ])]);
 
     expect($actions)
         ->toHaveCount(1)
@@ -230,7 +231,7 @@ it('leaves owner projection drift unresolved while the live projection mount is 
     app()->forgetInstance(DnsmasqReconciler::class);
     app()->forgetInstance(DoctorReportRunner::class);
 
-    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [[
+    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [app(DoctorIssueFactory::class)->fromArray([
         'family' => 'node',
         'node' => $node->name,
         'key' => 'node.dns_mapping_mismatch',
@@ -240,7 +241,7 @@ it('leaves owner projection drift unresolved while the live projection mount is 
         'detail' => ['record_kind' => 'node_host'],
         'restorable' => true,
         'adoptable' => false,
-    ]]);
+    ])]);
 
     expect($actions)
         ->toHaveCount(1)
@@ -268,7 +269,7 @@ it('leaves scoped DNS projection drift unresolved while a mounted runtime still 
     File::put($this->root.'/dnsmasq.d/10-node-records.conf', "node owner sentinel\n");
     File::put($this->root.'/dnsmasq.d/20-proxy-records.conf', "proxy owner sentinel\n");
 
-    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [[
+    $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [app(DoctorIssueFactory::class)->fromArray([
         'family' => $family,
         'node' => $node->name,
         'key' => $key,
@@ -278,7 +279,7 @@ it('leaves scoped DNS projection drift unresolved while a mounted runtime still 
         'detail' => [],
         'restorable' => true,
         'adoptable' => false,
-    ]]);
+    ])]);
 
     expect($actions)
         ->toHaveCount(1)

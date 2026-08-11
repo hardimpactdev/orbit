@@ -2,51 +2,46 @@
 
 declare(strict_types=1);
 
+use App\Data\Doctor\DoctorIssue;
+use App\Data\Doctor\DoctorRestoreProbe;
+use App\Enums\DriftKind;
+use App\Services\Doctor\DoctorIssueFactory;
+use App\Services\Doctor\DoctorIssueIdentityResolver;
 use App\Services\Doctor\DoctorRestoreConvergence;
 
 it('continues restore passes until no restorable genuine drift remains', function (): void {
     $probes = [
-        [
-            'issues' => [
-                issue('tool', 'tool.capability_missing'),
-            ],
-        ],
-        [
-            'issues' => [
-                issue('tool', 'tool.config_missing'),
-            ],
-        ],
-        [
-            'issues' => [],
-        ],
+        restoreProbe([issue('tool', 'tool.capability_missing')]),
+        restoreProbe([issue('tool', 'tool.config_missing')]),
+        restoreProbe([]),
     ];
     $probeIndex = 0;
     $applied = [];
 
     $result = new DoctorRestoreConvergence()->run(
-        probe: function () use (&$probeIndex, $probes): array {
-            $probe = $probes[$probeIndex] ?? ['issues' => []];
+        probe: function () use (&$probeIndex, $probes): DoctorRestoreProbe {
+            $probe = $probes[$probeIndex] ?? restoreProbe([]);
             $probeIndex++;
 
             return $probe;
         },
         apply: function (array $issues) use (&$applied): array {
             $applied[] = array_map(
-                static fn (array $issue): string => (string) $issue['code'],
+                static fn (DoctorIssue $issue): string => $issue->code,
                 $issues,
             );
 
             return array_map(
-                static fn (array $issue): array => [
-                    'code' => $issue['code'],
-                    'key' => $issue['key'],
+                static fn (DoctorIssue $issue): array => [
+                    'code' => $issue->code,
+                    'key' => $issue->key,
                     'mode' => 'restore',
                     'status' => 'completed',
                 ],
                 $issues,
             );
         },
-        isRestorable: static fn (array $issue): bool => ($issue['restorable'] ?? false) === true,
+        isRestorable: static fn (DoctorIssue $issue): bool => $issue->restorable,
     );
 
     expect($result['stop_reason'])
@@ -58,32 +53,28 @@ it('continues restore passes until no restorable genuine drift remains', functio
             ['tool.capability_missing'],
             ['tool.config_missing'],
         ])
-        ->and($result['probe']['issues'] ?? null)
+        ->and($result['probe']->issues)
         ->toBeEmpty();
 });
 
 it('stops with no_progress when restorable findings repeat after a pass', function (): void {
-    $same = [
-        'issues' => [
-            issue('node', 'node.security.home_perms'),
-        ],
-    ];
+    $same = restoreProbe([issue('node', 'node.security.home_perms')]);
     $probes = [$same, $same, $same];
     $probeIndex = 0;
 
     $result = new DoctorRestoreConvergence()->run(
-        probe: function () use (&$probeIndex, $probes): array {
+        probe: function () use (&$probeIndex, $probes): DoctorRestoreProbe {
             $probe = $probes[$probeIndex] ?? $probes[array_key_last($probes)];
             $probeIndex++;
 
             return $probe;
         },
         apply: static fn (array $issues): array => [[
-            'code' => $issues[0]['code'],
+            'code' => $issues[0]->code,
             'mode' => 'restore',
             'status' => 'completed',
         ]],
-        isRestorable: static fn (array $issue): bool => true,
+        isRestorable: static fn (DoctorIssue $issue): bool => true,
         maxPasses: 8,
     );
 
@@ -97,28 +88,24 @@ it('stops with no_progress when restorable findings repeat after a pass', functi
 
 it('stops at max_passes without looping forever', function (): void {
     $oscillating = [
-        [
-            'issues' => [issue('tool', 'tool.config_missing')],
-        ],
-        [
-            'issues' => [issue('tool', 'tool.config_mismatch')],
-        ],
+        restoreProbe([issue('tool', 'tool.config_missing')]),
+        restoreProbe([issue('tool', 'tool.config_mismatch')]),
     ];
     $probeIndex = 0;
 
     $result = new DoctorRestoreConvergence()->run(
-        probe: function () use (&$probeIndex, $oscillating): array {
+        probe: function () use (&$probeIndex, $oscillating): DoctorRestoreProbe {
             $probe = $oscillating[$probeIndex % 2];
             $probeIndex++;
 
             return $probe;
         },
         apply: static fn (array $issues): array => [[
-            'code' => $issues[0]['code'],
+            'code' => $issues[0]->code,
             'mode' => 'restore',
             'status' => 'completed',
         ]],
-        isRestorable: static fn (array $issue): bool => true,
+        isRestorable: static fn (DoctorIssue $issue): bool => true,
         maxPasses: 3,
     );
 
@@ -129,16 +116,30 @@ it('stops at max_passes without looping forever', function (): void {
 });
 
 /**
- * @return array<string, mixed>
  */
-function issue(string $family, string $code): array
+function issue(string $family, string $code): DoctorIssue
 {
-    return [
+    return new DoctorIssueFactory(new DoctorIssueIdentityResolver)->fromArray([
         'family' => $family,
         'code' => $code,
         'key' => $code,
         'node' => 'node-1',
-        'restorable' => true,
+        'kind' => DriftKind::Divergent->value,
+        'summary' => $code,
         'detail' => [],
-    ];
+    ]);
+}
+
+/**
+ * @param  list<DoctorIssue>  $issues
+ */
+function restoreProbe(array $issues): DoctorRestoreProbe
+{
+    return new DoctorRestoreProbe(
+        report: ['issues' => array_map(
+            static fn (DoctorIssue $issue): array => $issue->toArray(),
+            $issues,
+        )],
+        issues: $issues,
+    );
 }

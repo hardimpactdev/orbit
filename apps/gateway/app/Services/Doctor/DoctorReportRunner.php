@@ -7,6 +7,8 @@ namespace App\Services\Doctor;
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Actions\Processes\RecordProcessEvent;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Doctor\DoctorIssue;
+use App\Data\Doctor\DoctorRestoreProbe;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
@@ -20,7 +22,6 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\ProcessEventType;
-use App\Exceptions\DoctorUncataloguedIssueException;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -210,6 +211,7 @@ final readonly class DoctorReportRunner
         private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
         private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
+        private DoctorIssueFactory $doctorIssueFactory,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private RecordProcessEvent $recordProcessEvent = new RecordProcessEvent,
@@ -832,7 +834,11 @@ final readonly class DoctorReportRunner
             return $this->probeFleetTargetReport($node, $families, $key);
         }
 
-        return $report;
+        try {
+            return $this->canonicalizeFleetProbeProcessReport($report);
+        } catch (Throwable) {
+            return $this->probeFleetTargetReport($node, $families, $key);
+        }
     }
 
     /**
@@ -861,6 +867,36 @@ final readonly class DoctorReportRunner
         }
 
         return null;
+    }
+
+    /**
+     * Rebuild subprocess issues from observation fields before the parent trusts them.
+     *
+     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
+     */
+    private function canonicalizeFleetProbeProcessReport(array $report): array
+    {
+        $values = $report['issues'] ?? [];
+
+        if (! is_array($values)) {
+            throw new LogicException('Fleet Doctor probe issues must be an array.');
+        }
+
+        $issues = [];
+
+        foreach ($values as $value) {
+            if (! is_array($value)) {
+                throw new LogicException('Fleet Doctor probe issues must use the Doctor issue contract.');
+            }
+
+            /** @var array<string, mixed> $value */
+            $issues[] = $this->doctorIssueFactory->fromClientArray($value);
+        }
+
+        $report['issues'] = $this->serializeIssues($issues);
+
+        return $report;
     }
 
     /**
@@ -1120,13 +1156,14 @@ final readonly class DoctorReportRunner
         $key = $request->key;
         $dryRun = $request->dryRun;
         $probe = $this->probe($node, $families, $key, scope: $scope);
+        $issues = $this->issuesFromProbe($probe);
 
         if ($mode === 'verify') {
             return $probe;
         }
 
         if ($dryRun) {
-            return $this->finalize($probe, $mode, $this->plannedActions($mode, $probe['issues'] ?? []), dryRun: true);
+            return $this->finalize($probe, $mode, $this->plannedActions($mode, $issues), dryRun: true);
         }
 
         if ($mode === 'restore') {
@@ -1148,12 +1185,12 @@ final readonly class DoctorReportRunner
                         $scope,
                     )
             )
-            : $this->apply($node, $mode, $probe['issues'] ?? []);
+            : $this->applyIssues($node, $mode, $issues);
 
         if ($mode !== 'adopt' || $key === 'node.updates') {
             $actions = [
                 ...$actions,
-                ...$this->actionsForUnsupportedMode($mode, $probe['issues'] ?? [], $actions),
+                ...$this->actionsForUnsupportedMode($mode, $issues, $actions),
             ];
         }
 
@@ -1202,18 +1239,20 @@ final readonly class DoctorReportRunner
 
             return $fresh instanceof Node ? $fresh : $node;
         };
-        /** @var callable(): array{issues?: list<array<string, mixed>>} $probe */
-        $probe = function () use ($resolveSelectedNode, $families, $request, $initialProbe): array {
-            static $first = true;
+        $pendingInitialProbe = $this->restoreProbe($initialProbe);
+        $probe = function () use (
+            $resolveSelectedNode,
+            $families,
+            $request,
+            &$pendingInitialProbe,
+        ): DoctorRestoreProbe {
+            if ($pendingInitialProbe !== null) {
+                $probe = $pendingInitialProbe;
+                $pendingInitialProbe = null;
 
-            if ($first) {
-                $first = false;
-
-                /** @var array{issues?: list<array<string, mixed>>} $initialProbe */
-                return $initialProbe;
+                return $probe;
             }
 
-            /** @var array{issues?: list<array<string, mixed>>} $fresh */
             $fresh = $this->probe(
                 $resolveSelectedNode(),
                 $families,
@@ -1221,17 +1260,17 @@ final readonly class DoctorReportRunner
                 scope: $request->targetScope(),
             );
 
-            return $fresh;
+            return $this->restoreProbe($fresh);
         };
         $result = $convergence->run(
             probe: $probe,
-            apply: fn (array $issues): array => $this->apply($resolveSelectedNode(), 'restore', $issues),
-            isRestorable: fn (array $issue): bool => $this->issueSupportsMode($issue, 'restore'),
+            apply: fn (array $issues): array => $this->applyIssues($resolveSelectedNode(), 'restore', $issues),
+            isRestorable: fn (DoctorIssue $issue): bool => $this->issueSupportsMode($issue, 'restore'),
         );
 
         $actions = $result['actions'];
-        $finalProbe = $result['probe'];
-        $finalIssues = $this->issuesFromProbe($finalProbe);
+        $finalProbe = $result['probe']->report;
+        $finalIssues = $result['probe']->issues;
         $actions = [
             ...$actions,
             ...$this->actionsForUnsupportedMode('restore', $finalIssues, $actions),
@@ -1289,7 +1328,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @return array<string, int>
      */
     private function dispositionCounts(array $issues): array
@@ -1302,11 +1341,9 @@ final readonly class DoctorReportRunner
         ];
 
         foreach ($issues as $issue) {
-            $disposition = is_string($issue['disposition'] ?? null)
-                ? $issue['disposition']
-                : null;
+            $disposition = $issue->disposition->value;
 
-            if ($disposition !== null && array_key_exists($disposition, $counts)) {
+            if (array_key_exists($disposition, $counts)) {
                 $counts[$disposition]++;
             }
         }
@@ -1386,7 +1423,7 @@ final readonly class DoctorReportRunner
                     $issues = [
                         ...$issues,
                         ...array_map(
-                            fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
+                            fn (DriftEntry $entry): DoctorIssue => $this->issuePayload($entry, $node),
                             $this->nodesProbe->diff($node, $snapshot, $key),
                         ),
                     ];
@@ -1828,10 +1865,7 @@ final readonly class DoctorReportRunner
                 1,
                 function (callable $advance) use ($node, $scope, &$issues): void {
                     foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
-                        $issues[] = $this->annotateIssue([
-                            ...$issue,
-                            'node' => $node->name,
-                        ]);
+                        $issues[] = $issue;
                     }
 
                     $advance();
@@ -1869,7 +1903,7 @@ final readonly class DoctorReportRunner
             'mode' => 'verify',
             'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $issues,
+            'issues' => $this->serializeIssues($issues),
             'actions' => [],
         ];
     }
@@ -1906,7 +1940,7 @@ final readonly class DoctorReportRunner
             'mode' => 'verify',
             'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $issues,
+            'issues' => $this->serializeIssues($issues),
             'actions' => [],
         ];
     }
@@ -1927,7 +1961,7 @@ final readonly class DoctorReportRunner
         $selectedFamilies = $families === []
             ? $roleCategories
             : array_values(array_intersect($families, $roleCategories));
-        $issue = $this->annotateIssue([
+        $issue = $this->doctorIssueFactory->fromArray([
             'family' => 'node',
             'node' => $node->name,
             'key' => 'node.local_executor_probe_failed',
@@ -1945,7 +1979,7 @@ final readonly class DoctorReportRunner
             'mode' => 'verify',
             'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $issues,
+            'issues' => $this->serializeIssues($issues),
             'actions' => [],
         ];
     }
@@ -1988,7 +2022,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
     private function familyProbeFailedIssue(
         Node $node,
@@ -1996,7 +2030,7 @@ final readonly class DoctorReportRunner
         string $key,
         RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
         string $summary,
-    ): array {
+    ): DoctorIssue {
         $detail = [
             'error' => $exception->getMessage(),
         ];
@@ -2005,7 +2039,7 @@ final readonly class DoctorReportRunner
             $detail['exit_code'] = $exception->result->exitCode;
         }
 
-        return $this->annotateIssue([
+        return $this->doctorIssueFactory->fromArray([
             'family' => $family,
             'node' => $node->name,
             'key' => $key,
@@ -2016,7 +2050,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
     private function remoteShellProbeFailedIssue(
         Node $node,
@@ -2024,13 +2058,13 @@ final readonly class DoctorReportRunner
         string $key,
         RemoteShellFailed $exception,
         string $summary,
-    ): array {
+    ): DoctorIssue {
         return $this->familyProbeFailedIssue($node, $family, $key, $exception, $summary);
     }
 
     /**
      * @param  Collection<int, Instance>  $appInstances
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      */
     private function probeAppFamily(
         Node $node,
@@ -2072,7 +2106,7 @@ final readonly class DoctorReportRunner
         $configSnapshot = $configProbe->configs;
 
         if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
-            $issues[] = $this->annotateIssue([
+            $issues[] = $this->doctorIssueFactory->fromArray([
                 'family' => 'app',
                 'node' => $node->name,
                 'key' => 'app.runtime_config_probe_failed',
@@ -2094,7 +2128,7 @@ final readonly class DoctorReportRunner
                     ? $observed['path']
                     : $this->nodeHostPaths->appRuntimeConfigPath($node, $appSlug);
 
-                $issues[] = $this->annotateIssue([
+                $issues[] = $this->doctorIssueFactory->fromArray([
                     'family' => 'app',
                     'node' => $node->name,
                     'key' => 'app.runtime_config_extra',
@@ -2173,7 +2207,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<DoctorIssue>
      */
     private function missingFrankenPhpRuntimeProcessIssues(Node $node): array
     {
@@ -2200,7 +2234,7 @@ final readonly class DoctorReportRunner
                 continue;
             }
 
-            $issues[] = $this->annotateIssue([
+            $issues[] = $this->doctorIssueFactory->fromArray([
                 'family' => 'process',
                 'node' => $node->name,
                 'key' => 'process.runtime_unit_missing',
@@ -2264,7 +2298,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  Collection<int, ProxyRoute>  $routes
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      */
     private function probeProxyFamily(
         Node $node,
@@ -2329,14 +2363,11 @@ final readonly class DoctorReportRunner
             $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
 
             foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
-                $issues[] = $this->annotateIssue([
-                    'family' => $entry->family,
-                    'node' => $node->name,
-                    'key' => $entry->key,
-                    'kind' => $entry->kind->value,
-                    'summary' => $entry->summary,
-                    'detail' => $entry->detail ?? [],
-                ]);
+                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                    $entry,
+                    $node->name,
+                    detail: $entry->detail ?? [],
+                );
             }
 
             $advance();
@@ -2362,31 +2393,25 @@ final readonly class DoctorReportRunner
                     summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
                 );
 
-                $issues[] = $this->annotateIssue([
-                    'family' => 'proxy',
-                    'node' => $node->name,
-                    'code' => 'proxy.route_extra',
-                    'key' => $domain,
-                    'kind' => 'extra',
-                    'summary' => $entry->summary,
-                    'detail' => [
+                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                    $entry,
+                    $node->name,
+                    code: 'proxy.route_extra',
+                    detail: [
                         'domain' => $domain,
                         'code' => 'proxy.route_extra',
                     ],
-                ]);
+                );
             }
 
             $globalSnapshot = $this->proxyRouteProbe->introspectGlobalConfig($node);
 
             foreach ($this->proxyRouteProbe->diffGlobalConfig($node, $globalSnapshot) as $entry) {
-                $issues[] = $this->annotateIssue([
-                    'family' => 'proxy',
-                    'node' => $node->name,
-                    'key' => $entry->key,
-                    'kind' => $entry->kind->value,
-                    'summary' => $entry->summary,
-                    'detail' => $entry->detail ?? [],
-                ]);
+                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                    $entry,
+                    $node->name,
+                    detail: $entry->detail ?? [],
+                );
             }
         } catch (RemoteShellFailed $exception) {
             $issues[] = $this->remoteShellProbeFailedIssue(
@@ -2471,7 +2496,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      */
     private function appendFamilyProbeFailure(
         Node $node,
@@ -2483,7 +2508,7 @@ final readonly class DoctorReportRunner
         $familyIssues = array_slice($issues, $familyIssueOffset);
         $alreadyAttributed = array_any(
             $familyIssues,
-            static fn (array $issue): bool => str_ends_with((string) ($issue['key'] ?? ''), 'probe_failed'),
+            static fn (DoctorIssue $issue): bool => str_ends_with($issue->key, 'probe_failed'),
         );
 
         if ($alreadyAttributed) {
@@ -2500,7 +2525,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @param  array{completed: int, total: int}|null  $progress
      */
     private function reportFamilyProgress(
@@ -2514,14 +2539,29 @@ final readonly class DoctorReportRunner
             return;
         }
 
-        $onFamilyProgress($family, $phase, $issues, $progress['completed'] ?? null, $progress['total'] ?? null);
+        $onFamilyProgress(
+            $family,
+            $phase,
+            $this->serializeIssues($issues),
+            $progress['completed'] ?? null,
+            $progress['total'] ?? null,
+        );
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @return list<array<string, mixed>>
      */
     public function apply(Node $node, string $mode, array $issues): array
+    {
+        return $this->applyIssues($node, $mode, $issues);
+    }
+
+    /**
+     * @param  list<DoctorIssue>  $issues
+     * @return list<array<string, mixed>>
+     */
+    private function applyIssues(Node $node, string $mode, array $issues): array
     {
         $actions = [];
         $convergenceRestoreIssues = [];
@@ -2537,14 +2577,13 @@ final readonly class DoctorReportRunner
 
             if (
                 $mode === 'restore'
-                && ($issue['family'] ?? null) === 'tool'
-                && is_string($issue['key'] ?? null)
-                && $this->dnsRuntimeProbe->isRestorable($issue['key'])
+                && $issue->family === 'tool'
+                && $this->dnsRuntimeProbe->isRestorable($issue->key)
             ) {
                 $action = $this->applyDnsRuntimeIssue(
                     $node,
-                    $issue['key'],
-                    is_array($issue['detail'] ?? null) ? $issue['detail'] : [],
+                    $issue->key,
+                    $issue->detail,
                     $issue,
                 );
 
@@ -2557,8 +2596,7 @@ final readonly class DoctorReportRunner
 
             if (
                 $mode === 'restore'
-                && is_string($issue['key'] ?? null)
-                && DoctorDnsProjectionRestoreSupport::supports($issue['key'])
+                && DoctorDnsProjectionRestoreSupport::supports($issue->key)
             ) {
                 $actions[] = $this->applyDnsProjectionIssue($node, $issue);
 
@@ -2567,9 +2605,9 @@ final readonly class DoctorReportRunner
 
             if (
                 $mode === 'restore'
-                && (($issue['family'] ?? null) === 'tool'
-                || ($issue['family'] ?? null) === 'node'
-                && ($issue['key'] ?? null) === 'node.role_baseline_mismatch')
+                && ($issue->family === 'tool'
+                || $issue->family === 'node'
+                && $issue->key === 'node.role_baseline_mismatch')
             ) {
                 $convergenceRestoreIssues[] = $issue;
 
@@ -2587,7 +2625,7 @@ final readonly class DoctorReportRunner
             $result = $this->nodeConverger->applyIssues(
                 $node,
                 NodeConvergenceContext::Restore,
-                $convergenceRestoreIssues,
+                $this->serializeIssues($convergenceRestoreIssues),
             );
             $actions = [
                 ...$actions,
@@ -2610,9 +2648,7 @@ final readonly class DoctorReportRunner
         bool $dryRun = false,
         bool $authoritativeObservation = false,
     ): array {
-        $issues = $probe['issues'] ?? [];
-        $issues = is_array($issues) ? array_values(array_filter($issues, is_array(...))) : [];
-        /** @var list<array<string, mixed>> $remainingIssues */
+        $issues = $this->issuesFromProbe($probe);
         $remainingIssues = $authoritativeObservation
             ? $issues
             : $this->remainingIssues($issues, $actions);
@@ -2628,7 +2664,7 @@ final readonly class DoctorReportRunner
                     && $summary['skipped'] === 0,
             'mode' => $mode,
             'summary' => $summary,
-            'issues' => $remainingIssues,
+            'issues' => $this->serializeIssues($remainingIssues),
             'actions' => $actions,
         ];
 
@@ -2640,138 +2676,93 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function appIssuePayload(DriftEntry $entry, App $app): array
+    private function appIssuePayload(DriftEntry $entry, App $app): DoctorIssue
     {
         $app->loadMissing('node');
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $app->node?->name,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $app->node?->name,
+            detail: [
                 ...($entry->detail ?? []),
                 'app' => $app->name,
             ],
-        ]);
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): array
+    private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): DoctorIssue
     {
         $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
+            detail: [
                 ...($entry->detail ?? []),
                 'workspace' => $workspace->name,
                 'app' => $workspace->app?->name,
             ],
-        ]);
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function processIssuePayload(DriftEntry $entry, Process $process): array
+    private function processIssuePayload(DriftEntry $entry, Process $process): DoctorIssue
     {
         $app = $process->ownerApp();
         $app?->loadMissing('node');
         $node = $app instanceof App ? $app->node : $process->node;
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $node instanceof Node ? $node->name : null,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => $entry->detail,
-        ]);
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $node instanceof Node ? $node->name : null,
+            detail: $entry->detail ?? [],
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function issuePayload(DriftEntry $entry, Node $node): array
+    private function issuePayload(DriftEntry $entry, Node $node): DoctorIssue
     {
         $detail = $entry->detail ?? [];
-        $code = $this->driftEntryCatalogCode($entry);
 
-        return $this->annotateIssue([
-            'family' => 'node',
-            'node' => $node->name,
-            'key' => $entry->key,
-            'code' => $code,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => $detail,
-        ]);
+        return $this->doctorIssueFactory->fromDriftEntry($entry, $node->name, detail: $detail);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): array
+    private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): DoctorIssue
     {
         $detail = $entry->detail ?? [];
-        $code = $this->driftEntryCatalogCode($entry);
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $node->name,
-            'key' => $entry->key,
-            'code' => $code,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => $detail,
-        ]);
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $node->name,
+            detail: $detail,
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): array
+    private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): DoctorIssue
     {
-        $code = $this->driftEntryCatalogCode($entry);
-
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $route->node->name,
-            'key' => $entry->key,
-            'code' => $code,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $route->node->name,
+            detail: [
                 ...($entry->detail ?? []),
                 'domain' => $route->domain,
             ],
-        ]);
-    }
-
-    private function driftEntryCatalogCode(DriftEntry $entry): string
-    {
-        $detail = $entry->detail ?? [];
-        $explicit = is_string($detail['code'] ?? null) ? $detail['code'] : '';
-
-        if ($explicit !== '') {
-            return $explicit;
-        }
-
-        if (DoctorIssueCatalog::has($entry->key)) {
-            return $entry->key;
-        }
-
-        throw DoctorUncataloguedIssueException::forCode($entry->key);
+        );
     }
 
     /**
@@ -2936,6 +2927,7 @@ final readonly class DoctorReportRunner
      */
     private function nodeDnsProjectionSources(): array
     {
+        /** @var Collection<int, Node> $nodes */
         $nodes = Node::query()
             ->with('roleAssignments')
             ->where('status', NodeStatus::Active->value)
@@ -2945,10 +2937,6 @@ final readonly class DoctorReportRunner
         $sources = [];
 
         foreach ($nodes as $node) {
-            if (! $node instanceof Node) {
-                continue;
-            }
-
             $sources[] = $node;
         }
 
@@ -3016,17 +3004,15 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  array<string, mixed>  $issue
      */
-    private function productionNodeWorkspaceIssue(Node $node, array $issue): bool
+    private function productionNodeWorkspaceIssue(Node $node, DoctorIssue $issue): bool
     {
         if (! $this->productionNodeExcludesWorkspaces($node)) {
             return false;
         }
 
-        $family = is_string($issue['family'] ?? null) ? $issue['family'] : null;
-        /** @var array<string, mixed> $detail */
-        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $family = $issue->family;
+        $detail = $issue->detail;
 
         return match ($family) {
             'process' => $this->processIssueTargetsWorkspace($node, $detail),
@@ -3129,18 +3115,13 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>|null
      */
-    private function applyIssue(Node $node, string $mode, array $issue): ?array
+    private function applyIssue(Node $node, string $mode, DoctorIssue $issue): ?array
     {
-        $family = is_string($issue['family'] ?? null) ? $issue['family'] : null;
-        $key = is_string($issue['key'] ?? null) ? $issue['key'] : null;
-        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
-
-        if ($key === null) {
-            return null;
-        }
+        $family = $issue->family;
+        $key = $issue->key;
+        $detail = $issue->detail;
 
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
@@ -3310,14 +3291,13 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $detail
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>
      */
-    private function applyNodeIssue(Node $node, string $key, array $detail, array $issue): array
+    private function applyNodeIssue(Node $node, string $key, array $detail, DoctorIssue $issue): array
     {
         $targetNode = $this->nodeFromIssue($issue) ?? $node;
         $entry = $this->driftEntryFromStoredParts('node', $key, $detail, $issue);
-        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
+        $code = $issue->code;
 
         try {
             $this->nodesProbe->reconcile($targetNode, $entry);
@@ -3343,7 +3323,7 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$code}.",
+            'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$code}.",
             'details' => $detail,
         ];
     }
@@ -4382,11 +4362,15 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $detail
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>|null
      */
-    private function applyProxyIssue(Node $fallbackNode, string $mode, string $key, array $detail, array $issue): ?array
-    {
+    private function applyProxyIssue(
+        Node $fallbackNode,
+        string $mode,
+        string $key,
+        array $detail,
+        DoctorIssue $issue,
+    ): ?array {
         $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
 
         if (in_array($key, ['proxy.agent_tool_route_missing', 'proxy.agent_tool_route_mismatch'], true)) {
@@ -4412,7 +4396,7 @@ final readonly class DoctorReportRunner
             return $this->handleAnalyticsPublicProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
         }
 
-        if (($issue['kind'] ?? null) === DriftKind::Extra->value) {
+        if ($issue->kind === DriftKind::Extra) {
             if ($mode === 'adopt') {
                 $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
 
@@ -4438,9 +4422,9 @@ final readonly class DoctorReportRunner
                 family: 'proxy',
                 key: $key,
                 kind: DriftKind::Extra,
-                summary: (string) (
-                    $issue['summary'] ?? "Proxy route '{$key}' exists on node but not in gateway registry."
-                ),
+                summary: $issue->summary !== ''
+                    ? $issue->summary
+                    : "Proxy route '{$key}' exists on node but not in gateway registry.",
             ));
         }
 
@@ -4731,15 +4715,14 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>
      */
-    private function applyDnsProjectionIssue(Node $node, array $issue): array
+    private function applyDnsProjectionIssue(Node $node, DoctorIssue $issue): array
     {
-        $key = (string) $issue['key'];
+        $key = $issue->key;
         $family = $key === 'node.dns_mapping_mismatch' ? 'node' : 'proxy';
         $targetNode = $this->nodeFromIssue($issue) ?? $node;
-        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $detail = $issue->detail;
 
         if (! DoctorDnsProjectionRestoreSupport::supports($key)) {
             return [
@@ -4802,18 +4785,21 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.",
+            'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$key}.",
             'details' => $detail,
         ];
     }
 
     /**
      * @param  array<string, mixed>  $detail
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>|null
      */
-    private function applyDnsRuntimeIssue(Node $node, string $key, array $detail, array $issue): ?array
-    {
+    private function applyDnsRuntimeIssue(
+        Node $node,
+        string $key,
+        array $detail,
+        DoctorIssue $issue,
+    ): ?array {
         if (! $this->dnsRuntimeProbe->isRestorable($key)) {
             return null;
         }
@@ -4844,7 +4830,7 @@ final readonly class DoctorReportRunner
             'mode' => 'restore',
             'status' => $restored ? 'completed' : 'failed',
             'summary' => $restored
-                ? (is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.")
+                ? ($issue->summary !== '' ? $issue->summary : "Fixed {$key}.")
                 : "Failed to fix {$key}.",
             'details' => $restored
                 ? $detail
@@ -4859,8 +4845,12 @@ final readonly class DoctorReportRunner
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
-    private function applyScheduleIssue(Node $node, string $key, array $detail, array $issue): ?array
-    {
+    private function applyScheduleIssue(
+        Node $node,
+        string $key,
+        array $detail,
+        DoctorIssue $issue,
+    ): ?array {
         $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
 
         if (in_array($key, SchedulesFixer::GatewayRestorableCodes, true)) {
@@ -4919,19 +4909,14 @@ final readonly class DoctorReportRunner
             : null;
     }
 
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function driftEntryFromIssue(array $issue): DriftEntry
+    private function driftEntryFromIssue(DoctorIssue $issue): DriftEntry
     {
-        $kind = is_string($issue['kind'] ?? null) ? DriftKind::tryFrom($issue['kind']) : null;
-
         return new DriftEntry(
-            family: is_string($issue['family'] ?? null) ? $issue['family'] : 'unknown',
-            key: is_string($issue['key'] ?? null) ? $issue['key'] : 'unknown',
-            kind: $kind ?? DriftKind::Unknown,
-            summary: is_string($issue['summary'] ?? null) ? $issue['summary'] : '',
-            detail: is_array($issue['detail'] ?? null) ? $issue['detail'] : [],
+            family: $issue->family,
+            key: $issue->key,
+            kind: $issue->kind,
+            summary: $issue->summary,
+            detail: $issue->detail,
         );
     }
 
@@ -4942,25 +4927,20 @@ final readonly class DoctorReportRunner
         string $family,
         string $key,
         array $detail,
-        array $issue = [],
+        ?DoctorIssue $issue = null,
     ): DriftEntry {
-        $kind = is_string($issue['kind'] ?? null) ? DriftKind::tryFrom($issue['kind']) : null;
-
         return new DriftEntry(
             family: $family,
             key: $key,
-            kind: $kind ?? DriftKind::Divergent,
-            summary: is_string($issue['summary'] ?? null) ? $issue['summary'] : '',
+            kind: $issue?->kind ?? DriftKind::Divergent,
+            summary: $issue?->summary ?? '',
             detail: $detail,
         );
     }
 
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function nodeFromIssue(array $issue): ?Node
+    private function nodeFromIssue(DoctorIssue $issue): ?Node
     {
-        $nodeName = is_string($issue['node'] ?? null) ? $issue['node'] : null;
+        $nodeName = $issue->node;
 
         if ($nodeName === null) {
             return null;
@@ -4971,82 +4951,13 @@ final readonly class DoctorReportRunner
         return $node instanceof Node ? $node : null;
     }
 
-    /**
-     * @param  array<string, mixed>  $issue
-     * @return array<string, mixed>
-     */
-    private function annotateIssue(array $issue): array
-    {
-        $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
-        $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
-        $kind = is_string($issue['kind'] ?? null) ? $issue['kind'] : '';
-        $code = $this->catalogCodeForIssue($issue);
-        $definition = DoctorIssueCatalog::require($code);
-        $restorable = DoctorIssueCatalog::isRestorable($code);
-        $restoreAction = $restorable
-            ? DoctorRestoreSupport::actionId($code)
-            : null;
-
-        return [
-            ...$issue,
-            'code' => $code,
-            'disposition' => $definition->disposition->value,
-            'restore_action' => $restoreAction,
-            'restorable' => $restorable,
-            'adoptable' =>
-                ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value
-                    || $family === 'database_connection'
-                    && in_array(
-                        $key,
-                        [
-                            'database_connection.env_extra',
-                            'database_connection.target_extra',
-                            'database_connection.env_mismatch',
-                        ],
-                        true,
-                    ),
-        ];
-    }
-
-    /**
-     * Resolve the catalogued issue code. Resource-scoped keys (for example a
-     * proxy domain) must emit an explicit `code`; only registered catalog keys
-     * may use key-as-code. Unknown codes never invent a disposition.
-     *
-     * @param  array<string, mixed>  $issue
-     */
-    private function catalogCodeForIssue(array $issue): string
-    {
-        $explicit = is_string($issue['code'] ?? null) ? $issue['code'] : '';
-        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
-        $detailCode = is_string($detail['code'] ?? null) ? $detail['code'] : '';
-        $key = is_string($issue['key'] ?? null) ? $issue['key'] : '';
-
-        if ($explicit !== '') {
-            return $explicit;
-        }
-
-        if ($detailCode !== '') {
-            return $detailCode;
-        }
-
-        if ($key !== '' && DoctorIssueCatalog::has($key)) {
-            return $key;
-        }
-
-        throw DoctorUncataloguedIssueException::forCode($key !== '' ? $key : '(missing code)');
-    }
-
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function issueSupportsMode(array $issue, string $mode): bool
+    private function issueSupportsMode(DoctorIssue $issue, string $mode): bool
     {
         if ($mode === 'adopt') {
-            return ($issue['adoptable'] ?? false) === true;
+            return $issue->adoptable;
         }
 
-        return ($issue['restorable'] ?? false) === true;
+        return $issue->restorable;
     }
 
     /**
@@ -5067,9 +4978,9 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @param  list<array<string, mixed>>  $actions
-     * @return list<array<string, mixed>>
+     * @return list<DoctorIssue>
      */
     private function remainingIssues(array $issues, array $actions): array
     {
@@ -5090,8 +5001,8 @@ final readonly class DoctorReportRunner
 
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => (
-                ! in_array($this->issueResolutionId($issue), $resolvedIssueIds, true)
+            fn (DoctorIssue $issue): bool => (
+                ! in_array($this->doctorIssueResolutionId($issue), $resolvedIssueIds, true)
                 && ! $this->databaseConnectionIssueResolved($issue, $resolvedDatabaseTargets)
             ),
         ));
@@ -5103,7 +5014,7 @@ final readonly class DoctorReportRunner
      * authoritative in finalizeResolution.
      *
      * @param  list<array<string, mixed>>  $actions
-     * @param  list<array<string, mixed>>  $remainingIssues
+     * @param  list<DoctorIssue>  $remainingIssues
      * @return list<array<string, mixed>>
      */
     private function annotateRestoreActionsWithRemainingDrift(
@@ -5130,7 +5041,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  list<array<string, mixed>>  $remainingIssues
+     * @param  list<DoctorIssue>  $remainingIssues
      * @return array<string, mixed>
      */
     private function verifyCompletedDnsToolAction(array $action, array $remainingIssues): array
@@ -5144,21 +5055,18 @@ final readonly class DoctorReportRunner
         }
 
         $remainingIssue = collect($remainingIssues)->first(
-            fn (array $issue): bool => ($issue['family'] ?? null) === 'tool'
-            && in_array($issue['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true),
+            fn (DoctorIssue $issue): bool => (
+                $issue->family === 'tool'
+                && in_array($issue->key, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)
+            ),
         );
 
-        if (! is_array($remainingIssue)) {
+        if (! $remainingIssue instanceof DoctorIssue) {
             return $action;
         }
 
-        $key = $this->stringValue($remainingIssue, 'key');
-
-        if ($key === null) {
-            return $action;
-        }
-
-        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $key = $remainingIssue->key;
+        $issueDetail = $remainingIssue->detail;
         $details = is_array($action['details'] ?? null) ? $action['details'] : [];
 
         return [
@@ -5176,7 +5084,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  list<array<string, mixed>>  $remainingIssues
+     * @param  list<DoctorIssue>  $remainingIssues
      * @return array<string, mixed>
      */
     private function verifyCompletedNodeDnsAction(array $action, array $remainingIssues): array
@@ -5190,22 +5098,22 @@ final readonly class DoctorReportRunner
         }
 
         $remainingIssue = collect($remainingIssues)->first(
-            fn (array $issue): bool => (
-                ($issue['family'] ?? null) === 'node'
-                && ($issue['key'] ?? null) === 'node.dns_mapping_mismatch'
+            fn (DoctorIssue $issue): bool => (
+                $issue->family === 'node'
+                && $issue->key === 'node.dns_mapping_mismatch'
                 && (
                     $this->stringValue($action, 'node') === null
-                    || $this->stringValue($action, 'node') === $this->stringValue($issue, 'node')
+                    || $this->stringValue($action, 'node') === $issue->node
                 )
             ),
         );
 
-        if (! is_array($remainingIssue)) {
+        if (! $remainingIssue instanceof DoctorIssue) {
             return $action;
         }
 
-        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
-        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $node = $remainingIssue->node ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $issueDetail = $remainingIssue->detail;
         $details = is_array($action['details'] ?? null) ? $action['details'] : [];
 
         return [
@@ -5224,7 +5132,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  list<array<string, mixed>>  $remainingIssues
+     * @param  list<DoctorIssue>  $remainingIssues
      * @return array<string, mixed>
      */
     private function verifyCompletedProxyAction(array $action, array $remainingIssues): array
@@ -5237,10 +5145,10 @@ final readonly class DoctorReportRunner
         }
 
         $remainingIssue = collect($remainingIssues)->first(
-            fn (array $issue): bool => $this->actionMatchesRemainingIssue($action, $issue),
+            fn (DoctorIssue $issue): bool => $this->actionMatchesRemainingIssue($action, $issue),
         );
 
-        if (! is_array($remainingIssue)) {
+        if (! $remainingIssue instanceof DoctorIssue) {
             return $action;
         }
 
@@ -5249,7 +5157,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  list<array<string, mixed>>  $remainingIssues
+     * @param  list<DoctorIssue>  $remainingIssues
      * @return array<string, mixed>
      */
     private function verifyCompletedWebSocketAction(array $action, array $remainingIssues): array
@@ -5263,23 +5171,23 @@ final readonly class DoctorReportRunner
         }
 
         $remainingIssue = collect($remainingIssues)->first(
-            fn (array $issue): bool => (
-                ($issue['family'] ?? null) === 'node'
+            fn (DoctorIssue $issue): bool => (
+                $issue->family === 'node'
                 && (
                     $this->stringValue($action, 'node') === null
-                    || $this->stringValue($action, 'node') === $this->stringValue($issue, 'node')
+                    || $this->stringValue($action, 'node') === $issue->node
                 )
-                && $this->issueResolutionId($action) === $this->issueResolutionId($issue)
+                && $this->issueResolutionId($action) === $this->doctorIssueResolutionId($issue)
             ),
         );
 
-        if (! is_array($remainingIssue)) {
+        if (! $remainingIssue instanceof DoctorIssue) {
             return $action;
         }
 
-        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
-        $key = $this->stringValue($remainingIssue, 'key') ?? $this->stringValue($action, 'key') ?? 'unknown';
-        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $node = $remainingIssue->node ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $key = $remainingIssue->key;
+        $issueDetail = $remainingIssue->detail;
         $details = is_array($action['details'] ?? null) ? $action['details'] : [];
 
         return [
@@ -5298,15 +5206,14 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  array<string, mixed>  $remainingIssue
      * @return array<string, mixed>
      */
-    private function failedProxyAction(array $action, array $remainingIssue): array
+    private function failedProxyAction(array $action, DoctorIssue $remainingIssue): array
     {
-        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
-        $key = $this->stringValue($remainingIssue, 'key') ?? $this->stringValue($action, 'key') ?? 'unknown';
+        $node = $remainingIssue->node ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $key = $remainingIssue->key;
         $operation = "verify {$key}";
-        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $issueDetail = $remainingIssue->detail;
         $details = is_array($action['details'] ?? null) ? $action['details'] : [];
 
         return [
@@ -5325,16 +5232,15 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $action
-     * @param  array<string, mixed>  $issue
      */
-    private function actionMatchesRemainingIssue(array $action, array $issue): bool
+    private function actionMatchesRemainingIssue(array $action, DoctorIssue $issue): bool
     {
-        if (($action['family'] ?? null) !== 'proxy' || ($issue['family'] ?? null) !== 'proxy') {
+        if (($action['family'] ?? null) !== 'proxy' || $issue->family !== 'proxy') {
             return false;
         }
 
         $actionDetails = is_array($action['details'] ?? null) ? $action['details'] : [];
-        $issueDetail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $issueDetail = $issue->detail;
         $actionDomain = is_string($actionDetails['route'] ?? null) ? $actionDetails['route'] : null;
         $issueDomain = is_string($issueDetail['domain'] ?? null) ? $issueDetail['domain'] : null;
 
@@ -5343,33 +5249,66 @@ final readonly class DoctorReportRunner
         }
 
         $actionNode = is_string($action['node'] ?? null) ? $action['node'] : null;
-        $issueNode = is_string($issue['node'] ?? null) ? $issue['node'] : null;
+        $issueNode = $issue->node;
 
         return (
             ($actionNode === null || $actionNode === $issueNode)
-            && $this->issueResolutionId($action) === $this->issueResolutionId($issue)
+            && $this->issueResolutionId($action) === $this->doctorIssueResolutionId($issue)
         );
     }
 
     /**
      * @param  array<string, mixed>  $probe
-     * @return list<array<string, mixed>>
+     * @return list<DoctorIssue>
      */
     private function issuesFromProbe(array $probe): array
     {
         $probeIssues = is_array($probe['issues'] ?? null) ? $probe['issues'] : [];
+
+        return $this->issuesFromValues($probeIssues);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $values
+     * @return list<DoctorIssue>
+     */
+    private function issuesFromValues(array $values): array
+    {
         $issues = [];
 
-        foreach ($probeIssues as $issue) {
-            if (! is_array($issue)) {
-                continue;
+        foreach ($values as $value) {
+            if ($value instanceof DoctorIssue) {
+                $issues[] = $value;
+            } elseif (is_array($value)) {
+                /** @var array<string, mixed> $value */
+                $issues[] = $this->doctorIssueFactory->fromArray($value);
             }
-
-            /** @var array<string, mixed> $issue */
-            $issues[] = $issue;
         }
 
         return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function restoreProbe(array $report): DoctorRestoreProbe
+    {
+        return new DoctorRestoreProbe(
+            report: $report,
+            issues: $this->issuesFromProbe($report),
+        );
+    }
+
+    /**
+     * @param  list<DoctorIssue>  $issues
+     * @return list<array<string, mixed>>
+     */
+    private function serializeIssues(array $issues): array
+    {
+        return array_map(
+            static fn (DoctorIssue $issue): array => $issue->toArray(),
+            $issues,
+        );
     }
 
     /**
@@ -5399,17 +5338,21 @@ final readonly class DoctorReportRunner
         return "{$family}:{$key}:{$code}";
     }
 
+    private function doctorIssueResolutionId(DoctorIssue $issue): string
+    {
+        return "{$issue->family}:{$issue->key}:{$issue->code}";
+    }
+
     /**
-     * @param  array<string, mixed>  $issue
      * @param  list<string>  $resolvedTargets
      */
-    private function databaseConnectionIssueResolved(array $issue, array $resolvedTargets): bool
+    private function databaseConnectionIssueResolved(DoctorIssue $issue, array $resolvedTargets): bool
     {
-        if (($issue['family'] ?? null) !== 'database_connection') {
+        if ($issue->family !== 'database_connection') {
             return false;
         }
 
-        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $detail = $issue->detail;
         $key = implode(':', [
             (string) ($detail['target_type'] ?? ''),
             (string) ($detail['target_id'] ?? ''),
@@ -5497,76 +5440,64 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function firewallIssuePayload(DriftEntry $entry, FirewallRule $rule): array
+    private function firewallIssuePayload(DriftEntry $entry, FirewallRule $rule): DoctorIssue
     {
         $rule->loadMissing('node');
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $rule->node->name,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $rule->node->name,
+            detail: [
                 ...($entry->detail ?? []),
                 'rule' => $rule->name,
             ],
-        ]);
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function toolIssuePayload(DriftEntry $entry, NodeTool $tool): array
+    private function toolIssuePayload(DriftEntry $entry, NodeTool $tool): DoctorIssue
     {
         $tool->loadMissing('node');
 
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $tool->node?->name,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $tool->node?->name,
+            detail: [
                 ...($entry->detail ?? []),
                 'tool' => $tool->name,
             ],
-        ]);
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function scheduleIssuePayload(DriftEntry $entry, Schedule $schedule): array
+    private function scheduleIssuePayload(DriftEntry $entry, Schedule $schedule): DoctorIssue
     {
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $this->scheduleNodeName($schedule),
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => [
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $this->scheduleNodeName($schedule),
+            detail: [
                 ...($entry->detail ?? []),
                 'schedule_key' => $schedule->schedule_key,
             ],
-        ]);
+        );
     }
 
     /**
-     * @return array<string, mixed>
+     * @return DoctorIssue
      */
-    private function scheduleGatewayIssuePayload(DriftEntry $entry, Node $gatewayNode): array
+    private function scheduleGatewayIssuePayload(DriftEntry $entry, Node $gatewayNode): DoctorIssue
     {
-        return $this->annotateIssue([
-            'family' => $entry->family,
-            'node' => $gatewayNode->name,
-            'key' => $entry->key,
-            'kind' => $entry->kind->value,
-            'summary' => $entry->summary,
-            'detail' => $entry->detail,
-        ]);
+        return $this->doctorIssueFactory->fromDriftEntry(
+            $entry,
+            $gatewayNode->name,
+            detail: $entry->detail ?? [],
+        );
     }
 
     /**
@@ -5794,7 +5725,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @param  list<array<string, mixed>>  $existingActions
      * @return list<array<string, mixed>>
      */
@@ -5810,31 +5741,31 @@ final readonly class DoctorReportRunner
         ));
 
         return array_values(array_map(
-            fn (array $issue): array => $this->unsupportedAction($mode, $issue),
+            fn (DoctorIssue $issue): array => $this->unsupportedAction($mode, $issue),
             array_filter(
                 $issues,
-                fn (array $issue): bool => ! in_array($this->issueResolutionId($issue), $actionIds, true),
+                fn (DoctorIssue $issue): bool => ! in_array(
+                    $this->doctorIssueResolutionId($issue),
+                    $actionIds,
+                    true,
+                ),
             ),
         ));
     }
 
     /**
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>
      */
-    private function unsupportedAction(string $mode, array $issue): array
+    private function unsupportedAction(string $mode, DoctorIssue $issue): array
     {
-        $key = is_string($issue['key'] ?? null) ? $issue['key'] : null;
-        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
-
         return [
-            'family' => $issue['family'] ?? null,
-            'node' => $issue['node'] ?? null,
-            'code' => $code,
-            'key' => $key,
+            'family' => $issue->family,
+            'node' => $issue->node,
+            'code' => $issue->code,
+            'key' => $issue->key,
             'mode' => $mode,
             'status' => 'skipped',
-            'summary' => "No {$mode} action is registered for ".($code ?? 'this issue').'.',
+            'summary' => "No {$mode} action is registered for {$issue->code}.",
             'details' => [
                 'reason' => 'mode_not_supported',
             ],
@@ -5842,8 +5773,8 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
-     * @return list<array<string, mixed>>
+     * @param  list<DoctorIssue>  $issues
+     * @return list<DoctorIssue>
      */
     private function filterIssuesByKey(array $issues, ?string $key): array
     {
@@ -5853,18 +5784,18 @@ final readonly class DoctorReportRunner
 
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ($issue['key'] ?? null) === $key,
+            fn (DoctorIssue $issue): bool => $issue->key === $key,
         ));
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<DoctorIssue>  $issues
      * @return list<array<string, mixed>>
      */
     private function plannedActions(string $mode, array $issues): array
     {
         return array_values(array_map(
-            fn (array $issue): array => $this->issueSupportsMode($issue, $mode)
+            fn (DoctorIssue $issue): array => $this->issueSupportsMode($issue, $mode)
                 ? $this->plannedAction($mode, $issue)
                 : $this->unsupportedAction($mode, $issue),
             $issues,
@@ -5872,33 +5803,27 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  array<string, mixed>  $issue
      * @return array<string, mixed>
      */
-    private function plannedAction(string $mode, array $issue): array
+    private function plannedAction(string $mode, DoctorIssue $issue): array
     {
-        $key = (string) ($issue['key'] ?? 'this issue');
-        $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
-
-        $issueDetail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
-
         return [
-            'family' => $issue['family'] ?? null,
-            'node' => $issue['node'] ?? null,
-            'code' => $code,
-            'key' => $issue['key'] ?? null,
+            'family' => $issue->family,
+            'node' => $issue->node,
+            'code' => $issue->code,
+            'key' => $issue->key,
             'mode' => $mode,
             'status' => 'planned',
-            'summary' => "Would {$mode} {$code}.",
+            'summary' => "Would {$mode} {$issue->code}.",
             'details' => [
-                ...$issueDetail,
+                ...$issue->detail,
                 'dry_run' => true,
             ],
         ];
     }
 
     /**
-     * @param  list<array<string, mixed>>  $issues
+     * @param  list<mixed>  $issues
      * @param  list<array<string, mixed>>  $actions
      * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int, planned: int}
      */

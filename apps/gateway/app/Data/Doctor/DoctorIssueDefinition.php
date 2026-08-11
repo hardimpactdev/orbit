@@ -13,5 +13,6 @@ final readonly class DoctorIssueDefinition
         public string $family,
         public DoctorIssueDisposition $disposition,
         public ?string $restoreAction = null,
+        public bool $adoptable = false,
     ) {}
 }
