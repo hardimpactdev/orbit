@@ -1,0 +1,34 @@
+{
+    "schema_version": 1,
+    "candidate": "64a7a51fb3c6e49d1db87b06dd750afb79867e87",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "target": "nckrtl@192.168.6.20 / dev-aa3f9a operator",
+    "command": "orbit doctor --node=gateway --family=node --json",
+    "expected": "The source-mounted candidate runs through the real CLI and gateway, reports fixture drift, and emits the documented catalog-backed issue fields.",
+    "observed": "Solo terminal process 2277 connected through nckrtl@192.168.6.20. The launcher executed /home/orbit/orbit-run/apps/cli/orbit. The retained checkout was resynced after the empty-detail JSON correction. The source-mounted DoctorIssue and its raw JSON contract test SHA-256 hashes matched the local candidate. Doctor returned drift_detected with 6 issues. Every issue contained family, node, key, code, kind, summary, detail, disposition, restore_action, restorable, and adoptable. Catalog-derived restore and adoption flags matched the reported issue definitions.",
+    "result": "passed",
+    "topology": {
+        "id": "dev-aa3f9a",
+        "kind": "operator_gateway_app-dev",
+        "host_alias": "beast",
+        "host_address": "192.168.6.20",
+        "operator_instance": "orbit-e2e-dev-aa3f9a-operator",
+        "gateway_instance": "orbit-e2e-dev-aa3f9a-gateway",
+        "checkout": "/home/orbit/orbit-run",
+        "solo_project_id": 25,
+        "solo_process_id": 2277
+    },
+    "source_hashes": {
+        "apps/gateway/app/Services/Doctor/DoctorIssueFactory.php": "f4be94421b7f9e18e34810277fe1ba1be224cb61bbf99eae5a5264425f47e6b1",
+        "apps/gateway/app/Services/Doctor/DoctorIssueIdentityResolver.php": "d3e23bb1d4ac81a7963a2ad343758b5f192c2f27ac53e783bd48a7b832ec061c",
+        "apps/gateway/app/Data/Doctor/DoctorIssue.php": "47eb5b68f06cd151bd60180d36be42ba4b13a3ce04e244a9359f978869c2e6c8",
+        "apps/gateway/tests/Unit/Services/Doctor/DoctorIssueFactoryTest.php": "573bd4777f47aa0b8e885ab4411cbe5b290a7782a969e5ad4aadc80e1dc33f20"
+    },
+    "doctor": {
+        "exit_code": 1,
+        "error_code": "drift_detected",
+        "issue_count": 6,
+        "expected_issue_exit": true
+    }
+}

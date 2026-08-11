@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 254,
-    "unique_candidate_commit_count": 150,
+    "record_count": 255,
+    "unique_candidate_commit_count": 151,
     "orphan_count": 0,
     "records": [
         {
@@ -6931,6 +6931,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-11-110717-doctor-typed-issue-contract",
+            "slug": "doctor-typed-issue-contract",
+            "timestamp": "2026-08-11-110717",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "64a7a51fb3c6e49d1db87b06dd750afb79867e87",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,

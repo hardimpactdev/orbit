@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-11T09:07:17+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/doctor-typed-issue-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-11-110717-doctor-typed-issue-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-typed-issue-contract-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-11T090245Z-445c0e65baf9.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-typed-issue-contract-retained-incus.json": "f11d3602e6f5545f821f0718686c17938b7ca02fcd3b223970c00326431159c9",
+        "loop.md": "a8e645b86a4071d83d3c871f991a3eb4b881c3a6abc81a42e570970a851ca895",
+        "quality-gates/quality-check-2026-08-11T090245Z-445c0e65baf9.json": "e4d8748c7f419f85c7d7f3f02164ad6068e82c7f7ce62bb0e5d04ce0f2e6d791"
+    },
+    "slug": "doctor-typed-issue-contract",
+    "requested_slug": "doctor-typed-issue-contract",
+    "compatible_slugs": [
+        "doctor-typed-issue-contract"
+    ],
+    "branch": "doctor-typed-issue-contract",
+    "candidate_commit": "64a7a51fb3c6e49d1db87b06dd750afb79867e87",
+    "accepted_feature_tip": "64a7a51fb3c6e49d1db87b06dd750afb79867e87",
+    "accepted_main_tip": "8feeef357626223e10383eed6feb56fd336e0fd0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
