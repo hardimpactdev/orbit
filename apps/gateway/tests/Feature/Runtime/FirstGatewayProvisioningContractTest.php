@@ -22,8 +22,10 @@ describe('gateway-local provisioning contract', function (): void {
         $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
 
         expect($nodeCreator)
-            ->toContain('return $this->convergeGatewayLocally($name);')
-            ->toContain('private function convergeGatewayLocally(string $name): GatewayActionResult');
+            ->toContain('return $this->convergeGatewayLocally($name, $input);')
+            ->toContain(
+                'private function convergeGatewayLocally(string $name, NodeCreationInput $input): GatewayActionResult',
+            );
 
         foreach ([
             'bootstrapFirstGateway',

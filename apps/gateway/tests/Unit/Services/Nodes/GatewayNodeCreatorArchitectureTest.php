@@ -53,3 +53,11 @@ it('does not store bootstrap phase or caller state between requests', function (
         expect($source)->not->toContain($requestState);
     }
 });
+
+it('does not store raw request arguments between requests', function (): void {
+    $source = (string) file_get_contents(dirname(__DIR__, 4).'/app/Services/Nodes/GatewayNodeCreator.php');
+
+    foreach (['private array $arguments', '$this->arguments =', 'private function argument('] as $requestState) {
+        expect($source)->not->toContain($requestState);
+    }
+});

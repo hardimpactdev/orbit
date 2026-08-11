@@ -3,7 +3,30 @@
 declare(strict_types=1);
 
 use App\Services\Nodes\NodeCreationIngressPlacement;
+use App\Services\Nodes\NodeCreationInput;
 use App\Services\Nodes\WorkloadNodeProvisioningInput;
+
+it('reads node creation arguments without mutable service state', function (): void {
+    $input = new NodeCreationInput([
+        'name' => 'app-1',
+        '--host' => '192.0.2.20',
+        '--agent-tool' => ['claude', '', 42],
+        '--user' => '',
+    ]);
+
+    expect($input->stringArgument('name'))
+        ->toBe('app-1')
+        ->and($input->stringOption('host'))
+        ->toBe('192.0.2.20')
+        ->and($input->arrayOption('agent-tool'))
+        ->toBe(['claude'])
+        ->and($input->stringOption('user'))
+        ->toBeNull()
+        ->and($input->optionWasSupplied('user'))
+        ->toBeTrue()
+        ->and($input->option('missing'))
+        ->toBeNull();
+});
 
 it('holds resolved workload provisioning input without magic array keys', function (): void {
     $input = new WorkloadNodeProvisioningInput(

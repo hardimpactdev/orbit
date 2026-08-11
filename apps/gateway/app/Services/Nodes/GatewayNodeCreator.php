@@ -65,16 +65,15 @@ final class GatewayNodeCreator
 
     private const string WIREGUARD_RESERVATION_LOCK = 'orbit:node-bootstrap:wireguard-reservation';
 
-    /** @var array<string, mixed> */
-    private array $arguments = [];
-
     /**
      * @param  array<string, mixed>  $arguments
      */
     public function create(array $arguments): GatewayActionResult
     {
+        $input = new NodeCreationInput($arguments);
+
         return $this->execute(
-            $arguments,
+            $input,
             fn (
                 string $name,
                 array $_roles,
@@ -92,9 +91,10 @@ final class GatewayNodeCreator
     {
         $arguments['--json'] = true;
         $request = array_diff_key($arguments, ['--json' => true]);
+        $input = new NodeCreationInput($arguments);
 
         return $this->execute(
-            $arguments,
+            $input,
             fn (
                 string $name,
                 array $roles,
@@ -108,6 +108,7 @@ final class GatewayNodeCreator
                 inputs: $inputs,
                 caller: $caller,
                 request: $request,
+                input: $input,
             ),
             requireObservedPlatform: true,
         );
@@ -252,8 +253,9 @@ final class GatewayNodeCreator
         }
 
         try {
+            $input = new NodeCreationInput([...$bootstrap->request, '--json' => true]);
             $result = $this->execute(
-                [...$bootstrap->request, '--json' => true],
+                $input,
                 fn (
                     string $name,
                     array $roles,
@@ -267,6 +269,7 @@ final class GatewayNodeCreator
                     inputs: $inputs,
                     appProductionIngressNodeId: $ingressNodeId,
                     bootstrap: $bootstrap,
+                    input: $input,
                 ),
                 requireObservedPlatform: false,
             );
@@ -433,17 +436,15 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @param  array<string, mixed>  $arguments
      * @param  callable(string, list<string>, WorkloadNodeProvisioningInput, ?int): GatewayActionResult  $provisionWorkload
      */
     private function execute(
-        array $arguments,
+        NodeCreationInput $input,
         callable $provisionWorkload,
         bool $requireObservedPlatform,
     ): GatewayActionResult {
-        $this->arguments = $arguments;
-
         return $this->handle(
+            $input,
             app(NodeRoleAssignmentService::class),
             app(WireGuardKeyGenerator::class),
             $provisionWorkload,
@@ -455,18 +456,19 @@ final class GatewayNodeCreator
      * @param  callable(string, list<string>, WorkloadNodeProvisioningInput, ?int): GatewayActionResult  $provisionWorkload
      */
     private function handle(
+        NodeCreationInput $input,
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         callable $provisionWorkload,
         bool $requireObservedPlatform,
     ): GatewayActionResult {
-        $name = $this->resolveName();
+        $name = $input->stringArgument('name');
 
         try {
             $requestedRoles = app(NodeCreationRoleResolver::class)->resolve(
-                template: $this->stringOption('template'),
-                operator: (bool) $this->option('operator'),
-                roles: $this->stringOption('roles'),
+                template: $input->stringOption('template'),
+                operator: (bool) $input->option('operator'),
+                roles: $input->stringOption('roles'),
             );
         } catch (NodeCreationRoleInputException $exception) {
             return $this->failCommand(
@@ -485,7 +487,7 @@ final class GatewayNodeCreator
         }
 
         if (
-            $this->arrayOption('agent-tool') !== []
+            $input->arrayOption('agent-tool') !== []
             && ! in_array(NodeRoleName::Agent->value, $requestedRoles->workloadRoles, true)
         ) {
             return $this->failCommand(
@@ -501,6 +503,7 @@ final class GatewayNodeCreator
             $inputs = $this->resolveWorkloadRoleInputs(
                 $requestedRoles->workloadRoles,
                 $requireObservedPlatform,
+                $input,
             );
 
             if ($inputs instanceof GatewayActionResult) {
@@ -509,6 +512,7 @@ final class GatewayNodeCreator
 
             $placement = $this->resolveIngressPlacement(
                 $requestedRoles->workloadRoles,
+                $input,
                 validateLocalIngressRegistry: true,
             );
 
@@ -540,11 +544,12 @@ final class GatewayNodeCreator
                 inputs: $inputs,
                 appProductionIngressNodeId: $placement->ingressNodeId,
                 provisionWorkload: $provisionWorkload,
+                input: $input,
             );
         }
 
         if ($requestedRoles->clientIdentity || $requestedRoles->operator) {
-            $forbiddenInput = $this->forbiddenClientIdentityInput();
+            $forbiddenInput = $this->forbiddenClientIdentityInput($input);
 
             if ($forbiddenInput !== null) {
                 return $this->validationFailed(
@@ -553,11 +558,11 @@ final class GatewayNodeCreator
                 );
             }
 
-            return $this->enrollClientNode($wireGuardKeyGenerator, $name, $requestedRoles->operator);
+            return $this->enrollClientNode($wireGuardKeyGenerator, $name, $requestedRoles->operator, $input);
         }
 
         if ($requestedRoles->gateway) {
-            return $this->convergeGatewayLocally($name);
+            return $this->convergeGatewayLocally($name, $input);
         }
 
         return $this->failCommand(
@@ -579,6 +584,7 @@ final class GatewayNodeCreator
         WorkloadNodeProvisioningInput $inputs,
         ?int $appProductionIngressNodeId,
         callable $provisionWorkload,
+        NodeCreationInput $input,
     ): GatewayActionResult {
         $existing = Node::query()->where('name', $name)->first();
 
@@ -619,7 +625,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $preflight = $this->preflightAgentSetup($roles);
+        $preflight = $this->preflightAgentSetup($roles, $input);
         if ($preflight instanceof GatewayActionResult) {
             return $preflight;
         }
@@ -736,15 +742,15 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function convergeGatewayLocally(string $name): GatewayActionResult
+    private function convergeGatewayLocally(string $name, NodeCreationInput $input): GatewayActionResult
     {
-        $tld = $this->stringOption('tld');
+        $tld = $input->stringOption('tld');
 
         if ($tld === null || ! NodeTld::isValid($tld)) {
             return $this->validationFailed('tld', 'Every node requires an explicit valid non-reserved TLD.');
         }
 
-        $host = $this->resolveHost();
+        $host = $input->stringOption('host');
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
@@ -813,6 +819,7 @@ final class GatewayNodeCreator
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         string $name,
         bool $operator,
+        NodeCreationInput $input,
     ): GatewayActionResult {
         $existing = Node::query()->where('name', $name)->first();
 
@@ -873,7 +880,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $tld = $this->stringOption('tld');
+        $tld = $input->stringOption('tld');
 
         if ($tld === null || ! NodeTld::isValid($tld)) {
             return $this->failCommand(
@@ -988,6 +995,7 @@ final class GatewayNodeCreator
         WorkloadNodeProvisioningInput $inputs,
         Node $caller,
         array $request,
+        NodeCreationInput $input,
     ): GatewayActionResult {
         for ($attempt = 1; $attempt <= self::WIREGUARD_RESERVATION_ATTEMPTS; $attempt++) {
             try {
@@ -1002,6 +1010,7 @@ final class GatewayNodeCreator
                         $inputs,
                         $caller,
                         $request,
+                        $input,
                     ),
                 );
             } catch (QueryException $exception) {
@@ -1038,8 +1047,9 @@ final class GatewayNodeCreator
         WorkloadNodeProvisioningInput $inputs,
         Node $caller,
         array $request,
+        NodeCreationInput $input,
     ): GatewayActionResult {
-        $preflight = $this->preflightAgentSetup($roles);
+        $preflight = $this->preflightAgentSetup($roles, $input);
 
         if ($preflight instanceof GatewayActionResult) {
             return $preflight;
@@ -1238,6 +1248,7 @@ final class GatewayNodeCreator
         WorkloadNodeProvisioningInput $inputs,
         ?int $appProductionIngressNodeId,
         NodeBootstrap $bootstrap,
+        NodeCreationInput $input,
     ): GatewayActionResult {
         $node = Node::query()->find($bootstrap->node_id);
 
@@ -1273,6 +1284,7 @@ final class GatewayNodeCreator
                 'postgres_process' => $inputs->postgresProcessId,
                 'clickhouse' => $inputs->clickhouseNodeId,
             ],
+            input: $input,
         );
 
         if ($roleAssignmentFailure instanceof GatewayActionResult) {
@@ -1282,25 +1294,25 @@ final class GatewayNodeCreator
         $warnings = [];
 
         if (in_array(NodeRoleName::Agent->value, $roles, true)) {
-            $selfGrantFailure = $this->setupAgentSelfGrant($node);
+            $selfGrantFailure = $this->setupAgentSelfGrant($node, $input);
 
             if ($selfGrantFailure instanceof GatewayActionResult) {
                 return $selfGrantFailure;
             }
 
-            $grantToFailure = $this->setupGrantTo($node);
+            $grantToFailure = $this->setupGrantTo($node, $input);
 
             if ($grantToFailure instanceof GatewayActionResult) {
                 return $grantToFailure;
             }
 
-            $grantFromFailure = $this->setupGrantFrom($node);
+            $grantFromFailure = $this->setupGrantFrom($node, $input);
 
             if ($grantFromFailure instanceof GatewayActionResult) {
                 return $grantFromFailure;
             }
 
-            $agentToolFailure = $this->setupAgentTools($node, $warnings);
+            $agentToolFailure = $this->setupAgentTools($node, $warnings, $input);
 
             if ($agentToolFailure instanceof GatewayActionResult) {
                 return $agentToolFailure;
@@ -1560,59 +1572,7 @@ final class GatewayNodeCreator
             ->exists();
     }
 
-    private function stringArgument(string $name): ?string
-    {
-        $value = $this->argument($name);
-
-        return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function stringOption(string $name): ?string
-    {
-        $value = $this->option($name);
-
-        return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function arrayOption(string $name): array
-    {
-        $value = $this->option($name);
-
-        if (is_string($value) && $value !== '') {
-            return [$value];
-        }
-
-        if (! is_array($value)) {
-            return [];
-        }
-
-        return array_values(array_filter($value, fn ($item): bool => is_string($item) && $item !== ''));
-    }
-
-    private function resolveName(): ?string
-    {
-        return $this->stringArgument('name');
-    }
-
-    private function resolveHost(): ?string
-    {
-        return $this->stringOption('host');
-    }
-
-    private function resolveSshUser(): string
-    {
-        return $this->stringOption('user') ?? 'root';
-    }
-
-    private function sshUserOptionWasSupplied(): bool
-    {
-        return array_key_exists('--user', $this->arguments);
-    }
-
-    private function forbiddenClientIdentityInput(): ?string
+    private function forbiddenClientIdentityInput(NodeCreationInput $input): ?string
     {
         foreach ([
             'host',
@@ -1627,13 +1587,13 @@ final class GatewayNodeCreator
             'gateway-endpoint',
             'host-key-fingerprint',
         ] as $option) {
-            if ($this->stringOption($option) !== null) {
+            if ($input->stringOption($option) !== null) {
                 return $option;
             }
         }
 
         foreach (['agent-tool', 'grant-to', 'grant-from'] as $option) {
-            if ($this->arrayOption($option) !== []) {
+            if ($input->arrayOption($option) !== []) {
                 return $option;
             }
         }
@@ -1646,12 +1606,12 @@ final class GatewayNodeCreator
             'grant-from-preset',
             'grant-from-permissions',
         ] as $option) {
-            if ($this->stringOption($option) !== null) {
+            if ($input->stringOption($option) !== null) {
                 return $option;
             }
         }
 
-        if ($this->sshUserOptionWasSupplied()) {
+        if ($input->optionWasSupplied('user')) {
             return 'user';
         }
 
@@ -1665,6 +1625,7 @@ final class GatewayNodeCreator
     private function resolveWorkloadRoleInputs(
         array $roles,
         bool $requireObservedPlatform,
+        NodeCreationInput $input,
     ): WorkloadNodeProvisioningInput|GatewayActionResult {
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
@@ -1677,28 +1638,28 @@ final class GatewayNodeCreator
             NodeRoleName::S3->value,
         ]) !== [];
 
-        if (! $needsHost && $this->stringOption('host') !== null) {
+        if (! $needsHost && $input->stringOption('host') !== null) {
             return $this->validationFailed(
                 'host',
                 'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use host provisioning.',
             );
         }
 
-        if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
+        if (! $needsHost && $input->stringOption('host-key-fingerprint') !== null) {
             return $this->validationFailed(
                 'host_key_fingerprint',
                 'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use host-key fingerprint pinning.',
             );
         }
 
-        if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
+        if (! $needsHost && $input->stringOption('gateway-endpoint') !== null) {
             return $this->validationFailed(
                 'gateway_endpoint',
                 'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use WireGuard endpoint overrides.',
             );
         }
 
-        $host = $needsHost ? $this->resolveHost() : null;
+        $host = $needsHost ? $input->stringOption('host') : null;
 
         if ($needsHost && $host === null) {
             return $this->validationFailed('host', 'Host is required for workload roles that provision a host.');
@@ -1708,7 +1669,7 @@ final class GatewayNodeCreator
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
-        $gatewayEndpoint = $this->stringOption('gateway-endpoint');
+        $gatewayEndpoint = $input->stringOption('gateway-endpoint');
 
         if ($gatewayEndpoint !== null && ! $this->isValidHost($gatewayEndpoint)) {
             return $this->validationFailed(
@@ -1717,8 +1678,8 @@ final class GatewayNodeCreator
             );
         }
 
-        $platform = $this->stringOption('platform');
-        $architecture = $this->stringOption('architecture');
+        $platform = $input->stringOption('platform');
+        $architecture = $input->stringOption('architecture');
 
         if ($requireObservedPlatform && $platform === null) {
             return $this->validationFailed(
@@ -1751,7 +1712,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $tld = $this->stringOption('tld');
+        $tld = $input->stringOption('tld');
 
         if ($tld === null) {
             return $this->validationFailed('tld', 'Every node requires a unique TLD.');
@@ -1764,13 +1725,13 @@ final class GatewayNodeCreator
             );
         }
 
-        $s3DataPath = $this->resolveS3DataPath($roles);
+        $s3DataPath = $this->resolveS3DataPath($roles, $input);
 
         if ($s3DataPath instanceof GatewayActionResult) {
             return $s3DataPath;
         }
 
-        $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles);
+        $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles, $input);
 
         if ($analyticsDatabaseNodes instanceof GatewayActionResult) {
             return $analyticsDatabaseNodes;
@@ -1779,9 +1740,9 @@ final class GatewayNodeCreator
         return new WorkloadNodeProvisioningInput(
             host: $host ?? '',
             tld: $tld,
-            sshUser: $needsHost ? $this->resolveSshUser() : null,
+            sshUser: $needsHost ? $input->stringOption('user') ?? 'root' : null,
             gatewayEndpoint: $needsHost ? $gatewayEndpoint : null,
-            hostKeyFingerprint: $needsHost ? $this->stringOption('host-key-fingerprint') : null,
+            hostKeyFingerprint: $needsHost ? $input->stringOption('host-key-fingerprint') : null,
             platform: $platform,
             architecture: $architecture,
             postgresNodeId: $analyticsDatabaseNodes['postgres_node_id'],
@@ -1794,10 +1755,12 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function resolveS3DataPath(array $roles): string|GatewayActionResult|null
-    {
+    private function resolveS3DataPath(
+        array $roles,
+        NodeCreationInput $input,
+    ): string|GatewayActionResult|null {
         $hasS3 = in_array(NodeRoleName::S3->value, $roles, true);
-        $dataPath = $this->stringOption('s3-data-path');
+        $dataPath = $input->stringOption('s3-data-path');
 
         if (! $hasS3) {
             return $dataPath === null
@@ -1818,12 +1781,14 @@ final class GatewayNodeCreator
      * @param  list<string>  $roles
      * @return array{postgres_node_id: ?int, postgres_process_id: ?int, clickhouse_node_id: ?int}|GatewayActionResult
      */
-    private function resolveAnalyticsDatabaseNodes(array $roles): array|GatewayActionResult
-    {
+    private function resolveAnalyticsDatabaseNodes(
+        array $roles,
+        NodeCreationInput $input,
+    ): array|GatewayActionResult {
         $hasAnalytics = in_array(NodeRoleName::Analytics->value, $roles, true);
-        $postgresNodeName = $this->stringOption('postgres-node');
-        $postgresProcessName = $this->stringOption('postgres-process');
-        $clickhouseNodeName = $this->stringOption('clickhouse-node');
+        $postgresNodeName = $input->stringOption('postgres-node');
+        $postgresProcessName = $input->stringOption('postgres-process');
+        $clickhouseNodeName = $input->stringOption('clickhouse-node');
 
         if (! $hasAnalytics) {
             if ($postgresNodeName !== null) {
@@ -1947,6 +1912,7 @@ final class GatewayNodeCreator
         Node $node,
         NodeRoleAssignmentService $roleAssignmentService,
         array $roles,
+        NodeCreationInput $input,
         ?int $appProductionIngressNodeId = null,
         array $backingNodeIds = [],
     ): ?GatewayActionResult {
@@ -1959,7 +1925,7 @@ final class GatewayNodeCreator
                     $backingNodeIds['postgres'] ?? null,
                     $backingNodeIds['postgres_process'] ?? null,
                     $backingNodeIds['clickhouse'] ?? null,
-                    $this->stringOption('s3-data-path') ?? S3RoleSettings::DefaultDataPath,
+                    $input->stringOption('s3-data-path') ?? S3RoleSettings::DefaultDataPath,
                 );
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment
@@ -2027,10 +1993,11 @@ final class GatewayNodeCreator
      */
     private function resolveIngressPlacement(
         array $roles,
+        NodeCreationInput $input,
         bool $validateLocalIngressRegistry = true,
     ): NodeCreationIngressPlacement|GatewayActionResult {
         $roles = array_values(array_unique($roles));
-        $ingressNodeName = $this->stringOption('ingress');
+        $ingressNodeName = $input->stringOption('ingress');
 
         if (
             $ingressNodeName !== null
@@ -2144,10 +2111,12 @@ final class GatewayNodeCreator
         );
     }
 
-    private function setupAgentSelfGrant(Node $node): ?GatewayActionResult
-    {
-        $selfGrantMode = $this->stringOption('self-grant') ?? 'default';
-        $selfGrantPermissions = $this->stringOption('self-grant-permissions');
+    private function setupAgentSelfGrant(
+        Node $node,
+        NodeCreationInput $input,
+    ): ?GatewayActionResult {
+        $selfGrantMode = $input->stringOption('self-grant') ?? 'default';
+        $selfGrantPermissions = $input->stringOption('self-grant-permissions');
 
         if (! in_array($selfGrantMode, ['default', 'custom'], true)) {
             return $this->validationFailed('self-grant', 'Self-grant mode must be one of default or custom.');
@@ -2172,16 +2141,16 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function setupGrantTo(Node $node): ?GatewayActionResult
+    private function setupGrantTo(Node $node, NodeCreationInput $input): ?GatewayActionResult
     {
-        $targets = $this->arrayOption('grant-to');
+        $targets = $input->arrayOption('grant-to');
 
         if ($targets === []) {
             return null;
         }
 
-        $preset = $this->stringOption('grant-to-preset');
-        $permissionsInput = $this->stringOption('grant-to-permissions');
+        $preset = $input->stringOption('grant-to-preset');
+        $permissionsInput = $input->stringOption('grant-to-permissions');
 
         $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
         if ($permissions instanceof GatewayActionResult) {
@@ -2205,16 +2174,16 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function setupGrantFrom(Node $node): ?GatewayActionResult
+    private function setupGrantFrom(Node $node, NodeCreationInput $input): ?GatewayActionResult
     {
-        $sources = $this->arrayOption('grant-from');
+        $sources = $input->arrayOption('grant-from');
 
         if ($sources === []) {
             return null;
         }
 
-        $preset = $this->stringOption('grant-from-preset');
-        $permissionsInput = $this->stringOption('grant-from-permissions');
+        $preset = $input->stringOption('grant-from-preset');
+        $permissionsInput = $input->stringOption('grant-from-permissions');
 
         $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
         if ($permissions instanceof GatewayActionResult) {
@@ -2366,11 +2335,13 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function preflightAgentSetup(array $roles): ?GatewayActionResult
-    {
+    private function preflightAgentSetup(
+        array $roles,
+        NodeCreationInput $input,
+    ): ?GatewayActionResult {
         $hasAgentRole = in_array(NodeRoleName::Agent->value, $roles, true);
 
-        $tools = $this->arrayOption('agent-tool');
+        $tools = $input->arrayOption('agent-tool');
         if ($tools !== [] && ! $hasAgentRole) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -2379,12 +2350,12 @@ final class GatewayNodeCreator
             );
         }
 
-        $selfGrantMode = $this->stringOption('self-grant');
+        $selfGrantMode = $input->stringOption('self-grant');
         if ($selfGrantMode !== null && ! in_array($selfGrantMode, ['default', 'custom'], true)) {
             return $this->validationFailed('self-grant', 'Self-grant mode must be one of default or custom.');
         }
 
-        $selfGrantPermissions = $this->stringOption('self-grant-permissions');
+        $selfGrantPermissions = $input->stringOption('self-grant-permissions');
         if ($selfGrantPermissions !== null && $selfGrantMode !== 'custom') {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -2393,7 +2364,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $grantToTargets = $this->arrayOption('grant-to');
+        $grantToTargets = $input->arrayOption('grant-to');
         if ($grantToTargets !== []) {
             $resolved = $this->resolveGrantTargets($grantToTargets);
             if ($resolved instanceof GatewayActionResult) {
@@ -2401,7 +2372,7 @@ final class GatewayNodeCreator
             }
         }
 
-        $grantFromSources = $this->arrayOption('grant-from');
+        $grantFromSources = $input->arrayOption('grant-from');
         if ($grantFromSources !== []) {
             $resolved = $this->resolveGrantTargets($grantFromSources);
             if ($resolved instanceof GatewayActionResult) {
@@ -2409,8 +2380,8 @@ final class GatewayNodeCreator
             }
         }
 
-        $grantToPreset = $this->stringOption('grant-to-preset');
-        $grantToPermissions = $this->stringOption('grant-to-permissions');
+        $grantToPreset = $input->stringOption('grant-to-preset');
+        $grantToPermissions = $input->stringOption('grant-to-permissions');
         if ($grantToTargets === [] && ($grantToPreset !== null || $grantToPermissions !== null)) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -2425,8 +2396,8 @@ final class GatewayNodeCreator
             }
         }
 
-        $grantFromPreset = $this->stringOption('grant-from-preset');
-        $grantFromPermissions = $this->stringOption('grant-from-permissions');
+        $grantFromPreset = $input->stringOption('grant-from-preset');
+        $grantFromPermissions = $input->stringOption('grant-from-permissions');
         if ($grantFromSources === [] && ($grantFromPreset !== null || $grantFromPermissions !== null)) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -2475,9 +2446,12 @@ final class GatewayNodeCreator
     /**
      * @param  list<array{code: string, tools: list<string>}>  $warnings
      */
-    private function setupAgentTools(Node $node, array &$warnings): ?GatewayActionResult
-    {
-        $tools = $this->arrayOption('agent-tool');
+    private function setupAgentTools(
+        Node $node,
+        array &$warnings,
+        NodeCreationInput $input,
+    ): ?GatewayActionResult {
+        $tools = $input->arrayOption('agent-tool');
 
         if ($tools === []) {
             return null;
@@ -2720,15 +2694,5 @@ final class GatewayNodeCreator
     private function failCommand(string $code, string $message, array $meta): GatewayActionResult
     {
         return GatewayActionResult::error($code, $message, $meta);
-    }
-
-    private function argument(string $key): mixed
-    {
-        return $this->arguments[$key] ?? null;
-    }
-
-    private function option(string $key): mixed
-    {
-        return $this->arguments["--{$key}"] ?? null;
     }
 }
