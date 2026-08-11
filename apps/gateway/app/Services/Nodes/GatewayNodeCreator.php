@@ -49,10 +49,6 @@ use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 use Throwable;
 
-use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\select;
-use function Laravel\Prompts\text;
-
 final class GatewayNodeCreator
 {
     public function __construct(
@@ -610,23 +606,12 @@ final class GatewayNodeCreator
             );
         }
 
-        $requiresHostProvisioning = array_intersect($roles, [
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-            NodeRoleName::Database->value,
-            NodeRoleName::Ingress->value,
-            NodeRoleName::Agent->value,
-            NodeRoleName::Metrics->value,
-            NodeRoleName::Analytics->value,
-            NodeRoleName::S3->value,
-        ]) !== [];
-
         $preflight = $this->preflightAgentSetup($roles);
         if (is_int($preflight)) {
             return $preflight;
         }
 
-        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
             return $this->prepareHostBootstrap(
                 registryWriter: $registryWriter,
                 wireGuardKeyGenerator: $wireGuardKeyGenerator,
@@ -636,7 +621,7 @@ final class GatewayNodeCreator
             );
         }
 
-        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
             return $this->completePreparedWorkloadNode(
                 roleAssignmentService: $roleAssignmentService,
                 nodeConverger: $nodeConverger,
@@ -647,106 +632,7 @@ final class GatewayNodeCreator
             );
         }
 
-        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_NONE) {
-            return $this->clientBootstrapRequired($name, $inputs->host);
-        }
-
-        $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
-
-        if (is_int($wireguardAddress)) {
-            return $wireguardAddress;
-        }
-
-        $gatewayEndpoint = $inputs->gatewayEndpoint ?? $this->gatewayEndpoint();
-        $platform = 'ubuntu';
-        $node = $registryWriter->writeNodeIdentity(
-            name: $name,
-            tld: $inputs->tld,
-            platform: $platform,
-            host: '',
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            user: self::DEFAULT_RUNTIME_USER,
-            orbitPath: '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
-        );
-
-        $failedAssignment = null;
-
-        foreach ($this->orderWorkloadRoles($roles) as $role) {
-            $settings = $role === NodeRoleName::AppProduction->value
-                ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
-                : $this->settingsForRole(
-                    role: $role,
-                    postgresNodeId: $inputs->postgresNodeId,
-                    postgresProcessId: $inputs->postgresProcessId,
-                    clickhouseNodeId: $inputs->clickhouseNodeId,
-                    s3DataPath: $inputs->s3DataPath,
-                );
-
-            $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
-
-            if ($assignment->status !== NodeRoleStatus::Error) {
-                continue;
-            }
-
-            $failedAssignment = $assignment;
-
-            break;
-        }
-
-        if ($failedAssignment instanceof NodeRoleAssignment) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Node '{$name}' created but workload role '{$failedAssignment->role}' failed to converge.",
-                meta: [
-                    'node' => $name,
-                    'role' => $failedAssignment->role,
-                    'status' => $failedAssignment->status->value,
-                    'settings' => $failedAssignment->settings ?? [],
-                    'last_error' => $failedAssignment->last_error,
-                ],
-            );
-        }
-
-        $payload = [
-            'result' => [
-                'action' => 'created',
-            ],
-            'node' => [
-                'name' => $name,
-                'tld' => $node->tld,
-                'platform' => $node->platform,
-                'addresses' => [
-                    'wireguard' => $wireguardAddress,
-                ],
-                'status' => 'active',
-            ],
-            'roles' => $node
-                ->fresh()
-                ?->roleAssignments
-                ->map(fn (NodeRoleAssignment $assignment): array => [
-                    'role' => $assignment->role,
-                    'status' => $assignment->status->value,
-                    'settings' => $assignment->settings ?? [],
-                    'last_error' => $assignment->last_error,
-                ])
-                ->values()
-                ->all(),
-            'provisioning' => [
-                'transport' => 'none',
-                'host' => null,
-                'status' => 'created',
-            ],
-            'next_steps' => [],
-        ];
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $this->info("Created node {$name}.");
-
-        return self::SUCCESS;
+        return $this->clientBootstrapRequired($name, $inputs->host);
     }
 
     private function ensureProvisionedNodeWireGuardPeer(
@@ -866,7 +752,7 @@ final class GatewayNodeCreator
             return $this->validationFailed('tld', 'Every node requires an explicit valid non-reserved TLD.');
         }
 
-        $host = $this->resolveHost('gateway');
+        $host = $this->resolveHost();
 
         if ($host === null) {
             return $this->validationFailed('host', 'Host is required for gateway nodes.');
@@ -1774,59 +1660,17 @@ final class GatewayNodeCreator
 
     private function resolveName(): ?string
     {
-        $name = $this->stringArgument('name');
-
-        if ($name !== null) {
-            return $name;
-        }
-
-        if (! $this->isInteractiveInput()) {
-            return null;
-        }
-
-        return trim(text(
-            label: 'Node name',
-            required: true,
-            validate: fn (string $value): ?string => $this->validatePromptNodeName($value),
-        ));
+        return $this->stringArgument('name');
     }
 
-    private function resolveHost(string $role): ?string
+    private function resolveHost(): ?string
     {
-        $host = $this->stringOption('host');
-
-        if ($host !== null) {
-            return $host;
-        }
-
-        if (! $this->isInteractiveInput()) {
-            return null;
-        }
-
-        if (! in_array(
-            $role,
-            ['app-dev', 'app-prod', 'database', 'agent', 'ingress', 's3', 'metrics', 'analytics', 'gateway'],
-            true,
-        )) {
-            return null;
-        }
-
-        return trim(text(
-            label: 'Host',
-            required: true,
-            validate: fn (string $value): ?string => $this->validatePromptHost($value),
-        ));
+        return $this->stringOption('host');
     }
 
     private function resolveSshUser(): string
     {
-        $sshUser = $this->stringOption('user') ?? 'root';
-
-        if (! $this->isInteractiveInput() || $this->sshUserOptionWasSupplied()) {
-            return $sshUser;
-        }
-
-        return trim(text(label: 'SSH user', default: $sshUser, required: true));
+        return $this->stringOption('user') ?? 'root';
     }
 
     private function sshUserOptionWasSupplied(): bool
@@ -1880,33 +1724,6 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function isInteractiveInput(): bool
-    {
-        return false;
-    }
-
-    private function validatePromptNodeName(string $value): ?string
-    {
-        $name = trim($value);
-
-        if ($name === '') {
-            return 'Node name is required.';
-        }
-
-        return $this->isValidNodeName($name) ? null : 'Node name must be a valid node name.';
-    }
-
-    private function validatePromptHost(string $value): ?string
-    {
-        $host = trim($value);
-
-        if ($host === '') {
-            return 'Host is required.';
-        }
-
-        return $this->isValidHost($host) ? null : 'Host must be a valid IP address or dotted DNS name.';
-    }
-
     /**
      * @param  list<string>  $roles
      * @return WorkloadNodeProvisioningInput|int
@@ -1945,19 +1762,7 @@ final class GatewayNodeCreator
             );
         }
 
-        $hostRole =
-            array_first(array_intersect($roles, [
-                NodeRoleName::AppDevelopment->value,
-                NodeRoleName::AppProduction->value,
-                NodeRoleName::Database->value,
-                NodeRoleName::Ingress->value,
-                NodeRoleName::Agent->value,
-                NodeRoleName::Metrics->value,
-                NodeRoleName::Analytics->value,
-                NodeRoleName::S3->value,
-            ])) ?? NodeRoleName::Agent->value;
-
-        $host = $needsHost ? $this->resolveHost($hostRole) : null;
+        $host = $needsHost ? $this->resolveHost() : null;
 
         if ($needsHost && $host === null) {
             return $this->validationFailed('host', 'Host is required for workload roles that provision a host.');
@@ -2338,41 +2143,7 @@ final class GatewayNodeCreator
             );
         }
 
-        if (! $this->isInteractiveInput()) {
-            return $this->missingIngressPlacement('App-production requires explicit ingress placement.');
-        }
-
-        if (confirm(label: 'Serve public traffic from this node?', default: true)) {
-            return new NodeCreationIngressPlacement(
-                roles: $this->orderWorkloadRoles([...$roles, NodeRoleName::Ingress->value]),
-                ingressNodeId: null,
-                ingressNodeName: null,
-            );
-        }
-
-        $ingressNodes = $this->activeIngressNodes();
-
-        if ($ingressNodes === []) {
-            return $this->missingIngressPlacement();
-        }
-
-        $selectedNodeName = select(
-            label: 'Ingress node',
-            options: $ingressNodes,
-            required: true,
-        );
-
-        $ingressNode = $this->findActiveIngressNodeByName($selectedNodeName);
-
-        if (! $ingressNode instanceof Node) {
-            return $this->missingIngressPlacement();
-        }
-
-        return new NodeCreationIngressPlacement(
-            roles: $this->orderWorkloadRoles($roles),
-            ingressNodeId: $ingressNode->id,
-            ingressNodeName: $ingressNode->name,
-        );
+        return $this->missingIngressPlacement('App-production requires explicit ingress placement.');
     }
 
     /**
@@ -2397,21 +2168,6 @@ final class GatewayNodeCreator
         );
 
         return $roles;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function activeIngressNodes(): array
-    {
-        return Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->whereHas('roleAssignments', fn (Builder $query) => $query
-                ->where('role', NodeRoleName::Ingress->value)
-                ->where('status', NodeRoleStatus::Active->value))
-            ->orderBy('name')
-            ->pluck('name')
-            ->all();
     }
 
     private function findActiveIngressNodeByName(string $name): ?Node
@@ -2750,7 +2506,6 @@ final class GatewayNodeCreator
 
         if ($hasAgentRole && $tools !== []) {
             $catalog = app(ToolCatalog::class);
-            $resolvedTools = [];
             foreach ($tools as $tool) {
                 if (! $catalog->supports($tool)) {
                     return $this->failCommand(
@@ -2765,19 +2520,6 @@ final class GatewayNodeCreator
                         code: 'validation_failed',
                         message: "Tool '{$tool}' is not an agent tool.",
                         meta: ['field' => 'agent-tool', 'tool' => $tool],
-                    );
-                }
-
-                $resolvedTools[] = $tool;
-            }
-
-            if (count($resolvedTools) > 1 && ! $this->option('json') && $this->isInteractiveInput()) {
-                $this->warn('Multiple agent tools selected: '.implode(', ', $resolvedTools));
-                if (! confirm('Continue installing all tools?', default: false)) {
-                    return $this->failCommand(
-                        code: 'user_cancelled',
-                        message: 'Agent tool installation cancelled by user.',
-                        meta: [],
                     );
                 }
             }
@@ -3076,11 +2818,6 @@ final class GatewayNodeCreator
     }
 
     private function info(string $message): void
-    {
-        $this->line($message);
-    }
-
-    private function warn(string $message): void
     {
         $this->line($message);
     }
