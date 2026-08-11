@@ -57,12 +57,6 @@ final class GatewayNodeCreator
         private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
-    private const string BOOTSTRAP_PHASE_NONE = 'none';
-
-    private const string BOOTSTRAP_PHASE_PREPARE = 'prepare';
-
-    private const string BOOTSTRAP_PHASE_COMPLETE = 'complete';
-
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
     private const int SUCCESS = 0;
@@ -74,22 +68,21 @@ final class GatewayNodeCreator
     /** @var array<string, mixed> */
     private array $arguments = [];
 
-    private string $bootstrapPhase = self::BOOTSTRAP_PHASE_NONE;
-
-    private ?Node $bootstrapCaller = null;
-
-    private ?NodeBootstrap $bootstrap = null;
-
     /**
      * @param  array<string, mixed>  $arguments
      */
     public function create(array $arguments): GatewayActionResult
     {
-        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_NONE;
-        $this->bootstrapCaller = null;
-        $this->bootstrap = null;
-
-        return $this->execute($arguments);
+        return $this->execute(
+            $arguments,
+            fn (
+                string $name,
+                array $_roles,
+                WorkloadNodeProvisioningInput $inputs,
+                ?int $_ingressNodeId,
+            ): GatewayActionResult => $this->clientBootstrapRequired($name, $inputs->host),
+            requireObservedPlatform: false,
+        );
     }
 
     /**
@@ -97,12 +90,27 @@ final class GatewayNodeCreator
      */
     public function prepareBootstrap(array $arguments, Node $caller): GatewayActionResult
     {
-        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_PREPARE;
-        $this->bootstrapCaller = $caller;
-        $this->bootstrap = null;
         $arguments['--json'] = true;
+        $request = array_diff_key($arguments, ['--json' => true]);
 
-        return $this->execute($arguments);
+        return $this->execute(
+            $arguments,
+            fn (
+                string $name,
+                array $roles,
+                WorkloadNodeProvisioningInput $inputs,
+                ?int $_ingressNodeId,
+            ): GatewayActionResult => $this->prepareHostBootstrap(
+                registryWriter: app(NodeRegistryWriter::class),
+                wireGuardKeyGenerator: app(WireGuardKeyGenerator::class),
+                name: $name,
+                roles: $roles,
+                inputs: $inputs,
+                caller: $caller,
+                request: $request,
+            ),
+            requireObservedPlatform: true,
+        );
     }
 
     /**
@@ -243,12 +251,25 @@ final class GatewayNodeCreator
             );
         }
 
-        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_COMPLETE;
-        $this->bootstrapCaller = $caller;
-        $this->bootstrap = $bootstrap;
-
         try {
-            $result = $this->execute([...$bootstrap->request, '--json' => true]);
+            $result = $this->execute(
+                [...$bootstrap->request, '--json' => true],
+                fn (
+                    string $name,
+                    array $roles,
+                    WorkloadNodeProvisioningInput $inputs,
+                    ?int $ingressNodeId,
+                ): GatewayActionResult => $this->completePreparedWorkloadNode(
+                    roleAssignmentService: app(NodeRoleAssignmentService::class),
+                    nodeConverger: app(NodeConverger::class),
+                    name: $name,
+                    roles: $roles,
+                    inputs: $inputs,
+                    appProductionIngressNodeId: $ingressNodeId,
+                    bootstrap: $bootstrap,
+                ),
+                requireObservedPlatform: false,
+            );
         } catch (Throwable $exception) {
             $completed = $this->refreshCompletedBootstrap($bootstrap, $node);
 
@@ -413,24 +434,31 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<string, mixed>  $arguments
+     * @param  callable(string, list<string>, WorkloadNodeProvisioningInput, ?int): GatewayActionResult  $provisionWorkload
      */
-    private function execute(array $arguments): GatewayActionResult
-    {
+    private function execute(
+        array $arguments,
+        callable $provisionWorkload,
+        bool $requireObservedPlatform,
+    ): GatewayActionResult {
         $this->arguments = $arguments;
 
         return $this->handle(
-            app(NodeRegistryWriter::class),
             app(NodeRoleAssignmentService::class),
             app(WireGuardKeyGenerator::class),
-            app(NodeConverger::class),
+            $provisionWorkload,
+            $requireObservedPlatform,
         );
     }
 
+    /**
+     * @param  callable(string, list<string>, WorkloadNodeProvisioningInput, ?int): GatewayActionResult  $provisionWorkload
+     */
     private function handle(
-        NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
-        NodeConverger $nodeConverger,
+        callable $provisionWorkload,
+        bool $requireObservedPlatform,
     ): GatewayActionResult {
         $name = $this->resolveName();
 
@@ -470,7 +498,10 @@ final class GatewayNodeCreator
         $gatewayConfigured = $this->gatewayConfigured();
 
         if ($requestedRoles->workloadRoles !== []) {
-            $inputs = $this->resolveWorkloadRoleInputs($requestedRoles->workloadRoles);
+            $inputs = $this->resolveWorkloadRoleInputs(
+                $requestedRoles->workloadRoles,
+                $requireObservedPlatform,
+            );
 
             if ($inputs instanceof GatewayActionResult) {
                 return $inputs;
@@ -494,27 +525,21 @@ final class GatewayNodeCreator
             }
 
             if ($this->containsAppWorkloadRole($placement->roles)) {
-                return $this->provisionAppNode(
-                    registryWriter: $registryWriter,
-                    roleAssignmentService: $nodeRoleAssignmentService,
-                    wireGuardKeyGenerator: $wireGuardKeyGenerator,
-                    nodeConverger: $nodeConverger,
-                    name: $name,
-                    inputs: $inputs,
-                    initialWorkloadRoles: $placement->roles,
-                    appProductionIngressNodeId: $placement->ingressNodeId,
+                return $provisionWorkload(
+                    $name,
+                    $placement->roles,
+                    $inputs,
+                    $placement->ingressNodeId,
                 );
             }
 
             return $this->provisionWorkloadRoleNode(
-                registryWriter: $registryWriter,
                 roleAssignmentService: $nodeRoleAssignmentService,
-                wireGuardKeyGenerator: $wireGuardKeyGenerator,
-                nodeConverger: $nodeConverger,
                 name: $name,
                 roles: $placement->roles,
                 inputs: $inputs,
                 appProductionIngressNodeId: $placement->ingressNodeId,
+                provisionWorkload: $provisionWorkload,
             );
         }
 
@@ -544,17 +569,16 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
+     * @param  callable(string, list<string>, WorkloadNodeProvisioningInput, ?int): GatewayActionResult  $provisionWorkload
      * @mago-expect lint:halstead
      */
     private function provisionWorkloadRoleNode(
-        NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $roleAssignmentService,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-        NodeConverger $nodeConverger,
         string $name,
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
-        ?int $appProductionIngressNodeId = null,
+        ?int $appProductionIngressNodeId,
+        callable $provisionWorkload,
     ): GatewayActionResult {
         $existing = Node::query()->where('name', $name)->first();
 
@@ -600,28 +624,7 @@ final class GatewayNodeCreator
             return $preflight;
         }
 
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
-            return $this->prepareHostBootstrap(
-                registryWriter: $registryWriter,
-                wireGuardKeyGenerator: $wireGuardKeyGenerator,
-                name: $name,
-                roles: $roles,
-                inputs: $inputs,
-            );
-        }
-
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
-            return $this->completePreparedWorkloadNode(
-                roleAssignmentService: $roleAssignmentService,
-                nodeConverger: $nodeConverger,
-                name: $name,
-                roles: $roles,
-                inputs: $inputs,
-                appProductionIngressNodeId: $appProductionIngressNodeId,
-            );
-        }
-
-        return $this->clientBootstrapRequired($name, $inputs->host);
+        return $provisionWorkload($name, $roles, $inputs, $appProductionIngressNodeId);
     }
 
     private function ensureProvisionedNodeWireGuardPeer(
@@ -974,44 +977,8 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @param  list<string>  $initialWorkloadRoles
-     */
-    private function provisionAppNode(
-        NodeRegistryWriter $registryWriter,
-        NodeRoleAssignmentService $roleAssignmentService,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-        NodeConverger $nodeConverger,
-        string $name,
-        WorkloadNodeProvisioningInput $inputs,
-        array $initialWorkloadRoles = [],
-        ?int $appProductionIngressNodeId = null,
-    ): GatewayActionResult {
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
-            return $this->prepareHostBootstrap(
-                registryWriter: $registryWriter,
-                wireGuardKeyGenerator: $wireGuardKeyGenerator,
-                name: $name,
-                roles: $initialWorkloadRoles,
-                inputs: $inputs,
-            );
-        }
-
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
-            return $this->completePreparedWorkloadNode(
-                roleAssignmentService: $roleAssignmentService,
-                nodeConverger: $nodeConverger,
-                name: $name,
-                roles: $initialWorkloadRoles,
-                inputs: $inputs,
-                appProductionIngressNodeId: $appProductionIngressNodeId,
-            );
-        }
-
-        return $this->clientBootstrapRequired($name, $inputs->host);
-    }
-
-    /**
      * @param  list<string>  $roles
+     * @param  array<string, mixed>  $request
      */
     private function prepareHostBootstrap(
         NodeRegistryWriter $registryWriter,
@@ -1019,6 +986,8 @@ final class GatewayNodeCreator
         string $name,
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
+        Node $caller,
+        array $request,
     ): GatewayActionResult {
         for ($attempt = 1; $attempt <= self::WIREGUARD_RESERVATION_ATTEMPTS; $attempt++) {
             try {
@@ -1031,6 +1000,8 @@ final class GatewayNodeCreator
                         $name,
                         $roles,
                         $inputs,
+                        $caller,
+                        $request,
                     ),
                 );
             } catch (QueryException $exception) {
@@ -1057,6 +1028,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
+     * @param  array<string, mixed>  $request
      */
     private function prepareHostBootstrapWithReservationLock(
         NodeRegistryWriter $registryWriter,
@@ -1064,24 +1036,15 @@ final class GatewayNodeCreator
         string $name,
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
+        Node $caller,
+        array $request,
     ): GatewayActionResult {
-        $caller = $this->bootstrapCaller;
-
-        if (! $caller instanceof Node) {
-            return $this->failCommand(
-                code: 'authorization_failed',
-                message: 'An authenticated initiating node is required to prepare workload bootstrap.',
-                meta: [],
-            );
-        }
-
         $preflight = $this->preflightAgentSetup($roles);
 
         if ($preflight instanceof GatewayActionResult) {
             return $preflight;
         }
 
-        $request = $this->resumableBootstrapRequest();
         $existing = Node::query()->where('name', $name)->first();
         $bootstrap = $existing instanceof Node
             ? NodeBootstrap::query()->where('node_id', $existing->id)->first()
@@ -1274,11 +1237,11 @@ final class GatewayNodeCreator
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
         ?int $appProductionIngressNodeId,
+        NodeBootstrap $bootstrap,
     ): GatewayActionResult {
-        $bootstrap = $this->bootstrap;
-        $node = $bootstrap instanceof NodeBootstrap ? Node::query()->find($bootstrap->node_id) : null;
+        $node = Node::query()->find($bootstrap->node_id);
 
-        if (! $bootstrap instanceof NodeBootstrap || ! $node instanceof Node || $node->name !== $name) {
+        if (! $node instanceof Node || $node->name !== $name) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: 'Pending bootstrap identity does not match the requested node.',
@@ -1496,14 +1459,6 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function resumableBootstrapRequest(): array
-    {
-        return array_diff_key($this->arguments, ['--json' => true]);
-    }
-
-    /**
      * @param  list<string>  $roles
      */
     private function containsDevelopmentAppRole(array $roles): bool
@@ -1707,8 +1662,10 @@ final class GatewayNodeCreator
      * @param  list<string>  $roles
      * @return WorkloadNodeProvisioningInput|GatewayActionResult
      */
-    private function resolveWorkloadRoleInputs(array $roles): WorkloadNodeProvisioningInput|GatewayActionResult
-    {
+    private function resolveWorkloadRoleInputs(
+        array $roles,
+        bool $requireObservedPlatform,
+    ): WorkloadNodeProvisioningInput|GatewayActionResult {
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
@@ -1763,14 +1720,14 @@ final class GatewayNodeCreator
         $platform = $this->stringOption('platform');
         $architecture = $this->stringOption('architecture');
 
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE && $platform === null) {
+        if ($requireObservedPlatform && $platform === null) {
             return $this->validationFailed(
                 'platform',
                 'Client-observed target platform is required for workload bootstrap.',
             );
         }
 
-        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE && $architecture === null) {
+        if ($requireObservedPlatform && $architecture === null) {
             return $this->validationFailed(
                 'architecture',
                 'Client-observed target architecture is required for workload bootstrap.',

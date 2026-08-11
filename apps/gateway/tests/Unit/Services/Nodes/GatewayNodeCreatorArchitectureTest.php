@@ -38,3 +38,18 @@ it('returns gateway action results without a hidden output buffer', function ():
         expect($source)->not->toContain($hiddenOutputPath);
     }
 });
+
+it('does not store bootstrap phase or caller state between requests', function (): void {
+    $source = (string) file_get_contents(dirname(__DIR__, 4).'/app/Services/Nodes/GatewayNodeCreator.php');
+
+    foreach ([
+        'BOOTSTRAP_PHASE_',
+        'private string $bootstrapPhase',
+        'private ?Node $bootstrapCaller',
+        'private ?NodeBootstrap $bootstrap',
+        'NodeCreationContext',
+        'NodeCreationPhase',
+    ] as $requestState) {
+        expect($source)->not->toContain($requestState);
+    }
+});
