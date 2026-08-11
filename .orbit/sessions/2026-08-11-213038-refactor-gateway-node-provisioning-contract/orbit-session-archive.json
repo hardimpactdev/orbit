@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-11T19:30:39+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-gateway-node-provisioning-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-11-213038-refactor-gateway-node-provisioning-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/gateway-node-provisioning-retained-incus-96546744.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-11T19-20-54Z-96546744ca15/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/gateway-node-provisioning-retained-incus-96546744.md": "4036e51385553d4590f0b417e69e42d94e58a9d61769a968d26c22bd87f9cc92",
+        "loop.md": "2a75907aa4be0b5a9efbd438c33f35fe4089387167f5d7235bf9900e7af590f0",
+        "quality-gates/profiles/2026-08-11T19-20-54Z-96546744ca15/gateway_pest.junit.xml": "e5287f13611a2a67150bbf8b35bd68bb84ee371ff6c5120978b9575f70861d48"
+    },
+    "slug": "refactor-gateway-node-provisioning-contract",
+    "requested_slug": "refactor-gateway-node-provisioning-contract",
+    "compatible_slugs": [
+        "refactor-gateway-node-provisioning-contract"
+    ],
+    "branch": "refactor/gateway-node-provisioning-contract",
+    "candidate_commit": "96546744ca156ad12e2caef61260cfc2ab383ea7",
+    "accepted_feature_tip": "96546744ca156ad12e2caef61260cfc2ab383ea7",
+    "accepted_main_tip": "887789b4d61db322965ce85323f851aea7fe909f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
