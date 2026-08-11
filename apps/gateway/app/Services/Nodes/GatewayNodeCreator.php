@@ -67,16 +67,12 @@ final class GatewayNodeCreator
 
     private const int SUCCESS = 0;
 
-    private const int FAILURE = 1;
-
     private const int WIREGUARD_RESERVATION_ATTEMPTS = 3;
 
     private const string WIREGUARD_RESERVATION_LOCK = 'orbit:node-bootstrap:wireguard-reservation';
 
     /** @var array<string, mixed> */
     private array $arguments = [];
-
-    private ?string $output = null;
 
     private string $bootstrapPhase = self::BOOTSTRAP_PHASE_NONE;
 
@@ -421,16 +417,13 @@ final class GatewayNodeCreator
     private function execute(array $arguments): GatewayActionResult
     {
         $this->arguments = $arguments;
-        $this->output = null;
 
-        $exitCode = $this->handle(
+        return $this->handle(
             app(NodeRegistryWriter::class),
             app(NodeRoleAssignmentService::class),
             app(WireGuardKeyGenerator::class),
             app(NodeConverger::class),
         );
-
-        return GatewayActionResult::fromJsonOutput($exitCode, $this->output);
     }
 
     private function handle(
@@ -438,7 +431,7 @@ final class GatewayNodeCreator
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         NodeConverger $nodeConverger,
-    ): int {
+    ): GatewayActionResult {
         $name = $this->resolveName();
 
         try {
@@ -463,10 +456,6 @@ final class GatewayNodeCreator
             return $this->validationFailed('name', 'Node name must be a valid node name.');
         }
 
-        if (is_int($requestedRoles)) {
-            return $requestedRoles;
-        }
-
         if (
             $this->arrayOption('agent-tool') !== []
             && ! in_array(NodeRoleName::Agent->value, $requestedRoles->workloadRoles, true)
@@ -483,7 +472,7 @@ final class GatewayNodeCreator
         if ($requestedRoles->workloadRoles !== []) {
             $inputs = $this->resolveWorkloadRoleInputs($requestedRoles->workloadRoles);
 
-            if (is_int($inputs)) {
+            if ($inputs instanceof GatewayActionResult) {
                 return $inputs;
             }
 
@@ -492,7 +481,7 @@ final class GatewayNodeCreator
                 validateLocalIngressRegistry: true,
             );
 
-            if (is_int($placement)) {
+            if ($placement instanceof GatewayActionResult) {
                 return $placement;
             }
 
@@ -566,7 +555,7 @@ final class GatewayNodeCreator
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
         ?int $appProductionIngressNodeId = null,
-    ): int {
+    ): GatewayActionResult {
         $existing = Node::query()->where('name', $name)->first();
 
         if ($existing instanceof Node && $existing->isActive()) {
@@ -607,7 +596,7 @@ final class GatewayNodeCreator
         }
 
         $preflight = $this->preflightAgentSetup($roles);
-        if (is_int($preflight)) {
+        if ($preflight instanceof GatewayActionResult) {
             return $preflight;
         }
 
@@ -639,7 +628,7 @@ final class GatewayNodeCreator
         Node $node,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         string $wireguardAddress,
-    ): WireGuardPeer|int {
+    ): WireGuardPeer|GatewayActionResult {
         $peer = WireGuardPeer::query()->where('node_id', $node->id)->first();
 
         if ($peer instanceof WireGuardPeer && $peer->private_key !== '') {
@@ -683,7 +672,7 @@ final class GatewayNodeCreator
         Node $node,
         WireGuardPeer $peer,
         string $wireguardAddress,
-    ): string|int {
+    ): string|GatewayActionResult {
         if ($peer->public_key === '' || $peer->pre_shared_key === null || $peer->pre_shared_key === '') {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
@@ -744,7 +733,7 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function convergeGatewayLocally(string $name): int
+    private function convergeGatewayLocally(string $name): GatewayActionResult
     {
         $tld = $this->stringOption('tld');
 
@@ -781,13 +770,7 @@ final class GatewayNodeCreator
 
         $payload = $this->gatewayConvergencePayload($gateway, $host);
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $this->info('Gateway is already provisioned.');
-
-        return self::SUCCESS;
+        return $this->jsonSuccess($payload);
     }
 
     private function gatewayHostMatches(Node $gateway, string $host): bool
@@ -823,8 +806,11 @@ final class GatewayNodeCreator
         ];
     }
 
-    private function enrollClientNode(WireGuardKeyGenerator $wireGuardKeyGenerator, string $name, bool $operator): int
-    {
+    private function enrollClientNode(
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        string $name,
+        bool $operator,
+    ): GatewayActionResult {
         $existing = Node::query()->where('name', $name)->first();
 
         if ($existing instanceof Node && ! $existing->isOperator()) {
@@ -984,14 +970,7 @@ final class GatewayNodeCreator
             ],
         ];
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $type = $operator ? 'operator' : 'client';
-        $this->info("Enrolled {$type} node {$name}.");
-
-        return self::SUCCESS;
+        return $this->jsonSuccess($payload);
     }
 
     /**
@@ -1006,7 +985,7 @@ final class GatewayNodeCreator
         WorkloadNodeProvisioningInput $inputs,
         array $initialWorkloadRoles = [],
         ?int $appProductionIngressNodeId = null,
-    ): int {
+    ): GatewayActionResult {
         if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
             return $this->prepareHostBootstrap(
                 registryWriter: $registryWriter,
@@ -1040,13 +1019,13 @@ final class GatewayNodeCreator
         string $name,
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
-    ): int {
+    ): GatewayActionResult {
         for ($attempt = 1; $attempt <= self::WIREGUARD_RESERVATION_ATTEMPTS; $attempt++) {
             try {
-                /** @var int */
+                /** @var GatewayActionResult */
                 return Cache::lock(self::WIREGUARD_RESERVATION_LOCK, 120)->block(
                     30,
-                    fn (): int => $this->prepareHostBootstrapWithReservationLock(
+                    fn (): GatewayActionResult => $this->prepareHostBootstrapWithReservationLock(
                         $registryWriter,
                         $wireGuardKeyGenerator,
                         $name,
@@ -1085,7 +1064,7 @@ final class GatewayNodeCreator
         string $name,
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
-    ): int {
+    ): GatewayActionResult {
         $caller = $this->bootstrapCaller;
 
         if (! $caller instanceof Node) {
@@ -1098,7 +1077,7 @@ final class GatewayNodeCreator
 
         $preflight = $this->preflightAgentSetup($roles);
 
-        if (is_int($preflight)) {
+        if ($preflight instanceof GatewayActionResult) {
             return $preflight;
         }
 
@@ -1147,7 +1126,7 @@ final class GatewayNodeCreator
             $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
         }
 
-        if (is_int($wireguardAddress)) {
+        if ($wireguardAddress instanceof GatewayActionResult) {
             return $wireguardAddress;
         }
 
@@ -1201,7 +1180,7 @@ final class GatewayNodeCreator
 
             $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
 
-            if (is_int($peer)) {
+            if ($peer instanceof GatewayActionResult) {
                 DB::rollBack();
 
                 return $peer;
@@ -1224,7 +1203,7 @@ final class GatewayNodeCreator
 
         $wireguardServerPublicKey = $this->configureGatewayWireGuardServerPeer($node, $peer, $wireguardAddress);
 
-        if (is_int($wireguardServerPublicKey)) {
+        if ($wireguardServerPublicKey instanceof GatewayActionResult) {
             return $wireguardServerPublicKey;
         }
 
@@ -1295,7 +1274,7 @@ final class GatewayNodeCreator
         array $roles,
         WorkloadNodeProvisioningInput $inputs,
         ?int $appProductionIngressNodeId,
-    ): int {
+    ): GatewayActionResult {
         $bootstrap = $this->bootstrap;
         $node = $bootstrap instanceof NodeBootstrap ? Node::query()->find($bootstrap->node_id) : null;
 
@@ -1333,7 +1312,7 @@ final class GatewayNodeCreator
             ],
         );
 
-        if (is_int($roleAssignmentFailure)) {
+        if ($roleAssignmentFailure instanceof GatewayActionResult) {
             return $roleAssignmentFailure;
         }
 
@@ -1342,38 +1321,38 @@ final class GatewayNodeCreator
         if (in_array(NodeRoleName::Agent->value, $roles, true)) {
             $selfGrantFailure = $this->setupAgentSelfGrant($node);
 
-            if (is_int($selfGrantFailure)) {
+            if ($selfGrantFailure instanceof GatewayActionResult) {
                 return $selfGrantFailure;
             }
 
             $grantToFailure = $this->setupGrantTo($node);
 
-            if (is_int($grantToFailure)) {
+            if ($grantToFailure instanceof GatewayActionResult) {
                 return $grantToFailure;
             }
 
             $grantFromFailure = $this->setupGrantFrom($node);
 
-            if (is_int($grantFromFailure)) {
+            if ($grantFromFailure instanceof GatewayActionResult) {
                 return $grantFromFailure;
             }
 
             $agentToolFailure = $this->setupAgentTools($node, $warnings);
 
-            if (is_int($agentToolFailure)) {
+            if ($agentToolFailure instanceof GatewayActionResult) {
                 return $agentToolFailure;
             }
         }
 
         $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $roles);
 
-        if (is_int($nodeSetup)) {
+        if ($nodeSetup instanceof GatewayActionResult) {
             return $nodeSetup;
         }
 
         $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
 
-        if (is_int($securityBaseline)) {
+        if ($securityBaseline instanceof GatewayActionResult) {
             return $securityBaseline;
         }
 
@@ -1480,7 +1459,7 @@ final class GatewayNodeCreator
         );
     }
 
-    private function clientBootstrapRequired(string $name, string $host): int
+    private function clientBootstrapRequired(string $name, string $host): GatewayActionResult
     {
         return $this->failCommand(
             code: 'node.bootstrap_required',
@@ -1532,7 +1511,7 @@ final class GatewayNodeCreator
         return in_array(NodeRoleName::AppDevelopment->value, $roles, true);
     }
 
-    private function finalizeNodeSecurityBaseline(Node $node): ?int
+    private function finalizeNodeSecurityBaseline(Node $node): ?GatewayActionResult
     {
         $shell = app(RemoteShell::class);
 
@@ -1726,9 +1705,9 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return WorkloadNodeProvisioningInput|int
+     * @return WorkloadNodeProvisioningInput|GatewayActionResult
      */
-    private function resolveWorkloadRoleInputs(array $roles): WorkloadNodeProvisioningInput|int
+    private function resolveWorkloadRoleInputs(array $roles): WorkloadNodeProvisioningInput|GatewayActionResult
     {
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
@@ -1830,13 +1809,13 @@ final class GatewayNodeCreator
 
         $s3DataPath = $this->resolveS3DataPath($roles);
 
-        if (is_int($s3DataPath)) {
+        if ($s3DataPath instanceof GatewayActionResult) {
             return $s3DataPath;
         }
 
         $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles);
 
-        if (is_int($analyticsDatabaseNodes)) {
+        if ($analyticsDatabaseNodes instanceof GatewayActionResult) {
             return $analyticsDatabaseNodes;
         }
 
@@ -1858,7 +1837,7 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function resolveS3DataPath(array $roles): string|int|null
+    private function resolveS3DataPath(array $roles): string|GatewayActionResult|null
     {
         $hasS3 = in_array(NodeRoleName::S3->value, $roles, true);
         $dataPath = $this->stringOption('s3-data-path');
@@ -1880,9 +1859,9 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return array{postgres_node_id: ?int, postgres_process_id: ?int, clickhouse_node_id: ?int}|int
+     * @return array{postgres_node_id: ?int, postgres_process_id: ?int, clickhouse_node_id: ?int}|GatewayActionResult
      */
-    private function resolveAnalyticsDatabaseNodes(array $roles): array|int
+    private function resolveAnalyticsDatabaseNodes(array $roles): array|GatewayActionResult
     {
         $hasAnalytics = in_array(NodeRoleName::Analytics->value, $roles, true);
         $postgresNodeName = $this->stringOption('postgres-node');
@@ -2013,7 +1992,7 @@ final class GatewayNodeCreator
         array $roles,
         ?int $appProductionIngressNodeId = null,
         array $backingNodeIds = [],
-    ): ?int {
+    ): ?GatewayActionResult {
         foreach ($this->orderWorkloadRoles($roles) as $role) {
             $existingAssignment = $node->roleAssignments()->where('role', $role)->first();
             $settings = $role === NodeRoleName::AppProduction->value
@@ -2053,8 +2032,11 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function setupManagedNode(NodeConverger $nodeConverger, Node $node, array $roles): ?int
-    {
+    private function setupManagedNode(
+        NodeConverger $nodeConverger,
+        Node $node,
+        array $roles,
+    ): ?GatewayActionResult {
         if (! $this->containsDevelopmentAppRole($roles)) {
             return null;
         }
@@ -2084,12 +2066,12 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return NodeCreationIngressPlacement|int
+     * @return NodeCreationIngressPlacement|GatewayActionResult
      */
     private function resolveIngressPlacement(
         array $roles,
         bool $validateLocalIngressRegistry = true,
-    ): NodeCreationIngressPlacement|int {
+    ): NodeCreationIngressPlacement|GatewayActionResult {
         $roles = array_values(array_unique($roles));
         $ingressNodeName = $this->stringOption('ingress');
 
@@ -2192,8 +2174,9 @@ final class GatewayNodeCreator
             ->first();
     }
 
-    private function missingIngressPlacement(string $message = 'Private app-prod nodes require an active ingress node. Create one first with: orbit node:new edge-1 --template=ingress'): int
-    {
+    private function missingIngressPlacement(
+        string $message = 'Private app-prod nodes require an active ingress node. Create one first with: orbit node:new edge-1 --template=ingress',
+    ): GatewayActionResult {
         return $this->failCommand(
             code: 'validation_failed',
             message: $message,
@@ -2204,7 +2187,7 @@ final class GatewayNodeCreator
         );
     }
 
-    private function setupAgentSelfGrant(Node $node): ?int
+    private function setupAgentSelfGrant(Node $node): ?GatewayActionResult
     {
         $selfGrantMode = $this->stringOption('self-grant') ?? 'default';
         $selfGrantPermissions = $this->stringOption('self-grant-permissions');
@@ -2223,7 +2206,7 @@ final class GatewayNodeCreator
 
         $permissions = $this->resolveGrantPermissions(null, $selfGrantPermissions);
 
-        if (is_int($permissions)) {
+        if ($permissions instanceof GatewayActionResult) {
             return $permissions;
         }
 
@@ -2232,7 +2215,7 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function setupGrantTo(Node $node): ?int
+    private function setupGrantTo(Node $node): ?GatewayActionResult
     {
         $targets = $this->arrayOption('grant-to');
 
@@ -2244,12 +2227,12 @@ final class GatewayNodeCreator
         $permissionsInput = $this->stringOption('grant-to-permissions');
 
         $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
-        if (is_int($permissions)) {
+        if ($permissions instanceof GatewayActionResult) {
             return $permissions;
         }
 
         $resolvedTargets = $this->resolveGrantTargets($targets, $node->id);
-        if (is_int($resolvedTargets)) {
+        if ($resolvedTargets instanceof GatewayActionResult) {
             return $resolvedTargets;
         }
 
@@ -2265,7 +2248,7 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function setupGrantFrom(Node $node): ?int
+    private function setupGrantFrom(Node $node): ?GatewayActionResult
     {
         $sources = $this->arrayOption('grant-from');
 
@@ -2277,12 +2260,12 @@ final class GatewayNodeCreator
         $permissionsInput = $this->stringOption('grant-from-permissions');
 
         $permissions = $this->resolveGrantPermissions($preset, $permissionsInput);
-        if (is_int($permissions)) {
+        if ($permissions instanceof GatewayActionResult) {
             return $permissions;
         }
 
         $resolvedSources = $this->resolveGrantTargets($sources, $node->id);
-        if (is_int($resolvedSources)) {
+        if ($resolvedSources instanceof GatewayActionResult) {
             return $resolvedSources;
         }
 
@@ -2300,10 +2283,12 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<int, string>  $options
-     * @return list<Node>|int
+     * @return list<Node>|GatewayActionResult
      */
-    private function resolveGrantTargets(array $options, ?int $excludeNodeId = null): array|int
-    {
+    private function resolveGrantTargets(
+        array $options,
+        ?int $excludeNodeId = null,
+    ): array|GatewayActionResult {
         $targets = [];
         $hasAll = false;
 
@@ -2355,10 +2340,12 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @return list<string>|int
+     * @return list<string>|GatewayActionResult
      */
-    private function resolveGrantPermissions(?string $preset, ?string $permissionsInput): array|int
-    {
+    private function resolveGrantPermissions(
+        ?string $preset,
+        ?string $permissionsInput,
+    ): array|GatewayActionResult {
         if ($preset !== null && $permissionsInput !== null) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -2422,7 +2409,7 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function preflightAgentSetup(array $roles): ?int
+    private function preflightAgentSetup(array $roles): ?GatewayActionResult
     {
         $hasAgentRole = in_array(NodeRoleName::Agent->value, $roles, true);
 
@@ -2452,7 +2439,7 @@ final class GatewayNodeCreator
         $grantToTargets = $this->arrayOption('grant-to');
         if ($grantToTargets !== []) {
             $resolved = $this->resolveGrantTargets($grantToTargets);
-            if (is_int($resolved)) {
+            if ($resolved instanceof GatewayActionResult) {
                 return $resolved;
             }
         }
@@ -2460,7 +2447,7 @@ final class GatewayNodeCreator
         $grantFromSources = $this->arrayOption('grant-from');
         if ($grantFromSources !== []) {
             $resolved = $this->resolveGrantTargets($grantFromSources);
-            if (is_int($resolved)) {
+            if ($resolved instanceof GatewayActionResult) {
                 return $resolved;
             }
         }
@@ -2476,7 +2463,7 @@ final class GatewayNodeCreator
         }
         if ($grantToTargets !== []) {
             $permissions = $this->resolveGrantPermissions($grantToPreset, $grantToPermissions);
-            if (is_int($permissions)) {
+            if ($permissions instanceof GatewayActionResult) {
                 return $permissions;
             }
         }
@@ -2492,14 +2479,14 @@ final class GatewayNodeCreator
         }
         if ($grantFromSources !== []) {
             $permissions = $this->resolveGrantPermissions($grantFromPreset, $grantFromPermissions);
-            if (is_int($permissions)) {
+            if ($permissions instanceof GatewayActionResult) {
                 return $permissions;
             }
         }
 
         if ($selfGrantMode === 'custom' || $selfGrantPermissions !== null) {
             $permissions = $this->resolveGrantPermissions(null, $selfGrantPermissions);
-            if (is_int($permissions)) {
+            if ($permissions instanceof GatewayActionResult) {
                 return $permissions;
             }
         }
@@ -2531,7 +2518,7 @@ final class GatewayNodeCreator
     /**
      * @param  list<array{code: string, tools: list<string>}>  $warnings
      */
-    private function setupAgentTools(Node $node, array &$warnings): ?int
+    private function setupAgentTools(Node $node, array &$warnings): ?GatewayActionResult
     {
         $tools = $this->arrayOption('agent-tool');
 
@@ -2640,8 +2627,9 @@ final class GatewayNodeCreator
     /**
      * @param  array<int, string>  $excluding
      */
-    private function resolveProvisionedNodeWireguardAddress(array $excluding = []): string|int
-    {
+    private function resolveProvisionedNodeWireguardAddress(
+        array $excluding = [],
+    ): string|GatewayActionResult {
         $reservedAddress = $this->e2eReservedWireguardAddress();
 
         if ($reservedAddress === null) {
@@ -2751,7 +2739,7 @@ final class GatewayNodeCreator
         return $parts[0] === 10 && $parts[1] === 6 && $parts[2] === 0 && $parts[3] >= 3 && $parts[3] <= 254;
     }
 
-    private function validationFailed(string $field, string $message): int
+    private function validationFailed(string $field, string $message): GatewayActionResult
     {
         return $this->failCommand(
             code: 'validation_failed',
@@ -2762,39 +2750,19 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
      */
-    private function jsonSuccess(array $data, array $meta = []): int
+    private function jsonSuccess(array $data, array $meta = []): GatewayActionResult
     {
-        $this->line(json_encode(JsonEnvelope::success($data, $meta), JSON_THROW_ON_ERROR));
-
-        return self::SUCCESS;
+        return GatewayActionResult::success($data, $meta);
     }
 
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function failCommand(string $code, string $message, array $meta): int
+    private function failCommand(string $code, string $message, array $meta): GatewayActionResult
     {
-        if ($this->wantsJson()) {
-            $this->line(json_encode([
-                'error' => [
-                    'code' => $code,
-                    'message' => $message,
-                    'meta' => $meta,
-                ],
-            ], JSON_THROW_ON_ERROR));
-
-            return self::FAILURE;
-        }
-
-        $this->error($message);
-
-        return self::FAILURE;
-    }
-
-    private function wantsJson(): bool
-    {
-        return (bool) $this->option('json');
+        return GatewayActionResult::error($code, $message, $meta);
     }
 
     private function argument(string $key): mixed
@@ -2805,20 +2773,5 @@ final class GatewayNodeCreator
     private function option(string $key): mixed
     {
         return $this->arguments["--{$key}"] ?? null;
-    }
-
-    private function line(string $message): void
-    {
-        $this->output = $message;
-    }
-
-    private function error(string $message): void
-    {
-        $this->output = $message;
-    }
-
-    private function info(string $message): void
-    {
-        $this->line($message);
     }
 }

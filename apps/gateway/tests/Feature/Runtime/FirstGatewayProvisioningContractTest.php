@@ -23,7 +23,7 @@ describe('gateway-local provisioning contract', function (): void {
 
         expect($nodeCreator)
             ->toContain('return $this->convergeGatewayLocally($name);')
-            ->toContain('private function convergeGatewayLocally(string $name): int');
+            ->toContain('private function convergeGatewayLocally(string $name): GatewayActionResult');
 
         foreach ([
             'bootstrapFirstGateway',

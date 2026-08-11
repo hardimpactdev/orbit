@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Support;
 
 use JsonException;
+use Orbit\Core\Http\JsonEnvelope;
 
 final readonly class GatewayActionResult
 {
@@ -32,6 +33,18 @@ final readonly class GatewayActionResult
         }
 
         return 422;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
+     */
+    public static function success(array $data = [], array $meta = []): self
+    {
+        /** @var array<string, mixed> $payload */
+        $payload = JsonEnvelope::success($data, $meta);
+
+        return new self(0, $payload);
     }
 
     public static function fromJsonOutput(int $exitCode, ?string $output): self
