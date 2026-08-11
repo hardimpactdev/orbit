@@ -24,7 +24,6 @@ use Throwable;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
- * @mago-expect lint:halstead
  * @mago-expect lint:kan-defect
  * @mago-expect lint:too-many-methods
  */
@@ -74,6 +73,7 @@ final readonly class NodeBootstrapCompletion
 
     /**
      * @param  list<string>  $roles
+     * @mago-expect lint:excessive-parameter-list
      */
     public function convergePrepared(
         string $name,

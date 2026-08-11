@@ -6,6 +6,7 @@ namespace App\Services\Nodes;
 
 final readonly class WorkloadNodeProvisioningInput
 {
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         public string $host,
         public ?string $tld,

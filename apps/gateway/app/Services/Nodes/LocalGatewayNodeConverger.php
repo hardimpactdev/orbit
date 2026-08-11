@@ -9,6 +9,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Support\GatewayActionResult;
 use Orbit\Core\Nodes\NodeTld;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class LocalGatewayNodeConverger
 {
     public function __construct(
@@ -92,17 +93,14 @@ final readonly class LocalGatewayNodeConverger
             return false;
         }
 
-        foreach (explode('.', trim($host, '.')) as $label) {
-            if (
+        return array_all(
+            explode('.', trim($host, '.')),
+            fn ($label) => ! (
                 $label === ''
-                || strlen($label) > 63
-                || ! preg_match('/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/', $label)
-            ) {
-                return false;
-            }
-        }
-
-        return true;
+                || strlen((string) $label) > 63
+                || ! preg_match('/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/', (string) $label)
+            ),
+        );
     }
 
     private function validationFailed(string $field, string $message): GatewayActionResult

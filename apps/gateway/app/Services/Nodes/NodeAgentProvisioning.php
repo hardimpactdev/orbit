@@ -17,6 +17,11 @@ use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolRegistryFailure;
 use InvalidArgumentException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class NodeAgentProvisioning
 {
     public function __construct(

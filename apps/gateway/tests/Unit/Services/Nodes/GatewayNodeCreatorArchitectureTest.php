@@ -68,7 +68,7 @@ it('delegates bootstrap reservation as one focused boundary', function (): void 
     $reservation = (string) file_get_contents($services.'/NodeBootstrapReservation.php');
 
     expect($creator)
-        ->toContain('private readonly NodeBootstrapReservation $bootstrapReservation')
+        ->toContain('private NodeBootstrapReservation $bootstrapReservation')
         ->toContain('$this->bootstrapReservation->prepare(');
 
     expect($creator)->not->toContain('private function prepareHostBootstrap(');
@@ -86,7 +86,7 @@ it('delegates agent grants and tools to one setup boundary', function (): void {
     $agentSetup = (string) file_get_contents($services.'/NodeAgentProvisioning.php');
 
     expect($creator)
-        ->toContain('private readonly NodeAgentProvisioning $agentProvisioning')
+        ->toContain('private NodeAgentProvisioning $agentProvisioning')
         ->toContain('$this->agentProvisioning->preflight(');
 
     foreach ([
@@ -111,7 +111,7 @@ it('delegates bootstrap completion and ordered convergence as one boundary', fun
     $completion = (string) file_get_contents($services.'/NodeBootstrapCompletion.php');
 
     expect($creator)
-        ->toContain('private readonly NodeBootstrapCompletion $bootstrapCompletion')
+        ->toContain('private NodeBootstrapCompletion $bootstrapCompletion')
         ->toContain('$this->bootstrapCompletion->complete(')
         ->toContain('$this->bootstrapCompletion->convergePrepared(');
 
@@ -142,8 +142,8 @@ it('delegates gateway convergence and client enrollment', function (): void {
     $client = (string) file_get_contents($services.'/ClientNodeEnroller.php');
 
     expect($creator)
-        ->toContain('private readonly LocalGatewayNodeConverger $gatewayConverger')
-        ->toContain('private readonly ClientNodeEnroller $clientEnroller')
+        ->toContain('private LocalGatewayNodeConverger $gatewayConverger')
+        ->toContain('private ClientNodeEnroller $clientEnroller')
         ->toContain('$this->gatewayConverger->converge(')
         ->toContain('$this->clientEnroller->enroll(');
 
@@ -168,7 +168,7 @@ it('delegates workload request validation to a typed resolver', function (): voi
     $resolver = (string) file_get_contents($services.'/WorkloadNodeCreationResolver.php');
 
     expect($creator)
-        ->toContain('private readonly WorkloadNodeCreationResolver $workloadResolver')
+        ->toContain('private WorkloadNodeCreationResolver $workloadResolver')
         ->toContain('$this->workloadResolver->resolve(');
 
     foreach ([
@@ -194,7 +194,7 @@ it('delegates bootstrap resume lookup and readiness', function (): void {
     $resumer = (string) file_get_contents($services.'/NodeBootstrapResumer.php');
 
     expect($creator)
-        ->toContain('private readonly NodeBootstrapResumer $bootstrapResumer')
+        ->toContain('private NodeBootstrapResumer $bootstrapResumer')
         ->toContain('return $this->bootstrapResumer->resume($arguments, $caller);');
     expect($creator)->not->toContain('private function resumedBootstrapResult(');
 

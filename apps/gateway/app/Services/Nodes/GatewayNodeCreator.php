@@ -15,16 +15,16 @@ use App\Services\Support\GatewayActionResult;
 use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 
-final class GatewayNodeCreator
+final readonly class GatewayNodeCreator
 {
     public function __construct(
-        private readonly NodeBootstrapReservation $bootstrapReservation,
-        private readonly NodeAgentProvisioning $agentProvisioning,
-        private readonly NodeBootstrapCompletion $bootstrapCompletion,
-        private readonly LocalGatewayNodeConverger $gatewayConverger,
-        private readonly ClientNodeEnroller $clientEnroller,
-        private readonly WorkloadNodeCreationResolver $workloadResolver,
-        private readonly NodeBootstrapResumer $bootstrapResumer,
+        private NodeBootstrapReservation $bootstrapReservation,
+        private NodeAgentProvisioning $agentProvisioning,
+        private NodeBootstrapCompletion $bootstrapCompletion,
+        private LocalGatewayNodeConverger $gatewayConverger,
+        private ClientNodeEnroller $clientEnroller,
+        private WorkloadNodeCreationResolver $workloadResolver,
+        private NodeBootstrapResumer $bootstrapResumer,
     ) {}
 
     /**
@@ -90,21 +90,19 @@ final class GatewayNodeCreator
 
                 return $this->execute(
                     $input,
-                    function (
+                    fn (
                         string $name,
                         array $roles,
                         WorkloadNodeProvisioningInput $inputs,
                         ?int $ingressNodeId,
-                    ) use ($lockedBootstrap, $input): GatewayActionResult {
-                        return $this->bootstrapCompletion->convergePrepared(
-                            name: $name,
-                            roles: $roles,
-                            inputs: $inputs,
-                            appProductionIngressNodeId: $ingressNodeId,
-                            bootstrap: $lockedBootstrap,
-                            input: $input,
-                        );
-                    },
+                    ): GatewayActionResult => $this->bootstrapCompletion->convergePrepared(
+                        name: $name,
+                        roles: $roles,
+                        inputs: $inputs,
+                        appProductionIngressNodeId: $ingressNodeId,
+                        bootstrap: $lockedBootstrap,
+                        input: $input,
+                    ),
                     requireObservedPlatform: false,
                 );
             },
@@ -301,7 +299,6 @@ final class GatewayNodeCreator
         );
     }
 
-    /** @mago-expect lint:excessive-parameter-list */
     private function gatewayConfigured(): bool
     {
         if ($this->gatewayQuery()->exists()) {

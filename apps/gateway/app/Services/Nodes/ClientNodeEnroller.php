@@ -15,11 +15,14 @@ use App\Services\WireGuard\WireGuardKeyGenerator;
 use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class ClientNodeEnroller
 {
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
-    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private WireGuardKeyGenerator $wireGuardKeyGenerator,
         private DnsmasqReconciler $dnsmasqReconciler,
