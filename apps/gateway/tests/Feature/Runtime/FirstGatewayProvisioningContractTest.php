@@ -20,12 +20,14 @@ beforeEach(function (): void {
 describe('gateway-local provisioning contract', function (): void {
     it('keeps gateway convergence local to the gateway service', function (): void {
         $nodeCreator = file_get_contents(repo_path('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php'));
+        $gatewayConverger = file_get_contents(
+            repo_path('apps/gateway/app/Services/Nodes/LocalGatewayNodeConverger.php'),
+        );
 
         expect($nodeCreator)
-            ->toContain('return $this->convergeGatewayLocally($name, $input);')
-            ->toContain(
-                'private function convergeGatewayLocally(string $name, NodeCreationInput $input): GatewayActionResult',
-            );
+            ->toContain('return $this->gatewayConverger->converge($name, $input);');
+        expect($gatewayConverger)
+            ->toContain('public function converge(string $name, NodeCreationInput $input): GatewayActionResult');
 
         foreach ([
             'bootstrapFirstGateway',

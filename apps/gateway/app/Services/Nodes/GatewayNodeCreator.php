@@ -12,31 +12,25 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeBootstrap;
 use App\Models\Process;
-use App\Models\WireGuardPeer;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
-use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Support\GatewayActionResult;
-use App\Services\Vpn\WgEasyAddressReservationProbe;
-use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Nodes\NodeTld;
-use RuntimeException;
 
 final class GatewayNodeCreator
 {
     public function __construct(
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
-        private readonly DnsmasqReconciler $dnsmasqReconciler,
         private readonly NodeBootstrapReservation $bootstrapReservation,
         private readonly NodeAgentProvisioning $agentProvisioning,
         private readonly NodeBootstrapCompletion $bootstrapCompletion,
+        private readonly LocalGatewayNodeConverger $gatewayConverger,
+        private readonly ClientNodeEnroller $clientEnroller,
     ) {}
-
-    private const string DEFAULT_RUNTIME_USER = 'orbit';
 
     private const int SUCCESS = 0;
 
@@ -204,7 +198,6 @@ final class GatewayNodeCreator
         return $this->handle(
             $input,
             app(NodeRoleAssignmentService::class),
-            app(WireGuardKeyGenerator::class),
             $provisionWorkload,
             $requireObservedPlatform,
         );
@@ -216,7 +209,6 @@ final class GatewayNodeCreator
     private function handle(
         NodeCreationInput $input,
         NodeRoleAssignmentService $nodeRoleAssignmentService,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
         callable $provisionWorkload,
         bool $requireObservedPlatform,
     ): GatewayActionResult {
@@ -316,11 +308,11 @@ final class GatewayNodeCreator
                 );
             }
 
-            return $this->enrollClientNode($wireGuardKeyGenerator, $name, $requestedRoles->operator, $input);
+            return $this->clientEnroller->enroll($name, $requestedRoles->operator, $input);
         }
 
         if ($requestedRoles->gateway) {
-            return $this->convergeGatewayLocally($name, $input);
+            return $this->gatewayConverger->converge($name, $input);
         }
 
         return $this->failCommand(
@@ -391,247 +383,6 @@ final class GatewayNodeCreator
         return $provisionWorkload($name, $roles, $inputs, $appProductionIngressNodeId);
     }
 
-    private function convergeGatewayLocally(string $name, NodeCreationInput $input): GatewayActionResult
-    {
-        $tld = $input->stringOption('tld');
-
-        if ($tld === null || ! NodeTld::isValid($tld)) {
-            return $this->validationFailed('tld', 'Every node requires an explicit valid non-reserved TLD.');
-        }
-
-        $host = $input->stringOption('host');
-
-        if ($host === null) {
-            return $this->validationFailed('host', 'Host is required for gateway nodes.');
-        }
-
-        if (! $this->isValidHost($host)) {
-            return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
-        }
-
-        $gateway = $this
-            ->gatewayQuery()
-            ->where('name', $name)
-            ->first();
-
-        if (
-            ! $gateway instanceof Node
-            || ! $this->gatewayHostMatches($gateway, $host)
-            || $gateway->tld !== $tld
-        ) {
-            return $this->failCommand(
-                code: 'node.incompatible',
-                message: 'Existing gateway is incompatible with the requested host or identity.',
-                meta: ['name' => $name, 'host' => $host],
-            );
-        }
-
-        $payload = $this->gatewayConvergencePayload($gateway, $host);
-
-        return $this->jsonSuccess($payload);
-    }
-
-    private function gatewayHostMatches(Node $gateway, string $host): bool
-    {
-        return $gateway->host === $host || $gateway->gateway_endpoint === $host;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function gatewayConvergencePayload(Node $gateway, string $host): array
-    {
-        return [
-            'result' => [
-                'action' => 'converged',
-            ],
-            'node' => [
-                'name' => $gateway->name,
-                'tld' => $gateway->tld,
-                'platform' => $gateway->platform ?? 'unknown',
-                'addresses' => [
-                    'wireguard' => $gateway->wireguard_address,
-                    'gateway_endpoint' => $gateway->gateway_endpoint ?? $gateway->host,
-                ],
-                'status' => 'active',
-            ],
-            'provisioning' => [
-                'transport' => 'none',
-                'host' => $host,
-                'status' => 'already_provisioned',
-            ],
-            'next_steps' => [],
-        ];
-    }
-
-    private function enrollClientNode(
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-        string $name,
-        bool $operator,
-        NodeCreationInput $input,
-    ): GatewayActionResult {
-        $existing = Node::query()->where('name', $name)->first();
-
-        if ($existing instanceof Node && ! $existing->isOperator()) {
-            return $this->failCommand(
-                code: 'node.incompatible',
-                message: "Node '{$name}' already exists with a different role.",
-                meta: [
-                    'name' => $name,
-                    'existing_role' => $existing->displayRole(),
-                    'requested_role' => $operator ? 'operator' : 'client',
-                ],
-            );
-        }
-
-        $wireguardAddress =
-            $existing instanceof Node && is_string($existing->wireguard_address) && $existing->wireguard_address !== ''
-                ? $existing->wireguard_address
-                : $this->nextWireguardAddress();
-
-        $gateway = $this->gatewayQuery()->first();
-
-        if (! $gateway instanceof Node) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway identity is missing locally.',
-                meta: [
-                    'step' => 'gateway_identity',
-                    'error' => 'No active gateway node record exists.',
-                ],
-            );
-        }
-
-        $gatewayPeer = WireGuardPeer::query()->where('node_id', $gateway->id)->first();
-
-        if (! $gatewayPeer instanceof WireGuardPeer) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway WireGuard peer material is missing locally.',
-                meta: [
-                    'step' => 'gateway_wireguard_identity',
-                    'node' => $gateway->name,
-                ],
-            );
-        }
-
-        try {
-            $keys = $wireGuardKeyGenerator->generateKeyPair();
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to generate WireGuard identity material.',
-                meta: [
-                    'node' => $name,
-                    'step' => 'wireguard_identity',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        $tld = $input->stringOption('tld');
-
-        if ($tld === null || ! NodeTld::isValid($tld)) {
-            return $this->failCommand(
-                code: 'validation_failed',
-                message: 'Every node identity requires an explicit valid non-reserved TLD.',
-                meta: [
-                    'field' => 'tld',
-                    'name' => $name,
-                ],
-            );
-        }
-
-        if ($existing instanceof Node && $existing->tld !== $tld) {
-            return $this->failCommand(
-                code: 'node.incompatible',
-                message: "Node '{$name}' already exists with a different TLD.",
-                meta: ['field' => 'tld', 'existing' => $existing->tld, 'requested' => $tld],
-            );
-        }
-
-        $tldConflict = Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->where('tld', $tld);
-
-        if ($existing instanceof Node) {
-            $tldConflict->whereKeyNot($existing->id);
-        }
-
-        if ($tldConflict->exists()) {
-            return $this->failCommand(
-                code: 'node.tld_in_use',
-                message: "Node TLD '{$tld}' is already assigned to another node.",
-                meta: ['field' => 'tld', 'value' => $tld],
-            );
-        }
-
-        $node = Node::query()->updateOrCreate(
-            ['name' => $name],
-            [
-                'tld' => $tld,
-                'platform' => 'unknown',
-                'host' => $wireguardAddress,
-                'wireguard_address' => $wireguardAddress,
-                'gateway_endpoint' => $this->gatewayEndpoint(),
-                'user' => self::DEFAULT_RUNTIME_USER,
-                'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
-                'status' => 'active',
-            ],
-        );
-
-        $peer = WireGuardPeer::query()->updateOrCreate(
-            ['node_id' => $node->id],
-            [
-                'public_key' => $keys['public_key'],
-                'private_key' => $keys['private_key'],
-                'allowed_ips' => "{$wireguardAddress}/32",
-            ],
-        );
-
-        $wireguardConfig = $this->controlWireGuardConfig(
-            controlPrivateKey: $peer->private_key,
-            controlWireguardAddress: $wireguardAddress,
-            gatewayPublicKey: $gatewayPeer->public_key,
-            gatewayWireguardAddress: (string) $gateway->wireguard_address,
-            gatewayEndpoint: $gateway->gateway_endpoint ?? $gateway->host,
-        );
-
-        $this->dnsmasqReconciler->reconcileRecords();
-
-        $clientLabel = $operator ? 'operator node' : 'client';
-
-        $payload = [
-            'result' => [
-                'action' => 'enrolled',
-            ],
-            'node' => [
-                'name' => $name,
-                'tld' => $tld,
-                'platform' => 'unknown',
-                'addresses' => [
-                    'wireguard' => $wireguardAddress,
-                ],
-                'status' => 'active',
-            ],
-            'provisioning' => [
-                'transport' => 'wireguard',
-                'host' => null,
-                'status' => 'enrolled',
-            ],
-            'wireguard' => [
-                'config' => $wireguardConfig,
-            ],
-            'next_steps' => [
-                "Install the WireGuard configuration on the {$clientLabel}.",
-                'Join the Orbit WireGuard network.',
-                "Run `orbit gateway:add` on the {$clientLabel}.",
-            ],
-        ];
-
-        return $this->jsonSuccess($payload);
-    }
-
     private function resumedBootstrapResult(NodeBootstrap $bootstrap, string $status): GatewayActionResult
     {
         /** @var array<string, mixed> $payload */
@@ -664,37 +415,6 @@ final class GatewayNodeCreator
     }
 
     /** @mago-expect lint:excessive-parameter-list */
-    private function controlWireGuardConfig(
-        string $controlPrivateKey,
-        string $controlWireguardAddress,
-        string $gatewayPublicKey,
-        string $gatewayWireguardAddress,
-        string $gatewayEndpoint,
-        ?string $preSharedKey = null,
-        ?string $allowedIps = null,
-    ): string {
-        $lines = [
-            '[Interface]',
-            "PrivateKey = {$controlPrivateKey}",
-            "Address = {$controlWireguardAddress}/24",
-            '',
-            '[Peer]',
-            "PublicKey = {$gatewayPublicKey}",
-        ];
-
-        if ($preSharedKey !== null) {
-            $lines[] = "PresharedKey = {$preSharedKey}";
-        }
-
-        return implode("\n", [
-            ...$lines,
-            'AllowedIPs = '.($allowedIps ?? "{$gatewayWireguardAddress}/32"),
-            "Endpoint = {$gatewayEndpoint}:51820",
-            'PersistentKeepalive = 25',
-            '',
-        ]);
-    }
-
     private function gatewayConfigured(): bool
     {
         if ($this->gatewayQuery()->exists()) {
@@ -1177,76 +897,9 @@ final class GatewayNodeCreator
         return true;
     }
 
-    private function gatewayEndpoint(): ?string
-    {
-        /** @var Node|null $gateway */
-        $gateway = $this->gatewayQuery()
-            ->first();
-
-        if (! $gateway instanceof Node) {
-            return null;
-        }
-
-        return $gateway->wireguard_address ?? $gateway->gateway_endpoint ?? $gateway->host;
-    }
-
     private function gatewayQuery(): Builder
     {
         return app(NodeRoleAssignments::class)->activeGatewayNodeQuery();
-    }
-
-    /**
-     * @param  array<int, string>  $excluding
-     */
-    private function nextWireguardAddress(array $excluding = []): string
-    {
-        $used = $this->usedWireguardAddresses($excluding);
-
-        for ($octet = 3; $octet <= 254; $octet++) {
-            $candidate = "10.6.0.{$octet}";
-
-            if (! in_array($candidate, $used, true)) {
-                return $candidate;
-            }
-        }
-
-        throw new RuntimeException('No available WireGuard addresses remain in 10.6.0.0/24.');
-    }
-
-    /**
-     * @param  array<int, string>  $excluding
-     * @return list<string>
-     */
-    private function usedWireguardAddresses(array $excluding = []): array
-    {
-        $used = Node::query()
-            ->whereNotNull('wireguard_address')
-            ->pluck('wireguard_address')
-            ->all();
-
-        $peerAddresses = WireGuardPeer::query()
-            ->whereNotNull('allowed_ips')
-            ->pluck('allowed_ips')
-            ->flatMap(fn (string $allowedIps): array => $this->wireguardAddressesFromAllowedIps($allowedIps))
-            ->all();
-
-        $wgEasyAddresses = app(WgEasyAddressReservationProbe::class)->addresses();
-
-        return array_values(array_unique(array_merge($used, $peerAddresses, $wgEasyAddresses, $excluding)));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function wireguardAddressesFromAllowedIps(string $allowedIps): array
-    {
-        return array_values(array_filter(
-            array_map(
-                fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
-                explode(',', $allowedIps),
-            ),
-            fn (string $address): bool => $address !== '',
-        ));
     }
 
     private function validationFailed(string $field, string $message): GatewayActionResult
@@ -1256,15 +909,6 @@ final class GatewayNodeCreator
             message: $message,
             meta: ['field' => $field],
         );
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>  $meta
-     */
-    private function jsonSuccess(array $data, array $meta = []): GatewayActionResult
-    {
-        return GatewayActionResult::success($data, $meta);
     }
 
     /**

@@ -134,3 +134,30 @@ it('delegates bootstrap completion and ordered convergence as one boundary', fun
         ->toContain('public function convergePrepared(')
         ->toContain('NodeBootstrapCompletionLock $completionLock');
 });
+
+it('delegates gateway convergence and client enrollment', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $gateway = (string) file_get_contents($services.'/LocalGatewayNodeConverger.php');
+    $client = (string) file_get_contents($services.'/ClientNodeEnroller.php');
+
+    expect($creator)
+        ->toContain('private readonly LocalGatewayNodeConverger $gatewayConverger')
+        ->toContain('private readonly ClientNodeEnroller $clientEnroller')
+        ->toContain('$this->gatewayConverger->converge(')
+        ->toContain('$this->clientEnroller->enroll(');
+
+    foreach ([
+        'private function convergeGatewayLocally(',
+        'private function gatewayConvergencePayload(',
+        'private function enrollClientNode(',
+        'private function controlWireGuardConfig(',
+        'private function nextWireguardAddress(',
+        'private function usedWireguardAddresses(',
+    ] as $oldMethod) {
+        expect($creator)->not->toContain($oldMethod);
+    }
+
+    expect($gateway)->toContain('public function converge(');
+    expect($client)->toContain('public function enroll(');
+});
