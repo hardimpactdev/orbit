@@ -187,3 +187,18 @@ it('delegates workload request validation to a typed resolver', function (): voi
         ->toContain('public function resolve(')
         ->toContain('WorkloadNodeCreationRequest');
 });
+
+it('delegates bootstrap resume lookup and readiness', function (): void {
+    $services = dirname(__DIR__, 4).'/app/Services/Nodes';
+    $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
+    $resumer = (string) file_get_contents($services.'/NodeBootstrapResumer.php');
+
+    expect($creator)
+        ->toContain('private readonly NodeBootstrapResumer $bootstrapResumer')
+        ->toContain('return $this->bootstrapResumer->resume($arguments, $caller);');
+    expect($creator)->not->toContain('private function resumedBootstrapResult(');
+
+    expect($resumer)
+        ->toContain('public function resume(')
+        ->toContain('ProvisioningAgentReadinessProbe $readinessProbe');
+});

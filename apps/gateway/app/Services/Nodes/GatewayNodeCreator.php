@@ -14,7 +14,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Support\GatewayActionResult;
 use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
-use Orbit\Core\Http\JsonEnvelope;
 
 final class GatewayNodeCreator
 {
@@ -25,9 +24,8 @@ final class GatewayNodeCreator
         private readonly LocalGatewayNodeConverger $gatewayConverger,
         private readonly ClientNodeEnroller $clientEnroller,
         private readonly WorkloadNodeCreationResolver $workloadResolver,
+        private readonly NodeBootstrapResumer $bootstrapResumer,
     ) {}
-
-    private const int SUCCESS = 0;
 
     /**
      * @param  array<string, mixed>  $arguments
@@ -79,76 +77,7 @@ final class GatewayNodeCreator
      */
     public function resumeBootstrap(array $arguments, Node $caller): GatewayActionResult
     {
-        /** @var mixed $rawName */
-        $rawName = $arguments['name'] ?? null;
-        $name = is_string($rawName) ? trim($rawName) : '';
-        $node = $name !== '' ? Node::query()->where('name', $name)->first() : null;
-
-        if (! $node instanceof Node) {
-            /** @var array<string, mixed> $payload */
-            $payload = JsonEnvelope::success(['preflight_required' => true]);
-
-            return new GatewayActionResult(
-                exitCode: self::SUCCESS,
-                payload: $payload,
-            );
-        }
-
-        $bootstrap = NodeBootstrap::query()->where('node_id', $node->id)->first();
-        $request = array_diff_key($arguments, [
-            '--json' => true,
-            '--platform' => true,
-            '--architecture' => true,
-        ]);
-        $storedRequest = $bootstrap instanceof NodeBootstrap
-            ? array_diff_key($bootstrap->request, [
-                '--platform' => true,
-                '--architecture' => true,
-            ])
-            : [];
-
-        if (
-            ! $bootstrap instanceof NodeBootstrap
-            || $bootstrap->initiating_node_id !== $caller->id
-            || $storedRequest !== $request
-        ) {
-            return GatewayActionResult::error(
-                code: 'node.incompatible',
-                message: "Node '{$name}' already exists with incompatible bootstrap state.",
-                meta: ['name' => $name],
-            );
-        }
-
-        if ($bootstrap->status === 'completed' && $node->isActive()) {
-            return $this->resumedBootstrapResult($bootstrap, 'completed');
-        }
-
-        if ($bootstrap->status !== 'pending' || ! $node->isProvisioning()) {
-            return GatewayActionResult::error(
-                code: 'node.incompatible',
-                message: 'Node bootstrap is not in a compatible resumable state.',
-                meta: ['bootstrap_id' => $bootstrap->id],
-            );
-        }
-
-        if (app(ProvisioningAgentReadinessProbe::class)->isReady($node)) {
-            return $this->resumedBootstrapResult($bootstrap, 'pending');
-        }
-
-        /** @var array<string, mixed> $payload */
-        $payload = JsonEnvelope::success([
-            'preflight_required' => true,
-            'bootstrap' => [
-                'id' => $bootstrap->id,
-                'status' => 'pending',
-                'ssh_required' => true,
-            ],
-        ]);
-
-        return new GatewayActionResult(
-            exitCode: self::SUCCESS,
-            payload: $payload,
-        );
+        return $this->bootstrapResumer->resume($arguments, $caller);
     }
 
     public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): NodeBootstrapCompletionResult
@@ -357,24 +286,6 @@ final class GatewayNodeCreator
         }
 
         return $provisionWorkload($name, $roles, $inputs, $appProductionIngressNodeId);
-    }
-
-    private function resumedBootstrapResult(NodeBootstrap $bootstrap, string $status): GatewayActionResult
-    {
-        /** @var array<string, mixed> $payload */
-        $payload = JsonEnvelope::success([
-            'preflight_required' => false,
-            'bootstrap' => [
-                'id' => $bootstrap->id,
-                'status' => $status,
-                'ssh_required' => false,
-            ],
-        ]);
-
-        return new GatewayActionResult(
-            exitCode: self::SUCCESS,
-            payload: $payload,
-        );
     }
 
     private function clientBootstrapRequired(string $name, string $host): GatewayActionResult
