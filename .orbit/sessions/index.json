@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 262,
-    "unique_candidate_commit_count": 158,
+    "record_count": 263,
+    "unique_candidate_commit_count": 159,
     "orphan_count": 0,
     "records": [
         {
@@ -7117,6 +7117,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-132952-refactor-doctor-report-sections",
+            "slug": "refactor-doctor-report-sections",
+            "timestamp": "2026-08-12-132952",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "ca968c43b5c7a107f40131b7b8c39921d77657f9",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

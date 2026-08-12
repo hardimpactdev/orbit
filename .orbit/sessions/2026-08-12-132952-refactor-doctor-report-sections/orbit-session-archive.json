@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T11:29:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-report-sections/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-132952-refactor-doctor-report-sections",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-report-sections-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T112751Z-ff0d71566505.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-report-sections-retained-incus.md": "7cd49794ce1448c0d245084d6bf11f6997dfd291ecc96e53effe786aa50b009f",
+        "loop.md": "677a2194cca6ba09baef6f60273c142a95bc9bbbb4ebfb39bd1fe52c262b76f1",
+        "quality-gates/quality-check-2026-08-12T112751Z-ff0d71566505.json": "67400eeaa73db0bac1ca4807dbae2042b5c68508d5f65bbf6cd58fcdcfec86b9"
+    },
+    "slug": "refactor-doctor-report-sections",
+    "requested_slug": "refactor-doctor-report-sections",
+    "compatible_slugs": [
+        "refactor-doctor-report-sections"
+    ],
+    "branch": "refactor/doctor-report-sections",
+    "candidate_commit": "ca968c43b5c7a107f40131b7b8c39921d77657f9",
+    "accepted_feature_tip": "ca968c43b5c7a107f40131b7b8c39921d77657f9",
+    "accepted_main_tip": "4a521655c157e3e8a846f7be3e350156852544d1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
