@@ -1,0 +1,34 @@
+{
+  "candidate": "9644168e724d1e1364a1d72edf312adf4c9aaf02",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-4da171",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast",
+    "ssh_target": "nckrtl@192.168.6.20"
+  },
+  "candidate_identity": {
+    "apps/gateway/app/Services/Processes/ProcessRuntimeObserverRegistry.php": "1e42ea90107d4cd14daca5decbf31399ca7baea77dc3cf987fe9fb8106b33a11",
+    "apps/gateway/app/Services/Processes/ProcessesProbe.php": "8cfbb73ead1de4cf0417f1c8eaeb403616de4b9308d59ffd4eddd783e0ddedf0",
+    "remote_files_match_local_candidate": true
+  },
+  "command": "orbit doctor --node=app-dev-1 --family=process --json",
+  "expected": "Doctor reads current process runtime state and reports a healthy process family with no issues.",
+  "observed": {
+    "exit_code": 0,
+    "healthy": true,
+    "families": [
+      "process"
+    ],
+    "node": "app-dev-1",
+    "roles": [
+      "app-dev",
+      "database"
+    ],
+    "issues": 0,
+    "failed": 0
+  },
+  "result": "passed"
+}
