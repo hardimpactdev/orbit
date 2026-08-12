@@ -105,6 +105,7 @@ final readonly class DoctorReportRunner
         private DoctorFamilyProbeRunner $familyProbeRunner,
         private DoctorAppFamilyProbe $appFamilyProbe,
         private DoctorProcessFamilyProbe $processFamilyProbe,
+        private DoctorFirewallRuleFamilyProbe $firewallRuleFamilyProbe,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
@@ -1052,24 +1053,10 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
-            $firewallRules = $this->firewallRulesForNode($node);
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->firewallRuleFamilyProbe->probe(
                 node: $node,
-                family: 'firewall_rule',
-                total: $firewallRules->count(),
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($firewallRules): void {
-                    foreach ($firewallRules as $rule) {
-                        $snapshot = $this->firewallRuleProbe->introspect($rule);
-
-                        foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
-                            $addIssue($this->firewallIssuePayload($entry, $rule));
-                        }
-
-                        $advance();
-                    }
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1350,23 +1337,6 @@ final readonly class DoctorReportRunner
 
         /** @var Collection<int, ProxyRoute> $routes */
         return $routes;
-    }
-
-    /**
-     * @return Collection<int, FirewallRule>
-     */
-    private function firewallRulesForNode(Node $node): Collection
-    {
-        /** @mago-expect lint:inline-variable-return */
-        $rules = FirewallRule::query()
-            ->with('node')
-            ->where('node_id', $node->id)
-            ->get()
-            ->sortBy('id')
-            ->values();
-
-        /** @var Collection<int, FirewallRule> $rules */
-        return $rules;
     }
 
     /**
@@ -3357,23 +3327,6 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function firewallIssuePayload(DriftEntry $entry, FirewallRule $rule): DoctorIssue
-    {
-        $rule->loadMissing('node');
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $rule->node->name,
-            detail: [
-                ...($entry->detail ?? []),
-                'rule' => $rule->name,
-            ],
-        );
     }
 
     /**
