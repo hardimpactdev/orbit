@@ -1,0 +1,40 @@
+{
+    "candidate": "408cd0b7cda233ef98fbe8c98c37ee965141f871",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "topology": {
+        "id": "dev-abc1c2",
+        "kind": "operator_gateway_app-dev",
+        "provider": "incus",
+        "host": "nckrtl@192.168.6.20",
+        "roles": [
+            "operator",
+            "gateway",
+            "dev"
+        ],
+        "inspected_node": "app-dev-1"
+    },
+    "solo_process": {
+        "project_id": 63,
+        "process_id": 2341,
+        "name": "incus-process-doctor-proof"
+    },
+    "checkout": {
+        "path": "/home/orbit/orbit-run",
+        "launcher": "/home/orbit/orbit-run/apps/cli/orbit",
+        "processes_probe_sha256": "0cfd8076bf2c3604b3718e05b39c0e01249ac4eb0a62c8a2ca4e0b92f8fe3904",
+        "runtime_unit_diff_sha256": "fb045945b810aab36e2baf0041009eb81e8d4058122d32c6c5afb1f984b74a10"
+    },
+    "command": "orbit doctor --node=app-dev-1 --family=process --json",
+    "expected": "The source-mounted candidate inspects the active valkey Docker process and completes the process family without transport or comparison errors.",
+    "observed": {
+        "process": "valkey",
+        "runtime": "docker",
+        "status": "running",
+        "doctor_exit_code": 0,
+        "healthy": true,
+        "issues": 0,
+        "failed": 0
+    },
+    "result": "passed"
+}

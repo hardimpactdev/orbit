@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T23:00:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-processes-probe-runtime-observation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-010024-refactor-processes-probe-runtime-observation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/process-runtime-diff-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T225237Z-4f6229365c78.json"
+    ],
+    "entry_digests": {
+        "evidence/process-runtime-diff-retained-incus.json": "53119d48b49297cb19ee723b2fb76cc27ff9ed039548c3469fe8297bd563ac3a",
+        "loop.md": "86d1cb470de551051d075de067f6e274310249a985394696a444c4622bb751f4",
+        "quality-gates/quality-check-2026-08-12T225237Z-4f6229365c78.json": "230b0507be41f1cc3cb51c1b114a3f6fbb98f6a723072dae76394ded8a87afde"
+    },
+    "slug": "refactor-processes-probe-runtime-observation",
+    "requested_slug": "refactor-processes-probe-runtime-observation",
+    "compatible_slugs": [
+        "refactor-processes-probe-runtime-observation"
+    ],
+    "branch": "refactor/processes-probe-runtime-observation",
+    "candidate_commit": "408cd0b7cda233ef98fbe8c98c37ee965141f871",
+    "accepted_feature_tip": "408cd0b7cda233ef98fbe8c98c37ee965141f871",
+    "accepted_main_tip": "60bcacabb93123dee9e4f26e5d38b2348edc4dfc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
