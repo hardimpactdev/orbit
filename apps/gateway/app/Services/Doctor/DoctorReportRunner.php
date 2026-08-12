@@ -9,7 +9,6 @@ use App\Data\Doctor\DoctorRestoreProbe;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
-use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Models\App;
@@ -25,11 +24,9 @@ use App\Models\Workspace;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Apps\AppsFixer;
-use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
-use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -66,10 +63,9 @@ final readonly class DoctorReportRunner
         private NodesProbe $nodesProbe,
         private AppsFixer $appsFixer,
         private DatabaseConnectionRestorer $databaseConnectionRestorer,
-        private DatabaseConnectionAdopter $databaseConnectionAdopter,
+        private DoctorAdoptRunner $adoptRunner,
         private DoctorProcessRestorer $processRestorer,
         private ProxyRouteProbe $proxyRouteProbe,
-        private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
         private ProxyRouteFixer $proxyRouteFixer,
         private ProxyRouteAdopter $proxyRouteAdopter,
@@ -190,13 +186,15 @@ final readonly class DoctorReportRunner
             );
         }
 
+        /** @var list<string> $selectedFamilies */
+        $selectedFamilies = $probe['scope']['families'] ?? [];
         $actions = $mode === 'adopt'
             ? (
                 $key === 'node.updates'
                     ? []
-                    : $this->adoptSelectedFamilies(
+                    : $this->adoptRunner->adopt(
                         $node,
-                        $probe['scope']['families'] ?? [],
+                        $selectedFamilies,
                         $scope,
                     )
             )
@@ -527,125 +525,9 @@ final readonly class DoctorReportRunner
         return $result;
     }
 
-    /**
-     * @param  list<string>  $families
-     * @return list<array<string, mixed>>
-     */
-    private function adoptSelectedFamilies(
-        Node $node,
-        array $families,
-        DoctorTargetScope $scope,
-    ): array {
-        $actions = [];
-
-        if (in_array('node', $families, true)) {
-            $snapshot = $this->nodesProbe->snapshotForAdopt($node);
-
-            foreach ($this->nodesProbe->adopt($node, $snapshot) as $result) {
-                $actions[] = [
-                    'family' => $result->family,
-                    'node' => $node->name,
-                    'code' => $result->key,
-                    'key' => $result->key,
-                    'mode' => 'adopt',
-                    'status' => $result->action->value,
-                    'summary' => $result->summary,
-                    'details' => $result->detail,
-                ];
-            }
-        }
-
-        if (in_array('proxy', $families, true) && $node->isActive() && $this->canServeGatewayOrAppHost($node)) {
-            $snapshot = $this->proxyAdoptSnapshotForScope($node, $scope);
-
-            foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
-                $actions[] = [
-                    'family' => $result->family,
-                    'node' => $node->name,
-                    'code' => $result->key,
-                    'key' => $result->key,
-                    'mode' => 'adopt',
-                    'status' => $result->action->value,
-                    'summary' => $result->summary,
-                    'details' => $result->detail,
-                ];
-            }
-        }
-
-        if (
-            in_array('firewall_rule', $families, true)
-            && $node->isActive()
-            && $this->isUbuntuPlatform($node)
-            && $this->canServeGatewayOrAppHost($node)
-        ) {
-            $snapshot = $this->firewallRuleProbe->introspectNode($node);
-
-            foreach ($this->firewallRuleProbe->adopt($node, $snapshot) as $result) {
-                $actions[] = [
-                    'family' => $result->family,
-                    'node' => $node->name,
-                    'code' => $result->key,
-                    'key' => $result->key,
-                    'mode' => 'adopt',
-                    'status' => $result->action->value,
-                    'summary' => $result->summary,
-                    'details' => $result->detail,
-                ];
-            }
-        }
-
-        if (in_array('database_connection', $families, true)) {
-            foreach ($this->databaseConnectionAdopter->adopt($node, $scope) as $result) {
-                $actions[] = [
-                    'family' => $result->family,
-                    'node' => $node->name,
-                    'code' => $result->key,
-                    'key' => $result->key,
-                    'mode' => 'adopt',
-                    'status' => $result->action->value,
-                    'summary' => $result->summary,
-                    'details' => $result->detail,
-                ];
-            }
-        }
-
-        return $actions;
-    }
-
-    private function proxyAdoptSnapshotForScope(Node $node, DoctorTargetScope $scope): ProbeSnapshot
-    {
-        $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
-        $excludedDomains = $this->proxyRouteInventory->excludedWorkspaceDomains($node);
-
-        if ($excludedDomains !== []) {
-            $snapshot = new ProbeSnapshot(array_diff_key($snapshot->items, array_fill_keys($excludedDomains, true)));
-        }
-
-        if ($scope->app === null && $scope->workspace === null) {
-            return $snapshot;
-        }
-
-        $domains = $this->proxyRouteInventory
-            ->forScope($node, $scope)
-            ->map(static fn (ProxyRoute $route): string => $route->domain)
-            ->all();
-
-        return new ProbeSnapshot(array_intersect_key($snapshot->items, array_fill_keys($domains, true)));
-    }
-
-    private function canServeGatewayOrAppHost(Node $node): bool
-    {
-        return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
-    }
-
     private function productionNodeExcludesWorkspaces(Node $node): bool
     {
         return $this->proxyRouteInventory->nodeExcludesWorkspaces($node);
-    }
-
-    private function isUbuntuPlatform(Node $node): bool
-    {
-        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 
     private function productionNodeWorkspaceIssue(Node $node, DoctorIssue $issue): bool
