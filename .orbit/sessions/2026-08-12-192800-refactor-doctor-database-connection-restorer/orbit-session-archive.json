@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T17:28:00+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-database-connection-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-192800-refactor-doctor-database-connection-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-database-connection-restorer-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T17-18-06Z-f6d9cd512382/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-database-connection-restorer-retained-incus.md": "c7515007dcb51f4fab0bc014e9d472f7a1c9432a74d139a3641594cb6b212415",
+        "loop.md": "da676422c19ce849fb5d2e66bef495de1ae59ea79fe31cd50946c11c0a27e20e",
+        "quality-gates/profiles/2026-08-12T17-18-06Z-f6d9cd512382/gateway_pest.junit.xml": "d64e2ed250e89775fb2dd5bd96a7f3471c98c325b848967c5ec271e6def14b2a"
+    },
+    "slug": "refactor-doctor-database-connection-restorer",
+    "requested_slug": "refactor-doctor-database-connection-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-database-connection-restorer"
+    ],
+    "branch": "refactor/doctor-database-connection-restorer",
+    "candidate_commit": "f6d9cd512382fdf4e45ec4e0def7cff54e157128",
+    "accepted_feature_tip": "f6d9cd512382fdf4e45ec4e0def7cff54e157128",
+    "accepted_main_tip": "0321befff31f8bbf15d528ed8846259e634ebc88",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
