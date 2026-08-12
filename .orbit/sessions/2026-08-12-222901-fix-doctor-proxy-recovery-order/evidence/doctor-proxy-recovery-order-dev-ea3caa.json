@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "candidate": "48d6871ee36f970df683601136bac9e51c701a07",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-ea3caa",
+    "kind": "operator_gateway_app-dev_app-prod",
+    "target": "app-dev-1",
+    "released": true,
+    "instances_reaped": 4
+  },
+  "transport": {
+    "ssh": "nckrtl@192.168.6.20",
+    "incus_host": "beast"
+  },
+  "expected": "An unscoped proxy restore repairs stopped Caddy before the saved route, records no failed action, converges, and leaves a clean proxy verify.",
+  "setup": {
+    "route": "stabilizer.test",
+    "route_status": "converged",
+    "container_action": "docker stop orbit-caddy"
+  },
+  "dry_run": {
+    "exit_code": 0,
+    "reported_issue_keys": [
+      "proxy.route_missing",
+      "proxy.caddy_container_down"
+    ],
+    "planned_action_keys": [
+      "proxy.caddy_container_down",
+      "proxy.route_missing"
+    ]
+  },
+  "restore": {
+    "command": "orbit doctor --node=app-dev-1 --family=proxy --restore --json",
+    "exit_code": 0,
+    "healthy": true,
+    "action_keys": [
+      "proxy.caddy_container_down",
+      "proxy.route_missing"
+    ],
+    "fixed": 2,
+    "failed": 0,
+    "passes": 1,
+    "stop_reason": "converged"
+  },
+  "verify": {
+    "command": "orbit doctor --node=app-dev-1 --family=proxy --json",
+    "exit_code": 0,
+    "healthy": true,
+    "issues": 0
+  },
+  "candidate_file_sha256": {
+    "apps/gateway/app/Services/Doctor/DoctorManagedProxyRestorer.php": "456a8f3214bcc55f25dbf039d87eff972330c55d762a4258c2ff28a3fbe6e8fb",
+    "apps/gateway/app/Services/Doctor/DoctorProxyRestorer.php": "061ea166480e19c40d6fac287003063d158735fad57f4ff47ce035e5147654a4",
+    "apps/gateway/app/Services/Doctor/DoctorReportRunner.php": "95f4582cc3620f2247d4591ab4697a00f91819f928ef2f448ffafcff4de88b6d"
+  },
+  "result": "passed"
+}

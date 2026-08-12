@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T20:29:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-doctor-proxy-recovery-order/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-222901-fix-doctor-proxy-recovery-order",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-proxy-recovery-order-dev-ea3caa.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T201448Z-cf23ba3ac0e1.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-proxy-recovery-order-dev-ea3caa.json": "310a34d8cec3fb3282025254f1d59a9da4696f91b94e4de220cda29e5b8c2bad",
+        "loop.md": "4e8d35c607479f18e5e4a6efc6db6da328d1e8f8cf253ee2c46c86e06262400c",
+        "quality-gates/quality-check-2026-08-12T201448Z-cf23ba3ac0e1.json": "7dc8a9f139581fe04aa7e5d2995552b6e9ee297648df9d7001705157a4471e44"
+    },
+    "slug": "fix-doctor-proxy-recovery-order",
+    "requested_slug": "fix-doctor-proxy-recovery-order",
+    "compatible_slugs": [
+        "fix-doctor-proxy-recovery-order"
+    ],
+    "branch": "fix/doctor-proxy-recovery-order",
+    "candidate_commit": "48d6871ee36f970df683601136bac9e51c701a07",
+    "accepted_feature_tip": "48d6871ee36f970df683601136bac9e51c701a07",
+    "accepted_main_tip": "8d45233943fd09c2ff0bb8fb59880535f42cf953",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
