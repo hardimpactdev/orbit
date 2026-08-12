@@ -235,6 +235,15 @@ it('fails explicitly instead of publishing gateway-direct through an unsupported
         ->toContain('Docker iptables firewall backend');
 });
 
+it('waits for temporary xtables lock contention on every gateway-direct firewall command', function (): void {
+    $script = new GatewayDirectFirewallInstaller()->script();
+
+    expect(substr_count(haystack: $script, needle: 'sudo iptables '))->toBe(14);
+    expect(substr_count(haystack: $script, needle: 'sudo iptables -w 5 '))->toBe(14);
+    expect(substr_count(haystack: $script, needle: 'sudo ip6tables '))->toBe(5);
+    expect(substr_count(haystack: $script, needle: 'sudo ip6tables -w 5 '))->toBe(5);
+});
+
 it('repairs pre-existing gateway-owned TLS private key modes during routine runtime convergence', function (): void {
     $configKey = "{$this->configRoot}/certs/existing.key";
     $hostRoot = "{$this->configRoot}/host-root";
