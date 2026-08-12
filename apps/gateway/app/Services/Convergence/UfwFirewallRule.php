@@ -224,7 +224,7 @@ final readonly class UfwFirewallRule
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string}
      */
     public function expectedShape(): array
     {
