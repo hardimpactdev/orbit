@@ -12,11 +12,9 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Models\Node;
-use App\Models\NodeTool;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
-use App\Services\Tools\ToolsFixer;
 use Illuminate\Support\Collection;
 use LogicException;
 use Throwable;
@@ -48,7 +46,6 @@ final readonly class DoctorReportRunner
         private DoctorFirewallRuleRestorer $firewallRuleRestorer,
         private DoctorDnsRuntimeRestorer $dnsRuntimeRestorer,
         private NodeConverger $nodeConverger,
-        private ToolsFixer $toolsFixer,
         private DoctorScheduleRestorer $scheduleRestorer,
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorNodeProbeRunner $nodeProbeRunner,
@@ -388,7 +385,7 @@ final readonly class DoctorReportRunner
      */
     private function applyIssues(Node $node, string $mode, array $issues): array
     {
-        if (in_array($mode, ['restore', 'interactive'], strict: true)) {
+        if ($mode === 'restore') {
             $issues = $this->proxyRestorer->orderForRecovery($issues);
         }
 
@@ -538,7 +535,6 @@ final readonly class DoctorReportRunner
             'process' => $this->processRestorer->apply($node, $key, $detail),
             'proxy' => $this->proxyRestorer->apply($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->firewallRuleRestorer->apply($node, $key, $detail),
-            'tool' => $this->applyToolIssue($node, $key, $detail),
             'schedule' => $this->scheduleRestorer->apply($node, $key, $detail, $issue),
             default => null,
         };
@@ -581,28 +577,6 @@ final readonly class DoctorReportRunner
             'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$code}.",
             'details' => $detail,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyToolIssue(Node $node, string $key, array $detail): ?array
-    {
-        $toolName = is_string($detail['tool'] ?? null) ? $detail['tool'] : null;
-
-        if ($toolName === null) {
-            return null;
-        }
-
-        $tool = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', $toolName)
-            ->first();
-
-        return $tool instanceof NodeTool
-            ? $this->handleToolAction('restore', $tool, $this->driftEntryFromStoredParts('tool', $key, $detail))
-            : null;
     }
 
     /**
@@ -729,7 +703,7 @@ final readonly class DoctorReportRunner
     {
         if (($action['mode'] ?? null) === 'fix') {
             $action['mode'] = match ($mode) {
-                'interactive', 'restore' => 'restore',
+                'restore' => 'restore',
                 'adopt' => 'adopt',
                 default => $mode,
             };
@@ -1130,35 +1104,6 @@ final readonly class DoctorReportRunner
             (string) ($detail['target_id'] ?? ''),
             (string) ($detail['env_prefix'] ?? ''),
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleToolAction(string $mode, NodeTool $tool, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->toolsFixer->fix($tool, $entry);
-        } catch (Throwable $e) {
-            $tool->loadMissing('node');
-
-            return [
-                'family' => $entry->family,
-                'node' => $tool->node?->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
     }
 
     /**

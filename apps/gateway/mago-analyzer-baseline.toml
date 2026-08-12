@@ -3807,12 +3807,6 @@ count = 1
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "less-specific-argument"
-message = 'Argument type mismatch for argument #3 of `App\Services\Doctor\DoctorReportRunner::applyToolIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-argument"
 message = 'Argument type mismatch for argument #3 of `App\Services\Doctor\DoctorReportRunner::applyWorkspaceIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
 
