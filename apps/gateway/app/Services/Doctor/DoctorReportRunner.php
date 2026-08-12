@@ -70,8 +70,6 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Process as ProcessFacade;
-use JsonException;
 use LogicException;
 use Throwable;
 
@@ -121,6 +119,7 @@ final readonly class DoctorReportRunner
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
+        private DoctorFleetProbeWorker $fleetProbeWorker,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3DoctorProbe $s3DoctorProbe,
@@ -273,7 +272,7 @@ final readonly class DoctorReportRunner
 
     private function probeFleetTargets(FleetProbeRunState $state): void
     {
-        if ($this->canRunFleetProbeProcessWorkers()) {
+        if ($this->fleetProbeWorker->canRun()) {
             $this->probeFleetTargetsConcurrently($state);
 
             return;
@@ -311,7 +310,7 @@ final readonly class DoctorReportRunner
                     ($state->scope->onNodeProgress)($node, 'running');
                 }
 
-                $process = $this->startFleetProbeProcessWorker($node, $state->scope->families, $state->scope->key);
+                $process = $this->fleetProbeWorker->start($node, $state->scope->families, $state->scope->key);
 
                 if ($process === null) {
                     $this->completeFleetProbeTarget(
@@ -355,13 +354,16 @@ final readonly class DoctorReportRunner
                         $process->ensureNotTimedOut();
                     }
 
-                    if ($process->running()) {
-                        $this->pollFleetProbeProcessWorkerProgress($workers[$index]);
+                    $running = $process->running();
+                    $this->fleetProbeWorker->drainProgress(
+                        process: $workers[$index]['process'],
+                        outputBuffer: $workers[$index]['outputBuffer'],
+                        onFamilyProgress: $workers[$index]['onFamilyProgress'],
+                    );
 
+                    if ($running) {
                         continue;
                     }
-
-                    $this->pollFleetProbeProcessWorkerProgress($workers[$index]);
                 } catch (ProcessTimedOutException) {
                     $report = $this->probeFleetTargetReport(
                         node: $worker['node'],
@@ -513,75 +515,6 @@ final readonly class DoctorReportRunner
         }
     }
 
-    private function canRunFleetProbeProcessWorkers(): bool
-    {
-        if (! function_exists('proc_open')) {
-            return false;
-        }
-
-        $defaultConnection = (string) config('database.default');
-        $database = config("database.connections.{$defaultConnection}.database");
-
-        return is_string($database) && $database !== '' && $database !== ':memory:';
-    }
-
-    /**
-     * @param  list<string>  $families
-     */
-    private function startFleetProbeProcessWorker(Node $node, array $families, ?string $key): ?InvokedProcess
-    {
-        $command = [
-            'php',
-            'artisan',
-            'orbit:internal:doctor-fleet-probe-node',
-            '--node='.$node->name,
-            '--no-ansi',
-        ];
-
-        foreach ($families as $family) {
-            $command[] = '--families='.$family;
-        }
-
-        if ($key !== null) {
-            $command[] = '--key='.$key;
-        }
-
-        try {
-            return ProcessFacade::path(base_path())
-                ->timeout(600)
-                ->env($this->fleetProbeProcessEnvironment())
-                ->start($command);
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function fleetProbeProcessEnvironment(): array
-    {
-        $defaultConnection = (string) config('database.default');
-        $environment = [
-            'APP_ENV' => (string) config('app.env'),
-            'DB_CONNECTION' => $defaultConnection,
-        ];
-
-        $database = config("database.connections.{$defaultConnection}.database");
-
-        if (is_string($database) && $database !== '') {
-            $environment['DB_DATABASE'] = $database;
-        }
-
-        $appKey = config('app.key');
-
-        if (is_string($appKey) && $appKey !== '') {
-            $environment['APP_KEY'] = $appKey;
-        }
-
-        return $environment;
-    }
-
     /**
      * @param  list<string>  $families
      * @return array<string, mixed>
@@ -602,148 +535,17 @@ final readonly class DoctorReportRunner
             return $this->probeFleetTargetReport($node, $families, $key);
         }
 
-        $report = $this->decodeFleetProbeProcessReport($result->output());
+        $report = $this->fleetProbeWorker->decodeReport($result->output());
 
         if ($report === null) {
             return $this->probeFleetTargetReport($node, $families, $key);
         }
 
         try {
-            return $this->canonicalizeFleetProbeProcessReport($report);
+            return $this->fleetProbeWorker->canonicalizeReport($report);
         } catch (Throwable) {
             return $this->probeFleetTargetReport($node, $families, $key);
         }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function decodeFleetProbeProcessReport(string $output): ?array
-    {
-        $lines = array_values(array_filter(array_map(trim(...), explode("\n", $output))));
-
-        foreach (array_reverse($lines) as $line) {
-            try {
-                /** @var array<string, mixed> $payload */
-                $payload = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                continue;
-            }
-
-            $report = $payload['report'] ?? null;
-
-            if (! is_array($report)) {
-                continue;
-            }
-
-            /** @var array<string, mixed> $report */
-            return $report;
-        }
-
-        return null;
-    }
-
-    /**
-     * Rebuild subprocess issues from observation fields before the parent trusts them.
-     *
-     * @param  array<string, mixed>  $report
-     * @return array<string, mixed>
-     */
-    private function canonicalizeFleetProbeProcessReport(array $report): array
-    {
-        $values = $report['issues'] ?? [];
-
-        if (! is_array($values)) {
-            throw new LogicException('Fleet Doctor probe issues must be an array.');
-        }
-
-        $issues = [];
-
-        foreach ($values as $value) {
-            if (! is_array($value)) {
-                throw new LogicException('Fleet Doctor probe issues must use the Doctor issue contract.');
-            }
-
-            /** @var array<string, mixed> $value */
-            $issues[] = $this->doctorIssueFactory->fromClientArray($value);
-        }
-
-        $report['issues'] = $this->serializeIssues($issues);
-
-        return $report;
-    }
-
-    /**
-     * @param  array{node: Node, process: InvokedProcess, outputBuffer: string, onFamilyProgress: callable}  $worker
-     */
-    private function pollFleetProbeProcessWorkerProgress(array &$worker): void
-    {
-        $chunk = $worker['process']->latestOutput();
-
-        if ($chunk === '') {
-            return;
-        }
-
-        $worker['outputBuffer'] .= $chunk;
-
-        while (($newlinePosition = strpos($worker['outputBuffer'], needle: "\n")) !== false) {
-            $line = substr($worker['outputBuffer'], offset: 0, length: $newlinePosition);
-            $worker['outputBuffer'] = substr($worker['outputBuffer'], offset: $newlinePosition + 1);
-
-            $this->applyFleetProbeProcessWorkerProgressLine($line, $worker['onFamilyProgress']);
-        }
-    }
-
-    /**
-     * @param  callable(string, 'running'|'done', list<array<string, mixed>>, ?int, ?int): void  $onFamilyProgress
-     */
-    private function applyFleetProbeProcessWorkerProgressLine(string $line, callable $onFamilyProgress): void
-    {
-        $progress = $this->decodeFleetProbeProcessProgressLine($line);
-
-        if ($progress === null) {
-            return;
-        }
-
-        $family = is_string($progress['family'] ?? null) ? $progress['family'] : '';
-        $phase = is_string($progress['phase'] ?? null) ? $progress['phase'] : '';
-
-        if ($family === '' || $phase !== 'running' && $phase !== 'done') {
-            return;
-        }
-
-        $completedValue = $progress['completed'] ?? null;
-        $totalValue = $progress['total'] ?? null;
-
-        $completed = is_int($completedValue) ? $completedValue : null;
-        $total = is_int($totalValue) ? $totalValue : null;
-
-        $onFamilyProgress($family, $phase, [], $completed, $total);
-    }
-
-    /**
-     * @return array<array-key, mixed>|null
-     */
-    private function decodeFleetProbeProcessProgressLine(string $line): ?array
-    {
-        $line = trim($line);
-
-        if ($line === '') {
-            return null;
-        }
-
-        try {
-            /** @var array<string, mixed> $payload */
-            $payload = json_decode($line, associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return null;
-        }
-
-        if (! array_key_exists('progress', $payload) || ! is_array($payload['progress'])) {
-            return null;
-        }
-
-        return $payload['progress'];
     }
 
     /**
