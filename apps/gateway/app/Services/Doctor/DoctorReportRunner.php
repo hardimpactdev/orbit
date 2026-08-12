@@ -11,19 +11,14 @@ use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
-use App\Models\App;
 use App\Models\FirewallRule;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\Workspace;
-use App\Services\Apps\AppsFixer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Tools\ToolsFixer;
-use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
 use LogicException;
 use Throwable;
@@ -47,7 +42,7 @@ final readonly class DoctorReportRunner
 
     public function __construct(
         private NodesProbe $nodesProbe,
-        private AppsFixer $appsFixer,
+        private DoctorAppRestorer $appRestorer,
         private DoctorDatabaseConnectionRestorer $databaseConnectionRestorer,
         private DoctorAdoptRunner $adoptRunner,
         private DoctorProcessRestorer $processRestorer,
@@ -65,7 +60,7 @@ final readonly class DoctorReportRunner
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
-        private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
+        private DoctorWorkspaceRestorer $workspaceRestorer,
     ) {}
 
     /**
@@ -544,9 +539,9 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
-            'app' => $this->applyAppIssue($node, $key, $detail),
+            'app' => $this->appRestorer->apply($node, $key, $detail),
             'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
-            'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
+            'workspace' => $this->workspaceRestorer->apply($node, $key, $detail),
             'process' => $this->processRestorer->apply($node, $key, $detail),
             'proxy' => $this->proxyRestorer->apply($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($node, $key, $detail),
@@ -593,147 +588,6 @@ final readonly class DoctorReportRunner
             'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$code}.",
             'details' => $detail,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyWorkspaceIssue(Node $node, string $key, array $detail): ?array
-    {
-        $workspaceName = is_string($detail['workspace'] ?? null) ? $detail['workspace'] : null;
-
-        if ($workspaceName === null) {
-            return null;
-        }
-
-        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
-            ->where('name', $workspaceName)
-            ->whereHas('app', static function ($query) use ($appName): void {
-                if ($appName !== null) {
-                    $query->where('name', $appName);
-                }
-            })
-            ->get();
-        $workspace = $workspaces->first(
-            fn (Workspace $workspace): bool => (
-                $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
-            ),
-        );
-
-        if (! $workspace instanceof Workspace) {
-            return null;
-        }
-
-        return $this->handleWorkspaceAction($workspace, $this->driftEntryFromStoredParts('workspace', $key, $detail));
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyAppIssue(Node $node, string $key, array $detail): ?array
-    {
-        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-
-        if ($appName === null) {
-            return null;
-        }
-
-        if ($key === 'app.runtime_config_extra') {
-            return $this->handleAppConfigExtraAction($node, $appName);
-        }
-
-        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
-
-        if ($appInstanceName !== null) {
-            $app = App::query()
-                ->with(['node', 'instances'])
-                ->where('name', $appName)
-                ->first();
-            $instance = $app instanceof App
-                ? $app->instances->firstWhere('name', $appInstanceName)
-                : null;
-
-            if (
-                $app instanceof App
-                && $instance instanceof Instance
-                && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
-            ) {
-                return $this->handleInstanceAction(
-                    $app,
-                    $instance,
-                    $this->driftEntryFromStoredParts('app', $key, $detail),
-                );
-            }
-
-            return null;
-        }
-
-        $app = App::query()
-            ->with('node')
-            ->where('node_id', $node->id)
-            ->where('name', $appName)
-            ->first();
-
-        if (! $app instanceof App) {
-            return null;
-        }
-
-        return $this->handleAppAction($app, $this->driftEntryFromStoredParts('app', $key, $detail));
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleInstanceAction(App $app, Instance $instance, DriftEntry $entry): ?array
-    {
-        try {
-            return $this->appsFixer->fixInstance($app, $instance, $entry);
-        } catch (Throwable $e) {
-            $node = $this->workspacePlacement->nodeForInstance($instance);
-
-            return [
-                'family' => $entry->family,
-                'node' => $node?->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'app' => $app->name,
-                    'instance' => $instance->name,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleAppConfigExtraAction(Node $node, string $appSlug): array
-    {
-        try {
-            return $this->appsFixer->removeRuntimeConfigExtra($node, $appSlug);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_config_extra',
-                'key' => 'app.runtime_config_extra',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to remove extra managed app runtime config for {$appSlug}.",
-                'details' => [
-                    'app' => $appSlug,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
     }
 
     /**
@@ -1360,49 +1214,6 @@ final readonly class DoctorReportRunner
             (string) ($detail['target_id'] ?? ''),
             (string) ($detail['env_prefix'] ?? ''),
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): array
-    {
-        $workspace->loadMissing('app.node');
-
-        return [
-            'family' => $entry->family,
-            'node' => $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
-            'code' => $entry->key,
-            'key' => $entry->key,
-            'mode' => 'restore',
-            'status' => 'skipped',
-            'summary' => "Skipped fix for {$entry->key}: workspace auto-fix is not supported in the Docker-first runtime.",
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleAppAction(App $app, DriftEntry $entry): ?array
-    {
-        try {
-            return $this->appsFixer->fix($app, $entry);
-        } catch (Throwable $e) {
-            $app->loadMissing('node');
-
-            return [
-                'family' => $entry->family,
-                'node' => $app->node?->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
     }
 
     /**
