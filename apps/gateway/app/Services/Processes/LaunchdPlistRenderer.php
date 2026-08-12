@@ -15,12 +15,12 @@ use InvalidArgumentException;
 
 /**
  * @mago-expect lint:too-many-methods
- * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class LaunchdPlistRenderer
 {
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
+        private LaunchdProcessRuntimePolicy $runtimePolicy,
     ) {}
 
     public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
@@ -74,7 +74,7 @@ final readonly class LaunchdPlistRenderer
         $stdout = $this->stdoutLogPath($runtimeUnit, $node);
         $stderr = $this->stderrLogPath($runtimeUnit, $node);
         $keepAlive = $process->restart_policy !== ProcessRestartPolicy::Never ? '<true/>' : '<false/>';
-        $runAtLoad = $process->owner instanceof Node || ! $node->hasActiveRole('app-dev')
+        $runAtLoad = $this->runtimePolicy->shouldBeLoaded($process, $node)
             ? '<true/>'
             : '<false/>';
 

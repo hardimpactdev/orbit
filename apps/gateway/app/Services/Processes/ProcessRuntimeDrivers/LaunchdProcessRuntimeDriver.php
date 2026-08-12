@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Processes\LaunchdPlistRenderer;
+use App\Services\Processes\LaunchdProcessRuntimePolicy;
 use App\Services\Processes\RemoteLaunchdService;
 use Throwable;
 
@@ -19,6 +20,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
         private LaunchdPlistRenderer $renderer,
+        private LaunchdProcessRuntimePolicy $runtimePolicy,
         private RemoteLaunchdService $launchd,
     ) {}
 
@@ -42,7 +44,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
                     node: $node,
                     label: $label,
                     content: $this->renderer->render($node, $app, $process, $workspace),
-                    enabled: $process->owner instanceof Node || ! $node->hasActiveRole('app-dev'),
+                    enabled: $this->runtimePolicy->shouldBeLoaded($process, $node),
                 )
                 ->successful();
         } catch (Throwable) {

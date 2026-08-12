@@ -109,11 +109,12 @@ WireGuard-only bind posture are verified as process runtime-unit shape rather
 than as tool drift.
 
 For launchd runtime units, the probe reads LaunchAgent plist files that Orbit
-owns and compares content hashes against the gateway-rendered plist. When the
-runtime unit is expected to be running, the probe checks whether the label is
-loaded in the current user GUI domain. Log paths are reported separately from
-configuration drift. `doctor --restore` may rewrite the plist and run lifecycle
-actions only for launchd labels that Orbit owns.
+owns and compares content hashes against the gateway-rendered plist. For a
+node-owned unit or a unit outside `app-dev`, Doctor also checks whether the
+label is loaded in the current user GUI domain. An unloaded `app-dev` unit is
+normal because development lifecycle commands load it on demand. Log paths are
+reported separately from configuration drift. Doctor reports unloaded labels
+but does not load or start them.
 
 For app-development Docker runtime units, the probe also reads the exact
 Caddy-side hibernation marker that owns request-driven wake-up. A stopped unit
@@ -213,7 +214,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
 | `process.runtime_unit_down` | A Docker runtime unit whose configured restart policy is `always` exists but is not running, unless its app-development instance or workspace scope is explicitly marked hibernated. Units configured as `never` are intentionally excluded. |
-| `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
+| `process.runtime_unit_unloaded` | A launchd-backed node-owned or non-`app-dev` runtime unit has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
 
@@ -230,7 +231,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. Docker orphan containers use the `orbit-app-*` inventory path. Systemd and launchd extras are removed only when the unit identity is a strict Orbit-owned `orbit_*` name and the expected path is the canonical managed location (`/etc/systemd/system/{unit}.service` or the node user's `~/Library/LaunchAgents/dev.hardimpact.orbit.{unit}.plist`). Arbitrary units are never removed. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
 | `process.runtime_unit_down` | Start the exact current Orbit-owned Docker runtime unit when its configured restart policy is `always`. |
-| `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
+| `process.runtime_unit_unloaded` | No `doctor --restore` action. Doctor reports the unloaded label; `process:start` is the explicit lifecycle command. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
 
@@ -238,7 +239,8 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `process.owner_app_invalid`, `process.owner_node_invalid`,
 `process.runtime_context_unresolved`,
 `process.wireguard_self_route_unavailable`,
-or `process.runtime_backend_unavailable`.
+`process.runtime_backend_unavailable`,
+or `process.runtime_unit_unloaded`.
 
 Invalid user-managed process definitions and instance ownership problems
 remain explicit process, app, or workspace command work. Process doctor does
@@ -272,7 +274,7 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `process.runtime_unit_unrenderable` | No adoption action. Invalid gateway intent must be corrected instead of adopted from runtime state. |
 | `process.runtime_unit_extra` | No adoption action. Runtime artifacts are derived and must not create process configuration. |
 | `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:update` when the observed runtime command should become configuration. |
-| `process.runtime_unit_unloaded` | No adoption action. Loaded state is repaired through restore or lifecycle commands, not adopted as gateway configuration. |
+| `process.runtime_unit_unloaded` | No adoption action. Use `process:start` when the unit must be loaded; Doctor only reports the current state. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:update` when the observed policy should become configuration. |
 | `process.runtime_environment_mismatch` | No adoption action. Runtime environment is derived from app, workspace, and node configuration. |
 
