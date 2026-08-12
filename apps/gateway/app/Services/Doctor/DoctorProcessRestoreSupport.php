@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 /**
- * Process-family restore codes owned by DoctorReportRunner applyProcessIssue.
+ * Process-family restore codes owned by DoctorProcessRestorer.
  *
- * This is the support decision applyProcessIssue consumes — not a passive copy.
+ * This is the support decision DoctorProcessRestorer consumes — not a passive copy.
  */
 final class DoctorProcessRestoreSupport
 {

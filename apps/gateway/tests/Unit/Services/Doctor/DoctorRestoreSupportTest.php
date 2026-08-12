@@ -12,6 +12,7 @@ use App\Services\Apps\AppsFixer;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Doctor\DoctorIssueCatalog;
 use App\Services\Doctor\DoctorIssueFactory;
+use App\Services\Doctor\DoctorProcessRestorer;
 use App\Services\Doctor\DoctorProcessRestoreSupport;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorRestoreActionId;
@@ -204,7 +205,7 @@ it('binds schedule gateway codes to SchedulesFixer support and apply routing', f
     expect($unsupported)->toBeNull();
 });
 
-it('binds process genuine codes to DoctorProcessRestoreSupport consumed by applyProcessIssue', function (): void {
+it('binds process genuine codes to DoctorProcessRestoreSupport consumed by DoctorProcessRestorer', function (): void {
     $processCodes = array_keys(DoctorProcessRestoreSupport::restoreSupport());
 
     expect($processCodes)->not->toBeEmpty();
@@ -215,11 +216,7 @@ it('binds process genuine codes to DoctorProcessRestoreSupport consumed by apply
     }
 
     $node = Node::factory()->create(['name' => 'process-node', 'status' => 'active']);
-    $runner = app(DoctorReportRunner::class);
-    $method = new ReflectionMethod(DoctorReportRunner::class, 'applyProcessIssue');
-    $method->setAccessible(true);
-
-    expect($method->invoke($runner, $node, 'process.owner_app_invalid', []))->toBeNull();
+    expect(app(DoctorProcessRestorer::class)->apply($node, 'process.owner_app_invalid', []))->toBeNull();
 });
 
 it('binds generic fixer support to their supported-key sources and rejects unknown keys', function (): void {

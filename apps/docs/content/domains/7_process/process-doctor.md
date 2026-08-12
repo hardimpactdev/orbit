@@ -225,7 +225,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | --- | --- |
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker, systemd, or launchd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
-| `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
+| `process.runtime_unit_unrenderable` | For a node-owned managed service with canonical service and version detail, resolve current process intent from the service catalog and restore its runtime unit. Other incomplete or invalid process definitions have no automatic restore action. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway instance, workspace, and process configuration. For a managed PHP instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. Docker orphan containers use the `orbit-app-*` inventory path. Systemd and launchd extras are removed only when the unit identity is a strict Orbit-owned `orbit_*` name and the expected path is the canonical managed location (`/etc/systemd/system/{unit}.service` or the node user's `~/Library/LaunchAgents/dev.hardimpact.orbit.{unit}.plist`). Arbitrary units are never removed. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
@@ -238,8 +238,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `process.owner_app_invalid`, `process.owner_node_invalid`,
 `process.runtime_context_unresolved`,
 `process.wireguard_self_route_unavailable`,
-`process.runtime_backend_unavailable`, or
-`process.runtime_unit_unrenderable`.
+or `process.runtime_backend_unavailable`.
 
 Invalid user-managed process definitions and instance ownership problems
 remain explicit process, app, or workspace command work. Process doctor does
@@ -247,7 +246,11 @@ not create arbitrary definitions, change process names, edit instance or
 workspace records, or adopt arbitrary runtime-unit files as gateway
 configuration. Its only definition-recreation exception is the canonical,
 derived FrankenPHP process row for an active instance of an app that already
-owns managed FrankenPHP runtime intent.
+owns managed FrankenPHP runtime intent. For a node-owned managed service,
+`process.runtime_unit_unrenderable` can also restore canonical service intent
+from the service catalog when the issue includes enough service and version
+detail. It does not infer arbitrary commands or repair invalid app or workspace
+process definitions.
 
 For launchd, restore is limited to Orbit-owned user LaunchAgents. It may write
 the expected plist under the configured node user's `~/Library/LaunchAgents`,

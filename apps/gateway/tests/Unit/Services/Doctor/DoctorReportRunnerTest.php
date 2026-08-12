@@ -35,12 +35,14 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\DnsmasqBaseConfigBuilder;
 use App\Services\Doctor\DoctorIssueFactory;
+use App\Services\Doctor\DoctorProcessRestorer;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\NodeProcessResolver;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -173,12 +175,9 @@ it('selects app processes by current placement instead of a stale process.node_i
     ])->save();
     DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
 
-    $runner = app(DoctorReportRunner::class);
-    $method = new \ReflectionMethod(DoctorReportRunner::class, 'processesForNode');
-    $method->setAccessible(true);
-
-    $onOld = $method->invoke($runner, $oldNode);
-    $onNew = $method->invoke($runner, $newNode);
+    $processes = app(NodeProcessResolver::class);
+    $onOld = $processes->forNode($oldNode);
+    $onNew = $processes->forNode($newNode);
 
     expect($onOld->pluck('id')->all())
         ->not
@@ -1970,10 +1969,7 @@ describe('DoctorReportRunner', function (): void {
             ]);
 
         $staleUnit = 'orbit_dutchlaravelfoundation_development_best-practices-sync_vite';
-        $runner = app(DoctorReportRunner::class);
-        $method = new \ReflectionMethod(DoctorReportRunner::class, 'removeExtraManagedProcessRuntime');
-
-        $result = $method->invoke($runner, $node, 'process.runtime_unit_extra', [
+        $result = app(DoctorProcessRestorer::class)->apply($node, 'process.runtime_unit_extra', [
             'runtime_unit' => $staleUnit,
             'runtime' => 'systemd',
             'expected_path' => "/etc/systemd/system/{$staleUnit}.service",
@@ -2003,10 +1999,7 @@ describe('DoctorReportRunner', function (): void {
                 'platform' => 'ubuntu_24-04',
                 'user' => 'orbit',
             ]);
-        $runner = app(DoctorReportRunner::class);
-        $method = new \ReflectionMethod(DoctorReportRunner::class, 'removeExtraManagedProcessRuntime');
-
-        $result = $method->invoke($runner, $node, 'process.runtime_unit_extra', [
+        $result = app(DoctorProcessRestorer::class)->apply($node, 'process.runtime_unit_extra', [
             'runtime_unit' => 'nginx',
             'runtime' => 'systemd',
             'expected_path' => '/etc/systemd/system/nginx.service',
