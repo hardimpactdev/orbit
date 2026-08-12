@@ -16,21 +16,13 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\ProxyRoute;
 use App\Models\Workspace;
-use App\Services\Analytics\AnalyticsProxyDoctorProbe;
-use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
-use App\Services\Proxy\ProxyRouteAdopter;
-use App\Services\Proxy\ProxyRouteFixer;
-use App\Services\Proxy\ProxyRouteProbe;
-use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Tools\ToolsFixer;
-use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
 use LogicException;
@@ -59,10 +51,8 @@ final readonly class DoctorReportRunner
         private DoctorDatabaseConnectionRestorer $databaseConnectionRestorer,
         private DoctorAdoptRunner $adoptRunner,
         private DoctorProcessRestorer $processRestorer,
-        private ProxyRouteProbe $proxyRouteProbe,
+        private DoctorProxyRestorer $proxyRestorer,
         private FirewallRuleFixer $firewallRuleFixer,
-        private ProxyRouteFixer $proxyRouteFixer,
-        private ProxyRouteAdopter $proxyRouteAdopter,
         private NodeConverger $nodeConverger,
         private ToolsFixer $toolsFixer,
         private DoctorScheduleRestorer $scheduleRestorer,
@@ -71,10 +61,6 @@ final readonly class DoctorReportRunner
         private DoctorFleetProbeRunner $fleetProbeRunner,
         private DoctorFleetTargetProbe $fleetTargetProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
-        private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
-        private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
-        private AnalyticsProxyDoctorProbe $analyticsProxyDoctorProbe,
-        private AnalyticsPublicProxyDoctorProbe $analyticsPublicProxyDoctorProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
@@ -533,31 +519,10 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'process' => $this->processRestorer->issueTargetsWorkspace($node, $detail),
-            'proxy' => $this->proxyIssueTargetsWorkspace($detail),
+            'proxy' => $this->proxyRestorer->issueTargetsWorkspace($detail),
             'database_connection' => $this->databaseConnectionRestorer->issueTargetsWorkspace($detail),
             default => false,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     */
-    private function proxyIssueTargetsWorkspace(array $detail): bool
-    {
-        $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
-
-        if ($domain === null) {
-            return false;
-        }
-
-        $route = ProxyRoute::query()->where('domain', $domain)->first();
-
-        return $route instanceof ProxyRoute && $this->proxyRouteIsWorkspaceOwned($route);
-    }
-
-    private function proxyRouteIsWorkspaceOwned(ProxyRoute $route): bool
-    {
-        return $this->proxyRouteInventory->routeIsWorkspaceOwned($route);
     }
 
     /**
@@ -575,7 +540,7 @@ final readonly class DoctorReportRunner
             'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'process' => $this->processRestorer->apply($node, $key, $detail),
-            'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
+            'proxy' => $this->proxyRestorer->apply($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($node, $key, $detail),
             'tool' => $this->applyToolIssue($node, $key, $detail),
             'schedule' => $this->scheduleRestorer->apply($node, $key, $detail, $issue),
@@ -767,312 +732,6 @@ final readonly class DoctorReportRunner
      * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
-    private function applyProxyIssue(
-        Node $fallbackNode,
-        string $mode,
-        string $key,
-        array $detail,
-        DoctorIssue $issue,
-    ): ?array {
-        $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
-
-        if (in_array($key, ['proxy.agent_tool_route_missing', 'proxy.agent_tool_route_mismatch'], true)) {
-            return $this->handleAgentToolProxyAction(
-                $mode,
-                $node,
-                $this->driftEntryFromIssue($issue),
-            );
-        }
-
-        if (in_array(
-            $key,
-            [
-                AnalyticsProxyDoctorProbe::RouterRouteKey,
-                AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
-            ],
-            true,
-        )) {
-            return $this->handleAnalyticsProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        if ($key === AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY) {
-            return $this->handleAnalyticsPublicProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        if ($issue->kind === DriftKind::Extra) {
-            if ($mode === 'adopt') {
-                $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
-
-                foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
-                    if ($result->key === $key) {
-                        return [
-                            'family' => $result->family,
-                            'node' => $node->name,
-                            'code' => $result->key,
-                            'key' => $result->key,
-                            'mode' => 'adopt',
-                            'status' => $result->action->value,
-                            'summary' => $result->summary,
-                            'details' => $result->detail,
-                        ];
-                    }
-                }
-
-                return null;
-            }
-
-            return $this->handleProxyExtraAction($mode, $node, new DriftEntry(
-                family: 'proxy',
-                key: $key,
-                kind: DriftKind::Extra,
-                summary: $issue->summary !== ''
-                    ? $issue->summary
-                    : "Proxy route '{$key}' exists on node but not in gateway registry.",
-            ));
-        }
-
-        if (in_array(
-            $key,
-            ['proxy.caddy_container_missing', 'proxy.caddy_container_down', 'proxy.caddy_container_detached'],
-            true,
-        )) {
-            return $this->handleProxyCaddyContainerAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        if (in_array($key, ['proxy.global_config_missing', 'proxy.global_config_mismatch'], true)) {
-            return $this->handleProxyGlobalConfigAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        if (in_array(
-            $key,
-            [WebSocketProxyDoctorProbe::RouterRouteKey, WebSocketProxyDoctorProbe::PublicRouteKey],
-            true,
-        )) {
-            return $this->handleWebSocketProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        if (in_array(
-            $key,
-            [
-                S3ProxyDoctorProbe::RouterRouteKey,
-                S3ProxyDoctorProbe::RouterBackendKey,
-                S3ProxyDoctorProbe::PublicRouteKey,
-            ],
-            true,
-        )) {
-            return $this->handleS3ProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
-        }
-
-        $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
-
-        if ($domain === null) {
-            return null;
-        }
-
-        $route = ProxyRoute::query()
-            ->where('domain', $domain)
-            ->first();
-
-        if (! $route instanceof ProxyRoute) {
-            return null;
-        }
-
-        return $this->handleProxyAction($mode, $route, $this->driftEntryFromIssue($issue));
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleProxyCaddyContainerAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleAgentToolProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->proxyRouteFixer->restoreAgentToolRoute($node, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleProxyGlobalConfigAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->proxyRouteFixer->fixGlobalConfig($node, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleWebSocketProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->webSocketProxyDoctorProbe->restore($node, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleS3ProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->s3ProxyDoctorProbe->restore($node, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleAnalyticsProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->analyticsProxyDoctorProbe->restore($node, $entry);
-        } catch (Throwable $throwable) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $throwable->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleAnalyticsPublicProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->analyticsPublicProxyDoctorProbe->restore($node, $entry);
-        } catch (Throwable $throwable) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $throwable->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
     private function applyFirewallIssue(Node $node, string $key, array $detail): ?array
     {
         $ruleName = is_string($detail['rule'] ?? null) ? $detail['rule'] : null;
@@ -1242,17 +901,6 @@ final readonly class DoctorReportRunner
                     'error' => 'restore_returned_false',
                 ],
         ];
-    }
-
-    private function driftEntryFromIssue(DoctorIssue $issue): DriftEntry
-    {
-        return new DriftEntry(
-            family: $issue->family,
-            key: $issue->key,
-            kind: $issue->kind,
-            summary: $issue->summary,
-            detail: $issue->detail,
-        );
     }
 
     /**
@@ -1704,62 +1352,6 @@ final readonly class DoctorReportRunner
             (string) ($detail['target_id'] ?? ''),
             (string) ($detail['env_prefix'] ?? ''),
         ]);
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleProxyAction(string $mode, ProxyRoute $route, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->proxyRouteFixer->fix($route, $entry);
-        } catch (Throwable $e) {
-            $route->loadMissing('node');
-
-            return [
-                'family' => $entry->family,
-                'node' => $route->node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleProxyExtraAction(string $mode, Node $node, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->proxyRouteFixer->removeExtra($node, $entry->key);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to remove extra proxy route {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
     }
 
     /**

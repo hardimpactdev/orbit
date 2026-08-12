@@ -90,4 +90,20 @@ final readonly class DoctorProxyRouteInventory
             || $route->kind === 'workspace'
         );
     }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    public function issueTargetsWorkspace(array $detail): bool
+    {
+        $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
+
+        if ($domain === null) {
+            return false;
+        }
+
+        $route = ProxyRoute::query()->where('domain', $domain)->first();
+
+        return $route instanceof ProxyRoute && $this->routeIsWorkspaceOwned($route);
+    }
 }
