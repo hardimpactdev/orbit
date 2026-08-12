@@ -8,7 +8,6 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
-use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Instance;
@@ -17,19 +16,19 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Nodes\WireGuardSelfRouteOutput;
-use App\Services\RuntimeBackend\RuntimeBackendProbe;
-use InvalidArgumentException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class ProcessesProbe
 {
-    private const array WORKSPACE_OWNER_TYPES = [Workspace::class, 'workspace'];
-
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private ProcessRuntimeObserverRegistry $runtimeObservers,
         private ProcessRuntimeContextResolver $runtimeContextResolver,
-        private ProcessExpectedRuntimeUnits $expectedRuntimeUnits,
-        private ?RuntimeBackendProbe $runtimeBackendProbe = null,
+        private NodeRoleAssignments $nodeRoles,
+        private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
+        private ProcessRuntimeContextDiff $runtimeContextDiff,
+        private ProcessRuntimeUnitDiff $runtimeUnitDiff,
+        private ProcessOwnershipDetail $ownershipDetail,
     ) {}
 
     public function key(): string
@@ -47,83 +46,25 @@ final readonly class ProcessesProbe
         return $this->runtimeObservers->observe($process);
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
+    /** @return list<DriftEntry> */
     public function diff(Process $process, ProbeSnapshot $snapshot): array
     {
         $drift = [];
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($process));
         $drift = array_merge($drift, $this->checkOwner($process));
-        $drift = array_merge($drift, $this->checkRuntimeContexts($process));
+        $drift = array_merge($drift, $this->runtimeContextDiff->diff($process));
         $drift = array_merge($drift, $this->checkWireGuardSelfRoute($process));
-        $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeUnitRenderability($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeUnitLiveness($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeUnitExtras($process, $snapshot));
 
-        return $drift;
+        return array_merge($drift, $this->runtimeUnitDiff->diff($process, $snapshot));
     }
 
     /**
      * @return list<DriftEntry>
-     */
-    private function checkRuntimeUnitLiveness(Process $process, ProbeSnapshot $snapshot): array
-    {
-        if (
-            $this->runtimeContextResolver->runtime($process) !== ProcessRuntime::Docker
-            || $process->restart_policy !== ProcessRestartPolicy::Always
-        ) {
-            return [];
-        }
-
-        $observed = $snapshot->get($process->name);
-
-        if (
-            ! is_array($observed)
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ($observed['runtime_unit_renderable'] ?? null) === false
-            || ! is_array($observed['runtime_units'] ?? null)
-        ) {
-            return [];
-        }
-
-        $drift = [];
-
-        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
-            $runtimeUnit = $observed['runtime_units'][$unit['name']] ?? null;
-
-            if (
-                ! is_array($runtimeUnit)
-                || ($runtimeUnit['config_exists'] ?? null) !== true
-                || ! is_string($runtimeUnit['container_state'] ?? null)
-                || $runtimeUnit['container_state'] === 'running'
-                || ($runtimeUnit['hibernated'] ?? null) === true
-            ) {
-                continue;
-            }
-
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'process.runtime_unit_down',
-                kind: DriftKind::Divergent,
-                summary: "Always-on process runtime unit {$unit['name']} is not running.",
-                detail: [
-                    ...$this->runtimeUnitDetail($process, $unit),
-                    'observed_state' => $runtimeUnit['container_state'],
-                ],
-            );
-        }
-
-        return $drift;
-    }
-
-    /**
-     * @return list<DriftEntry>
+     *
+     * @mago-expect analyzer:mixed-assignment
+     * @mago-expect analyzer:redundant-logical-operation
+     * @mago-expect analyzer:redundant-type-comparison
      */
     private function checkRecordCompleteness(Process $process): array
     {
@@ -155,7 +96,7 @@ final readonly class ProcessesProbe
                     key: 'process.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Process record for {$process->name} is missing required fields.",
-                    detail: $this->processOwnershipDetail($process),
+                    detail: $this->ownershipDetail->for($process),
                 ),
             ];
         }
@@ -163,9 +104,7 @@ final readonly class ProcessesProbe
         return [];
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
+    /** @return list<DriftEntry> */
     private function checkOwner(Process $process): array
     {
         $process->loadMissing('owner');
@@ -207,7 +146,7 @@ final readonly class ProcessesProbe
             || $instance->app_id !== $app->id
             || ! $node instanceof Node
             || ! $node->isActive()
-            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
+            || ! $this->nodeRoles->nodeHasActiveAppHostRole($node)
         ) {
             return [
                 new DriftEntry(
@@ -215,7 +154,7 @@ final readonly class ProcessesProbe
                     key: 'process.owner_app_invalid',
                     kind: DriftKind::Divergent,
                     summary: "Process {$process->name} owner instance is not on an active app node.",
-                    detail: $this->processOwnershipDetail($process),
+                    detail: $this->ownershipDetail->for($process),
                 ),
             ];
         }
@@ -223,9 +162,7 @@ final readonly class ProcessesProbe
         return [];
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
+    /** @return list<DriftEntry> */
     private function checkWireGuardSelfRoute(Process $process): array
     {
         $node = $this->runtimeContextResolver->executionNode($process);
@@ -241,20 +178,19 @@ final readonly class ProcessesProbe
         }
 
         $endpoint = collect($this->serviceEndpoints($process))
-            ->first(fn (array $endpoint): bool => $endpoint['host'] === $wireGuardAddress);
+            ->first(static fn (array $endpoint): bool => $endpoint['host'] === $wireGuardAddress);
 
         if (! is_array($endpoint)) {
             return [];
         }
 
-        $diagnostic = $this->wireGuardSelfRouteProbe()->probe($node);
+        $diagnostic = $this->wireGuardSelfRouteProbe->probe($node);
 
-        if (($diagnostic['ok'] ?? false) === true) {
+        if ($diagnostic['ok'] === true) {
             return [];
         }
 
-        // Unsupported platforms and other non-diagnostic states are not drift.
-        if (($diagnostic['supported'] ?? true) === false) {
+        if ($diagnostic['supported'] === false) {
             return [];
         }
 
@@ -267,446 +203,19 @@ final readonly class ProcessesProbe
                 detail: [
                     'process' => $process->name,
                     'node' => $node->name,
-                    'endpoint' => $endpoint['name'] ?? null,
+                    'endpoint' => $endpoint['name'],
                     'host' => $endpoint['host'],
-                    'port' => $endpoint['port'] ?? null,
+                    'port' => $endpoint['port'],
                     ...$this->wireGuardSelfRouteDetail($diagnostic),
                 ],
             ),
         ];
     }
 
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeUnitExtras(Process $process, ProbeSnapshot $snapshot): array
-    {
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ! is_array($observed['runtime_unit_extras'] ?? null)
-        ) {
-            return [];
-        }
-
-        $process->loadMissing('owner');
-
-        if (
-            $process->owner instanceof Node
-            && $this->runtimeContextResolver->runtime($process) === ProcessRuntime::Systemd
-        ) {
-            return [];
-        }
-
-        $isDocker = in_array(
-            $this->runtimeContextResolver->runtime($process),
-            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
-            true,
-        );
-        $runtimeUnitPrefix = $this->runtimeUnitPrefix($process);
-        $expectedRuntimeUnitsForApp = $this->expectedRuntimeUnitsForApp($process);
-
-        return collect($observed['runtime_unit_extras'])
-            ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
-            ->reject(fn (string $runtimeUnit): bool => in_array($runtimeUnit, $expectedRuntimeUnitsForApp, true))
-            ->filter(
-                fn (string $runtimeUnit): bool => $runtimeUnitPrefix === null
-                || str_starts_with($runtimeUnit, $runtimeUnitPrefix),
-            )
-            ->map(function (string $runtimeUnit) use ($process, $isDocker): DriftEntry {
-                $detail = $this->runtimeUnitDetail($process, [
-                    'name' => $runtimeUnit,
-                    'config_path' => $runtimeUnit,
-                ]);
-
-                if (! $isDocker) {
-                    $runtime = $this->runtimeContextResolver->runtime($process);
-                    $detail['expected_path'] = $runtime === ProcessRuntime::Launchd
-                        ? $this->launchdExtraExpectedPath($process, $runtimeUnit)
-                        : "/etc/systemd/system/{$runtimeUnit}.service";
-                }
-
-                return new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_unit_extra',
-                    kind: DriftKind::Extra,
-                    summary: "Process runtime unit {$runtimeUnit} has no matching active gateway process intent.",
-                    detail: $detail,
-                );
-            })
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function expectedRuntimeUnitsForApp(Process $process): array
-    {
-        $app = $process->ownerApp();
-        $node = $this->runtimeContextResolver->executionNode($process);
-
-        if (! $app instanceof App || ! $node instanceof Node) {
-            return [];
-        }
-
-        $runtimeUnits = [];
-
-        $query = Process::query()
-            ->with(['owner', 'instance'])
-            ->where('instance_id', $process->instance_id);
-
-        if ($this->runtimeContextResolver->productionNodeExcludesWorkspaces($node)) {
-            $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
-        }
-
-        $query->each(function (Process $candidate) use ($app, $node, &$runtimeUnits): void {
-            $candidateApp = $candidate->ownerApp();
-
-            if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
-                return;
-            }
-
-            $candidateNode = $this->runtimeContextResolver->executionNode($candidate);
-
-            if (! $candidateNode instanceof Node || ! $candidateNode->is($node)) {
-                return;
-            }
-
-            try {
-                $runtimeUnits = [
-                    ...$runtimeUnits,
-                    ...$this->expectedRuntimeUnits->names($candidate),
-                ];
-            } catch (InvalidArgumentException) {
-                return;
-            }
-        });
-
-        return array_values(array_unique($runtimeUnits));
-    }
-
-    private function runtimeUnitPrefix(Process $process): ?string
-    {
-        $app = $process->ownerApp();
-
-        if (! $app instanceof App || $app->name === '') {
-            return null;
-        }
-
-        $process->loadMissing('instance');
-
-        return $process->instance instanceof Instance
-            ? "orbit_{$app->name}_{$process->instance->name}_"
-            : "orbit_{$app->name}_";
-    }
-
-    private function launchdExtraExpectedPath(Process $process, string $runtimeUnit): string
-    {
-        $node = $this->runtimeContextResolver->executionNode($process);
-
-        if (! $node instanceof Node) {
-            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
-        }
-
-        try {
-            return $this->expectedRuntimeUnits->launchdPath($runtimeUnit, $node);
-        } catch (InvalidArgumentException) {
-            // Inventory may surface identities that fail launchd validity. Do not
-            // throw from the process family probe; leave a non-path label only.
-            return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
-        }
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRestartPolicy(Process $process, ProbeSnapshot $snapshot): array
-    {
-        if (in_array(
-            $this->runtimeContextResolver->runtime($process),
-            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
-            true,
-        )) {
-            return [];
-        }
-
-        return $this->checkRuntimeUnitField(
-            process: $process,
-            snapshot: $snapshot,
-            field: 'restart_policy_matches',
-            key: 'process.restart_policy_mismatch',
-            summary: fn (string $name): string => "Process runtime unit {$name} restart policy differs from gateway process intent.",
-        );
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeEnvironment(Process $process, ProbeSnapshot $snapshot): array
-    {
-        if (in_array(
-            $this->runtimeContextResolver->runtime($process),
-            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
-            true,
-        )) {
-            return [];
-        }
-
-        return $this->checkRuntimeUnitField(
-            process: $process,
-            snapshot: $snapshot,
-            field: 'environment_matches',
-            key: 'process.runtime_environment_mismatch',
-            summary: fn (string $name): string => "Process runtime unit {$name} environment differs from gateway process intent.",
-        );
-    }
-
-    /**
-     * @param  callable(string): string  $summary
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeUnitField(
-        Process $process,
-        ProbeSnapshot $snapshot,
-        string $field,
-        string $key,
-        callable $summary,
-    ): array {
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ($observed['runtime_unit_renderable'] ?? null) === false
-            || ! is_array($observed['runtime_units'] ?? null)
-        ) {
-            return [];
-        }
-
-        $drift = [];
-
-        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
-            $name = $unit['name'];
-            $runtimeUnit = $observed['runtime_units'][$name] ?? null;
-
-            if (! is_array($runtimeUnit) || ($runtimeUnit['config_exists'] ?? null) === false) {
-                continue;
-            }
-
-            if (($runtimeUnit[$field] ?? null) === false) {
-                $drift[] = new DriftEntry(
-                    family: $this->key(),
-                    key: $key,
-                    kind: DriftKind::Divergent,
-                    summary: $summary($name),
-                    detail: $this->runtimeUnitDetail($process, $unit),
-                );
-            }
-        }
-
-        return $drift;
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeUnits(Process $process, ProbeSnapshot $snapshot): array
-    {
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_backend_available'] ?? null) === false
-            || ($observed['runtime_unit_renderable'] ?? null) === false
-            || ! is_array($observed['runtime_units'] ?? null)
-        ) {
-            return [];
-        }
-
-        $drift = [];
-
-        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
-            $name = $unit['name'];
-            $runtimeUnit = $observed['runtime_units'][$name] ?? null;
-
-            if (! is_array($runtimeUnit) || ($runtimeUnit['config_exists'] ?? null) === false) {
-                $drift[] = new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_unit_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Process runtime unit {$name} is missing.",
-                    detail: $this->runtimeUnitDetail($process, $unit),
-                );
-
-                continue;
-            }
-
-            // For host runtimes, restart and environment drift get their own entries.
-            $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
-
-            if (! in_array(
-                $this->runtimeContextResolver->runtime($process),
-                [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
-                strict: true,
-            )) {
-                $isMismatch =
-                    $isMismatch
-                    && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
-                    && ($runtimeUnit['environment_matches'] ?? null) !== false;
-            }
-
-            if ($isMismatch) {
-                $drift[] = new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_unit_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Process runtime unit {$name} differs from gateway process intent.",
-                    detail: $this->runtimeUnitDetail($process, $unit),
-                );
-            }
-        }
-
-        return $drift;
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeBackend(Process $process, ProbeSnapshot $snapshot): array
-    {
-        $node = $this->runtimeContextResolver->executionNode($process);
-
-        if (! $node instanceof Node) {
-            return [];
-        }
-
-        $observed = $snapshot->get($process->name);
-
-        if ($observed === null) {
-            return [];
-        }
-
-        if (($observed['runtime_backend_available'] ?? null) === false) {
-            $backendName = match ($this->runtimeContextResolver->runtime($process)) {
-                ProcessRuntime::Docker, ProcessRuntime::DockerSwarm => 'Docker',
-                ProcessRuntime::Launchd => 'launchd',
-                ProcessRuntime::Systemd => 'systemd',
-            };
-
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_backend_unavailable',
-                    kind: DriftKind::Unverifiable,
-                    summary: "{$backendName} runtime backend is unavailable for process {$process->name} on node {$node->name}.",
-                    detail: [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'node' => $node->name,
-                        'runtime' => $this->runtimeContextResolver->runtime($process)->value,
-                        ...$this->serviceRuntimeDetail($process),
-                        'exit_code' => $observed['runtime_backend_exit_code'] ?? null,
-                        'output' => $observed['runtime_backend_output'] ?? '',
-                    ],
-                ),
-            ];
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeUnitRenderability(Process $process, ProbeSnapshot $snapshot): array
-    {
-        $observed = $snapshot->get($process->name);
-
-        if (
-            $observed === null
-            || ($observed['runtime_unit_renderable'] ?? null) !== false
-        ) {
-            return [];
-        }
-
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'process.runtime_unit_unrenderable',
-                kind: DriftKind::Unverifiable,
-                summary: "Process {$process->name} runtime unit cannot be rendered from gateway intent.",
-                detail: array_filter(
-                    [
-                        'process' => $process->name,
-                        ...$this->processOwnershipDetail($process),
-                        'runtime' => $this->runtimeContextResolver->runtime($process)->value,
-                        ...$this->serviceRuntimeDetail($process),
-                        'reason' => $observed['runtime_unit_render_error'] ?? null,
-                    ],
-                    $this->filledDetail(...),
-                ),
-            ),
-        ];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeContexts(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            return [];
-        }
-
-        $this->runtimeContextResolver->loadRuntimeApp($process, withWorkspaces: true);
-
-        if (! $process->app instanceof App) {
-            return [];
-        }
-
-        try {
-            $runtimeUnits = $this->expectedRuntimeUnits->names($process);
-        } catch (InvalidArgumentException $exception) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_context_unresolved',
-                    kind: DriftKind::Unverifiable,
-                    summary: "Process {$process->name} runtime contexts cannot be derived from gateway intent.",
-                    detail: [
-                        ...$this->processOwnershipDetail($process),
-                        'reason' => $exception->getMessage(),
-                    ],
-                ),
-            ];
-        }
-
-        if ($runtimeUnits === []) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_context_unresolved',
-                    kind: DriftKind::Unverifiable,
-                    summary: "Process {$process->name} has no derived runtime contexts.",
-                    detail: $this->processOwnershipDetail($process),
-                ),
-            ];
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<array{name: string|null, host: string, port: int|null}>
-     */
+    /** @return list<array{name: string|null, host: string, port: int|null}> */
     private function serviceEndpoints(Process $process): array
     {
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $config = $process->runtime_config;
         $rawEndpoints = [];
 
         if (is_array($config['endpoint'] ?? null)) {
@@ -714,6 +223,7 @@ final readonly class ProcessesProbe
         }
 
         if (is_array($config['endpoints'] ?? null)) {
+            /** @mago-expect analyzer:mixed-assignment */
             foreach ($config['endpoints'] as $endpoint) {
                 if (! is_array($endpoint)) {
                     continue;
@@ -762,131 +272,7 @@ final readonly class ProcessesProbe
                 'exit_code' => $diagnostic['exit_code'] ?? null,
                 'output' => $diagnostic['output'] ?? null,
             ],
-            fn (mixed $value): bool => $value !== null && $value !== '',
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $unit
-     * @return array<string, mixed>
-     */
-    private function runtimeUnitDetail(Process $process, array $unit): array
-    {
-        return array_filter(
-            [
-                'process' => $process->name,
-                ...$this->processOwnershipDetail($process),
-                'runtime' => $this->runtimeContextResolver->runtime($process)->value,
-                'runtime_unit' => $unit['name'] ?? null,
-                'expected' => $unit['config_path'] ?? null,
-                ...$this->serviceRuntimeDetail($process),
-            ],
-            $this->filledDetail(...),
-        );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serviceRuntimeDetail(Process $process): array
-    {
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $service = ProcessRuntimeServiceMetadata::service($config);
-
-        if ($service === null) {
-            return [];
-        }
-
-        return array_filter(
-            [
-                'service' => $service,
-                'version_family' => $this->optionalConfigString($config, 'version_family'),
-                'version' => $this->optionalConfigString($config, 'version'),
-                'service_name' => $this->optionalConfigString($config, 'service_name'),
-                'endpoint' => $this->serviceEndpointDetail($config['endpoint'] ?? null),
-            ],
-            $this->filledDetail(...),
-        );
-    }
-
-    private function filledDetail(mixed $value): bool
-    {
-        if ($value === null) {
-            return false;
-        }
-
-        return ! is_string($value) || $value !== '';
-    }
-
-    /**
-     * @return array{name: string|null, host: string, port: int|null}|null
-     */
-    private function serviceEndpointDetail(mixed $endpoint): ?array
-    {
-        if (! is_array($endpoint)) {
-            return null;
-        }
-
-        $host = is_string($endpoint['host'] ?? null) ? trim($endpoint['host']) : '';
-
-        if ($host === '') {
-            return null;
-        }
-
-        $name = is_string($endpoint['name'] ?? null) ? trim($endpoint['name']) : null;
-        $port = is_numeric($endpoint['port'] ?? null) ? (int) $endpoint['port'] : null;
-
-        return [
-            'name' => $name !== '' ? $name : null,
-            'host' => $host,
-            'port' => $port,
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function optionalConfigString(array $config, string $key): ?string
-    {
-        $value = $config[$key] ?? null;
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function processOwnershipDetail(Process $process): array
-    {
-        $app = $process->ownerApp();
-        $process->loadMissing('instance');
-        /** @var array<string, string> $detail */
-        $detail = [];
-        $appName = $app?->name;
-        $instance = $process->instance;
-        $appInstanceName = $instance?->name;
-
-        if (is_string($appName) && $appName !== '') {
-            $detail['app'] = $appName;
-        }
-
-        if (is_string($appInstanceName) && $appInstanceName !== '') {
-            $detail['instance'] = $appInstanceName;
-        }
-
-        return $detail;
-    }
-
-    private function runtimeBackendProbe(): RuntimeBackendProbe
-    {
-        return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
-    }
-
-    private function wireGuardSelfRouteProbe(): NodeWireGuardSelfRouteProbe
-    {
-        return new NodeWireGuardSelfRouteProbe(
-            $this->runtimeBackendProbe()->executor(),
-            app(WireGuardSelfRouteOutput::class),
+            static fn (mixed $value): bool => $value !== null && $value !== '',
         );
     }
 }

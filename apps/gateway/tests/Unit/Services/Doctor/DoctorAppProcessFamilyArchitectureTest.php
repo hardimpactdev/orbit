@@ -8,6 +8,9 @@ use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessExpectedRuntimeUnits;
+use App\Services\Processes\ProcessOwnershipDetail;
+use App\Services\Processes\ProcessRuntimeAvailabilityDiff;
+use App\Services\Processes\ProcessRuntimeContextDiff;
 use App\Services\Processes\ProcessRuntimeContextResolver;
 use App\Services\Processes\ProcessRuntimeObserverRegistry;
 use App\Services\Processes\ProcessRuntimeObservers\DockerProcessRuntimeObserver;
@@ -15,6 +18,9 @@ use App\Services\Processes\ProcessRuntimeObservers\DockerSwarmProcessRuntimeObse
 use App\Services\Processes\ProcessRuntimeObservers\LaunchdProcessRuntimeObserver;
 use App\Services\Processes\ProcessRuntimeObservers\ProcessRuntimeObserver;
 use App\Services\Processes\ProcessRuntimeObservers\SystemdProcessRuntimeObserver;
+use App\Services\Processes\ProcessRuntimeUnitDiff;
+use App\Services\Processes\ProcessRuntimeUnitExtrasDiff;
+use App\Services\Processes\ProcessRuntimeUnitLivenessDiff;
 use App\Services\Processes\ProcessRuntimeUnitSpecFactory;
 
 it('keeps app and process family probes behind focused services', function (): void {
@@ -117,12 +123,17 @@ it('keeps runtime context, expected units, and live observation outside Processe
     expect($dependencies)
         ->toContain(
             ProcessRuntimeContextResolver::class,
-            ProcessExpectedRuntimeUnits::class,
             ProcessRuntimeObserverRegistry::class,
+            ProcessRuntimeContextDiff::class,
+            ProcessRuntimeUnitDiff::class,
         )
         ->and(class_exists(ProcessRuntimeObserverRegistry::class))
         ->toBeTrue()
         ->and(class_exists(ProcessRuntimeUnitSpecFactory::class))
+        ->toBeTrue()
+        ->and(class_exists(ProcessRuntimeUnitDiff::class))
+        ->toBeTrue()
+        ->and(class_exists(ProcessExpectedRuntimeUnits::class))
         ->toBeTrue()
         ->and(file_get_contents($sourceFile))
         ->not->toContain(
@@ -141,7 +152,33 @@ it('keeps runtime context, expected units, and live observation outside Processe
             'private function launchdProbeScript(',
             'private function annotateHibernatedDockerUnits(',
             'private function unrenderableRuntimeUnitSnapshot(',
+            'private function checkRuntimeBackend(',
+            'private function checkRuntimeUnitRenderability(',
+            'private function checkRuntimeUnits(',
+            'private function checkRuntimeUnitLiveness(',
+            'private function checkRestartPolicy(',
+            'private function checkRuntimeEnvironment(',
+            'private function checkRuntimeUnitExtras(',
+            'private function checkRuntimeUnitField(',
         );
+
+    foreach ([
+        ProcessesProbe::class,
+        ProcessOwnershipDetail::class,
+        ProcessRuntimeAvailabilityDiff::class,
+        ProcessRuntimeContextDiff::class,
+        ProcessRuntimeUnitDiff::class,
+        ProcessRuntimeUnitExtrasDiff::class,
+        ProcessRuntimeUnitLivenessDiff::class,
+    ] as $service) {
+        $serviceFile = new ReflectionClass($service)->getFileName();
+
+        if (! is_string($serviceFile)) {
+            throw new LogicException("{$service} source file is unavailable.");
+        }
+
+        expect(file_get_contents($serviceFile))->not->toContain('app(');
+    }
 
     foreach ([
         DockerProcessRuntimeObserver::class,

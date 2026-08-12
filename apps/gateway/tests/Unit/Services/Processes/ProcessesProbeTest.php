@@ -20,6 +20,8 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
+use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessRuntimeContextResolver;
@@ -65,6 +67,10 @@ function processesProbeWithShell(RemoteShell&RunsInternalCommands $shell): Proce
 {
     app()->instance(RemoteShell::class, $shell);
     app()->instance(RunsInternalCommands::class, $shell);
+    app()->instance(
+        NodeWireGuardSelfRouteProbe::class,
+        new NodeWireGuardSelfRouteProbe($shell, app(WireGuardSelfRouteOutput::class)),
+    );
 
     return processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
 }
@@ -220,9 +226,7 @@ describe('WireGuard self-route diagnostics', function (): void {
                 durationMs: 1,
             ),
         ]);
-        app()->instance(RemoteShell::class, $shell);
-
-        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+        $drift = processesProbeWithShell($shell)->diff($process, new ProbeSnapshot([]));
 
         expect(issue($drift, 'process.owner_app_invalid'))
             ->toBeNull()
@@ -268,7 +272,7 @@ describe('WireGuard self-route diagnostics', function (): void {
                     ],
                 ],
             ]);
-        app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
+        $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: processesProbeSuccessData([
@@ -278,9 +282,9 @@ describe('WireGuard self-route diagnostics', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-        ]));
+        ]);
 
-        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+        $drift = processesProbeWithShell($shell)->diff($process, new ProbeSnapshot([]));
 
         expect(issue($drift, 'process.wireguard_self_route_unavailable'))->toBeNull();
     });
@@ -342,7 +346,7 @@ describe('WireGuard self-route diagnostics', function (): void {
                     ],
                 ],
             ]);
-        app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
+        $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: processesProbeSuccessData([
@@ -352,9 +356,9 @@ describe('WireGuard self-route diagnostics', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-        ]));
+        ]);
 
-        $drift = $this->probe->diff($process, new ProbeSnapshot([]));
+        $drift = processesProbeWithShell($shell)->diff($process, new ProbeSnapshot([]));
 
         expect(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)
             ->toBe(DriftKind::Unverifiable)
@@ -1440,7 +1444,18 @@ describe('docker runtime probe scope', function (): void {
                 ],
             ]);
 
-        $drift = $this->probe->diff($process, new ProbeSnapshot([
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'exit_code' => 0,
+                    'output' => "local 10.6.0.7 dev lo src 10.6.0.7\n",
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+        $drift = processesProbeWithShell($shell)->diff($process, new ProbeSnapshot([
             'mysql8' => [
                 'runtime_backend_available' => true,
                 'runtime_units' => [
