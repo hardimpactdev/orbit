@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T10:37:48+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-family-probe-runner/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-123748-refactor-doctor-family-probe-runner",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-family-probe-runner-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T103059Z-d381ad6d0cf2.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-family-probe-runner-retained-incus.md": "9d46bbb6aad237369e9e8ed3dc131a1f1007ab1c6d886da26261fc21c79cadbc",
+        "loop.md": "098e1b5b4016991db947a0ad924393401f6c1c39c7cbf9d8b35e194c7eb8be18",
+        "quality-gates/quality-check-2026-08-12T103059Z-d381ad6d0cf2.json": "944ed11cf1c518e07dae5d03089070de7bc48025b1a0f68774ba7ba74fc48021"
+    },
+    "slug": "refactor-doctor-family-probe-runner",
+    "requested_slug": "refactor-doctor-family-probe-runner",
+    "compatible_slugs": [
+        "refactor-doctor-family-probe-runner"
+    ],
+    "branch": "refactor/doctor-family-probe-runner",
+    "candidate_commit": "f8168fab4384b0ace8c4509da42acb693dc42570",
+    "accepted_feature_tip": "f8168fab4384b0ace8c4509da42acb693dc42570",
+    "accepted_main_tip": "23c21498054f5c18bf0a16aee8ffe508d1511431",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
