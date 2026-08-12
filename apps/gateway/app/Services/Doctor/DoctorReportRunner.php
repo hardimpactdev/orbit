@@ -81,8 +81,6 @@ final readonly class DoctorReportRunner
 
     private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
 
-    private const array WORKSPACE_PROCESS_OWNER_TYPES = [Workspace::class, 'workspace'];
-
     private const array WORKSPACE_PROXY_OWNER_TYPES = ['workspace', Workspace::class];
 
     private const array SUPPORTED_FAMILIES = [
@@ -2918,70 +2916,11 @@ final readonly class DoctorReportRunner
         $detail = $issue->detail;
 
         return match ($family) {
-            'process' => $this->processIssueTargetsWorkspace($node, $detail),
+            'process' => $this->processRestorer->issueTargetsWorkspace($node, $detail),
             'proxy' => $this->proxyIssueTargetsWorkspace($detail),
             'database_connection' => $this->databaseConnectionIssueTargetsWorkspace($detail),
             default => false,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     */
-    private function processIssueTargetsWorkspace(Node $node, array $detail): bool
-    {
-        if (is_string($detail['workspace'] ?? null)) {
-            return true;
-        }
-
-        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
-
-        if ($processName === null) {
-            return false;
-        }
-
-        /** @var Builder<Process> $query */
-        $query = Process::query();
-        $query
-            ->where('node_id', $node->id)
-            ->where('name', $processName)
-            ->whereIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
-        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
-
-        if ($appName !== null && $appInstanceName !== null) {
-            $query->whereHas(
-                'instance',
-                fn (Builder $instanceQuery): Builder => $instanceQuery
-                    ->where('name', $appInstanceName)
-                    ->whereHas(
-                        'app',
-                        fn (Builder $appQuery): Builder => $appQuery->where('name', $appName),
-                    ),
-            );
-        }
-
-        /** @var Collection<int, Process> $processes */
-        $processes = $query->with('instance.app')->get();
-        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
-
-        if ($runtimeUnit === null) {
-            return $processes->isNotEmpty();
-        }
-
-        foreach ($processes as $process) {
-            if ($process->owner_type !== Workspace::class) {
-                return true;
-            }
-
-            $process->loadMissing('owner');
-
-            if ($this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

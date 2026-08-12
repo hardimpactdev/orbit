@@ -32,6 +32,7 @@ use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use RuntimeException;
 use Throwable;
@@ -43,6 +44,8 @@ use Throwable;
  */
 final readonly class DoctorProcessRestorer
 {
+    private const array WORKSPACE_PROCESS_OWNER_TYPES = [Workspace::class, 'workspace'];
+
     public function __construct(
         private NodeProcessResolver $nodeProcesses,
         private ProcessRuntimeDriverRegistry $processRuntimeDrivers,
@@ -163,6 +166,65 @@ final readonly class DoctorProcessRestorer
                 'process' => $process->name,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    public function issueTargetsWorkspace(Node $node, array $detail): bool
+    {
+        if (is_string($detail['workspace'] ?? null)) {
+            return true;
+        }
+
+        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
+
+        if ($processName === null) {
+            return false;
+        }
+
+        /** @var Builder<Process> $query */
+        $query = Process::query();
+        $query
+            ->where('node_id', $node->id)
+            ->where('name', $processName)
+            ->whereIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+        $appInstanceName = is_string($detail['instance'] ?? null) ? $detail['instance'] : null;
+
+        if ($appName !== null && $appInstanceName !== null) {
+            $query->whereHas(
+                'instance',
+                fn (Builder $instanceQuery): Builder => $instanceQuery
+                    ->where('name', $appInstanceName)
+                    ->whereHas(
+                        'app',
+                        fn (Builder $appQuery): Builder => $appQuery->where('name', $appName),
+                    ),
+            );
+        }
+
+        /** @var Collection<int, Process> $processes */
+        $processes = $query->with('instance.app')->get();
+        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
+
+        if ($runtimeUnit === null) {
+            return $processes->isNotEmpty();
+        }
+
+        foreach ($processes as $process) {
+            if ($process->owner_type !== Workspace::class) {
+                return true;
+            }
+
+            $process->loadMissing('owner');
+
+            if ($this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -832,6 +894,7 @@ final readonly class DoctorProcessRestorer
             });
         }
 
+        /** @var Collection<int, Process> $processes */
         $processes = $processes->values();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
         $runtimeProcess = $this->processForRuntimeUnit($node, $processes, $runtimeUnit);
@@ -840,7 +903,13 @@ final readonly class DoctorProcessRestorer
             return $runtimeProcess;
         }
 
-        return $processes->count() === 1 ? $processes->first() : null;
+        if ($processes->count() !== 1) {
+            return null;
+        }
+
+        $process = $processes->first();
+
+        return $process instanceof Process ? $process : null;
     }
 
     /**
