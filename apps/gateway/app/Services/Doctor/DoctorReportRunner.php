@@ -12,8 +12,6 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Models\App;
-use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
@@ -24,7 +22,6 @@ use App\Models\Workspace;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Apps\AppsFixer;
-use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Nodes\NodeConverger;
@@ -62,7 +59,7 @@ final readonly class DoctorReportRunner
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsFixer $appsFixer,
-        private DatabaseConnectionRestorer $databaseConnectionRestorer,
+        private DoctorDatabaseConnectionRestorer $databaseConnectionRestorer,
         private DoctorAdoptRunner $adoptRunner,
         private DoctorProcessRestorer $processRestorer,
         private ProxyRouteProbe $proxyRouteProbe,
@@ -542,7 +539,7 @@ final readonly class DoctorReportRunner
         return match ($family) {
             'process' => $this->processRestorer->issueTargetsWorkspace($node, $detail),
             'proxy' => $this->proxyIssueTargetsWorkspace($detail),
-            'database_connection' => $this->databaseConnectionIssueTargetsWorkspace($detail),
+            'database_connection' => $this->databaseConnectionRestorer->issueTargetsWorkspace($detail),
             default => false,
         };
     }
@@ -563,14 +560,6 @@ final readonly class DoctorReportRunner
         return $route instanceof ProxyRoute && $this->proxyRouteIsWorkspaceOwned($route);
     }
 
-    /**
-     * @param  array<string, mixed>  $detail
-     */
-    private function databaseConnectionIssueTargetsWorkspace(array $detail): bool
-    {
-        return ($detail['target_type'] ?? null) === 'workspace' || is_string($detail['workspace'] ?? null);
-    }
-
     private function proxyRouteIsWorkspaceOwned(ProxyRoute $route): bool
     {
         return $this->proxyRouteInventory->routeIsWorkspaceOwned($route);
@@ -588,7 +577,7 @@ final readonly class DoctorReportRunner
         return match ($family) {
             'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
             'app' => $this->applyAppIssue($node, $key, $detail),
-            'database_connection' => $this->applyDatabaseConnectionIssue($key, $detail),
+            'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
             'workspace' => $this->applyWorkspaceIssue($node, $key, $detail),
             'process' => $this->processRestorer->apply($node, $key, $detail),
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
@@ -597,158 +586,6 @@ final readonly class DoctorReportRunner
             'schedule' => $this->applyScheduleIssue($node, $key, $detail, $issue),
             default => null,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyDatabaseConnectionIssue(string $key, array $detail): ?array
-    {
-        if (! array_key_exists($key, DatabaseConnectionRestorer::restoreSupport())) {
-            return null;
-        }
-
-        $targetType = is_string($detail['target_type'] ?? null) ? $detail['target_type'] : null;
-        $targetId = is_int($detail['target_id'] ?? null)
-            ? $detail['target_id']
-            : (is_numeric($detail['target_id'] ?? null) ? (int) $detail['target_id'] : null);
-        $prefix = is_string($detail['env_prefix'] ?? null) ? $detail['env_prefix'] : null;
-
-        if ($targetType === null || $targetId === null || $prefix === null) {
-            return null;
-        }
-
-        if (! in_array($targetType, ['instance', 'workspace'], true)) {
-            return null;
-        }
-
-        $target = DatabaseConnectionTarget::query()
-            ->with(['instance.app', 'workspace.instance.app'])
-            ->where('env_prefix', $prefix)
-            ->when($targetType === 'instance', fn ($query) => $query->where('instance_id', $targetId))
-            ->when($targetType === 'workspace', fn ($query) => $query->where('workspace_id', $targetId))
-            ->first();
-
-        if (! $target instanceof DatabaseConnectionTarget) {
-            if ($key !== 'database_connection.target_missing') {
-                return null;
-            }
-
-            return $this->restoreMissingDatabaseConnectionTarget($key, $detail, $targetType, $targetId, $prefix);
-        }
-
-        $nodeName = $this->databaseConnectionTargetNode($target)?->name;
-
-        try {
-            $this->databaseConnectionRestorer->restore($target);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'database_connection',
-                'node' => $nodeName,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'database_connection',
-            'node' => $nodeName,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Fixed {$key}.",
-            'details' => $detail,
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function restoreMissingDatabaseConnectionTarget(
-        string $key,
-        array $detail,
-        string $targetType,
-        int $targetId,
-        string $prefix,
-    ): ?array {
-        $connectionId = is_int($detail['database_connection_id'] ?? null)
-            ? $detail['database_connection_id']
-            : (is_numeric($detail['database_connection_id'] ?? null) ? (int) $detail['database_connection_id'] : null);
-
-        if ($connectionId === null) {
-            return null;
-        }
-
-        $connection = DatabaseConnection::query()->find($connectionId);
-
-        if (! $connection instanceof DatabaseConnection) {
-            return null;
-        }
-
-        DatabaseConnectionTarget::query()->create([
-            'database_connection_id' => $connection->id,
-            'env_prefix' => $prefix,
-            'instance_id' => $targetType === 'instance' ? $targetId : null,
-            'workspace_id' => $targetType === 'workspace' ? $targetId : null,
-        ]);
-
-        $nodeName = $this->databaseConnectionTargetNodeName($targetType, $targetId);
-
-        return [
-            'family' => 'database_connection',
-            'node' => $nodeName,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Fixed {$key}.",
-            'details' => $detail,
-        ];
-    }
-
-    private function databaseConnectionTargetNodeName(string $targetType, int $targetId): ?string
-    {
-        if ($targetType === 'instance') {
-            $instance = Instance::query()->with('app')->find($targetId);
-
-            return $instance instanceof Instance
-                ? $this->workspacePlacement->nodeForInstance($instance)?->name
-                : null;
-        }
-
-        if ($targetType !== 'workspace') {
-            return null;
-        }
-
-        $workspace = Workspace::query()
-            ->with(['instance.app'])
-            ->find($targetId);
-
-        return $workspace instanceof Workspace
-            ? $this->workspacePlacement->nodeForWorkspace($workspace)?->name
-            : null;
-    }
-
-    private function databaseConnectionTargetNode(DatabaseConnectionTarget $target): ?Node
-    {
-        if ($target->instance instanceof Instance) {
-            return $this->workspacePlacement->nodeForInstance($target->instance);
-        }
-
-        if ($target->workspace instanceof Workspace) {
-            return $this->workspacePlacement->nodeForWorkspace($target->workspace);
-        }
-
-        return null;
     }
 
     /**
