@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T13:27:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-inventory-ordering/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-152724-refactor-doctor-inventory-ordering",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-inventory-ordering-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-inventory-ordering-retained-incus.md": "6a00ddfd835ef3851d5c831e519236e0b106ebc21e749cc2f432c82e1cd1c9b1",
+        "loop.md": "8da5922f6892b915a5f27a9b1b2f861e725c823730f23382ac5cb0cfbffbdbbd"
+    },
+    "slug": "refactor-doctor-inventory-ordering",
+    "requested_slug": "refactor-doctor-inventory-ordering",
+    "compatible_slugs": [
+        "refactor-doctor-inventory-ordering"
+    ],
+    "branch": "refactor/doctor-inventory-ordering",
+    "candidate_commit": "528f4bb8e9318b566b1e86b471d21d3ab2e2e1b7",
+    "accepted_feature_tip": "528f4bb8e9318b566b1e86b471d21d3ab2e2e1b7",
+    "accepted_main_tip": "6bc5c1a754a6229541b6dedfcd0e8702f60fe599",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
