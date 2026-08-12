@@ -31,7 +31,6 @@ use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
-use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
@@ -80,7 +79,6 @@ final readonly class DoctorReportRunner
     public function __construct(
         private NodesProbe $nodesProbe,
         private AppsFixer $appsFixer,
-        private DatabaseConnectionProbe $databaseConnectionProbe,
         private DatabaseConnectionRestorer $databaseConnectionRestorer,
         private DatabaseConnectionAdopter $databaseConnectionAdopter,
         private DoctorProcessRestorer $processRestorer,
@@ -104,6 +102,7 @@ final readonly class DoctorReportRunner
         private DoctorToolFamilyProbe $toolFamilyProbe,
         private DoctorScheduleFamilyProbe $scheduleFamilyProbe,
         private DoctorScheduleNodeResolver $scheduleNodeResolver,
+        private DoctorDatabaseConnectionFamilyProbe $databaseConnectionFamilyProbe,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
@@ -1028,19 +1027,11 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('database_connection', $selectedFamilies, true)) {
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->databaseConnectionFamilyProbe->probe(
                 node: $node,
-                family: 'database_connection',
-                total: 1,
+                scope: $scope,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($node, $scope): void {
-                    foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
-                        $addIssue($issue);
-                    }
-
-                    $advance();
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
