@@ -9,6 +9,12 @@ use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessExpectedRuntimeUnits;
 use App\Services\Processes\ProcessRuntimeContextResolver;
+use App\Services\Processes\ProcessRuntimeObserverRegistry;
+use App\Services\Processes\ProcessRuntimeObservers\DockerProcessRuntimeObserver;
+use App\Services\Processes\ProcessRuntimeObservers\DockerSwarmProcessRuntimeObserver;
+use App\Services\Processes\ProcessRuntimeObservers\LaunchdProcessRuntimeObserver;
+use App\Services\Processes\ProcessRuntimeObservers\ProcessRuntimeObserver;
+use App\Services\Processes\ProcessRuntimeObservers\SystemdProcessRuntimeObserver;
 use App\Services\Processes\ProcessRuntimeUnitSpecFactory;
 
 it('keeps app and process family probes behind focused services', function (): void {
@@ -95,7 +101,7 @@ it('loads one app instance snapshot and removes hidden runtime service lookups',
         );
 });
 
-it('keeps runtime context and expected unit construction outside ProcessesProbe', function (): void {
+it('keeps runtime context, expected units, and live observation outside ProcessesProbe', function (): void {
     $probe = new ReflectionClass(ProcessesProbe::class);
     $dependencies = collect($probe->getConstructor()?->getParameters() ?? [])
         ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
@@ -109,7 +115,13 @@ it('keeps runtime context and expected unit construction outside ProcessesProbe'
     }
 
     expect($dependencies)
-        ->toContain(ProcessRuntimeContextResolver::class, ProcessExpectedRuntimeUnits::class)
+        ->toContain(
+            ProcessRuntimeContextResolver::class,
+            ProcessExpectedRuntimeUnits::class,
+            ProcessRuntimeObserverRegistry::class,
+        )
+        ->and(class_exists(ProcessRuntimeObserverRegistry::class))
+        ->toBeTrue()
         ->and(class_exists(ProcessRuntimeUnitSpecFactory::class))
         ->toBeTrue()
         ->and(file_get_contents($sourceFile))
@@ -121,5 +133,32 @@ it('keeps runtime context and expected unit construction outside ProcessesProbe'
             'private function expectedDockerSwarmUnitSpecs(',
             'private function expectedSystemdUnitSpecs(',
             'private function expectedLaunchdUnitSpecs(',
+            'private function introspectDocker(',
+            'private function introspectDockerSwarm(',
+            'private function introspectSystemd(',
+            'private function introspectLaunchd(',
+            'private function systemdProbeScript(',
+            'private function launchdProbeScript(',
+            'private function annotateHibernatedDockerUnits(',
+            'private function unrenderableRuntimeUnitSnapshot(',
         );
+
+    foreach ([
+        DockerProcessRuntimeObserver::class,
+        DockerSwarmProcessRuntimeObserver::class,
+        LaunchdProcessRuntimeObserver::class,
+        SystemdProcessRuntimeObserver::class,
+    ] as $observer) {
+        $reflection = new ReflectionClass($observer);
+        $observerFile = $reflection->getFileName();
+
+        if (! is_string($observerFile)) {
+            throw new LogicException("{$observer} source file is unavailable.");
+        }
+
+        expect($reflection->implementsInterface(ProcessRuntimeObserver::class))
+            ->toBeTrue()
+            ->and(file_get_contents($observerFile))
+            ->not->toContain('app(');
+    }
 });

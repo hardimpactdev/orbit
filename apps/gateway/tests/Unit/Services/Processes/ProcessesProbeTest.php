@@ -27,6 +27,7 @@ use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,10 +46,19 @@ function processes_probe(
     ?RuntimeBackendProbe $runtimeBackendProbe = null,
     ?RemoteRuntimeHibernation $runtimeHibernation = null,
 ): ProcessesProbe {
-    return app()->makeWith(ProcessesProbe::class, array_filter([
-        'runtimeBackendProbe' => $runtimeBackendProbe,
-        'runtimeHibernation' => $runtimeHibernation,
-    ]));
+    if ($runtimeBackendProbe instanceof RuntimeBackendProbe) {
+        $executor = $runtimeBackendProbe->executor();
+
+        app()->instance(RuntimeBackendProbe::class, $runtimeBackendProbe);
+        app()->instance(RunsInternalCommands::class, $executor);
+        app()->instance(ToolScriptDispatcher::class, new ToolScriptDispatcher($executor));
+    }
+
+    if ($runtimeHibernation instanceof RemoteRuntimeHibernation) {
+        app()->instance(RemoteRuntimeHibernation::class, $runtimeHibernation);
+    }
+
+    return app(ProcessesProbe::class);
 }
 
 function processesProbeWithShell(RemoteShell&RunsInternalCommands $shell): ProcessesProbe
@@ -1344,6 +1354,61 @@ describe('docker runtime probe scope', function (): void {
             ])
             ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail['reason'] ?? null)
             ->toContain('missing runtime_config.image');
+    });
+
+    it('introspects Docker Swarm services before listing extra managed services', function (): void {
+        $node = Node::factory()->database()->create(['name' => 'database-1']);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql8',
+                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime_config' => [
+                    'service_name' => 'orbit-mysql8',
+                    'spec_hash' => 'mysql-spec-hash',
+                ],
+            ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'Spec' => [
+                        'Labels' => ['orbit.process.spec_hash' => 'mysql-spec-hash'],
+                        'Mode' => ['Replicated' => ['Replicas' => 2]],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit-mysql8-old\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+
+        expect($shell->scripts)
+            ->toBe([
+                "docker service inspect --format '{{json .}}' 'orbit-mysql8'",
+                "docker service ls --filter label=orbit.managed=true --filter label=orbit.process='mysql8' --format '{{.Name}}'",
+            ])
+            ->and($snapshot->get('mysql8'))
+            ->toMatchArray([
+                'runtime_backend_available' => true,
+                'runtime_backend_exit_code' => 0,
+                'runtime_backend_output' => '',
+                'runtime_units' => [
+                    'orbit-mysql8' => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'service_replicas' => 2,
+                    ],
+                ],
+                'runtime_unit_extras' => ['orbit-mysql8-old'],
+            ]);
     });
 
     it('reports concrete service metadata for missing Docker Swarm service units', function (): void {
