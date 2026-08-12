@@ -1,0 +1,26 @@
+candidate=e997c13031d9e7fd0fc657188ad50676501ed38a
+venue=retained-incus
+environment=dev-fixture
+topology=dev-9feacb
+provider=incus
+host=192.168.6.20
+target=orbit-e2e-dev-9feacb-gateway/orbit_orbit-vpn
+
+expected=When the VPN container holds /run/xtables.lock for five seconds, Orbit waits and reapplies the four DNS forwarding rules without an xtables-lock failure. The deployed health check uses the same five-second wait and a ten-second timeout.
+
+observed=The retained topology acquired successfully. The VPN container reported iptables v1.8.11 legacy with --wait support. A background flock held /run/xtables.lock for five seconds. VpnDnsSwarmManager::convergeDnsForwarding() completed with exit 0 after 5.02 seconds. dnsForwardingReady() returned true. Docker service inspection showed all eight health-check iptables commands use -w 5 and the health-check timeout is 10 seconds.
+
+result=passed
+
+lock-contention-output:
+exit=0
+true
+real 5.02
+user 0.00
+sys 0.00
+
+deployed-healthcheck-summary:
+iptables wait occurrences=8
+wait seconds=5
+timeout nanoseconds=10000000000
+retries=6

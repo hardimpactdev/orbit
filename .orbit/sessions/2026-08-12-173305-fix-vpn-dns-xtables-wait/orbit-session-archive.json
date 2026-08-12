@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T15:33:05+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-vpn-dns-xtables-wait/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-173305-fix-vpn-dns-xtables-wait",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/vpn-dns-xtables-wait.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/vpn-dns-xtables-wait.txt": "cc7735b550a93f5f4da990f250ef0dd1d812f93182afdc53aa53714622eb3549",
+        "loop.md": "16d23f46f6979779e4722f9ccccad102b06a2aa7dd7ab9ea46ed7daf3cee7613"
+    },
+    "slug": "fix-vpn-dns-xtables-wait",
+    "requested_slug": "fix-vpn-dns-xtables-wait",
+    "compatible_slugs": [
+        "fix-vpn-dns-xtables-wait"
+    ],
+    "branch": "fix/vpn-dns-xtables-wait",
+    "candidate_commit": "e997c13031d9e7fd0fc657188ad50676501ed38a",
+    "accepted_feature_tip": "e997c13031d9e7fd0fc657188ad50676501ed38a",
+    "accepted_main_tip": "bf337f15a09952ef5bb05fae2ddb75312c483805",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

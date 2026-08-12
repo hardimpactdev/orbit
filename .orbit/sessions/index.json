@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 274,
-    "unique_candidate_commit_count": 170,
+    "record_count": 275,
+    "unique_candidate_commit_count": 171,
     "orphan_count": 0,
     "records": [
         {
@@ -7391,6 +7391,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-173305-fix-vpn-dns-xtables-wait",
+            "slug": "fix-vpn-dns-xtables-wait",
+            "timestamp": "2026-08-12-173305",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "e997c13031d9e7fd0fc657188ad50676501ed38a",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
