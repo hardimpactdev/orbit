@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 287,
-    "unique_candidate_commit_count": 183,
+    "record_count": 288,
+    "unique_candidate_commit_count": 184,
     "orphan_count": 0,
     "records": [
         {
@@ -7687,6 +7687,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "fbd1d5d8ad7a5b439e9988f3c602d73a9efcff61",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-231852-refactor-doctor-firewall-rule-restorer",
+            "slug": "refactor-doctor-firewall-rule-restorer",
+            "timestamp": "2026-08-12-231852",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "b9873556bb4ea69b43d7a0346f815b2af7f36173",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T21:18:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-firewall-rule-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-231852-refactor-doctor-firewall-rule-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-firewall-rule-restorer-dev-4b5135.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T211233Z-32036a21d979.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-firewall-rule-restorer-dev-4b5135.json": "1e4309fc1782c1b818e82e8944a08f256afd6a5205f6e1c67899c69d605b4356",
+        "loop.md": "b9fa8a27b5988ba65144d632fd2ef03fe3a2a3ee8069472b9d9f559513b6cb9c",
+        "quality-gates/quality-check-2026-08-12T211233Z-32036a21d979.json": "daadcb7d2dfecd2b9e1c7764ab8094eb8db8296f8c374f79f177a1c0820519b6"
+    },
+    "slug": "refactor-doctor-firewall-rule-restorer",
+    "requested_slug": "refactor-doctor-firewall-rule-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-firewall-rule-restorer"
+    ],
+    "branch": "refactor/doctor-firewall-rule-restorer",
+    "candidate_commit": "b9873556bb4ea69b43d7a0346f815b2af7f36173",
+    "accepted_feature_tip": "b9873556bb4ea69b43d7a0346f815b2af7f36173",
+    "accepted_main_tip": "900d6173655a5a367edb7aa4b566a576c54890f9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
