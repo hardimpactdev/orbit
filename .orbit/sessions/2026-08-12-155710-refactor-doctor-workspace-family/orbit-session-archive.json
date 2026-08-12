@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T13:57:10+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-workspace-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-155710-refactor-doctor-workspace-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-workspace-family-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-workspace-family-retained-incus.md": "8e0c113de86cb40613dcdb8f01f595ddf706b750e7850d86432d899be47a7f9b",
+        "loop.md": "79e303fb8e5cb998fe7d78c7466ed04cee6950406055b7293b71aee9374832e7"
+    },
+    "slug": "refactor-doctor-workspace-family",
+    "requested_slug": "refactor-doctor-workspace-family",
+    "compatible_slugs": [
+        "refactor-doctor-workspace-family"
+    ],
+    "branch": "refactor/doctor-workspace-family",
+    "candidate_commit": "cfc4ad1d525f1222be9621e75e336d7f8cf981f2",
+    "accepted_feature_tip": "cfc4ad1d525f1222be9621e75e336d7f8cf981f2",
+    "accepted_main_tip": "87e270cd7c446dca6caa7b82074f4948ffdba69c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
