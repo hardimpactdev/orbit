@@ -17,6 +17,7 @@ use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\Workspaces\WorkspacePlacement;
+use Illuminate\Support\Collection;
 
 final readonly class DatabaseConnectionProbe
 {
@@ -197,6 +198,7 @@ final readonly class DatabaseConnectionProbe
      */
     private function targetsForNode(Node $node, DoctorTargetScope $scope): array
     {
+        /** @var list<DatabaseConnectionTarget> $targets */
         $targets = [];
         $query = DatabaseConnectionTarget::query();
 
@@ -204,9 +206,14 @@ final readonly class DatabaseConnectionProbe
             $query->whereNull('workspace_id');
         }
 
-        foreach ($query
+        /** @var Collection<int, DatabaseConnectionTarget> $targetModels */
+        $targetModels = $query
             ->with(['connection.node', 'instance.app', 'workspace.app', 'workspace.instance'])
-            ->get() as $target) {
+            ->get()
+            ->sortBy('id')
+            ->values();
+
+        foreach ($targetModels as $target) {
             if (! $this->targetNode($target)->is($node)) {
                 continue;
             }
@@ -527,11 +534,14 @@ final readonly class DatabaseConnectionProbe
 
     private function matchingConnection(DatabaseConnectionPayload $payload, Node $node): ?DatabaseConnection
     {
-        $connections = DatabaseConnection::query()
+        /** @var Collection<int, DatabaseConnection> $connectionModels */
+        $connectionModels = DatabaseConnection::query()
             ->where('driver', $payload->driver)
-            ->get();
+            ->get()
+            ->sortBy('id')
+            ->values();
 
-        foreach ($connections as $connection) {
+        foreach ($connectionModels as $connection) {
             if ($this->connectionMatchesPayload($connection, $payload, $node)) {
                 return $connection;
             }
@@ -593,7 +603,14 @@ final readonly class DatabaseConnectionProbe
 
         $instances = [];
 
-        foreach (Instance::query()->with('app')->get() as $instance) {
+        /** @var Collection<int, Instance> $instanceModels */
+        $instanceModels = Instance::query()
+            ->with('app')
+            ->get()
+            ->sortBy('id')
+            ->values();
+
+        foreach ($instanceModels as $instance) {
             if (! $instance instanceof Instance) {
                 continue;
             }
@@ -636,9 +653,17 @@ final readonly class DatabaseConnectionProbe
             }
         }
 
-        /** @var list<Workspace> */
-        return $query
+        /** @var Collection<int, Workspace> $workspaceModels */
+        $workspaceModels = $query
             ->get()
+            ->sortBy('id')
+            ->values();
+
+        /**
+         * @var list<Workspace> $workspaces
+         * @mago-expect lint:inline-variable-return
+         */
+        $workspaces = $workspaceModels
             ->filter(
                 fn (Workspace $workspace): bool => (
                     $this->workspacePlacement->nodeForWorkspace($workspace)?->is($node) === true
@@ -646,6 +671,8 @@ final readonly class DatabaseConnectionProbe
             )
             ->values()
             ->all();
+
+        return $workspaces;
     }
 
     private function productionNodeExcludesWorkspaces(Node $node): bool

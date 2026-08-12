@@ -20,6 +20,7 @@ use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process as ProcessFacade;
@@ -34,6 +35,157 @@ beforeEach(function (): void {
 
 /** @mago-expect lint:cyclomatic-complexity */
 describe('DatabaseConnectionProbe', function (): void {
+    it('reports database target issues in stable row identity order', function (): void {
+        /** @var Node $node */
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        /** @var list<Instance> $instances */
+        $instances = [];
+
+        foreach (['first', 'second'] as $name) {
+            $path = storage_path("framework/testing/database-probe-order-{$name}");
+            File::ensureDirectoryExists($path);
+            File::put($path.'/.env', "DB_CONNECTION=pgsql\n");
+
+            $app = databaseConnectionProbeApp([
+                'node_id' => $node->id,
+                'name' => $name,
+                'path' => $path,
+            ]);
+            $instance = databaseConnectionProbeInstance($app);
+            $instances[] = $instance;
+            /** @var DatabaseConnection $connection */
+            $connection = DatabaseConnection::factory()->create([
+                'slug' => $name,
+                'driver' => 'pgsql',
+                'host' => 'db.internal',
+                'port' => 5432,
+                'database' => $name,
+                'username' => 'orbit',
+            ]);
+            DatabaseConnectionTarget::factory()
+                ->forInstance($instance)
+                ->create([
+                    'database_connection_id' => $connection->id,
+                    'env_prefix' => 'DB',
+                ]);
+        }
+
+        DB::statement('PRAGMA reverse_unordered_selects = ON');
+
+        try {
+            $issues = app(DatabaseConnectionProbe::class)->probe($node);
+
+            expect(collect($issues)->pluck('detail.target_id')->all())
+                ->toBe(array_map(static fn (Instance $instance): int => $instance->id, $instances));
+        } finally {
+            DB::statement('PRAGMA reverse_unordered_selects = OFF');
+        }
+    });
+
+    it('selects the first matching database connection by stable row identity', function (): void {
+        /** @var Node $node */
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $path = storage_path('framework/testing/database-probe-matching-connection-order');
+        File::ensureDirectoryExists($path);
+        File::put(
+            $path.'/.env',
+            "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\n",
+        );
+        databaseConnectionProbeApp([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => $path,
+        ]);
+        /** @var DatabaseConnection $firstConnection */
+        $firstConnection = DatabaseConnection::factory()->create([
+            'slug' => 'first',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+        ]);
+        DatabaseConnection::factory()->create([
+            'slug' => 'second',
+            'driver' => 'pgsql',
+            'host' => 'db.internal',
+            'port' => 5432,
+            'database' => 'docs',
+            'username' => 'orbit',
+        ]);
+
+        DB::statement('PRAGMA reverse_unordered_selects = ON');
+
+        try {
+            $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
+                ->firstWhere('key', 'database_connection.target_missing');
+
+            expect($issue)
+                ->toBeInstanceOf(DoctorIssue::class)
+                ->and($issue->detail['database_connection_id'] ?? null)
+                ->toBe($firstConnection->id);
+        } finally {
+            DB::statement('PRAGMA reverse_unordered_selects = OFF');
+        }
+    });
+
+    it('reports observed instance and workspace issues in stable row identity order', function (): void {
+        /** @var Node $node */
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+        /** @var list<Instance> $instances */
+        $instances = [];
+        /** @var list<Workspace> $workspaces */
+        $workspaces = [];
+        $env = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\n";
+
+        foreach (['first', 'second'] as $name) {
+            $path = storage_path("framework/testing/database-probe-instance-order-{$name}");
+            File::ensureDirectoryExists($path);
+            File::put($path.'/.env', $env);
+            $app = databaseConnectionProbeApp([
+                'node_id' => $node->id,
+                'name' => $name,
+                'path' => $path,
+            ]);
+            $instances[] = databaseConnectionProbeInstance($app);
+        }
+
+        /** @var App $app */
+        $app = $instances[0]->app;
+
+        foreach (['first', 'second'] as $name) {
+            $path = storage_path("framework/testing/database-probe-workspace-order-{$name}");
+            File::ensureDirectoryExists($path);
+            File::put($path.'/.env', $env);
+            /** @var Workspace $workspace */
+            $workspace = Workspace::factory()->create([
+                'app_id' => $app->id,
+                'instance_id' => $instances[0]->id,
+                'name' => $name,
+                'path' => $path,
+            ]);
+            $workspaces[] = $workspace;
+        }
+
+        DB::statement('PRAGMA reverse_unordered_selects = ON');
+
+        try {
+            $orderedTargets = collect(app(DatabaseConnectionProbe::class)->probe($node))
+                ->map(static fn (DoctorIssue $issue): array => [
+                    $issue->detail['target_type'] ?? null,
+                    $issue->detail['target_id'] ?? null,
+                ])
+                ->all();
+
+            expect($orderedTargets)->toBe([
+                ...array_map(static fn (Instance $instance): array => ['instance', $instance->id], $instances),
+                ...array_map(static fn (Workspace $workspace): array => ['workspace', $workspace->id], $workspaces),
+            ]);
+        } finally {
+            DB::statement('PRAGMA reverse_unordered_selects = OFF');
+        }
+    });
+
     it('does not inspect workspace database targets on production app nodes', function (): void {
         $node = Node::factory()
             ->appProd()

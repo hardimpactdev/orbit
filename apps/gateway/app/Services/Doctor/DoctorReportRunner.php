@@ -157,6 +157,7 @@ final readonly class DoctorReportRunner
                     $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
                 ),
             )
+            ->sortBy('id')
             ->values();
 
         /** @var Collection<int, Workspace> $workspaces */
@@ -168,7 +169,13 @@ final readonly class DoctorReportRunner
      */
     private function processesForNode(Node $node): Collection
     {
-        return $this->nodeProcesses->forNode($node, ['owner', 'instance', 'node']);
+        $processes = $this->nodeProcesses
+            ->forNode($node, ['owner', 'instance', 'node'])
+            ->sortBy('id')
+            ->values();
+
+        /** @var Collection<int, Process> $processes */
+        return $processes;
     }
 
     /**
@@ -1259,12 +1266,13 @@ final readonly class DoctorReportRunner
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
+            $firewallRules = $this->firewallRulesForNode($node);
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'firewall_rule',
-                FirewallRule::query()->with('node')->where('node_id', $node->id)->count(),
-                function (callable $advance) use ($node, &$issues): void {
-                    foreach (FirewallRule::query()->with('node')->where('node_id', $node->id)->get() as $rule) {
+                $firewallRules->count(),
+                function (callable $advance) use ($firewallRules, &$issues): void {
+                    foreach ($firewallRules as $rule) {
                         $snapshot = $this->firewallRuleProbe->introspect($rule);
 
                         foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
@@ -1300,8 +1308,9 @@ final readonly class DoctorReportRunner
 
         if (in_array('tool', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
+            $tools = $this->toolsForNode($node);
             $toolCheckTotal =
-                NodeTool::query()->where('node_id', $node->id)->count()
+                $tools->count()
                 + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
@@ -1310,8 +1319,8 @@ final readonly class DoctorReportRunner
                 $onFamilyProgress,
                 'tool',
                 $toolCheckTotal,
-                function (callable $advance) use ($node, &$issues): void {
-                    foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
+                function (callable $advance) use ($node, $tools, &$issues): void {
+                    foreach ($tools as $tool) {
                         $snapshot = $this->toolsProbe->introspect($tool);
 
                         foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
@@ -1735,6 +1744,7 @@ final readonly class DoctorReportRunner
                     $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
                 ),
             )
+            ->sortBy('id')
             ->values();
 
         return $instances;
@@ -1869,7 +1879,45 @@ final readonly class DoctorReportRunner
             );
         }
 
-        return $query->get();
+        /** @mago-expect lint:inline-variable-return */
+        $routes = $query->get()->sortBy('id')->values();
+
+        /** @var Collection<int, ProxyRoute> $routes */
+        return $routes;
+    }
+
+    /**
+     * @return Collection<int, FirewallRule>
+     */
+    private function firewallRulesForNode(Node $node): Collection
+    {
+        /** @mago-expect lint:inline-variable-return */
+        $rules = FirewallRule::query()
+            ->with('node')
+            ->where('node_id', $node->id)
+            ->get()
+            ->sortBy('id')
+            ->values();
+
+        /** @var Collection<int, FirewallRule> $rules */
+        return $rules;
+    }
+
+    /**
+     * @return Collection<int, NodeTool>
+     */
+    private function toolsForNode(Node $node): Collection
+    {
+        /** @mago-expect lint:inline-variable-return */
+        $tools = NodeTool::query()
+            ->with('node')
+            ->where('node_id', $node->id)
+            ->get()
+            ->sortBy('id')
+            ->values();
+
+        /** @var Collection<int, NodeTool> $tools */
+        return $tools;
     }
 
     /**
@@ -4230,17 +4278,29 @@ final readonly class DoctorReportRunner
     private function schedulesForNode(Node $node): Collection
     {
         if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-            return Schedule::query()
+            /** @mago-expect lint:inline-variable-return */
+            $schedules = Schedule::query()
                 ->with(['app', 'instance', 'node'])
                 ->where('enabled', true)
                 ->where('status', 'expected')
-                ->get();
+                ->get()
+                ->sortBy('id')
+                ->values();
+
+            /** @var Collection<int, Schedule> $schedules */
+            return $schedules;
         }
 
-        return $this->scheduleTargets
+        /** @mago-expect lint:inline-variable-return */
+        $schedules = $this->scheduleTargets
             ->expectedFor($node)
             ->with(['app', 'instance', 'node'])
-            ->get();
+            ->get()
+            ->sortBy('id')
+            ->values();
+
+        /** @var Collection<int, Schedule> $schedules */
+        return $schedules;
     }
 
     private function gatewayNode(): ?Node
