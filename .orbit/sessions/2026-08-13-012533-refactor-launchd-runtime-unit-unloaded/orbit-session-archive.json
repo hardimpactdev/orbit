@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T23:25:33+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-launchd-runtime-unit-unloaded/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-012533-refactor-launchd-runtime-unit-unloaded",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/launchd-runtime-unit-unloaded-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T231618Z-d2779a02f057.json"
+    ],
+    "entry_digests": {
+        "evidence/launchd-runtime-unit-unloaded-retained-incus.json": "780712a8f38d4f7b61f580ba89a4757ac4ba2dde2f5a7eb7ba60133f39d1faa1",
+        "loop.md": "44d9135222a23f60d90e98bc0b9ba1f0eb25d3af96919f11fab3791286e8ab9f",
+        "quality-gates/quality-check-2026-08-12T231618Z-d2779a02f057.json": "781774fab63161d031a480da097ff8fe136f7826a0c389e6efc69850d5e4cdff"
+    },
+    "slug": "refactor-launchd-runtime-unit-unloaded",
+    "requested_slug": "refactor-launchd-runtime-unit-unloaded",
+    "compatible_slugs": [
+        "refactor-launchd-runtime-unit-unloaded"
+    ],
+    "branch": "refactor/launchd-runtime-unit-unloaded",
+    "candidate_commit": "7c9564087a1188f0cdf3a29cfc9112a0ea0aeceb",
+    "accepted_feature_tip": "7c9564087a1188f0cdf3a29cfc9112a0ea0aeceb",
+    "accepted_main_tip": "0e4b735c6539663be87787644e0c7c315e193de0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
