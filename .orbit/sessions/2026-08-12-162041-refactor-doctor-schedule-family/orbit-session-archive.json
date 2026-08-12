@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T14:20:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-schedule-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-162041-refactor-doctor-schedule-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-schedule-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T14-15-45Z-6aa586ef60e4/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-schedule-family-retained-incus.md": "5315cfc32df5674949c2d2504a24877fb6642ba824802289eab20c31de037414",
+        "loop.md": "f192712a7dce3614ef67d0cdd3627949a205ae6b19a86ce185ae5c3052cbe421",
+        "quality-gates/profiles/2026-08-12T14-15-45Z-6aa586ef60e4/gateway_pest.junit.xml": "2614893ed9ce9167b429485cc431a8fa45ccf96937c9036e7a4767672406a6d2"
+    },
+    "slug": "refactor-doctor-schedule-family",
+    "requested_slug": "refactor-doctor-schedule-family",
+    "compatible_slugs": [
+        "refactor-doctor-schedule-family"
+    ],
+    "branch": "refactor/doctor-schedule-family",
+    "candidate_commit": "6aa586ef60e47b503cc0b8a65c9ca360bb075d0c",
+    "accepted_feature_tip": "6aa586ef60e47b503cc0b8a65c9ca360bb075d0c",
+    "accepted_main_tip": "0c8676c426c0e6a8954b1a40116c7a5ae6da1bbe",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
