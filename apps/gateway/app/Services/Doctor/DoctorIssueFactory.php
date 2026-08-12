@@ -8,6 +8,8 @@ use App\Data\Doctor\DoctorIssue;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Exceptions\DoctorIssueIdentityMismatch;
+use App\Exceptions\RemoteShellFailed;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 
 /**
  * Normalizes boundary arrays before creating the typed issue contract.
@@ -82,6 +84,31 @@ final readonly class DoctorIssueFactory
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
             'detail' => $detail ?? $entry->detail ?? [],
+        ]);
+    }
+
+    public function fromProbeFailure(
+        string $family,
+        string $node,
+        string $key,
+        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
+        string $summary,
+    ): DoctorIssue {
+        $detail = [
+            'error' => $exception->getMessage(),
+        ];
+
+        if ($exception instanceof RemoteShellFailed) {
+            $detail['exit_code'] = $exception->result->exitCode;
+        }
+
+        return $this->fromArray([
+            'family' => $family,
+            'node' => $node,
+            'key' => $key,
+            'kind' => DriftKind::Unverifiable->value,
+            'summary' => $summary,
+            'detail' => $detail,
         ]);
     }
 }

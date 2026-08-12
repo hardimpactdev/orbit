@@ -117,6 +117,7 @@ final readonly class DoctorReportRunner
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
+        private DoctorFamilyProbeRunner $familyProbeRunner,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
@@ -991,25 +992,24 @@ final readonly class DoctorReportRunner
         $issues = [];
 
         if (in_array('node', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $nodeCheckTotal =
                 2
                 + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0);
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'node',
-                $nodeCheckTotal,
-                function (callable $advance) use ($node, $key, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'node',
+                total: $nodeCheckTotal,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($node, $key): void {
                     $snapshot = $this->nodesProbe->introspect($node);
-                    $issues = [
-                        ...$issues,
-                        ...array_map(
-                            fn (DriftEntry $entry): DoctorIssue => $this->issuePayload($entry, $node),
-                            $this->nodesProbe->diff($node, $snapshot, $key),
-                        ),
-                    ];
+
+                    foreach ($this->nodesProbe->diff($node, $snapshot, $key) as $entry) {
+                        $addIssue($this->issuePayload($entry, $node));
+                    }
+
                     $advance();
 
                     // Fleet node DNS projection is only consumed by the DNS runtime on
@@ -1025,7 +1025,7 @@ final readonly class DoctorReportRunner
                     ) {
                         foreach ($this->nodeDnsProjectionSources() as $source) {
                             foreach ($this->nodeDnsProjectionProbe->drift($source) as $entry) {
-                                $issues[] = $this->nodeScopedIssuePayload($entry, $source);
+                                $addIssue($this->nodeScopedIssuePayload($entry, $source));
                             }
                         }
                     }
@@ -1036,7 +1036,7 @@ final readonly class DoctorReportRunner
 
                     if ($webSocketAssignment instanceof NodeRoleAssignment) {
                         foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
                         }
 
                         $advance();
@@ -1046,143 +1046,94 @@ final readonly class DoctorReportRunner
 
                     if ($s3Assignment instanceof NodeRoleAssignment) {
                         foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
                         }
 
                         $advance();
                     }
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'node',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'node',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('app', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $appInstances = $this->scopedInstances($this->instancesForNode($node), $scope);
             $includeNodeConfigInventory = $scope->app === null && $scope->instanceId === null;
             $appCheckTotal = $appInstances->count() + ($includeNodeConfigInventory ? 1 : 0);
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'app',
-                $appCheckTotal,
-                function (callable $advance) use ($appInstances, $includeNodeConfigInventory, $node, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'app',
+                total: $appCheckTotal,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use (
+                    $appInstances,
+                    $includeNodeConfigInventory,
+                    $node,
+                ): void {
                     $this->probeAppFamily(
                         $node,
                         $appInstances,
                         $includeNodeConfigInventory,
-                        $issues,
+                        $addIssue,
                         $advance,
                     );
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'app',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'app',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('workspace', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $workspaces = $this->workspacesForNode($node);
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'workspace',
-                $workspaces->count(),
-                function (callable $advance) use ($workspaces, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'workspace',
+                total: $workspaces->count(),
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($workspaces): void {
                     foreach ($workspaces as $workspace) {
                         $snapshot = $this->workspacesProbe->introspect($workspace);
 
                         foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
-                            $issues[] = $this->workspaceIssuePayload($entry, $workspace);
+                            $addIssue($this->workspaceIssuePayload($entry, $workspace));
                         }
 
                         $advance();
                     }
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'workspace',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'workspace',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('process', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $missingRuntimeProcessIssues = $this->missingFrankenPhpRuntimeProcessIssues($node);
             $processes = $this->processesForNode($node);
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'process',
-                count($missingRuntimeProcessIssues) + $processes->count() + 1,
-                function (callable $advance) use ($missingRuntimeProcessIssues, $node, $processes, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'process',
+                total: count($missingRuntimeProcessIssues) + $processes->count() + 1,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use (
+                    $missingRuntimeProcessIssues,
+                    $node,
+                    $processes,
+                ): void {
                     foreach ($processes as $process) {
                         $snapshot = $this->processesProbe->introspect($process);
 
                         foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
-                            $issues[] = $this->processIssuePayload($entry, $process);
+                            $addIssue($this->processIssuePayload($entry, $process));
                         }
 
                         $advance();
                     }
 
                     foreach ($missingRuntimeProcessIssues as $issue) {
-                        $issues[] = $issue;
+                        $addIssue($issue);
                         $advance();
                     }
 
@@ -1193,37 +1144,16 @@ final readonly class DoctorReportRunner
                         $runtimeContainers,
                         $this->activePhpRuntimeSlugsForNode($node),
                     ) as $entry) {
-                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                        $addIssue($this->nodeScopedIssuePayload($entry, $node));
                     }
 
                     $advance();
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'process',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'process',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $proxyRoutes = $this->proxyRoutesForScope($node, $scope);
             $proxyCheckTotal =
                 $proxyRoutes->count()
@@ -1233,81 +1163,43 @@ final readonly class DoctorReportRunner
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0);
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'proxy',
-                $proxyCheckTotal,
-                function (callable $advance) use ($node, $proxyRoutes, $scope, &$issues): void {
-                    $this->probeProxyFamily($node, $proxyRoutes, $scope, $issues, $advance);
-                },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'proxy',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'proxy',
+                total: $proxyCheckTotal,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($node, $proxyRoutes, $scope): void {
+                    $this->probeProxyFamily($node, $proxyRoutes, $scope, $addIssue, $advance);
                 },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'proxy',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $firewallRules = $this->firewallRulesForNode($node);
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'firewall_rule',
-                $firewallRules->count(),
-                function (callable $advance) use ($firewallRules, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'firewall_rule',
+                total: $firewallRules->count(),
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($firewallRules): void {
                     foreach ($firewallRules as $rule) {
                         $snapshot = $this->firewallRuleProbe->introspect($rule);
 
                         foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
-                            $issues[] = $this->firewallIssuePayload($entry, $rule);
+                            $addIssue($this->firewallIssuePayload($entry, $rule));
                         }
 
                         $advance();
                     }
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'firewall_rule',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'firewall_rule',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('tool', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $tools = $this->toolsForNode($node);
             $toolCheckTotal =
                 $tools->count()
@@ -1315,16 +1207,18 @@ final readonly class DoctorReportRunner
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'tool',
-                $toolCheckTotal,
-                function (callable $advance) use ($node, $tools, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'tool',
+                total: $toolCheckTotal,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($node, $tools): void {
                     foreach ($tools as $tool) {
                         $snapshot = $this->toolsProbe->introspect($tool);
 
                         foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                            $issues[] = $this->toolIssuePayload($entry, $tool);
+                            $addIssue($this->toolIssuePayload($entry, $tool));
                         }
 
                         $advance();
@@ -1334,7 +1228,7 @@ final readonly class DoctorReportRunner
 
                     if ($webSocketAssignment instanceof NodeRoleAssignment) {
                         foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
                         }
 
                         $advance();
@@ -1344,7 +1238,7 @@ final readonly class DoctorReportRunner
 
                     if ($s3Assignment instanceof NodeRoleAssignment) {
                         foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
                         }
 
                         $advance();
@@ -1352,55 +1246,36 @@ final readonly class DoctorReportRunner
 
                     if ($this->shouldProbeDnsRuntime($node)) {
                         foreach ($this->dnsRuntimeProbe->probe() as $entry) {
-                            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
                         }
 
                         $advance();
                     }
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'tool',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'tool',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
             $scheduleInventory = $this->schedulesForNode($node);
 
             if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
                 $scheduleInventory = collect([$node])->concat($scheduleInventory)->values();
             }
 
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'schedule',
-                $scheduleInventory->count(),
-                function (callable $advance) use ($scheduleInventory, $node, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'schedule',
+                total: $scheduleInventory->count(),
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($scheduleInventory, $node): void {
                     foreach ($scheduleInventory as $target) {
                         if ($target instanceof Node) {
                             $snapshot = $this->schedulesProbe->introspectGateway($target);
 
                             foreach ($this->schedulesProbe->diffGateway($target, $snapshot) as $entry) {
-                                $issues[] = $this->scheduleGatewayIssuePayload($entry, $node);
+                                $addIssue($this->scheduleGatewayIssuePayload($entry, $node));
                             }
 
                             $advance();
@@ -1411,72 +1286,32 @@ final readonly class DoctorReportRunner
                         $snapshot = $this->schedulesProbe->introspect($target);
 
                         foreach ($this->schedulesProbe->diff($target, $snapshot) as $entry) {
-                            $issues[] = $this->scheduleIssuePayload($entry, $target);
+                            $addIssue($this->scheduleIssuePayload($entry, $target));
                         }
 
                         $advance();
                     }
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'schedule',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'schedule',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         if (in_array('database_connection', $selectedFamilies, true)) {
-            $familyIssueOffset = count($issues);
-
-            $this->runFamilyCheckPlan(
-                $onFamilyProgress,
-                'database_connection',
-                1,
-                function (callable $advance) use ($node, $scope, &$issues): void {
+            $familyIssues = $this->familyProbeRunner->run(
+                node: $node,
+                family: 'database_connection',
+                total: 1,
+                key: $key,
+                onFamilyProgress: $onFamilyProgress,
+                probe: function (callable $addIssue, callable $advance) use ($node, $scope): void {
                     foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
-                        $issues[] = $issue;
+                        $addIssue($issue);
                     }
 
                     $advance();
                 },
-                function (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) use (
-                    $node,
-                    &$issues,
-                    $familyIssueOffset,
-                    $onFamilyProgress,
-                ): void {
-                    $this->appendFamilyProbeFailure(
-                        $node,
-                        'database_connection',
-                        $exception,
-                        $issues,
-                        $familyIssueOffset,
-                    );
-                },
             );
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                'database_connection',
-                'done',
-                $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key),
-            );
+            $issues = [...$issues, ...$familyIssues];
         }
 
         $issues = $this->filterIssuesByKey($issues, $key);
@@ -1609,34 +1444,6 @@ final readonly class DoctorReportRunner
     /**
      * @return DoctorIssue
      */
-    private function familyProbeFailedIssue(
-        Node $node,
-        string $family,
-        string $key,
-        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
-        string $summary,
-    ): DoctorIssue {
-        $detail = [
-            'error' => $exception->getMessage(),
-        ];
-
-        if ($exception instanceof RemoteShellFailed) {
-            $detail['exit_code'] = $exception->result->exitCode;
-        }
-
-        return $this->doctorIssueFactory->fromArray([
-            'family' => $family,
-            'node' => $node->name,
-            'key' => $key,
-            'kind' => DriftKind::Unverifiable->value,
-            'summary' => $summary,
-            'detail' => $detail,
-        ]);
-    }
-
-    /**
-     * @return DoctorIssue
-     */
     private function remoteShellProbeFailedIssue(
         Node $node,
         string $family,
@@ -1644,18 +1451,24 @@ final readonly class DoctorReportRunner
         RemoteShellFailed $exception,
         string $summary,
     ): DoctorIssue {
-        return $this->familyProbeFailedIssue($node, $family, $key, $exception, $summary);
+        return $this->doctorIssueFactory->fromProbeFailure(
+            family: $family,
+            node: $node->name,
+            key: $key,
+            exception: $exception,
+            summary: $summary,
+        );
     }
 
     /**
      * @param  Collection<int, Instance>  $appInstances
-     * @param  list<DoctorIssue>  $issues
+     * @param  callable(DoctorIssue): void  $addIssue
      */
     private function probeAppFamily(
         Node $node,
         Collection $appInstances,
         bool $includeNodeConfigInventory,
-        array &$issues,
+        callable $addIssue,
         callable $advance,
     ): void {
         foreach ($appInstances as $instance) {
@@ -1664,11 +1477,11 @@ final readonly class DoctorReportRunner
             $snapshot = $this->appsProbe->introspectInstance($app, $instance);
 
             foreach ($this->appsProbe->diffInstance($app, $instance, $snapshot) as $entry) {
-                $issues[] = $this->appIssuePayload($entry, $app);
+                $addIssue($this->appIssuePayload($entry, $app));
             }
 
             foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
-                $issues[] = $this->appIssuePayload($entry, $app);
+                $addIssue($this->appIssuePayload($entry, $app));
             }
 
             $advance();
@@ -1691,7 +1504,7 @@ final readonly class DoctorReportRunner
         $configSnapshot = $configProbe->configs;
 
         if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
-            $issues[] = $this->doctorIssueFactory->fromArray([
+            $addIssue($this->doctorIssueFactory->fromArray([
                 'family' => 'app',
                 'node' => $node->name,
                 'key' => 'app.runtime_config_probe_failed',
@@ -1701,7 +1514,7 @@ final readonly class DoctorReportRunner
                     'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
                     'error' => $configProbe->error,
                 ],
-            ]);
+            ]));
         } elseif ($configProbe->status === NodeRuntimeConfigsProbeStatus::Present) {
             foreach ($configSnapshot->keys() as $appSlug) {
                 if (in_array($appSlug, $activePhpAppSlugs, true)) {
@@ -1713,7 +1526,7 @@ final readonly class DoctorReportRunner
                     ? $observed['path']
                     : $this->nodeHostPaths->appRuntimeConfigPath($node, $appSlug);
 
-                $issues[] = $this->doctorIssueFactory->fromArray([
+                $addIssue($this->doctorIssueFactory->fromArray([
                     'family' => 'app',
                     'node' => $node->name,
                     'key' => 'app.runtime_config_extra',
@@ -1723,7 +1536,7 @@ final readonly class DoctorReportRunner
                         'app' => $appSlug,
                         'path' => $path,
                     ],
-                ]);
+                ]));
             }
         }
 
@@ -1922,20 +1735,20 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  Collection<int, ProxyRoute>  $routes
-     * @param  list<DoctorIssue>  $issues
+     * @param  callable(DoctorIssue): void  $addIssue
      */
     private function probeProxyFamily(
         Node $node,
         Collection $routes,
         DoctorTargetScope $scope,
-        array &$issues,
+        callable $addIssue,
         callable $advance,
     ): void {
         foreach ($routes as $route) {
             $snapshot = $this->proxyRouteProbe->introspect($route);
 
             foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
-                $issues[] = $this->proxyIssuePayload($entry, $route);
+                $addIssue($this->proxyIssuePayload($entry, $route));
             }
 
             $advance();
@@ -1943,7 +1756,7 @@ final readonly class DoctorReportRunner
 
         if ($scope->app === null && $scope->workspace === null) {
             foreach ($this->proxyRouteProbe->diffAgentToolRouteIntent($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
 
             $advance();
@@ -1951,7 +1764,7 @@ final readonly class DoctorReportRunner
 
         if ($this->shouldProbeProxyDnsProjection($node, $scope)) {
             foreach ($this->proxyDnsProjectionProbe->drift($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
 
             $advance();
@@ -1959,7 +1772,7 @@ final readonly class DoctorReportRunner
 
         if ($scope->workspace === null) {
             foreach ($this->webSocketProxyDoctorProbe->drift($node, $scope->app) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
         }
 
@@ -1967,17 +1780,17 @@ final readonly class DoctorReportRunner
 
         if ($scope->app === null && $scope->workspace === null) {
             foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
 
             foreach ($this->analyticsProxyDoctorProbe->drift($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
         }
 
         if ($scope->workspace === null) {
             foreach ($this->analyticsPublicProxyDoctorProbe->drift($node, $scope->app) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $addIssue($this->nodeScopedIssuePayload($entry, $node));
             }
         }
 
@@ -1987,11 +1800,11 @@ final readonly class DoctorReportRunner
             $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
 
             foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
-                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                $addIssue($this->doctorIssueFactory->fromDriftEntry(
                     $entry,
                     $node->name,
                     detail: $entry->detail ?? [],
-                );
+                ));
             }
 
             $advance();
@@ -2017,7 +1830,7 @@ final readonly class DoctorReportRunner
                     summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
                 );
 
-                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                $addIssue($this->doctorIssueFactory->fromDriftEntry(
                     $entry,
                     $node->name,
                     code: 'proxy.route_extra',
@@ -2025,151 +1838,29 @@ final readonly class DoctorReportRunner
                         'domain' => $domain,
                         'code' => 'proxy.route_extra',
                     ],
-                );
+                ));
             }
 
             $globalSnapshot = $this->proxyRouteProbe->introspectGlobalConfig($node);
 
             foreach ($this->proxyRouteProbe->diffGlobalConfig($node, $globalSnapshot) as $entry) {
-                $issues[] = $this->doctorIssueFactory->fromDriftEntry(
+                $addIssue($this->doctorIssueFactory->fromDriftEntry(
                     $entry,
                     $node->name,
                     detail: $entry->detail ?? [],
-                );
+                ));
             }
         } catch (RemoteShellFailed $exception) {
-            $issues[] = $this->remoteShellProbeFailedIssue(
+            $addIssue($this->remoteShellProbeFailedIssue(
                 node: $node,
                 family: 'proxy',
                 key: 'proxy.node_probe_failed',
                 exception: $exception,
                 summary: "Proxy node route scan failed on node '{$node->name}'; extra backend routes on the node cannot be detected.",
-            );
+            ));
         }
 
         $advance();
-    }
-
-    /**
-     * @param  callable(callable(): void): void  $runner
-     * @param  (callable(RemoteShellFailed|RemoteLocalExecutorTransportFailed): void)|null  $onFamilyProbeFailed
-     */
-    private function runFamilyCheckPlan(
-        ?callable $onFamilyProgress,
-        string $family,
-        int $total,
-        callable $runner,
-        ?callable $onFamilyProbeFailed = null,
-    ): void {
-        if ($total === 0) {
-            $this->reportFamilyProgress($onFamilyProgress, $family, 'running');
-
-            try {
-                $runner(static function (): void {});
-            } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
-                if ($onFamilyProbeFailed === null) {
-                    throw $exception;
-                }
-
-                $onFamilyProbeFailed($exception);
-            }
-
-            return;
-        }
-
-        $completed = 0;
-        $this->reportFamilyProgress(
-            $onFamilyProgress,
-            $family,
-            'running',
-            [],
-            [
-                'completed' => 0,
-                'total' => $total,
-            ],
-        );
-
-        $advance = function () use (&$completed, $onFamilyProgress, $family, $total): void {
-            $completed++;
-
-            if ($completed >= $total) {
-                return;
-            }
-
-            $this->reportFamilyProgress(
-                $onFamilyProgress,
-                $family,
-                'running',
-                [],
-                [
-                    'completed' => $completed,
-                    'total' => $total,
-                ],
-            );
-        };
-
-        try {
-            $runner($advance);
-        } catch (RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception) {
-            if ($onFamilyProbeFailed === null) {
-                throw $exception;
-            }
-
-            $onFamilyProbeFailed($exception);
-        }
-    }
-
-    /**
-     * @param  list<DoctorIssue>  $issues
-     */
-    private function appendFamilyProbeFailure(
-        Node $node,
-        string $family,
-        RemoteShellFailed|RemoteLocalExecutorTransportFailed $exception,
-        array &$issues,
-        int $familyIssueOffset,
-    ): void {
-        $familyIssues = array_slice($issues, $familyIssueOffset);
-        $alreadyAttributed = array_any(
-            $familyIssues,
-            static fn (DoctorIssue $issue): bool => str_ends_with($issue->key, 'probe_failed'),
-        );
-
-        if ($alreadyAttributed) {
-            return;
-        }
-
-        $issues[] = $this->familyProbeFailedIssue(
-            node: $node,
-            family: $family,
-            key: $family === 'proxy' ? 'proxy.node_probe_failed' : "{$family}.remote_shell_probe_failed",
-            exception: $exception,
-            summary: "Doctor {$family} probe failed on node '{$node->name}': {$exception->getMessage()}",
-        );
-    }
-
-    /**
-     * @param  list<DoctorIssue>  $issues
-     * @param  array{completed: int, total: int}|null  $progress
-     */
-    private function reportFamilyProgress(
-        ?callable $onFamilyProgress,
-        string $family,
-        string $phase,
-        array $issues = [],
-        ?array $progress = null,
-    ): void {
-        if ($onFamilyProgress === null) {
-            return;
-        }
-
-        $onFamilyProgress(
-            $family,
-            $phase,
-            $this->serializeIssues($issues),
-            $progress['completed'] ?? null,
-            $progress['total'] ?? null,
-        );
     }
 
     /**
