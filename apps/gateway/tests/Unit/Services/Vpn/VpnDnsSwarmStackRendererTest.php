@@ -55,6 +55,7 @@ it('renders vpn and dns as separate co-located Swarm services on a shared networ
         ->toContain('node.labels.orbit.role.gateway == true')
         ->toContain('node.labels.orbit.role.vpn == true')
         ->toContain('healthcheck:')
+        ->toContain('timeout: 10s')
         ->toContain('CMD-SHELL')
         ->toContain('getent hosts')
         ->toContain('dns_ip="$$(getent hosts')
@@ -111,7 +112,7 @@ it('renders a vpn-side dns forwarding script from wg0 to the dns service', funct
 
     expect($script)
         ->toContain("getent hosts 'orbit-dns'")
-        ->toContain('iptables -t nat')
+        ->toContain('iptables -w 5 -t nat')
         ->toContain('PREROUTING')
         ->toContain('-i wg0')
         ->toContain('-p udp')
@@ -121,6 +122,8 @@ it('renders a vpn-side dns forwarding script from wg0 to the dns service', funct
         ->toContain('MASQUERADE')
         ->not->toContain('docker restart wg-easy')
         ->not->toContain('docker restart orbit-vpn');
+
+    expect(substr_count(haystack: $script, needle: 'iptables -w 5'))->toBe(8);
 });
 
 it('renders a vpn-side dns forwarding probe script', function (): void {
@@ -128,7 +131,7 @@ it('renders a vpn-side dns forwarding probe script', function (): void {
 
     expect($script)
         ->toContain("getent hosts 'orbit-dns'")
-        ->toContain('iptables -t nat')
+        ->toContain('iptables -w 5 -t nat')
         ->toContain('-C PREROUTING')
         ->toContain('-C POSTROUTING')
         ->toContain('-i wg0')
@@ -139,6 +142,8 @@ it('renders a vpn-side dns forwarding probe script', function (): void {
         ->toContain('MASQUERADE')
         ->not->toContain(' -A ')
         ->not->toContain(' -I ');
+
+    expect(substr_count(haystack: $script, needle: 'iptables -w 5'))->toBe(4);
 });
 
 it('rejects unsafe WireGuard interface names in forwarding scripts', function (): void {

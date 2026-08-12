@@ -86,15 +86,15 @@ final readonly class VpnDnsSwarmStackRenderer
                     exit 1
                 fi
 
-                iptables -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
-                    || iptables -t nat -A PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
-                iptables -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
-                    || iptables -t nat -A PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -w 5 -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
+                    || iptables -w 5 -t nat -A PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -w 5 -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
+                    || iptables -w 5 -t nat -A PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
 
-                iptables -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
-                    || iptables -t nat -A POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
-                iptables -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
-                    || iptables -t nat -A POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -w 5 -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
+                    || iptables -w 5 -t nat -A POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -w 5 -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
+                    || iptables -w 5 -t nat -A POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
                 SH,
             escapeshellarg($dnsService),
             $dnsService,
@@ -123,10 +123,10 @@ final readonly class VpnDnsSwarmStackRenderer
                     exit 1
                 fi
 
-                iptables -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
-                iptables -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
-                iptables -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
-                iptables -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -w 5 -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -w 5 -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -w 5 -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -w 5 -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
                 SH,
             escapeshellarg($dnsService),
             $dnsService,
@@ -197,7 +197,7 @@ final readonly class VpnDnsSwarmStackRenderer
                 ),
             ),
             '      interval: 10s',
-            '      timeout: 5s',
+            '      timeout: 10s',
             '      retries: 6',
             '      start_period: 15s',
             '    deploy:',
