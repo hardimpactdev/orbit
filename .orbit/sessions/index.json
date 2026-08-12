@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 278,
-    "unique_candidate_commit_count": 174,
+    "record_count": 279,
+    "unique_candidate_commit_count": 175,
     "orphan_count": 0,
     "records": [
         {
@@ -7483,6 +7483,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-190116-refactor-doctor-adopt-runner",
+            "slug": "refactor-doctor-adopt-runner",
+            "timestamp": "2026-08-12-190116",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "bd6bd8178a44d7490d6f5c76eb46b02a03d98eac",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,

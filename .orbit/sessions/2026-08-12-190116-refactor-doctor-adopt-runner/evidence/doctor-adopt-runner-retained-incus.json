@@ -1,0 +1,39 @@
+{
+  "candidate": "bd6bd8178a44d7490d6f5c76eb46b02a03d98eac",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": "dev-5fe8c1",
+  "topology_kind": "operator_gateway_app-dev",
+  "provider": "incus",
+  "host": "192.168.6.20",
+  "ssh_user": "nckrtl",
+  "target": "orbit-e2e-dev-5fe8c1-operator:/home/orbit/orbit-run",
+  "command": "orbit doctor --node=app-dev-1 --family=node --family=proxy --family=firewall_rule --family=database_connection --adopt --json",
+  "expected": "The committed runtime checkout returns a Doctor adopt report with the selected family scope, the canonical action shape and order, and identical output on an unchanged repeat run.",
+  "observed": {
+    "launcher": "/home/orbit/orbit-run/apps/cli/orbit",
+    "candidate_file_sha256_local": "0eeecc2e54ca5d3b7dad9528859dd280d260840842dd111e5e42d24fcbed038b",
+    "candidate_file_sha256_runtime": "0eeecc2e54ca5d3b7dad9528859dd280d260840842dd111e5e42d24fcbed038b",
+    "runs": 2,
+    "exit_code_each_run": 1,
+    "exit_reason": "The retained fixture has expected unresolved drift.",
+    "mode": "adopt",
+    "healthy": false,
+    "scope_families": [
+      "node",
+      "proxy",
+      "firewall_rule",
+      "database_connection"
+    ],
+    "actions_each_run": 4,
+    "action_families": [
+      "node"
+    ],
+    "action_shape_valid": true,
+    "action_order_valid": true,
+    "output_sha256_run_1": "1331487041deacbcb9f25e08a0ca55ed3c365195d26c201c3325788d12f3f59a",
+    "output_sha256_run_2": "1331487041deacbcb9f25e08a0ca55ed3c365195d26c201c3325788d12f3f59a",
+    "outputs_identical": true
+  },
+  "result": "passed"
+}
