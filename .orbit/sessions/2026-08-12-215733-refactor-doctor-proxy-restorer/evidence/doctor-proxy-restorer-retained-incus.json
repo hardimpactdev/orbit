@@ -1,0 +1,32 @@
+{
+    "candidate": "51c3604db8502b894c0265f2e743e9e68bf9dc53",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "topology": "dev-806ece",
+    "host": "beast",
+    "host_connection": "nckrtl@192.168.6.20",
+    "target": "app-dev-1",
+    "expected": "A key-scoped proxy restore restarts a stopped managed orbit-caddy container, and a full proxy verification is healthy.",
+    "observed": {
+        "restore": {
+            "command": "orbit doctor --node=app-dev-1 --family=proxy --key=proxy.caddy_container_down --restore --json",
+            "exit_code": 0,
+            "healthy": true,
+            "fixed": 1,
+            "failed": 0,
+            "passes": 1,
+            "stop_reason": "converged",
+            "action_status": "completed"
+        },
+        "verify": {
+            "command": "orbit doctor --node=app-dev-1 --family=proxy --json",
+            "exit_code": 0,
+            "healthy": true,
+            "issues": 0,
+            "failed": 0
+        },
+        "candidate_application_file_hashes_match_runtime_overlay": true,
+        "candidate_difference_after_runtime_overlay": "The amended candidate only removes one stale static-analysis baseline entry; application files are unchanged from the runtime overlay."
+    },
+    "result": "passed"
+}

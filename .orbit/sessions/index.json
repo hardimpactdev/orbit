@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 284,
-    "unique_candidate_commit_count": 180,
+    "record_count": 285,
+    "unique_candidate_commit_count": 181,
     "orphan_count": 0,
     "records": [
         {
@@ -7618,6 +7618,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "9644168e724d1e1364a1d72edf312adf4c9aaf02",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-215733-refactor-doctor-proxy-restorer",
+            "slug": "refactor-doctor-proxy-restorer",
+            "timestamp": "2026-08-12-215733",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "51c3604db8502b894c0265f2e743e9e68bf9dc53",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

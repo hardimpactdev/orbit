@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T19:57:33+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-proxy-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-215733-refactor-doctor-proxy-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-proxy-restorer-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T195453Z-bdbaa3a92cea.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-proxy-restorer-retained-incus.json": "ed43d5b03e1de4dd0d794d4c9143dea764f3efbe7b3f3a6639da58b813be1a1d",
+        "loop.md": "7b8c5de437653d48b33ea13611ffaf46c37380de3ab7cbf439a326a10b3c177c",
+        "quality-gates/quality-check-2026-08-12T195453Z-bdbaa3a92cea.json": "2a17089442d34a9cba58522645aff74b4ae28caee3b9893499ed9d1ed2d2cd1c"
+    },
+    "slug": "refactor-doctor-proxy-restorer",
+    "requested_slug": "refactor-doctor-proxy-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-proxy-restorer"
+    ],
+    "branch": "refactor/doctor-proxy-restorer",
+    "candidate_commit": "51c3604db8502b894c0265f2e743e9e68bf9dc53",
+    "accepted_feature_tip": "51c3604db8502b894c0265f2e743e9e68bf9dc53",
+    "accepted_main_tip": "1c95f41cb4a4a670cc37ea4312daedaab41f897a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
