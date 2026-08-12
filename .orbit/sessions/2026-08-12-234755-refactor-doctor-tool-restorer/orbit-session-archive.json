@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T21:47:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-tool-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-234755-refactor-doctor-tool-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-dns-runtime-retained-incus-dev-43ead1.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T214637Z-f8230cfd8eb5.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-dns-runtime-retained-incus-dev-43ead1.json": "def0082afdccad419a57e6f4d0ae3a482eb1232ccd05fab975f926ae9721e0d8",
+        "loop.md": "9eb864111112ae3f6436d516b38ad07a58ddbcd620e87d8c4d39f3404adf52aa",
+        "quality-gates/quality-check-2026-08-12T214637Z-f8230cfd8eb5.json": "c2ca91243d883dbd18a89f5c512c49b81f186c878143b42bd817d2a54b59206a"
+    },
+    "slug": "refactor-doctor-tool-restorer",
+    "requested_slug": "refactor-doctor-tool-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-tool-restorer"
+    ],
+    "branch": "refactor/doctor-tool-restorer",
+    "candidate_commit": "fdeb5ee70a052dd362a78a692d8ecc8a8d35dc9e",
+    "accepted_feature_tip": "fdeb5ee70a052dd362a78a692d8ecc8a8d35dc9e",
+    "accepted_main_tip": "b5f8c81a140817dc3df47ee123a8781085c6e27f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

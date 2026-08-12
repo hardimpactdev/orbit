@@ -1,0 +1,52 @@
+{
+  "candidate": "fdeb5ee70a052dd362a78a692d8ecc8a8d35dc9e",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "gateway:tool.dns_container_missing",
+  "expected": "Doctor restores a missing orbit-dns service and a fresh verify is healthy.",
+  "observed": {
+    "host": "beast",
+    "ssh_user": "nckrtl",
+    "lan_ip": "192.168.6.20",
+    "host_resolution": "beast resolved to 192.168.6.20",
+    "topology": {
+      "id": "dev-43ead1",
+      "kind": "operator_gateway",
+      "provider": "incus"
+    },
+    "controlled_drift": {
+      "operation": "docker service rm orbit_orbit-dns",
+      "doctor_key": "tool.dns_container_missing",
+      "healthy": false,
+      "issues": 1,
+      "disposition": "genuine_drift",
+      "restorable": true
+    },
+    "restore": {
+      "healthy": true,
+      "mode": "restore",
+      "fixed": 1,
+      "failed": 0,
+      "passes": 1,
+      "stop_reason": "converged",
+      "action_status": "completed"
+    },
+    "fresh_verify": {
+      "healthy": true,
+      "issues": 0
+    },
+    "runtime": {
+      "service": "orbit_orbit-dns",
+      "state": "Running",
+      "config_mount": "/home/orbit/.config/orbit/dnsmasq.conf -> /etc/dnsmasq.conf (read-only)",
+      "projection_mount": "/home/orbit/.config/orbit/dnsmasq.d -> /etc/dnsmasq.d (read-only)"
+    },
+    "release": {
+      "reaped": [
+        "orbit-e2e-dev-43ead1-operator",
+        "orbit-e2e-dev-43ead1-gateway"
+      ]
+    }
+  },
+  "result": "passed"
+}
