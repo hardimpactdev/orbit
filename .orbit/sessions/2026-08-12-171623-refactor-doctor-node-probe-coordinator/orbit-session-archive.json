@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T15:16:23+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-node-probe-coordinator/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-171623-refactor-doctor-node-probe-coordinator",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-node-probe-coordinator-retained-incus.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T15-04-42Z-a5ed7ed63b19/gateway_pest.log"
+    ],
+    "entry_digests": {
+        "evidence/doctor-node-probe-coordinator-retained-incus.txt": "34d24ddfc00f542ce011b3d3c6768bd72d1875ce1a5631e91a706650e7aff5e2",
+        "loop.md": "aadfeebac7be80c2bd6559c35167c86ad7ef914ef9064e46e30e6a9e87285057",
+        "quality-gates/profiles/2026-08-12T15-04-42Z-a5ed7ed63b19/gateway_pest.log": "3e22e8302f5be7f6d5647ced2474adb42ebfc2b5320b67db6cea2a8fdf9a652f"
+    },
+    "slug": "refactor-doctor-node-probe-coordinator",
+    "requested_slug": "refactor-doctor-node-probe-coordinator",
+    "compatible_slugs": [
+        "refactor-doctor-node-probe-coordinator"
+    ],
+    "branch": "refactor/doctor-node-probe-coordinator",
+    "candidate_commit": "a5ed7ed63b1940cd376ddd013aa3fa294d856231",
+    "accepted_feature_tip": "a5ed7ed63b1940cd376ddd013aa3fa294d856231",
+    "accepted_main_tip": "1205863d26179aebdea9a5481df5c9af2b067afc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
