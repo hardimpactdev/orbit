@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T12:01:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-app-process-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-140146-refactor-doctor-app-process-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-app-process-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T115121Z-c06a49ceb432.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-app-process-family-retained-incus.md": "06e85c4cf0d2828e71dd370100b88258a5101aa020645b11f9c3d794c85d5a04",
+        "loop.md": "ce712468573a204269a55d1bdf6b2934042cef3736a59cfa19c520548bfa811c",
+        "quality-gates/quality-check-2026-08-12T115121Z-c06a49ceb432.json": "fdd49fee9ab54a76915745773d804c14b3994711a1e9f5cb02be574585422589"
+    },
+    "slug": "refactor-doctor-app-process-family",
+    "requested_slug": "refactor-doctor-app-process-family",
+    "compatible_slugs": [
+        "refactor-doctor-app-process-family"
+    ],
+    "branch": "refactor/doctor-app-process-family",
+    "candidate_commit": "018ad26fbe39d503db615a8eccab93ba9388306d",
+    "accepted_feature_tip": "018ad26fbe39d503db615a8eccab93ba9388306d",
+    "accepted_main_tip": "017dc72c7ac659cb6e6f8a2b7e1309840e7a2011",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
