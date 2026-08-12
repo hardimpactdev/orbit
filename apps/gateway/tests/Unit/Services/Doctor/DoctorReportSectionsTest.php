@@ -14,6 +14,7 @@ use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorReportSections;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -173,4 +174,64 @@ it('uses operator as the complete role set when a node has no active roles', fun
     $node = Node::factory()->create(['status' => 'active']);
 
     expect(app(DoctorReportSections::class)->roles($node))->toBe(['operator']);
+});
+
+it('preserves the local executor failed report without disposition counts', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'local-executor-failed',
+        'status' => 'active',
+    ]);
+    $method = new ReflectionMethod(DoctorReportRunner::class, 'nodeLocalExecutorProbeFailedReport');
+    $method->setAccessible(true);
+
+    $report = $method->invoke(
+        app(DoctorReportRunner::class),
+        $node,
+        ['node'],
+        null,
+        new RemoteLocalExecutorTransportFailed('agent push unavailable'),
+        DoctorTargetScope::none(),
+    );
+
+    expect($report)
+        ->toBe([
+            'healthy' => false,
+            'mode' => 'verify',
+            'scope' => [
+                'families' => ['node'],
+                'node' => 'local-executor-failed',
+                'role' => 'operator',
+                'roles' => ['operator'],
+                'self' => false,
+                'app' => null,
+                'instance' => null,
+                'workspace' => null,
+                'key' => null,
+            ],
+            'summary' => [
+                'issues' => 1,
+                'fixed' => 0,
+                'adopted' => 0,
+                'skipped' => 0,
+                'conflicts' => 0,
+                'failed' => 0,
+                'planned' => 0,
+            ],
+            'issues' => [[
+                'family' => 'node',
+                'node' => 'local-executor-failed',
+                'key' => 'node.local_executor_probe_failed',
+                'code' => 'node.local_executor_probe_failed',
+                'kind' => 'unverifiable',
+                'summary' => "Doctor probe failed on node 'local-executor-failed': agent push unavailable",
+                'detail' => ['error' => 'agent push unavailable'],
+                'disposition' => 'blocked_inspection',
+                'restore_action' => null,
+                'restorable' => false,
+                'adoptable' => false,
+            ]],
+            'actions' => [],
+        ])
+        ->and($report['summary'])
+        ->not->toHaveKey('dispositions');
 });
