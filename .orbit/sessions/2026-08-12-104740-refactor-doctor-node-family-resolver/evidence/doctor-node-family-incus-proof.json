@@ -1,0 +1,56 @@
+{
+  "candidate": "05032b16047e0794bc7ed07c20657b5653996d85",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-a9f229",
+    "kind": "operator_gateway_app-dev",
+    "host": "beast",
+    "ssh_user": "nckrtl",
+    "ssh_address": "192.168.6.20",
+    "gateway_instance": "orbit-e2e-dev-a9f229-gateway",
+    "operator_instance": "orbit-e2e-dev-a9f229-operator",
+    "app_dev_instance": "orbit-e2e-dev-a9f229-dev"
+  },
+  "solo_terminal": "solo://proj/28/process/2282",
+  "source_identity": {
+    "DoctorNodeFamilyResolver.php": "5ca7dbb518e1419ffb435e42edf4f39685c8c125657fba967cf2180e42b47b70",
+    "DoctorNodeScheduleTargets.php": "9e21de120bb2a1a4691ed7c989fa6292c25eb06a2d7c18a5db8a3c8e05d182d9",
+    "DoctorReportRunner.php": "297e2cca83c9c111f06f8fa1d410dc910969a03c0b1fe0522d56bd1cb2cfb2d0",
+    "result": "gateway checksums matched the implementation worktree"
+  },
+  "checks": [
+    {
+      "command": "orbit doctor --node=app-dev-1 --family=process --json",
+      "expected": "app-dev accepts the process family",
+      "observed": "healthy process report with roles app-dev and database",
+      "exit_code": 0
+    },
+    {
+      "command": "orbit doctor --node=app-dev-1 --family=schedule --json",
+      "expected": "app-dev without an expected schedule rejects schedule scope",
+      "observed": "family_not_in_node_scope with the resolved allowed family list",
+      "exit_code": 1
+    },
+    {
+      "command": "orbit doctor --node=gateway --family=schedule --json",
+      "expected": "gateway accepts schedule scope and runs schedule probes",
+      "observed": "schedule probe ran and reported two concrete schedule drift issues",
+      "exit_code": 1,
+      "exit_note": "Doctor uses exit 1 when it detects drift"
+    },
+    {
+      "command": "orbit doctor --all --family=process --json",
+      "expected": "fleet family selection includes active role-bearing nodes that support process",
+      "observed": "targets were app-dev-1 and gateway, both healthy for process",
+      "exit_code": 0
+    },
+    {
+      "command": "orbit doctor --node=app-dev-1 --family=not-a-family --json",
+      "expected": "unknown families fail before probing",
+      "observed": "scope_not_found",
+      "exit_code": 1
+    }
+  ],
+  "result": "passed"
+}

@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T08:47:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-node-family-resolver/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-104740-refactor-doctor-node-family-resolver",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-node-family-incus-proof.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-node-family-incus-proof.json": "44e3a7509fe844b669fd3ff99bd948dc024d3f55fc792aed8b8948be133fd62b",
+        "loop.md": "6b84f0f02442f9cb0a30f22d137d18b0ef51d6dac2a5cbd480f6d14629847c44"
+    },
+    "slug": "refactor-doctor-node-family-resolver",
+    "requested_slug": "refactor-doctor-node-family-resolver",
+    "compatible_slugs": [
+        "refactor-doctor-node-family-resolver"
+    ],
+    "branch": "refactor/doctor-node-family-resolver",
+    "candidate_commit": "05032b16047e0794bc7ed07c20657b5653996d85",
+    "accepted_feature_tip": "05032b16047e0794bc7ed07c20657b5653996d85",
+    "accepted_main_tip": "f9135a337e265c1a0f391351079efe5c15d71f40",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
