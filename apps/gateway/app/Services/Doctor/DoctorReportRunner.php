@@ -137,19 +137,25 @@ final readonly class DoctorReportRunner
      */
     private function workspacesForNode(Node $node): Collection
     {
-        $workspaces = Workspace::query()
+        /** @var Builder<Workspace> $query */
+        $query = Workspace::query();
+
+        /** @var Collection<int, Workspace> $workspaces */
+        $workspaces = $query
             ->with(['app.node', 'app.instances', 'instance'])
-            ->get()
+            ->orderBy('id')
+            ->get();
+
+        /** @var Collection<int, Workspace> $workspacesForNode */
+        $workspacesForNode = $workspaces
             ->filter(
                 fn (Workspace $workspace): bool => (
                     $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
                 ),
             )
-            ->sortBy('id')
             ->values();
 
-        /** @var Collection<int, Workspace> $workspaces */
-        return $workspaces;
+        return $workspacesForNode;
     }
 
     /**
@@ -1290,19 +1296,25 @@ final readonly class DoctorReportRunner
      */
     private function instancesForNode(Node $node): Collection
     {
+        /** @var Builder<Instance> $query */
+        $query = Instance::query();
+
         /** @var Collection<int, Instance> $instances */
-        $instances = Instance::query()
+        $instances = $query
             ->with(['app.node', 'app.instances'])
-            ->get()
+            ->orderBy('id')
+            ->get();
+
+        /** @var Collection<int, Instance> $instancesForNode */
+        $instancesForNode = $instances
             ->filter(
                 fn (Instance $instance): bool => (
                     $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
                 ),
             )
-            ->sortBy('id')
             ->values();
 
-        return $instances;
+        return $instancesForNode;
     }
 
     /**
@@ -1333,7 +1345,7 @@ final readonly class DoctorReportRunner
         }
 
         /** @mago-expect lint:inline-variable-return */
-        $routes = $query->get()->sortBy('id')->values();
+        $routes = $query->orderBy('id')->get()->values();
 
         /** @var Collection<int, ProxyRoute> $routes */
         return $routes;
@@ -1348,8 +1360,8 @@ final readonly class DoctorReportRunner
         $tools = NodeTool::query()
             ->with('node')
             ->where('node_id', $node->id)
+            ->orderBy('id')
             ->get()
-            ->sortBy('id')
             ->values();
 
         /** @var Collection<int, NodeTool> $tools */
@@ -3535,8 +3547,8 @@ final readonly class DoctorReportRunner
                 ->with(['app', 'instance', 'node'])
                 ->where('enabled', true)
                 ->where('status', 'expected')
+                ->orderBy('id')
                 ->get()
-                ->sortBy('id')
                 ->values();
 
             /** @var Collection<int, Schedule> $schedules */
@@ -3547,8 +3559,8 @@ final readonly class DoctorReportRunner
         $schedules = $this->scheduleTargets
             ->expectedFor($node)
             ->with(['app', 'instance', 'node'])
+            ->orderBy('id')
             ->get()
-            ->sortBy('id')
             ->values();
 
         /** @var Collection<int, Schedule> $schedules */

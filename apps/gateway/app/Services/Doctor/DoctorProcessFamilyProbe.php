@@ -97,9 +97,7 @@ final readonly class DoctorProcessFamilyProbe
          * @var Collection<int, Process> $processes
          */
         $processes = $this->nodeProcesses
-            ->forNode($node, ['owner', 'instance', 'node'])
-            ->sortBy('id')
-            ->values();
+            ->forNode($node, ['owner', 'instance', 'node']);
 
         return $processes;
     }

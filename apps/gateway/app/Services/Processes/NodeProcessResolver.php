@@ -32,7 +32,13 @@ final readonly class NodeProcessResolver
         /** @var list<int> $placedInstanceIds */
         $placedInstanceIds = [];
 
-        foreach (Instance::query()->with('app')->get() as $instance) {
+        /** @var Builder<Instance> $instancesQuery */
+        $instancesQuery = Instance::query();
+
+        $instances = $instancesQuery->oldest('id')->get();
+        $instances->load('app');
+
+        foreach ($instances as $instance) {
             if ($this->workspacePlacement->nodeForInstance($instance)?->is($node) !== true) {
                 continue;
             }
@@ -40,13 +46,20 @@ final readonly class NodeProcessResolver
             $placedInstanceIds[] = $instance->id;
         }
 
-        /** @var Collection<int, Process> */
-        return $this
-            ->query($node, $placedInstanceIds)
-            ->with($relations)
-            ->get()
+        $processesQuery = $this->query($node, $placedInstanceIds);
+
+        $processes = $processesQuery->oldest('id')->get();
+        $processes->load($relations);
+
+        /**
+         * @mago-expect lint:inline-variable-return
+         * @var Collection<int, Process> $processesForNode
+         */
+        $processesForNode = $processes
             ->filter(fn (Process $process): bool => $this->belongsToNode($process, $node))
             ->values();
+
+        return $processesForNode;
     }
 
     /**

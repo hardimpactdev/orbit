@@ -124,27 +124,54 @@ it('reads every node inventory in stable row identity order', function (): void 
         $runner = app(DoctorReportRunner::class);
         $scope = DoctorTargetScope::none();
 
-        expect(doctor_inventory_ids($runner, methodName: 'instancesForNode', arguments: [$node]))
+        expect(doctor_inventory_ids(
+            $runner,
+            methodName: 'instancesForNode',
+            arguments: [$node],
+            orderedTable: 'instances',
+        ))
             ->toBe($instances->pluck('id')->all())
-            ->and(doctor_inventory_ids($runner, methodName: 'workspacesForNode', arguments: [$node]))
+            ->and(doctor_inventory_ids(
+                $runner,
+                methodName: 'workspacesForNode',
+                arguments: [$node],
+                orderedTable: 'workspaces',
+            ))
             ->toBe($workspaces->pluck('id')->all())
             ->and(doctor_inventory_ids(
                 app(DoctorProcessFamilyProbe::class),
                 methodName: 'processesForNode',
                 arguments: [$node],
+                orderedTable: 'processes',
             ))
             ->toBe($processes->pluck('id')->all())
-            ->and(doctor_inventory_ids($runner, methodName: 'proxyRoutesForScope', arguments: [$node, $scope]))
+            ->and(doctor_inventory_ids(
+                $runner,
+                methodName: 'proxyRoutesForScope',
+                arguments: [$node, $scope],
+                orderedTable: 'proxy_routes',
+            ))
             ->toBe($routes->pluck('id')->all())
             ->and(doctor_inventory_ids(
                 app(DoctorFirewallRuleFamilyProbe::class),
                 methodName: 'firewallRulesForNode',
                 arguments: [$node],
+                orderedTable: 'firewall_rules',
             ))
             ->toBe($firewallRules->pluck('id')->all())
-            ->and(doctor_inventory_ids($runner, methodName: 'toolsForNode', arguments: [$node]))
+            ->and(doctor_inventory_ids(
+                $runner,
+                methodName: 'toolsForNode',
+                arguments: [$node],
+                orderedTable: 'node_tools',
+            ))
             ->toBe($tools->pluck('id')->all())
-            ->and(doctor_inventory_ids($runner, methodName: 'schedulesForNode', arguments: [$node]))
+            ->and(doctor_inventory_ids(
+                $runner,
+                methodName: 'schedulesForNode',
+                arguments: [$node],
+                orderedTable: 'schedules',
+            ))
             ->toBe($schedules->pluck('id')->all());
     } finally {
         DB::statement('PRAGMA reverse_unordered_selects = OFF');
@@ -190,6 +217,7 @@ it('reads the gateway schedule inventory in stable row identity order', function
             app(DoctorReportRunner::class),
             methodName: 'schedulesForNode',
             arguments: [$gateway],
+            orderedTable: 'schedules',
         ))->toBe([$firstSchedule->id, $secondSchedule->id]);
     } finally {
         DB::statement('PRAGMA reverse_unordered_selects = OFF');
@@ -200,13 +228,32 @@ it('reads the gateway schedule inventory in stable row identity order', function
  * @param  list<mixed>  $arguments
  * @return list<int>
  */
-function doctor_inventory_ids(object $owner, string $methodName, array $arguments): array
+function doctor_inventory_ids(object $owner, string $methodName, array $arguments, string $orderedTable): array
 {
+    $connection = DB::connection();
+    $connection->flushQueryLog();
+    $connection->enableQueryLog();
+
     $method = new ReflectionMethod($owner, $methodName);
     /** @var Collection<int, Model> $inventory */
     $inventory = $method->invokeArgs($owner, $arguments);
 
-    expect($inventory)->toBeInstanceOf(Collection::class);
+    /** @var list<array{query: string, bindings: array<int, mixed>, time: float|null}> $queries */
+    $queries = $connection->getQueryLog();
+    $connection->disableQueryLog();
+
+    $inventoryQuery = collect($queries)->first(
+        static fn (array $query): bool => str_contains(strtolower($query['query']), 'from "'.$orderedTable.'"'),
+    );
+
+    if (! is_array($inventoryQuery)) {
+        throw new RuntimeException("No query captured for [{$orderedTable}].");
+    }
+
+    expect($inventory)
+        ->toBeInstanceOf(Collection::class)
+        ->and(strtolower($inventoryQuery['query']))
+        ->toContain('order by "id" asc');
 
     return array_values(
         $inventory

@@ -59,8 +59,8 @@ final readonly class DoctorFirewallRuleFamilyProbe
         $rules = FirewallRule::query()
             ->with('node')
             ->where('node_id', $node->id)
+            ->orderBy('id')
             ->get()
-            ->sortBy('id')
             ->values();
 
         /** @var Collection<int, FirewallRule> $rules */
