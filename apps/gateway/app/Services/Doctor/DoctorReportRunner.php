@@ -83,51 +83,6 @@ final readonly class DoctorReportRunner
 
     private const array WORKSPACE_PROXY_OWNER_TYPES = ['workspace', Workspace::class];
 
-    private const array SUPPORTED_FAMILIES = [
-        'node',
-        'app',
-        'workspace',
-        'process',
-        'proxy',
-        'firewall_rule',
-        'tool',
-        'schedule',
-        'database_connection',
-    ];
-
-    private const array CONTROL_CATEGORIES = ['node'];
-
-    private const array GATEWAY_CATEGORIES = ['node', 'schedule'];
-
-    private const array APP_CATEGORIES = [
-        'node',
-        'app',
-        'workspace',
-        'process',
-        'proxy',
-        'tool',
-        'database_connection',
-    ];
-
-    private const array APP_PRODUCTION_CATEGORIES = [
-        'node',
-        'app',
-        'process',
-        'proxy',
-        'tool',
-        'database_connection',
-    ];
-
-    private const array DATABASE_CATEGORIES = ['node', 'tool', 'process'];
-
-    private const array AGENT_CATEGORIES = ['node', 'tool', 'proxy'];
-
-    private const array INGRESS_CATEGORIES = ['node', 'proxy', 'tool'];
-
-    private const array ROUTER_CATEGORIES = ['node', 'proxy'];
-
-    private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
-
     private const array VERIFIED_WEBSOCKET_RESTORE_KEYS = [
         'node.websocket.backend_cert_missing',
         'node.websocket.bind_public_interface',
@@ -139,23 +94,6 @@ final readonly class DoctorReportRunner
         'tool.dns_base_config_mismatch',
         'tool.dns_client_dns_drift',
         'tool.dns_forwarding_missing',
-    ];
-
-    private const array S3_CATEGORIES = ['node', 'tool', 'proxy'];
-
-    private const array METRICS_CATEGORIES = ['node', 'tool', 'process', 'proxy'];
-
-    private const array ROLE_CATEGORY_PRIORITY = [
-        NodeRoleName::Gateway->value,
-        NodeRoleName::AppDevelopment->value,
-        NodeRoleName::AppProduction->value,
-        NodeRoleName::Database->value,
-        NodeRoleName::Agent->value,
-        NodeRoleName::Ingress->value,
-        NodeRoleName::Router->value,
-        NodeRoleName::WebSocket->value,
-        NodeRoleName::S3->value,
-        NodeRoleName::Metrics->value,
     ];
 
     public function __construct(
@@ -180,6 +118,8 @@ final readonly class DoctorReportRunner
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private DoctorNodeFamilyResolver $nodeFamilies,
+        private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
@@ -202,7 +142,7 @@ final readonly class DoctorReportRunner
      */
     public function supportedFamilies(): array
     {
-        return self::SUPPORTED_FAMILIES;
+        return $this->nodeFamilies->supportedFamilies();
     }
 
     /**
@@ -237,20 +177,7 @@ final readonly class DoctorReportRunner
      */
     public function categoriesForRole(string $role): array
     {
-        return match ($role) {
-            'operator' => self::CONTROL_CATEGORIES,
-            NodeRoleName::Gateway->value => self::GATEWAY_CATEGORIES,
-            NodeRoleName::AppDevelopment->value => self::APP_CATEGORIES,
-            NodeRoleName::AppProduction->value => self::APP_PRODUCTION_CATEGORIES,
-            NodeRoleName::Database->value => self::DATABASE_CATEGORIES,
-            NodeRoleName::Agent->value => self::AGENT_CATEGORIES,
-            NodeRoleName::Ingress->value => self::INGRESS_CATEGORIES,
-            NodeRoleName::Router->value => self::ROUTER_CATEGORIES,
-            NodeRoleName::WebSocket->value => self::WEBSOCKET_CATEGORIES,
-            NodeRoleName::S3->value => self::S3_CATEGORIES,
-            NodeRoleName::Metrics->value => self::METRICS_CATEGORIES,
-            default => [],
-        };
+        return $this->nodeFamilies->categoriesForRole($role);
     }
 
     /**
@@ -258,63 +185,7 @@ final readonly class DoctorReportRunner
      */
     public function categoriesForNode(Node $node): array
     {
-        $categories = [];
-        $hasActiveRole = false;
-
-        foreach (self::ROLE_CATEGORY_PRIORITY as $role) {
-            if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, $role)) {
-                continue;
-            }
-
-            $hasActiveRole = true;
-            $categories = [
-                ...$categories,
-                ...$this->categoriesForRole($role),
-            ];
-        }
-
-        if (! $hasActiveRole) {
-            $hasActiveRole = $this->nodeHasAnyActiveRole($node);
-        }
-
-        if ($categories === []) {
-            $categories = self::CONTROL_CATEGORIES;
-        }
-
-        if ($hasActiveRole) {
-            $categories[] = 'process';
-        }
-
-        if (
-            $this->nodeRoleAssignments->nodeIsGateway($node)
-            && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)
-        ) {
-            $categories[] = 'tool';
-        }
-
-        if (
-            ! in_array('tool', $categories, true)
-            && NodeTool::query()->where('node_id', $node->id)->exists()
-        ) {
-            $categories[] = 'tool';
-        }
-
-        if (
-            $node->isActive()
-            && $this->isUbuntuPlatform($node)
-            && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node)
-        ) {
-            $categories[] = 'firewall_rule';
-        }
-
-        if (
-            ! in_array('schedule', $categories, true)
-            && $this->expectedSchedulesTargetingNode($node)->exists()
-        ) {
-            $categories[] = 'schedule';
-        }
-
-        return array_values(array_unique($categories));
+        return $this->nodeFamilies->categoriesForNode($node);
     }
 
     /**
@@ -330,7 +201,7 @@ final readonly class DoctorReportRunner
             ->with('roleAssignments')
             ->orderBy('name')
             ->get()
-            ->filter(fn (Node $node): bool => $this->nodeSupportsFamilies($node, $families))
+            ->filter(fn (Node $node): bool => $this->nodeFamilies->nodeSupportsFamilies($node, $families))
             ->values();
 
         return $nodes;
@@ -381,7 +252,7 @@ final readonly class DoctorReportRunner
             'healthy' => $issues === [],
             'mode' => 'verify',
             'scope' => [
-                'families' => $this->fleetFamilies($targets, $families),
+                'families' => $this->nodeFamilies->fleetFamilies($targets, $families),
                 'node' => null,
                 'role' => 'fleet',
                 'self' => false,
@@ -981,7 +852,7 @@ final readonly class DoctorReportRunner
             'healthy' => $issues === [],
             'mode' => 'verify',
             'scope' => [
-                'families' => $this->fleetFamilies($targets, $scope['families']),
+                'families' => $this->nodeFamilies->fleetFamilies($targets, $scope['families']),
                 'node' => null,
                 'role' => 'fleet',
                 'self' => false,
@@ -1026,7 +897,7 @@ final readonly class DoctorReportRunner
             }
         }
 
-        $fleetFamilies = $this->fleetFamilies($targets, $families);
+        $fleetFamilies = $this->nodeFamilies->fleetFamilies($targets, $families);
 
         $nodes = [];
 
@@ -2855,57 +2726,6 @@ final readonly class DoctorReportRunner
         );
     }
 
-    private function nodeHasAnyActiveRole(Node $node): bool
-    {
-        return $this->nodeRoleAssignments->nodeHasAnyActiveRole(
-            $node,
-            array_map(
-                static fn (NodeRoleName $role): string => $role->value,
-                NodeRoleName::cases(),
-            ),
-        );
-    }
-
-    /**
-     * @param  list<string>  $families
-     */
-    private function nodeSupportsFamilies(Node $node, array $families): bool
-    {
-        if ($families === []) {
-            return true;
-        }
-
-        $categories = $this->categoriesForNode($node);
-
-        return array_all($families, fn (string $family): bool => in_array($family, $categories, true));
-    }
-
-    /**
-     * @param  Collection<int, Node>  $targets
-     * @param  list<string>  $families
-     * @return list<string>
-     */
-    private function fleetFamilies(Collection $targets, array $families): array
-    {
-        if ($families !== []) {
-            return $families;
-        }
-
-        $resolved = [];
-
-        foreach ($targets as $node) {
-            foreach ($this->categoriesForNode($node) as $family) {
-                if (in_array($family, $resolved, true)) {
-                    continue;
-                }
-
-                $resolved[] = $family;
-            }
-        }
-
-        return $resolved;
-    }
-
     private function productionNodeWorkspaceIssue(Node $node, DoctorIssue $issue): bool
     {
         if (! $this->productionNodeExcludesWorkspaces($node)) {
@@ -4615,29 +4435,10 @@ final readonly class DoctorReportRunner
                 ->get();
         }
 
-        return $this
-            ->expectedSchedulesTargetingNode($node)
+        return $this->scheduleTargets
+            ->expectedFor($node)
             ->with(['app', 'instance', 'node'])
             ->get();
-    }
-
-    /**
-     * @return Builder<Schedule>
-     */
-    private function expectedSchedulesTargetingNode(Node $node): Builder
-    {
-        /** @var Builder<Schedule> $query */
-        $query = Schedule::query();
-        $instanceIds = $this->instancesForNode($node)->pluck('id')->all();
-
-        return $query
-            ->where('enabled', true)
-            ->where('status', 'expected')
-            ->where(static function (Builder $query) use ($node, $instanceIds): void {
-                $query
-                    ->where('node_id', $node->id)
-                    ->orWhereIn('instance_id', $instanceIds);
-            });
     }
 
     private function gatewayNode(): ?Node

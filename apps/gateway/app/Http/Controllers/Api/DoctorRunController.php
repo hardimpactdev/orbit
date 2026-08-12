@@ -81,7 +81,7 @@ final readonly class DoctorRunController implements Loggable
                 );
             }
 
-            $failure = $validator->validate($families, $runner);
+            $failure = $validator->validate($families);
 
             if ($failure instanceof DoctorValidationFailure) {
                 return response()->json([
@@ -175,7 +175,7 @@ final readonly class DoctorRunController implements Loggable
             return $this->authorizationFailed($target, 'doctor:verify', $authorization);
         }
 
-        $failure = $validator->validate($families, $runner, $target, $scope);
+        $failure = $validator->validate($families, $target, $scope);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([

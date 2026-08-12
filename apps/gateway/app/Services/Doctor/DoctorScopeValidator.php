@@ -9,12 +9,15 @@ use App\Models\Node;
 
 final readonly class DoctorScopeValidator
 {
+    public function __construct(
+        private DoctorNodeFamilyResolver $nodeFamilies,
+    ) {}
+
     /**
      * @param  list<string>  $families
      */
     public function validate(
         array $families,
-        DoctorReportRunner $runner,
         ?Node $target = null,
         ?DoctorTargetScope $scope = null,
     ): ?DoctorValidationFailure {
@@ -25,7 +28,7 @@ final readonly class DoctorScopeValidator
         }
 
         foreach ($validatedFamilies as $family) {
-            if (! in_array($family, $runner->supportedFamilies(), true)) {
+            if (! in_array($family, $this->nodeFamilies->supportedFamilies(), true)) {
                 return new DoctorValidationFailure(
                     code: 'scope_not_found',
                     message: "Doctor family '{$family}' is not available yet.",
@@ -35,7 +38,7 @@ final readonly class DoctorScopeValidator
         }
 
         if ($target instanceof Node) {
-            $allowed = $runner->categoriesForNode($target);
+            $allowed = $this->nodeFamilies->categoriesForNode($target);
 
             foreach ($validatedFamilies as $family) {
                 if (! in_array($family, $allowed, true)) {

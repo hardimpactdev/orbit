@@ -140,7 +140,7 @@ final class DoctorFixController implements Loggable
                 $this->scopeValue($request, 'workspace'),
             );
 
-        $failure = $validator->validate($families, $runner, $target, $scope);
+        $failure = $validator->validate($families, $target, $scope);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([

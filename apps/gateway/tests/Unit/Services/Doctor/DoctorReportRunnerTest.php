@@ -3356,7 +3356,6 @@ describe('DoctorReportRunner', function (): void {
 
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['process'],
-            runner: app(DoctorReportRunner::class),
             target: $node,
         );
 
@@ -3820,7 +3819,6 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['schedule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -3865,7 +3863,6 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['schedule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -3897,7 +3894,6 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['tool'],
-            runner: $runner,
             target: $node,
         );
 
@@ -3919,7 +3915,6 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['tool'],
-            runner: $runner,
             target: $node,
         );
 
@@ -3946,7 +3941,6 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['schedule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -3978,7 +3972,6 @@ describe('DoctorReportRunner firewall categories', function (): void {
         $categories = $runner->categoriesForNode($node);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['firewall_rule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -4016,7 +4009,6 @@ describe('DoctorReportRunner firewall categories', function (): void {
         $runner = app(DoctorReportRunner::class);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['firewall_rule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -4044,7 +4036,6 @@ describe('DoctorReportRunner firewall categories', function (): void {
         $categories = $runner->categoriesForNode($node);
         $failure = app(DoctorScopeValidator::class)->validate(
             families: ['firewall_rule'],
-            runner: $runner,
             target: $node,
         );
 
@@ -4084,12 +4075,10 @@ it('rejects workspace doctor family and scope on app production nodes', function
 
     $familyFailure = $validator->validate(
         families: ['workspace'],
-        runner: $runner,
         target: $node,
     );
     $scopeFailure = $validator->validate(
         families: ['app'],
-        runner: $runner,
         target: $node,
         scope: DoctorTargetScope::from('docs', 'feature', instance: 'production'),
     );
