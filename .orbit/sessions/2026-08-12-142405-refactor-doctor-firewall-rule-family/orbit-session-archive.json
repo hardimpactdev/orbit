@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T12:24:05+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-firewall-rule-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-142405-refactor-doctor-firewall-rule-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-firewall-rule-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T121608Z-5209fb765cec.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-firewall-rule-family-retained-incus.md": "8f04b7189c24bbaa7e0f77f59264428e2c1886c9ea4740518d5ca5b5037a8452",
+        "loop.md": "b14806cd284c9c545b9717a707823a65ed8e4de363d464b0e0e2b6fcc19e2efa",
+        "quality-gates/quality-check-2026-08-12T121608Z-5209fb765cec.json": "0ae403df165ac96e70bbfc63378e3d752eee1413d4a2740665fe626f107bc5a9"
+    },
+    "slug": "refactor-doctor-firewall-rule-family",
+    "requested_slug": "refactor-doctor-firewall-rule-family",
+    "compatible_slugs": [
+        "refactor-doctor-firewall-rule-family"
+    ],
+    "branch": "refactor/doctor-firewall-rule-family",
+    "candidate_commit": "3b84795bb739bb2fdf1e82c0302d24555f5b7454",
+    "accepted_feature_tip": "3b84795bb739bb2fdf1e82c0302d24555f5b7454",
+    "accepted_main_tip": "6d138cda28099ba1c1af710a27d6c197fa757a91",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
