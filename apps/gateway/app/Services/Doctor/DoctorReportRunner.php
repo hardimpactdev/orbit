@@ -12,7 +12,6 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
-use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\RemoteShellFailed;
@@ -22,7 +21,6 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
@@ -42,11 +40,9 @@ use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
-use App\Services\S3\S3DoctorProbe;
 use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Tools\ToolsFixer;
-use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
 use Closure;
@@ -92,7 +88,7 @@ final readonly class DoctorReportRunner
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
-        private DoctorFamilyProbeRunner $familyProbeRunner,
+        private DoctorNodeFamilyProbe $nodeFamilyProbe,
         private DoctorAppFamilyProbe $appFamilyProbe,
         private DoctorWorkspaceFamilyProbe $workspaceFamilyProbe,
         private DoctorProcessFamilyProbe $processFamilyProbe,
@@ -105,14 +101,11 @@ final readonly class DoctorReportRunner
         private DoctorDatabaseConnectionFamilyProbe $databaseConnectionFamilyProbe,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
-        private WebSocketDoctorProbe $webSocketDoctorProbe,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
-        private S3DoctorProbe $s3DoctorProbe,
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AnalyticsProxyDoctorProbe $analyticsProxyDoctorProbe,
         private AnalyticsPublicProxyDoctorProbe $analyticsPublicProxyDoctorProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
-        private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
@@ -895,66 +888,10 @@ final readonly class DoctorReportRunner
             : new Collection;
 
         if (in_array('node', $selectedFamilies, true)) {
-            $nodeCheckTotal =
-                2
-                + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
-                + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0);
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->nodeFamilyProbe->probe(
                 node: $node,
-                family: 'node',
-                total: $nodeCheckTotal,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($node, $key): void {
-                    $snapshot = $this->nodesProbe->introspect($node);
-
-                    foreach ($this->nodesProbe->diff($node, $snapshot, $key) as $entry) {
-                        $addIssue($this->issuePayload($entry, $node));
-                    }
-
-                    $advance();
-
-                    // Fleet node DNS projection is only consumed by the DNS runtime on
-                    // the VPN/gateway host. Probe once there (targeted and broad scopes
-                    // share this gate) and attribute each source node's fragment
-                    // mismatch to that source — never fan out the same shared artifact
-                    // path across non-consumer nodes. Skip content probes when the live
-                    // orbit-dns runtime does not mount the appion directory so
-                    // unmounted host files cannot produce false positives.
-                    if (
-                        $this->shouldProbeNodeDnsProjection($node)
-                        && $this->dnsmasqReconciler->projectionDirectoryIsMounted()
-                    ) {
-                        foreach ($this->nodeDnsProjectionSources() as $source) {
-                            foreach ($this->nodeDnsProjectionProbe->drift($source) as $entry) {
-                                $addIssue($this->nodeScopedIssuePayload($entry, $source));
-                            }
-                        }
-                    }
-
-                    $advance();
-
-                    $webSocketAssignment = $this->activeWebSocketAssignment($node);
-
-                    if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                        foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
-                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                        }
-
-                        $advance();
-                    }
-
-                    $s3Assignment = $this->activeS3Assignment($node);
-
-                    if ($s3Assignment instanceof NodeRoleAssignment) {
-                        foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
-                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                        }
-
-                        $advance();
-                    }
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1299,30 +1236,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return DoctorIssue
-     */
-    private function issuePayload(DriftEntry $entry, Node $node): DoctorIssue
-    {
-        $detail = $entry->detail ?? [];
-
-        return $this->doctorIssueFactory->fromDriftEntry($entry, $node->name, detail: $detail);
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function nodeScopedIssuePayload(DriftEntry $entry, Node $node): DoctorIssue
-    {
-        $detail = $entry->detail ?? [];
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $node->name,
-            detail: $detail,
-        );
-    }
-
-    /**
      * @param  list<string>  $families
      * @return list<array<string, mixed>>
      */
@@ -1441,53 +1354,6 @@ final readonly class DoctorReportRunner
     private function isUbuntuPlatform(Node $node): bool
     {
         return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
-    }
-
-    private function activeWebSocketAssignment(Node $node): ?NodeRoleAssignment
-    {
-        return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::WebSocket->value);
-    }
-
-    private function activeS3Assignment(Node $node): ?NodeRoleAssignment
-    {
-        return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::S3->value);
-    }
-
-    private function shouldProbeDnsRuntime(Node $node): bool
-    {
-        return (
-            $this->nodeRoleAssignments->nodeIsGateway($node) && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)
-        );
-    }
-
-    /**
-     * Node-owned dnsmasq projection content is verified only on the DNS-serving
-     * host (gateway-coupled VPN role), matching proxy DNS projection scope.
-     */
-    private function shouldProbeNodeDnsProjection(Node $node): bool
-    {
-        return $this->shouldProbeDnsRuntime($node);
-    }
-
-    /**
-     * @return list<Node>
-     */
-    private function nodeDnsProjectionSources(): array
-    {
-        /** @var Collection<int, Node> $nodes */
-        $nodes = Node::query()
-            ->with('roleAssignments')
-            ->where('status', NodeStatus::Active->value)
-            ->orderBy('id')
-            ->get();
-
-        $sources = [];
-
-        foreach ($nodes as $node) {
-            $sources[] = $node;
-        }
-
-        return $sources;
     }
 
     private function productionNodeWorkspaceIssue(Node $node, DoctorIssue $issue): bool
