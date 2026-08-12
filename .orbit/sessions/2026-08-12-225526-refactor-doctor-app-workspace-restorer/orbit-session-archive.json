@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T20:55:26+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-app-workspace-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-225526-refactor-doctor-app-workspace-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-app-workspace-restorer-dev-f3447c.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T205345Z-8e8120f1ece2.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-app-workspace-restorer-dev-f3447c.json": "66ef4bc3f323bb4c2f5f96cb6564535099b43a48735e2ce33a4bcf9ea6639d85",
+        "loop.md": "017b5ebbdb5aef86afdd8561b8df687260073ed85c6c9143563fde19aa6e8dcc",
+        "quality-gates/quality-check-2026-08-12T205345Z-8e8120f1ece2.json": "f02ac7e0f2a70a865b0e882c4dc7016b90f2659e7eb796ae7ea9f175b5ddaa7f"
+    },
+    "slug": "refactor-doctor-app-workspace-restorer",
+    "requested_slug": "refactor-doctor-app-workspace-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-app-workspace-restorer"
+    ],
+    "branch": "refactor/doctor-app-workspace-restorer",
+    "candidate_commit": "fbd1d5d8ad7a5b439e9988f3c602d73a9efcff61",
+    "accepted_feature_tip": "fbd1d5d8ad7a5b439e9988f3c602d73a9efcff61",
+    "accepted_main_tip": "12df740f52ed09e3cb4905d2781bdffef2daf12d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
