@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T23:42:36+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/docs-process-crash-notification-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-014236-docs-process-crash-notification-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T233938Z-4bee26df3676.json"
+    ],
+    "entry_digests": {
+        "loop.md": "eac07c58126009ae5ef386daf77eca9aea281fdb88c03bbfc48c395df0ea54d8",
+        "quality-gates/quality-check-2026-08-12T233938Z-4bee26df3676.json": "323bad972e00af217221ad5f8ad54e3be88e15f0e5ee7f71358322e9a37753ce"
+    },
+    "slug": "docs-process-crash-notification-contract",
+    "requested_slug": "docs-process-crash-notification-contract",
+    "compatible_slugs": [
+        "docs-process-crash-notification-contract"
+    ],
+    "branch": "docs/process-crash-notification-contract",
+    "candidate_commit": "7a3fe0940c56d2931af333cd95b8cd4a71f17855",
+    "accepted_feature_tip": "7a3fe0940c56d2931af333cd95b8cd4a71f17855",
+    "accepted_main_tip": "3fa7ce0b59f6e6c59d698bc8c7581a4213bd2be8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

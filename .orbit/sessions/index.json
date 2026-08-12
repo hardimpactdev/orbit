@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 292,
-    "unique_candidate_commit_count": 188,
+    "record_count": 293,
+    "unique_candidate_commit_count": 189,
     "orphan_count": 0,
     "records": [
         {
@@ -7807,6 +7807,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-014236-docs-process-crash-notification-contract",
+            "slug": "docs-process-crash-notification-contract",
+            "timestamp": "2026-08-13-014236",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "7a3fe0940c56d2931af333cd95b8cd4a71f17855",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
