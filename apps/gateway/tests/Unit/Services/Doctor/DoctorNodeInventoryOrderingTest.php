@@ -15,9 +15,9 @@ use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorFirewallRuleFamilyProbe;
+use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Doctor\DoctorProxyRouteInventory;
-use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScheduleFamilyProbe;
 use App\Services\Doctor\DoctorToolFamilyProbe;
 use App\Services\Doctor\DoctorWorkspaceFamilyProbe;
@@ -125,7 +125,7 @@ it('reads every node inventory in stable row identity order', function (): void 
     DB::statement('PRAGMA reverse_unordered_selects = ON');
 
     try {
-        $runner = app(DoctorReportRunner::class);
+        $runner = app(DoctorNodeProbeRunner::class);
         $scope = DoctorTargetScope::none();
 
         expect(doctor_inventory_ids(

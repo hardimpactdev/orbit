@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Services\Doctor\DoctorAppFamilyProbe;
+use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
-use App\Services\Doctor\DoctorReportRunner;
 
 it('keeps app and process family probes behind focused services', function (): void {
-    $runner = new ReflectionClass(DoctorReportRunner::class);
-    $constructor = $runner->getConstructor();
+    $coordinator = new ReflectionClass(DoctorNodeProbeRunner::class);
+    $constructor = $coordinator->getConstructor();
     $parameterTypes = collect($constructor?->getParameters() ?? [])
         ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
         ->filter()
@@ -30,10 +30,10 @@ it('keeps app and process family probes behind focused services', function (): v
 });
 
 it('loads one app instance snapshot and removes hidden runtime service lookups', function (): void {
-    $runnerFile = new ReflectionClass(DoctorReportRunner::class)->getFileName();
+    $runnerFile = new ReflectionClass(DoctorNodeProbeRunner::class)->getFileName();
 
     if (! is_string($runnerFile)) {
-        throw new LogicException('DoctorReportRunner source file is unavailable.');
+        throw new LogicException('DoctorNodeProbeRunner source file is unavailable.');
     }
 
     $runnerSource = file_get_contents($runnerFile);

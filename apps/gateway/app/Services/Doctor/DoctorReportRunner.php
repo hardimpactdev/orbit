@@ -47,7 +47,6 @@ use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
 use Closure;
 use Illuminate\Contracts\Process\InvokedProcess;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
 use LogicException;
@@ -88,17 +87,9 @@ final readonly class DoctorReportRunner
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
-        private DoctorNodeFamilyProbe $nodeFamilyProbe,
-        private DoctorAppFamilyProbe $appFamilyProbe,
-        private DoctorWorkspaceFamilyProbe $workspaceFamilyProbe,
-        private DoctorProcessFamilyProbe $processFamilyProbe,
-        private DoctorProxyFamilyProbe $proxyFamilyProbe,
+        private DoctorNodeProbeRunner $nodeProbeRunner,
         private DoctorProxyRouteInventory $proxyRouteInventory,
-        private DoctorFirewallRuleFamilyProbe $firewallRuleFamilyProbe,
-        private DoctorToolFamilyProbe $toolFamilyProbe,
-        private DoctorScheduleFamilyProbe $scheduleFamilyProbe,
         private DoctorScheduleNodeResolver $scheduleNodeResolver,
-        private DoctorDatabaseConnectionFamilyProbe $databaseConnectionFamilyProbe,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
@@ -877,114 +868,13 @@ final readonly class DoctorReportRunner
         ?callable $onFamilyProgress = null,
         ?DoctorTargetScope $scope = null,
     ): array {
-        $scope ??= DoctorTargetScope::none();
-        $roleCategories = $this->categoriesForNode($node);
-        $selectedFamilies = $families === []
-            ? $roleCategories
-            : array_values(array_intersect($families, $roleCategories));
-        $issues = [];
-        $nodeInstances = array_intersect(['app', 'process'], $selectedFamilies) !== []
-            ? $this->instancesForNode($node)
-            : new Collection;
-
-        if (in_array('node', $selectedFamilies, true)) {
-            $familyIssues = $this->nodeFamilyProbe->probe(
-                node: $node,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('app', $selectedFamilies, true)) {
-            $familyIssues = $this->appFamilyProbe->probe(
-                node: $node,
-                nodeInstances: $nodeInstances,
-                scope: $scope,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('workspace', $selectedFamilies, true)) {
-            $familyIssues = $this->workspaceFamilyProbe->probe(
-                node: $node,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('process', $selectedFamilies, true)) {
-            $familyIssues = $this->processFamilyProbe->probe(
-                node: $node,
-                nodeInstances: $nodeInstances,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('proxy', $selectedFamilies, true)) {
-            $familyIssues = $this->proxyFamilyProbe->probe(
-                node: $node,
-                scope: $scope,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('firewall_rule', $selectedFamilies, true)) {
-            $familyIssues = $this->firewallRuleFamilyProbe->probe(
-                node: $node,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('tool', $selectedFamilies, true)) {
-            $familyIssues = $this->toolFamilyProbe->probe(
-                node: $node,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('schedule', $selectedFamilies, true)) {
-            $familyIssues = $this->scheduleFamilyProbe->probe(
-                node: $node,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        if (in_array('database_connection', $selectedFamilies, true)) {
-            $familyIssues = $this->databaseConnectionFamilyProbe->probe(
-                node: $node,
-                scope: $scope,
-                key: $key,
-                onFamilyProgress: $onFamilyProgress,
-            );
-            $issues = [...$issues, ...$familyIssues];
-        }
-
-        $issues = $this->filterIssuesByKey($issues, $key);
-        $summary = $this->reportSections->summary($issues, []);
-        $summary['dispositions'] = $this->reportSections->dispositions($issues);
-
-        return [
-            'healthy' => $issues === [],
-            'mode' => 'verify',
-            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
-            'summary' => $summary,
-            'issues' => $this->reportSections->serializeIssues($issues),
-            'actions' => [],
-        ];
+        return $this->nodeProbeRunner->probe(
+            node: $node,
+            families: $families,
+            key: $key,
+            onFamilyProgress: $onFamilyProgress,
+            scope: $scope,
+        );
     }
 
     /**
@@ -1080,32 +970,6 @@ final readonly class DoctorReportRunner
             exception: $exception,
             summary: $summary,
         );
-    }
-
-    /**
-     * @return Collection<int, Instance>
-     */
-    private function instancesForNode(Node $node): Collection
-    {
-        /** @var Builder<Instance> $query */
-        $query = Instance::query();
-
-        /** @var Collection<int, Instance> $instances */
-        $instances = $query
-            ->with(['app.node', 'app.instances'])
-            ->orderBy('id')
-            ->get();
-
-        /** @var Collection<int, Instance> $instancesForNode */
-        $instancesForNode = $instances
-            ->filter(
-                fn (Instance $instance): bool => (
-                    $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
-                ),
-            )
-            ->values();
-
-        return $instancesForNode;
     }
 
     /**

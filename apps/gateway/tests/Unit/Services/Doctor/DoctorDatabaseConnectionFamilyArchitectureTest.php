@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\Doctor\DoctorDatabaseConnectionFamilyProbe;
-use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorNodeProbeRunner;
 
 it('keeps database connection verification behind a focused family service', function (): void {
-    $runner = new ReflectionClass(DoctorReportRunner::class);
-    $constructor = $runner->getConstructor();
+    $coordinator = new ReflectionClass(DoctorNodeProbeRunner::class);
+    $constructor = $coordinator->getConstructor();
     $parameterTypes = collect($constructor?->getParameters() ?? [])
         ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
         ->filter()
@@ -25,11 +25,11 @@ it('keeps database connection verification behind a focused family service', fun
     )->toBeTrue();
 });
 
-it('removes database connection verification dispatch from the report runner', function (): void {
-    $runnerFile = new ReflectionClass(DoctorReportRunner::class)->getFileName();
+it('keeps database connection verification dispatch in the node probe coordinator', function (): void {
+    $runnerFile = new ReflectionClass(DoctorNodeProbeRunner::class)->getFileName();
 
     if (! is_string($runnerFile)) {
-        throw new LogicException('DoctorReportRunner source file is unavailable.');
+        throw new LogicException('DoctorNodeProbeRunner source file is unavailable.');
     }
 
     $runnerSource = file_get_contents($runnerFile);

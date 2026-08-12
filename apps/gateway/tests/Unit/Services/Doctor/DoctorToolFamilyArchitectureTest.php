@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorToolFamilyProbe;
 
 it('keeps tool verification behind a focused family service', function (): void {
-    $runner = new ReflectionClass(DoctorReportRunner::class);
-    $constructor = $runner->getConstructor();
+    $coordinator = new ReflectionClass(DoctorNodeProbeRunner::class);
+    $constructor = $coordinator->getConstructor();
     $parameterTypes = collect($constructor?->getParameters() ?? [])
         ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
         ->filter()
@@ -26,11 +26,11 @@ it('keeps tool verification behind a focused family service', function (): void 
         ->toBeTrue();
 });
 
-it('removes tool verification and inventory from the report runner', function (): void {
-    $runnerFile = new ReflectionClass(DoctorReportRunner::class)->getFileName();
+it('keeps tool dispatch in the coordinator without family inventory details', function (): void {
+    $runnerFile = new ReflectionClass(DoctorNodeProbeRunner::class)->getFileName();
 
     if (! is_string($runnerFile)) {
-        throw new LogicException('DoctorReportRunner source file is unavailable.');
+        throw new LogicException('DoctorNodeProbeRunner source file is unavailable.');
     }
 
     $runnerSource = file_get_contents($runnerFile);
