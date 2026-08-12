@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Collection;
 
 final readonly class DoctorFleetNodeProjection
 {
     public function __construct(
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private DoctorReportSections $reportSections,
     ) {}
 
     /**
@@ -22,12 +21,11 @@ final readonly class DoctorFleetNodeProjection
     {
         $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
         $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
-        $roles = $this->nodeRoleAssignments->activeRoleNames($node);
 
         return [
             'node' => $node->name,
             'role' => $node->displayRole(),
-            'roles' => $roles === [] ? ['operator'] : $roles,
+            'roles' => $this->reportSections->roles($node),
             'healthy' => ($report['healthy'] ?? false) === true,
             'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
             'summary' => $reportSummary,

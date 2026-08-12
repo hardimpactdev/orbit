@@ -35,7 +35,39 @@ it('exposes all active roles in stable order on single-node doctor scope', funct
         familyStatuses: ['node' => 'queued', 'tool' => 'queued'],
     );
 
-    expect($report['scope']['role'])->toBe('agent')->and($report['scope']['roles'])->toBe(['agent', 'gateway']);
+    expect($report)->toBe([
+        'healthy' => false,
+        'mode' => 'verify',
+        'scope' => [
+            'families' => ['node', 'tool'],
+            'node' => 'gateway-agent-1',
+            'role' => 'agent',
+            'roles' => ['agent', 'gateway'],
+            'self' => false,
+            'app' => null,
+            'instance' => null,
+            'workspace' => null,
+            'key' => null,
+        ],
+        'summary' => [
+            'issues' => 0,
+            'fixed' => 0,
+            'adopted' => 0,
+            'skipped' => 0,
+            'conflicts' => 0,
+            'failed' => 0,
+            'planned' => 0,
+        ],
+        'issues' => [],
+        'actions' => [],
+        'progress' => [
+            'state' => 'running',
+            'families' => [
+                ['family' => 'node', 'status' => 'queued'],
+                ['family' => 'tool', 'status' => 'queued'],
+            ],
+        ],
+    ]);
 });
 
 it('exposes complete roles on fleet node summaries while keeping role=fleet on fleet scope', function (): void {

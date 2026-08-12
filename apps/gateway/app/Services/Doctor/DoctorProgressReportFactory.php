@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Data\Doctor\DoctorTargetScope;
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final class DoctorProgressReportFactory
 {
+    public function __construct(
+        private readonly DoctorReportSections $reportSections,
+    ) {}
+
     /**
      * @param  list<string>  $families
      * @return array<string, string>
@@ -50,20 +53,17 @@ final class DoctorProgressReportFactory
         return [
             'healthy' => false,
             'mode' => $mode,
-            'scope' => [
-                'families' => $families,
-                'node' => $target->name,
-                'role' => $target->displayRole(),
-                'roles' => ($roles = app(NodeRoleAssignments::class)->activeRoleNames($target)) === []
-                    ? ['operator']
-                    : $roles,
-                'self' => false,
-                'app' => $app,
-                'instance' => $instance,
-                'workspace' => $workspace,
-                'key' => $key,
-            ],
-            'summary' => $this->summary($mode, $issues, $actions),
+            'scope' => $this->reportSections->nodeScope(
+                families: $families,
+                node: $target,
+                key: $key,
+                scope: new DoctorTargetScope(
+                    app: $app,
+                    workspace: $workspace,
+                    instance: $instance,
+                ),
+            ),
+            'summary' => $this->reportSections->progressSummary($mode, $issues, $actions),
             'issues' => $issues,
             'actions' => $actions,
             'progress' => [
@@ -86,47 +86,6 @@ final class DoctorProgressReportFactory
                     $families,
                 ),
             ],
-        ];
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $issues
-     * @param  list<array<string, mixed>>  $actions
-     * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int, planned: int}
-     */
-    private function summary(string $mode, array $issues, array $actions): array
-    {
-        $fixed = count(array_filter(
-            $actions,
-            fn (array $action): bool => in_array($action['mode'] ?? $mode, ['fix', 'restore'], true)
-            && ($action['status'] ?? null) === 'completed',
-        ));
-        $adopted = count(array_filter(
-            $actions,
-            fn (array $action): bool => ($action['mode'] ?? $mode) === 'adopt'
-            && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true),
-        ));
-
-        return [
-            'issues' => count($issues),
-            'fixed' => $fixed,
-            'adopted' => $adopted,
-            'skipped' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'skipped',
-            )),
-            'conflicts' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'conflict',
-            )),
-            'failed' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'failed',
-            )),
-            'planned' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'planned',
-            )),
         ];
     }
 }

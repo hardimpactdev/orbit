@@ -12,7 +12,6 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
-use App\Enums\DoctorIssueDisposition;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
@@ -133,6 +132,7 @@ final readonly class DoctorReportRunner
         private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
+        private DoctorReportSections $reportSections,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
@@ -253,24 +253,12 @@ final readonly class DoctorReportRunner
         $issues = $state->issues;
         $nodes = $state->nodes;
 
-        $summary = $this->summary('verify', $issues, []);
+        $summary = $this->reportSections->summary($issues, []);
 
         return [
             'healthy' => $issues === [],
             'mode' => 'verify',
-            'scope' => [
-                'families' => $this->nodeFamilies->fleetFamilies($targets, $families),
-                'node' => null,
-                'role' => 'fleet',
-                'self' => false,
-                'app' => null,
-                'workspace' => null,
-                'key' => $key,
-                'targets' => $targets
-                    ->map(fn (Node $node): string => $node->name)
-                    ->values()
-                    ->all(),
-            ],
+            'scope' => $this->reportSections->fleetScope($targets, $families, $key),
             'summary' => $summary,
             'issues' => $issues,
             'actions' => [],
@@ -661,20 +649,8 @@ final readonly class DoctorReportRunner
         return [
             'healthy' => $issues === [],
             'mode' => 'verify',
-            'scope' => [
-                'families' => $this->nodeFamilies->fleetFamilies($targets, $scope['families']),
-                'node' => null,
-                'role' => 'fleet',
-                'self' => false,
-                'app' => null,
-                'workspace' => null,
-                'key' => $scope['key'],
-                'targets' => $targets
-                    ->map(fn (Node $node): string => $node->name)
-                    ->values()
-                    ->all(),
-            ],
-            'summary' => $this->summary('verify', $issues, []),
+            'scope' => $this->reportSections->fleetScope($targets, $scope['families'], $scope['key']),
+            'summary' => $this->reportSections->summary($issues, []),
             'issues' => $issues,
             'actions' => [],
             'nodes' => $this->fleetProgressNodes($targets, $scope['families'], $nodes),
@@ -715,7 +691,7 @@ final readonly class DoctorReportRunner
             $nodes[] = $completedByName[$target->name] ?? [
                 'node' => $target->name,
                 'role' => $target->displayRole(),
-                'roles' => $this->nodeRoles($target),
+                'roles' => $this->reportSections->roles($target),
                 'healthy' => true,
                 'families' => $fleetFamilies,
                 'summary' => ['issues' => 0],
@@ -909,30 +885,6 @@ final readonly class DoctorReportRunner
         ];
 
         return $report;
-    }
-
-    /**
-     * @param  list<DoctorIssue>  $issues
-     * @return array<string, int>
-     */
-    private function dispositionCounts(array $issues): array
-    {
-        $counts = [
-            DoctorIssueDisposition::GenuineDrift->value => 0,
-            DoctorIssueDisposition::BlockedInspection->value => 0,
-            DoctorIssueDisposition::InvalidIntent->value => 0,
-            DoctorIssueDisposition::RuntimeIncident->value => 0,
-        ];
-
-        foreach ($issues as $issue) {
-            $disposition = $issue->disposition->value;
-
-            if (array_key_exists($disposition, $counts)) {
-                $counts[$disposition]++;
-            }
-        }
-
-        return $counts;
     }
 
     /**
@@ -1315,15 +1267,15 @@ final readonly class DoctorReportRunner
         }
 
         $issues = $this->filterIssuesByKey($issues, $key);
-        $summary = $this->summary('verify', $issues, []);
-        $summary['dispositions'] = $this->dispositionCounts($issues);
+        $summary = $this->reportSections->summary($issues, []);
+        $summary['dispositions'] = $this->reportSections->dispositions($issues);
 
         return [
             'healthy' => $issues === [],
             'mode' => 'verify',
-            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
+            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $this->serializeIssues($issues),
+            'issues' => $this->reportSections->serializeIssues($issues),
             'actions' => [],
         ];
     }
@@ -1352,15 +1304,15 @@ final readonly class DoctorReportRunner
             summary: "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
         );
         $issues = $this->filterIssuesByKey([$issue], $key);
-        $summary = $this->summary('verify', $issues, []);
-        $summary['dispositions'] = $this->dispositionCounts($issues);
+        $summary = $this->reportSections->summary($issues, []);
+        $summary['dispositions'] = $this->reportSections->dispositions($issues);
 
         return [
             'healthy' => false,
             'mode' => 'verify',
-            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
+            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $this->serializeIssues($issues),
+            'issues' => $this->reportSections->serializeIssues($issues),
             'actions' => [],
         ];
     }
@@ -1392,53 +1344,16 @@ final readonly class DoctorReportRunner
             ],
         ]);
         $issues = $this->filterIssuesByKey([$issue], $key);
-        $summary = $this->summary('verify', $issues, []);
+        $summary = $this->reportSections->summary($issues, []);
 
         return [
             'healthy' => false,
             'mode' => 'verify',
-            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
+            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
-            'issues' => $this->serializeIssues($issues),
+            'issues' => $this->reportSections->serializeIssues($issues),
             'actions' => [],
         ];
-    }
-
-    /**
-     * @param  list<string>  $families
-     * @return array{families: list<string>, node: string, role: string, roles: list<string>, self: false, app: string|null, instance: string|null, workspace: string|null, key: string|null}
-     */
-    private function reportScope(
-        array $families,
-        Node $node,
-        ?string $key,
-        DoctorTargetScope $scope,
-    ): array {
-        return [
-            'families' => $families,
-            'node' => $node->name,
-            'role' => $node->displayRole(),
-            'roles' => $this->nodeRoles($node),
-            'self' => false,
-            'app' => $scope->app,
-            'instance' => $scope->instance,
-            'workspace' => $scope->workspace,
-            'key' => $key,
-        ];
-    }
-
-    /**
-     * Active canonical roles in stable sorted order. Operator nodes with no
-     * active role assignment surface as `['operator']` so consumers always
-     * receive a complete role set alongside the legacy primary `role` field.
-     *
-     * @return list<string>
-     */
-    private function nodeRoles(Node $node): array
-    {
-        $roles = app(NodeRoleAssignments::class)->activeRoleNames($node);
-
-        return $roles === [] ? ['operator'] : $roles;
     }
 
     /**
@@ -1940,7 +1855,7 @@ final readonly class DoctorReportRunner
             $result = $this->nodeConverger->applyIssues(
                 $node,
                 NodeConvergenceContext::Restore,
-                $this->serializeIssues($convergenceRestoreIssues),
+                $this->reportSections->serializeIssues($convergenceRestoreIssues),
             );
             $actions = [
                 ...$actions,
@@ -1967,8 +1882,8 @@ final readonly class DoctorReportRunner
         $remainingIssues = $authoritativeObservation
             ? $issues
             : $this->remainingIssues($issues, $actions);
-        $summary = $this->summary($mode, $remainingIssues, $actions);
-        $summary['dispositions'] = $this->dispositionCounts($remainingIssues);
+        $summary = $this->reportSections->summary($remainingIssues, $actions);
+        $summary['dispositions'] = $this->reportSections->dispositions($remainingIssues);
 
         $result = [
             ...$probe,
@@ -1979,7 +1894,7 @@ final readonly class DoctorReportRunner
                     && $summary['skipped'] === 0,
             'mode' => $mode,
             'summary' => $summary,
-            'issues' => $this->serializeIssues($remainingIssues),
+            'issues' => $this->reportSections->serializeIssues($remainingIssues),
             'actions' => $actions,
         ];
 
@@ -3612,18 +3527,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  list<DoctorIssue>  $issues
-     * @return list<array<string, mixed>>
-     */
-    private function serializeIssues(array $issues): array
-    {
-        return array_map(
-            static fn (DoctorIssue $issue): array => $issue->toArray(),
-            $issues,
-        );
-    }
-
-    /**
      * @param  array<string, mixed>  $item
      */
     private function stringValue(array $item, string $key): ?string
@@ -4096,48 +3999,6 @@ final readonly class DoctorReportRunner
                 ...$issue->detail,
                 'dry_run' => true,
             ],
-        ];
-    }
-
-    /**
-     * @param  list<mixed>  $issues
-     * @param  list<array<string, mixed>>  $actions
-     * @return array{issues: int, fixed: int, adopted: int, skipped: int, conflicts: int, failed: int, planned: int}
-     */
-    private function summary(string $mode, array $issues, array $actions): array
-    {
-        return [
-            'issues' => count($issues),
-            'fixed' => count(array_filter(
-                $actions,
-                fn (array $action): bool => in_array($action['mode'] ?? null, ['fix', 'restore'], true)
-                && ($action['status'] ?? null) === 'completed',
-            )),
-            'adopted' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['mode'] ?? null) === 'adopt'
-                && in_array(
-                    needle: $action['status'] ?? null,
-                    haystack: ['completed', 'created', 'updated'],
-                    strict: true,
-                ),
-            )),
-            'skipped' => count(array_filter(
-                $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'skipped',
-            )),
-            'conflicts' => count(array_filter(
-                $actions,
-                static fn (array $action): bool => ($action['status'] ?? null) === 'conflict',
-            )),
-            'failed' => count(array_filter(
-                $actions,
-                static fn (array $action): bool => ($action['status'] ?? null) === 'failed',
-            )),
-            'planned' => count(array_filter(
-                $actions,
-                static fn (array $action): bool => ($action['status'] ?? null) === 'planned',
-            )),
         ];
     }
 }
