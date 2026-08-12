@@ -122,7 +122,7 @@ final readonly class DoctorNodeFamilyResolver
         $categoriesByRole = array_map($this->categoriesForRole(...), $activeRoles);
         $roleCategories = array_merge(...$categoriesByRole);
         $categories = $roleCategories === [] ? self::CONTROL_CATEGORIES : $roleCategories;
-        $hasActiveRole = $this->nodeHasAnyActiveRole($node);
+        $hasActiveRole = $activeRoles !== [] || $this->nodeHasAnyActiveRole($node);
         $overlays = array_keys(array_filter(
             [
                 'process' => $hasActiveRole,
