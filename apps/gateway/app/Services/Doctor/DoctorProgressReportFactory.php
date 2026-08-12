@@ -7,10 +7,10 @@ namespace App\Services\Doctor;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Models\Node;
 
-final class DoctorProgressReportFactory
+final readonly class DoctorProgressReportFactory
 {
     public function __construct(
-        private readonly DoctorReportSections $reportSections,
+        private DoctorReportSections $reportSections,
     ) {}
 
     /**

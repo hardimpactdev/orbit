@@ -58,6 +58,12 @@ final readonly class DoctorReportSections
      */
     public function fleetScope(Collection $targets, array $families, ?string $key): array
     {
+        /** @var list<string> $targetNames */
+        $targetNames = $targets
+            ->map(static fn (Node $node): string => $node->name)
+            ->values()
+            ->all();
+
         return [
             'families' => $this->nodeFamilies->fleetFamilies($targets, $families),
             'node' => null,
@@ -66,10 +72,7 @@ final readonly class DoctorReportSections
             'app' => null,
             'workspace' => null,
             'key' => $key,
-            'targets' => $targets
-                ->map(static fn (Node $node): string => $node->name)
-                ->values()
-                ->all(),
+            'targets' => $targetNames,
         ];
     }
 
