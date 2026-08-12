@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T16:14:17+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-fleet-probe/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-181417-refactor-doctor-fleet-probe",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-fleet-target-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T16-02-24Z-01f598f5b4ce/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-fleet-target-retained-incus.md": "9ce8a67ed2ecd678ae7fc9a97200711f40a5d477fc390de9be18b39de2f02c75",
+        "loop.md": "7e7c4feab18148acf9c56749724b2a19d21fd7f09114319455ef4c3fc4117ade",
+        "quality-gates/profiles/2026-08-12T16-02-24Z-01f598f5b4ce/gateway_pest.junit.xml": "4308fa5f1a60e118a0e9652da489a81918ae58644d289b95b1378f51f393306a"
+    },
+    "slug": "refactor-doctor-fleet-probe",
+    "requested_slug": "refactor-doctor-fleet-probe",
+    "compatible_slugs": [
+        "refactor-doctor-fleet-probe"
+    ],
+    "branch": "refactor/doctor-fleet-probe",
+    "candidate_commit": "01f598f5b4ce33d74a63384776158c43b9f0b1d5",
+    "accepted_feature_tip": "01f598f5b4ce33d74a63384776158c43b9f0b1d5",
+    "accepted_main_tip": "07cd2b6cd9bd402d7bcdc2ef4f705121aab99fe8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
