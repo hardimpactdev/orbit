@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T14:30:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-database-connection-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-163019-refactor-doctor-database-connection-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-database-connection-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T14-24-40Z-e9f414d40112/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-database-connection-family-retained-incus.md": "46b87088c19c29a22a481d0abb55194cff519133cf6b1211bc01c556b3466399",
+        "loop.md": "c62d54a8080ff15e2862347795b53246c3c24866047bdd77731b21ea57f08950",
+        "quality-gates/profiles/2026-08-12T14-24-40Z-e9f414d40112/gateway_pest.junit.xml": "1332a82a461dda7c7c5bd6825b1afceeb3c8cd7367e1373f2928bbe78872e3d0"
+    },
+    "slug": "refactor-doctor-database-connection-family",
+    "requested_slug": "refactor-doctor-database-connection-family",
+    "compatible_slugs": [
+        "refactor-doctor-database-connection-family"
+    ],
+    "branch": "refactor/doctor-database-connection-family",
+    "candidate_commit": "e9f414d401126965ffa7f3da7eab132356587429",
+    "accepted_feature_tip": "e9f414d401126965ffa7f3da7eab132356587429",
+    "accepted_main_tip": "021a1238efef1096ed1cc3d5f165aec85a725fa7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
