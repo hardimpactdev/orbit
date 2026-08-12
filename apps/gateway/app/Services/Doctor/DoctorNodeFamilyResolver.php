@@ -163,6 +163,19 @@ final readonly class DoctorNodeFamilyResolver
     }
 
     /**
+     * @param  list<string>  $families
+     * @return list<string>
+     */
+    public function selectedFamiliesForNode(Node $node, array $families): array
+    {
+        $nodeFamilies = $this->categoriesForNode($node);
+
+        return $families === []
+            ? $nodeFamilies
+            : array_values(array_intersect($families, $nodeFamilies));
+    }
+
+    /**
      * @param  Collection<int, Node>  $targets
      * @param  list<string>  $families
      * @return list<string>
