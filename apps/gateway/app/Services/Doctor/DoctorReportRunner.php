@@ -17,7 +17,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
-use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
@@ -26,12 +25,10 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\S3\S3ProxyDoctorProbe;
-use App\Services\Schedules\SchedulesFixer;
 use App\Services\Tools\ToolsFixer;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -68,14 +65,12 @@ final readonly class DoctorReportRunner
         private ProxyRouteAdopter $proxyRouteAdopter,
         private NodeConverger $nodeConverger,
         private ToolsFixer $toolsFixer,
-        private SchedulesFixer $schedulesFixer,
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private DoctorScheduleRestorer $scheduleRestorer,
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorNodeProbeRunner $nodeProbeRunner,
         private DoctorFleetProbeRunner $fleetProbeRunner,
         private DoctorFleetTargetProbe $fleetTargetProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
-        private DoctorScheduleNodeResolver $scheduleNodeResolver,
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AnalyticsProxyDoctorProbe $analyticsProxyDoctorProbe,
@@ -583,7 +578,7 @@ final readonly class DoctorReportRunner
             'proxy' => $this->applyProxyIssue($node, $mode, $key, $detail, $issue),
             'firewall_rule' => $this->applyFirewallIssue($node, $key, $detail),
             'tool' => $this->applyToolIssue($node, $key, $detail),
-            'schedule' => $this->applyScheduleIssue($node, $key, $detail, $issue),
+            'schedule' => $this->scheduleRestorer->apply($node, $key, $detail, $issue),
             default => null,
         };
     }
@@ -1249,74 +1244,6 @@ final readonly class DoctorReportRunner
         ];
     }
 
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyScheduleIssue(
-        Node $node,
-        string $key,
-        array $detail,
-        DoctorIssue $issue,
-    ): ?array {
-        $scheduleKey = is_string($detail['schedule_key'] ?? null) ? $detail['schedule_key'] : null;
-
-        if (in_array($key, SchedulesFixer::GatewayRestorableCodes, true)) {
-            $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $node;
-            $schedule = $scheduleKey === null
-                ? null
-                : Schedule::query()->where('schedule_key', $scheduleKey)->first();
-
-            try {
-                $fixed = $this->schedulesFixer->fixGateway(
-                    $gatewayNode,
-                    $this->driftEntryFromStoredParts('schedule', $key, $detail, $issue),
-                    $schedule instanceof Schedule ? $schedule : null,
-                );
-
-                return $fixed ?? [
-                    'family' => 'schedule',
-                    'node' => $gatewayNode->name,
-                    'code' => $key,
-                    'key' => $key,
-                    'mode' => 'restore',
-                    'status' => 'skipped',
-                    'summary' => "No restore action is registered for {$key}.",
-                    'details' => [
-                        'reason' => 'mode_not_supported',
-                    ],
-                ];
-            } catch (Throwable $e) {
-                return [
-                    'family' => 'schedule',
-                    'node' => $gatewayNode->name,
-                    'code' => $key,
-                    'key' => $key,
-                    'mode' => 'restore',
-                    'status' => 'failed',
-                    'summary' => "Failed to fix {$key}.",
-                    'details' => [
-                        'error' => $e->getMessage(),
-                    ],
-                ];
-            }
-        }
-
-        if ($scheduleKey === null) {
-            return null;
-        }
-
-        $schedule = Schedule::query()->where('schedule_key', $scheduleKey)->first();
-
-        return $schedule instanceof Schedule
-            ? $this->handleScheduleAction(
-                'restore',
-                $schedule,
-                $this->driftEntryFromStoredParts('schedule', $key, $detail),
-            )
-            : null;
-    }
-
     private function driftEntryFromIssue(DoctorIssue $issue): DriftEntry
     {
         return new DriftEntry(
@@ -1934,40 +1861,6 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function handleScheduleAction(string $mode, Schedule $schedule, DriftEntry $entry): ?array
-    {
-        if ($mode === 'verify') {
-            return null;
-        }
-
-        try {
-            return $this->schedulesFixer->fix($schedule, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $this->scheduleNodeResolver->nameFor($schedule),
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => $mode,
-                'status' => 'failed',
-                'summary' => "Failed to fix {$entry->key}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    private function gatewayNode(): ?Node
-    {
-        $node = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
-
-        return $node instanceof Node ? $node : null;
     }
 
     /**

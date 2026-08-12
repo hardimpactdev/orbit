@@ -14,9 +14,9 @@ use App\Services\Doctor\DoctorIssueCatalog;
 use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProcessRestorer;
 use App\Services\Doctor\DoctorProcessRestoreSupport;
-use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Doctor\DoctorRestoreSupport;
+use App\Services\Doctor\DoctorScheduleRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -114,6 +114,7 @@ it('binds node genuine codes to NodesProbe restoreSupport consumed by reconcile'
     }
 
     $node = Node::factory()->create(['name' => 'node-probe', 'status' => 'active']);
+    assert($node instanceof Node);
     $probe = app(NodesProbe::class);
 
     // Unsupported key is rejected by the real reconcile dispatch gate.
@@ -151,18 +152,15 @@ it('binds schedule gateway codes to SchedulesFixer support and apply routing', f
         ->toBe(SchedulesFixer::GatewayRestorableCodes);
 
     $node = Node::factory()->create(['name' => 'gateway', 'status' => 'active']);
-    $runner = app(DoctorReportRunner::class);
-
-    $method = new ReflectionMethod(DoctorReportRunner::class, 'applyScheduleIssue');
-    $method->setAccessible(true);
+    assert($node instanceof Node);
+    $restorer = app(DoctorScheduleRestorer::class);
 
     foreach (SchedulesFixer::GatewayRestorableCodes as $code) {
         if (! str_contains($code, 'hibernator')) {
             continue;
         }
 
-        $result = $method->invoke(
-            $runner,
+        $result = $restorer->apply(
             $node,
             $code,
             [],
@@ -186,8 +184,7 @@ it('binds schedule gateway codes to SchedulesFixer support and apply routing', f
             ->toBe('restore');
     }
 
-    $unsupported = $method->invoke(
-        $runner,
+    $unsupported = $restorer->apply(
         $node,
         'schedule.heartbeat_stale',
         [],
@@ -216,6 +213,7 @@ it('binds process genuine codes to DoctorProcessRestoreSupport consumed by Docto
     }
 
     $node = Node::factory()->create(['name' => 'process-node', 'status' => 'active']);
+    assert($node instanceof Node);
     expect(app(DoctorProcessRestorer::class)->apply($node, 'process.owner_app_invalid', []))->toBeNull();
 });
 
@@ -235,7 +233,9 @@ it('binds generic fixer support to their supported-key sources and rejects unkno
         ]);
 
     $node = Node::factory()->create(['name' => 'tool-node', 'status' => 'active']);
+    assert($node instanceof Node);
     $tool = NodeTool::factory()->for($node)->create(['name' => 'php-cli']);
+    assert($tool instanceof NodeTool);
     $fixer = app(ToolsFixer::class);
 
     expect($fixer->fix(
@@ -296,6 +296,7 @@ it('accepts every genuine code via the real family support decision used by appl
 
 it('does not treat unsupported findings as restore candidates that poison multi-pass', function (): void {
     $node = Node::factory()->create(['name' => 'app-1', 'status' => 'active']);
+    assert($node instanceof Node);
     NodeRoleAssignment::factory()->for($node)->create([
         'role' => 'app-dev',
         'status' => 'active',
