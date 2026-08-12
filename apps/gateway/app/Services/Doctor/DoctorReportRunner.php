@@ -46,6 +46,7 @@ final readonly class DoctorReportRunner
         private DoctorProcessRestorer $processRestorer,
         private DoctorProxyRestorer $proxyRestorer,
         private DoctorFirewallRuleRestorer $firewallRuleRestorer,
+        private DoctorDnsRuntimeRestorer $dnsRuntimeRestorer,
         private NodeConverger $nodeConverger,
         private ToolsFixer $toolsFixer,
         private DoctorScheduleRestorer $scheduleRestorer,
@@ -54,7 +55,6 @@ final readonly class DoctorReportRunner
         private DoctorFleetProbeRunner $fleetProbeRunner,
         private DoctorFleetTargetProbe $fleetTargetProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
-        private DnsRuntimeProbe $dnsRuntimeProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
@@ -407,14 +407,9 @@ final readonly class DoctorReportRunner
             if (
                 $mode === 'restore'
                 && $issue->family === 'tool'
-                && $this->dnsRuntimeProbe->isRestorable($issue->key)
+                && $this->dnsRuntimeRestorer->isRestorable($issue->key)
             ) {
-                $action = $this->applyDnsRuntimeIssue(
-                    $node,
-                    $issue->key,
-                    $issue->detail,
-                    $issue,
-                );
+                $action = $this->dnsRuntimeRestorer->apply($node, $issue);
 
                 if ($action !== null) {
                     $actions[] = $action;
@@ -683,57 +678,6 @@ final readonly class DoctorReportRunner
             'status' => 'completed',
             'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$key}.",
             'details' => $detail,
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>|null
-     */
-    private function applyDnsRuntimeIssue(
-        Node $node,
-        string $key,
-        array $detail,
-        DoctorIssue $issue,
-    ): ?array {
-        if (! $this->dnsRuntimeProbe->isRestorable($key)) {
-            return null;
-        }
-
-        try {
-            $restored = $this->dnsRuntimeProbe->restore($key);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'tool',
-                'node' => $node->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$key}.",
-                'details' => [
-                    ...$detail,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'tool',
-            'node' => $node->name,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => $restored ? 'completed' : 'failed',
-            'summary' => $restored
-                ? ($issue->summary !== '' ? $issue->summary : "Fixed {$key}.")
-                : "Failed to fix {$key}.",
-            'details' => $restored
-                ? $detail
-                : [
-                    ...$detail,
-                    'error' => 'restore_returned_false',
-                ],
         ];
     }
 

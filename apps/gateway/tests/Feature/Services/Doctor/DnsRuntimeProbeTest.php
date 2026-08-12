@@ -391,6 +391,50 @@ it('restores missing swarm vpn dns forwarding by converging the vpn task namespa
     );
 });
 
+it('waits for the swarm dns task before checking its mount during restore', function (): void {
+    File::ensureDirectoryExists($this->workdir.'/swarm');
+    File::put($this->workdir.'/swarm/orbit-vpn-dns-stack.yml', "services:\n  orbit-dns: {}\n");
+    $dnsContainerLookups = 0;
+
+    Process::fake(function ($process) use (&$dnsContainerLookups) {
+        $command = (string) $process->command;
+
+        if (str_contains($command, 'docker stack deploy')) {
+            return Process::result();
+        }
+
+        if ($command === "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'") {
+            $dnsContainerLookups++;
+
+            return Process::result($dnsContainerLookups === 1 ? '' : "dns-container-id\n");
+        }
+
+        if ($command === 'docker ps -a -q -f name=orbit-dns') {
+            return Process::result('');
+        }
+
+        if (str_starts_with($command, 'docker inspect --format')) {
+            return Process::result(dns_runtime_probe_mounts($this->workdir));
+        }
+
+        if ($command === "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'") {
+            return Process::result("vpn-container-id\n");
+        }
+
+        if (str_starts_with($command, "docker exec 'vpn-container-id'")) {
+            return Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: "Unexpected command: {$command}");
+    });
+    Process::preventStrayProcesses();
+
+    expect($this->probe->restore('tool.dns_container_missing'))
+        ->toBeTrue()
+        ->and($dnsContainerLookups)
+        ->toBe(2);
+});
+
 it('stages owner-neutral runtime layout before restoring a missing standalone container', function (): void {
     File::put($this->workdir.'/docker-compose.yaml', "services:\n  orbit-dns: {}\n");
     Process::fake(function ($process) {

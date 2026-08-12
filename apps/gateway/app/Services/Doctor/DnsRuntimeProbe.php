@@ -21,6 +21,10 @@ use Throwable;
 
 final readonly class DnsRuntimeProbe
 {
+    private const int RUNTIME_READINESS_ATTEMPTS = 60;
+
+    private const int RUNTIME_READINESS_DELAY_MICROSECONDS = 500_000;
+
     public function __construct(
         private DnsmasqBaseConfigBuilder $baseConfigBuilder,
         private string $rootPath,
@@ -232,7 +236,7 @@ final readonly class DnsRuntimeProbe
                 escapeshellarg('orbit'),
             ));
 
-            if (! $result->successful() || ! $this->projectionDirectoryIsMounted()) {
+            if (! $result->successful() || ! $this->waitForProjectionDirectoryMount()) {
                 return false;
             }
 
@@ -244,7 +248,7 @@ final readonly class DnsRuntimeProbe
             escapeshellarg($this->composePath()),
         ));
 
-        return $result->successful() && $this->projectionDirectoryIsMounted();
+        return $result->successful() && $this->waitForProjectionDirectoryMount();
     }
 
     private function restartContainer(): bool
@@ -357,6 +361,21 @@ final readonly class DnsRuntimeProbe
     private function projectionDirectoryIsMounted(?string $containerId = null): bool
     {
         return $this->runtimeInspector->projectionDirectoryIsMounted($this->projectionPath(), $containerId);
+    }
+
+    private function waitForProjectionDirectoryMount(): bool
+    {
+        for ($attempt = 1; $attempt <= self::RUNTIME_READINESS_ATTEMPTS; $attempt++) {
+            if ($this->projectionDirectoryIsMounted()) {
+                return true;
+            }
+
+            if ($attempt < self::RUNTIME_READINESS_ATTEMPTS) {
+                usleep(self::RUNTIME_READINESS_DELAY_MICROSECONDS);
+            }
+        }
+
+        return false;
     }
 
     private function legacyMonolithicBaseExists(): bool
