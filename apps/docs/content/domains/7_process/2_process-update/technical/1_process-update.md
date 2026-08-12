@@ -32,7 +32,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants process-configuration mutation; pass `--instance=<app.instance>` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
-| `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `none`. |
+| `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | The only supported value is `none`. |
 | `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. See runtime selection below. |
 | `binds` | repeated `--bind` | Optional. Counts as an editable field when supplied. | Host-command processes; instance/workspace ownership; Docker Swarm; non-managed-service processes. | Current normalized bind intent when omitted. | Each value must be exactly `wireguard` or `loopback`. Empty strings and unsupported values fail with `validation_failed` (`field=bind`). Duplicates normalize. Explicit selectors replace the entire bind list and re-render publish hosts while preserving unrelated service/version/image/options/credentials/volumes/labels/runtime config. Arbitrary IP addresses or interface names are never accepted. |
 | `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. Existing `--restart` behavior is unchanged by bind updates. |
@@ -119,7 +119,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:update` changes process configuration and attempts to re-render the runtime units derived from that definition. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing, divergent, or orphaned runtime units and lifecycle event notifier material.
+`process:update` changes process configuration and attempts to re-render the runtime units derived from that definition. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing, divergent, or orphaned runtime units.
 
 ## Activity Logging
 

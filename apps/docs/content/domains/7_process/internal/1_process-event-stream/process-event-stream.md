@@ -61,5 +61,4 @@ These limits keep the stream read-only and app-scoped.
 ## Doctor Relationship
 
 [`process-doctor.md`](../../process-doctor.md) verifies rendered runtime
-artifacts and event notifier material. Event history itself is not desired
-state.
+artifacts. Event history itself is not desired state.

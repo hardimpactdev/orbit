@@ -63,9 +63,9 @@ These rules describe how runtime units are derived from process definitions.
   processes such as generated FrankenPHP web-runtime units, not arbitrary
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
-  runtime backend, runtime configuration, and crash notification policy. The
-  rendering context supplies per-instance fields such as node/app/instance/workspace
-  identity, path, URL, environment, ports, and volumes.
+  runtime backend, runtime configuration, and the crash-notification compatibility
+  field. The rendering context supplies per-instance fields such as
+  node/app/instance/workspace identity, path, URL, environment, ports, and volumes.
 - Runtime unit names for instance and workspace units use the five-part form
   `orbit_<app>_<instance>_<workspace|main>_<process>` (for example
   `orbit_docs_development_main_vite`). Node-owned units use the bare process
@@ -86,16 +86,17 @@ Restart policy is process configuration. Each derived main-instance or workspace
 
 ### Crash notification policy
 
-Process definitions store a crash-notification policy. The only supported
-value is `none`. Orbit does not deliver crash notifications through an agent
-IDE or other external adapter. Rows that still store a removed `agent_ide`
-policy are cleared to `none` by the Release A storage cleanup migration.
+Process definitions retain a crash-notification compatibility field. The only
+supported value is `none`. Orbit does not install a process crash hook or
+deliver crash notifications through an agent IDE or other external adapter.
+Rows that still store a removed `agent_ide` policy are cleared to `none` by the
+Release A storage cleanup migration.
 
 ### Crash event history
 
-Process lifecycle history may still record start/stop/crash observations that
-operators inspect through process list and show surfaces. Crash history is not
-an operator command for posting events and is not tied to external notification delivery.
+Orbit retains durable process lifecycle history for list and status surfaces.
+Existing `crashed` events remain readable, but current runtime paths do not
+install a crash hook or ingest new process-exit reports.
 
 ### Lifecycle events
 
@@ -103,12 +104,14 @@ These rules describe the durable history that records process state transitions.
 
 - Process lifecycle events are durable history, not process-unit configuration.
   Orbit records transitional `starting`/`stopping`/`restarting`, terminal
-  `started`/`stopped`/`crashed`, and `failed` (status `unknown`) for gateway
-  SSE consumers, list surfaces, and automation.
+  `started`/`stopped`, and `failed` (status `unknown`) for gateway SSE
+  consumers, list surfaces, and automation. It continues to read existing
+  `crashed` events for compatibility.
 - Gateway start/stop/restart and normal creation/convergence start paths record
   the transitional event before the runtime call and the terminal event after
   success or failure (including thrown driver errors).
-- `crashed` events are recorded when the runtime hook on the node reports an exit.
+- Current runtime paths do not install a process crash hook. Existing `crashed`
+  events remain readable through the same lifecycle history surfaces.
 
 ### Read commands
 
@@ -144,8 +147,7 @@ node-local `launchctl` command adapter. The runtime name is `launchd`;
 This slice intentionally excludes system LaunchDaemons under
 `/Library/LaunchDaemons`, root-owned boot-before-login services, third-party
 LaunchAgent inventory or adoption, a broad macOS background-process dashboard,
-launchd migration tooling, and launchd crash notification parity without an
-Orbit-owned crash wrapper.
+and launchd migration tooling.
 
 ### Managed services
 
@@ -294,11 +296,11 @@ Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by the
 
 ## Crash Event History
 
-With `crash_notification=none`, Orbit does not install external crash hooks or
+With `crash_notification=none`, Orbit does not install a process crash hook or
 post crash notifications to third-party tools. Operators still use process list,
-logs, and doctor to observe unit health. Crash rows that remain in
-storage after Release A cleanup are inspection-only; there is no active product
-command that ingests or fans out crash notifications.
+logs, and Doctor to observe unit health. Existing `crashed` events remain
+readable, but there is no active product command that ingests or fans out crash
+notifications.
 
 ## Commands
 

@@ -13,8 +13,8 @@ that make those definitions executable on their resolved nodes or instance servi
 The process family owns these facts:
 
 - gateway-owned process definitions: node/instance/workspace owner, name, command,
-  restart policy, crash-notification policy, optional tool dependency, runtime,
-  runtime configuration, and service endpoint metadata;
+  restart policy, crash-notification compatibility field, optional tool dependency,
+  runtime, runtime configuration, and service endpoint metadata;
 - derived runtime-unit identity for one concrete instance and, on
   `app-dev` only, its workspaces:
   `orbit_<app>_<instance>_<workspace|main>_<process>`, deterministically
@@ -39,7 +39,6 @@ The process family owns these facts:
 - metrics-role Prometheus, Grafana, and node-exporter runtime artifacts created
   from process definitions; the metrics command domain does not add a separate
   doctor family;
-- lifecycle event notifier material that Orbit manages, required to record runtime `crashed` events from app-host units whose process definitions require crash event reporting;
 - stale process runtime artifacts owned by Orbit whose identity maps to
   nothing active — no matching app, workspace, or process definition.
 - read-only self-route diagnostics for node-owned service endpoints that point
@@ -63,9 +62,9 @@ Main instance and node-owned process drift remains visible.
 ### Registry configuration
 
 Every selected instance/workspace process definition has valid app and
-concrete instance references, plus a process name, command, restart policy,
-and crash-notification policy. Node-owned service process definitions have a
-valid active node owner instead of an instance owner.
+concrete instance references, plus a process name, command, restart policy, and
+crash-notification compatibility field. Node-owned service process definitions
+have a valid active node owner instead of an instance owner.
 
 For a PHP app that already owns managed FrankenPHP runtime intent, every active
 instance must have its canonical FrankenPHP process row. A missing
@@ -168,10 +167,6 @@ The rendered command, working directory, restart policy, user, runtime
 environment, launchd label, and launchd stdout/stderr log paths match gateway
 configuration.
 
-### Lifecycle notifier material
-
-The crash event hooks that Orbit manages, gateway endpoint material, and gateway CA material required to write durable `crashed` events exist and match the selected process definitions.
-
 ### Stale runtime units
 
 Runtime artifacts that Orbit owns are reported as process-family drift when
@@ -187,6 +182,9 @@ app and concrete instance runtime slugs. Inventory failure reports
 ### Lifecycle events as history
 
 Latest lifecycle events are history, not desired state. The processes probe may read them to explain observed runtime state, but it does not repair or adopt event history.
+
+Doctor does not install, verify, restore, or adopt a process crash hook or an
+external notification adapter.
 
 ## Process Issue Codes
 
@@ -304,8 +302,7 @@ WireGuard self-route diagnostics (including unsupported-platform not-applicable
 behavior and true supported unhealthy drift), current-placement resolution after
 instance moves, missing/extra/drifted runtime artifacts, launchd plist and
 loaded-state drift, restart policy drift, runtime environment drift, event
-notifier drift, and exclusion of non-process drift from issue codes are also
-covered.
+history handling, and exclusion of non-process drift from issue codes are also covered.
 
 `DoctorReportRunnerTest` also covers process selection by current app instance
 placement when denormalized `process.node_id` is stale.

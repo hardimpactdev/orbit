@@ -206,9 +206,9 @@ than assuming fixed roles such as a queue worker. Failed
   are single-flight across scopes sharing a node and source path, while process
   startup and warm markers remain scope-owned. Stale takeover must acquire both
   fences.
-- **Crash notification policy:** Process-definition field for crash
-  notification delivery. The only supported value is `none`. Orbit does not
-  deliver crash notifications through an external notification adapter.
+- **Crash notification policy:** Retained process-definition compatibility
+  field. The only supported value is `none`. Orbit does not install a process
+  crash hook or deliver crash notifications through an external adapter.
 - **Process runtime selection:** Process-definition field that records which
   backend renders the runtime units. Instance and workspace host-command processes
   default to `systemd` on Linux and `launchd` on macOS. Node-owned host-command
@@ -235,18 +235,18 @@ records restarting→started/failed with the current process name snapshot,
 including renames applied in the same update.
 
 Deploy active-release FrankenPHP container restarts are not process lifecycle
-events. `crashed` events are recorded when the runtime hook on the node reports
-an exit. Gateway lifecycle event history is authoritative for list and toolbar
-consumers. List does not live-probe nodes.
+events. Current runtime paths do not install a process crash hook or ingest new
+process-exit reports. Gateway lifecycle event history is authoritative for list
+and toolbar consumers. List does not live-probe nodes.
 - **Process status:** Normalized runtime status from the latest durable
   lifecycle event: `starting`, `running` (`started`), `stopping`, `stopped`,
   `restarting`, `crashed`, and `unknown` (no event yet, or latest event
   `failed`). Transitional values appear only when truthfully persisted.
   Compatible `last_event` fields remain present when an event exists.
-- **Crash event:** A process event emitted by the runtime hooks that Orbit
-  manages on nodes, for definitions whose crash-notification policy is
-  enabled. Carries a stable event id, runtime unit name, exit code, exit status,
-  and occurrence time.
+- **Crash event:** Process-event type retained for list and status
+  compatibility. Existing `crashed` events remain readable. Current runtime
+  paths do not install a process crash hook or create these rows from process
+  exits.
 
 ## Boundaries
 
@@ -255,9 +255,9 @@ These terms define what the process family owns and what remains outside its sco
 - **Process-family boundaries:** Process commands own process definitions,
   optional node/instance/workspace/`app` hostname scope, optional tool dependency, runtime backend,
   runtime configuration, command or image configuration, environment, ports,
-  volumes, restart policy, lifecycle commands, logs, crash notification policy,
-  runtime unit derivation, runtime unit environment, and lifecycle event
-  history. WireGuard interface setup and self-route mutation belong to node
+  volumes, restart policy, lifecycle commands, logs, the crash-notification
+  compatibility field, runtime unit derivation, runtime unit environment, and
+  lifecycle event history. WireGuard interface setup and self-route mutation belong to node
   provisioning/topology work; process doctor may only diagnose self-route
   health when a process endpoint depends on it.
 - Plausible CE is a process-owned service. Its configured image version,
@@ -269,5 +269,4 @@ These terms define what the process family owns and what remains outside its sco
   this model, and process `kind` or `category` is intentionally deferred until
   a concrete workflow needs it. The launchd slice does not own system
   LaunchDaemons, third-party LaunchAgent inventory or adoption, a broad macOS
-  background-process dashboard, migration tooling, or crash-notification parity
-  without an Orbit-owned wrapper.
+  background-process dashboard, or migration tooling.

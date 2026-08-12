@@ -77,8 +77,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `process:log` reads logs from the selected runtime backend for process runtime units.
 [`process-doctor.md`](../../process-doctor.md) owns verification and
-repair of the runtime-unit artifacts and event notifier material that help
-produce process observability.
+repair of the runtime-unit artifacts. Lifecycle events are history, not
+Doctor-managed runtime artifacts.
 
 ## Activity Logging
 
