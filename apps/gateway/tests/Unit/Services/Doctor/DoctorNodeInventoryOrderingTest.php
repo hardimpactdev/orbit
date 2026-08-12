@@ -18,6 +18,7 @@ use App\Services\Doctor\DoctorFirewallRuleFamilyProbe;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Doctor\DoctorProxyRouteInventory;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorScheduleFamilyProbe;
 use App\Services\Doctor\DoctorToolFamilyProbe;
 use App\Services\Doctor\DoctorWorkspaceFamilyProbe;
 use Illuminate\Database\Eloquent\Model;
@@ -170,8 +171,8 @@ it('reads every node inventory in stable row identity order', function (): void 
             ))
             ->toBe($tools->pluck('id')->all())
             ->and(doctor_inventory_ids(
-                $runner,
-                methodName: 'schedulesForNode',
+                app(DoctorScheduleFamilyProbe::class),
+                methodName: 'nodeSchedules',
                 arguments: [$node],
                 orderedTable: 'schedules',
             ))
@@ -217,9 +218,9 @@ it('reads the gateway schedule inventory in stable row identity order', function
 
     try {
         expect(doctor_inventory_ids(
-            app(DoctorReportRunner::class),
-            methodName: 'schedulesForNode',
-            arguments: [$gateway],
+            app(DoctorScheduleFamilyProbe::class),
+            methodName: 'gatewaySchedules',
+            arguments: [],
             orderedTable: 'schedules',
         ))->toBe([$firstSchedule->id, $secondSchedule->id]);
     } finally {

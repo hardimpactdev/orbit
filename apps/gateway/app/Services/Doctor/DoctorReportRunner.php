@@ -46,7 +46,6 @@ use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\S3\S3DoctorProbe;
 use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
-use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
@@ -92,7 +91,6 @@ final readonly class DoctorReportRunner
         private ProxyRouteAdopter $proxyRouteAdopter,
         private NodeConverger $nodeConverger,
         private ToolsFixer $toolsFixer,
-        private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
@@ -104,7 +102,8 @@ final readonly class DoctorReportRunner
         private DoctorProxyRouteInventory $proxyRouteInventory,
         private DoctorFirewallRuleFamilyProbe $firewallRuleFamilyProbe,
         private DoctorToolFamilyProbe $toolFamilyProbe,
-        private DoctorNodeScheduleTargets $scheduleTargets,
+        private DoctorScheduleFamilyProbe $scheduleFamilyProbe,
+        private DoctorScheduleNodeResolver $scheduleNodeResolver,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
         private WebSocketDoctorProbe $webSocketDoctorProbe,
@@ -1020,41 +1019,10 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
-            $scheduleInventory = $this->schedulesForNode($node);
-
-            if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-                $scheduleInventory = collect([$node])->concat($scheduleInventory)->values();
-            }
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->scheduleFamilyProbe->probe(
                 node: $node,
-                family: 'schedule',
-                total: $scheduleInventory->count(),
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($scheduleInventory, $node): void {
-                    foreach ($scheduleInventory as $target) {
-                        if ($target instanceof Node) {
-                            $snapshot = $this->schedulesProbe->introspectGateway($target);
-
-                            foreach ($this->schedulesProbe->diffGateway($target, $snapshot) as $entry) {
-                                $addIssue($this->scheduleGatewayIssuePayload($entry, $node));
-                            }
-
-                            $advance();
-
-                            continue;
-                        }
-
-                        $snapshot = $this->schedulesProbe->introspect($target);
-
-                        foreach ($this->schedulesProbe->diff($target, $snapshot) as $entry) {
-                            $addIssue($this->scheduleIssuePayload($entry, $target));
-                        }
-
-                        $advance();
-                    }
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -3000,33 +2968,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return DoctorIssue
-     */
-    private function scheduleIssuePayload(DriftEntry $entry, Schedule $schedule): DoctorIssue
-    {
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $this->scheduleNodeName($schedule),
-            detail: [
-                ...($entry->detail ?? []),
-                'schedule_key' => $schedule->schedule_key,
-            ],
-        );
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function scheduleGatewayIssuePayload(DriftEntry $entry, Node $gatewayNode): DoctorIssue
-    {
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $gatewayNode->name,
-            detail: $entry->detail ?? [],
-        );
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function handleWorkspaceAction(Workspace $workspace, DriftEntry $entry): array
@@ -3141,7 +3082,7 @@ final readonly class DoctorReportRunner
         } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
-                'node' => $this->scheduleNodeName($schedule),
+                'node' => $this->scheduleNodeResolver->nameFor($schedule),
                 'code' => $entry->key,
                 'key' => $entry->key,
                 'mode' => $mode,
@@ -3152,60 +3093,6 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
-    }
-
-    private function scheduleNodeName(Schedule $schedule): ?string
-    {
-        $schedule->loadMissing(['app', 'instance', 'node']);
-
-        if ($schedule->scope === 'app') {
-            return $schedule->instance instanceof Instance
-                ? $this->workspacePlacement->nodeForInstance($schedule->instance)?->name
-                : null;
-        }
-
-        if ($schedule->scope === 'node') {
-            return $schedule->node?->name;
-        }
-
-        if ($schedule->scope === 'orbit') {
-            $node = $this->nodeRoleAssignments->activeGatewayNodeQuery()->first();
-
-            return $node instanceof Node ? $node->name : null;
-        }
-
-        return null;
-    }
-
-    /**
-     * @return Collection<int, Schedule>
-     */
-    private function schedulesForNode(Node $node): Collection
-    {
-        if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-            /** @mago-expect lint:inline-variable-return */
-            $schedules = Schedule::query()
-                ->with(['app', 'instance', 'node'])
-                ->where('enabled', true)
-                ->where('status', 'expected')
-                ->orderBy('id')
-                ->get()
-                ->values();
-
-            /** @var Collection<int, Schedule> $schedules */
-            return $schedules;
-        }
-
-        /** @mago-expect lint:inline-variable-return */
-        $schedules = $this->scheduleTargets
-            ->expectedFor($node)
-            ->with(['app', 'instance', 'node'])
-            ->orderBy('id')
-            ->get()
-            ->values();
-
-        /** @var Collection<int, Schedule> $schedules */
-        return $schedules;
     }
 
     private function gatewayNode(): ?Node
