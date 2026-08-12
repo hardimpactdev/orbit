@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 281,
-    "unique_candidate_commit_count": 177,
+    "record_count": 282,
+    "unique_candidate_commit_count": 178,
     "orphan_count": 0,
     "records": [
         {
@@ -7552,6 +7552,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-202336-refactor-processes-probe-node-runtime-inventory",
+            "slug": "refactor-processes-probe-node-runtime-inventory",
+            "timestamp": "2026-08-12-202336",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "c09831cc64e4ff2d21ceea8160b353ebfb6d2af4",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,

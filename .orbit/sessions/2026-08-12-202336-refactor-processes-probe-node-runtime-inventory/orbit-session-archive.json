@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T18:23:36+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-processes-probe-node-runtime-inventory/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-202336-refactor-processes-probe-node-runtime-inventory",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/claude-opus-review.txt",
+        "evidence/retained-incus-process-inventory.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/claude-opus-review.txt": "9c52a6f2616eba876ba65f03b2d6822d1598b7a193000097c7fb1ad068c17379",
+        "evidence/retained-incus-process-inventory.txt": "003c8accc991964f07a13afcba1156fd7b9a8be144263405988cd7ed05cf8a96",
+        "loop.md": "2498d7fb91896ce3d264971ad6605a1bd5b1df765cd4826df5580aad408c3e6e"
+    },
+    "slug": "refactor-processes-probe-node-runtime-inventory",
+    "requested_slug": "refactor-processes-probe-node-runtime-inventory",
+    "compatible_slugs": [
+        "refactor-processes-probe-node-runtime-inventory"
+    ],
+    "branch": "refactor/processes-probe-node-runtime-inventory",
+    "candidate_commit": "c09831cc64e4ff2d21ceea8160b353ebfb6d2af4",
+    "accepted_feature_tip": "c09831cc64e4ff2d21ceea8160b353ebfb6d2af4",
+    "accepted_main_tip": "ca2bff245aa912e39b85e9a658ac2c7368b68ae4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,26 @@
+candidate=c09831cc64e4ff2d21ceea8160b353ebfb6d2af4
+venue=retained-incus
+topology=dev-663746
+topology_kind=operator_gateway_app-dev
+checkout_roles=gateway
+solo_terminal=2327 retained-incus-process-inventory-proof
+incus_host_alias=beast
+incus_ssh_user=nckrtl
+incus_lan_ip=192.168.6.20
+
+Host proof:
+- `dscacheutil -q host -a name beast` resolved Beast to 192.168.6.20.
+- All direct inspection commands used `ssh -o HostName=192.168.6.20 beast`.
+
+Candidate proof:
+- The retained source overlay does not contain Git metadata, so `git rev-parse` is unavailable inside the gateway VM.
+- SHA-256 hashes for all four changed production files matched between the local exact commit and `/home/orbit/orbit-run` in `orbit-e2e-dev-663746-gateway`.
+- After the test-only amend, `composer e2e:incus -- --sync --id=dev-663746 --json` refreshed the source overlay and both gateway API containers were restarted.
+
+Runtime proof:
+- `orbit node:list --json` from `orbit-e2e-dev-663746-operator` reported active `app-dev-1`, `gateway`, and `operator-1` nodes.
+- `orbit doctor --node=app-dev-1 --family=process --json` completed with exit code 0.
+- Doctor reported `healthy: true`, zero issues, zero failed actions, and the exact `process` family scope for `app-dev-1`.
+- The same Doctor command passed again after syncing the amended exact commit.
+
+Result: passed
