@@ -1,0 +1,34 @@
+Candidate: e1b5220c7457219839e4cc1fed9eb84946226f04
+Venue: retained-incus
+Environment: dev-fixture
+Topology: dev-4e4c64 (operator_gateway_app-dev)
+Operator container: orbit-e2e-dev-4e4c64-operator
+Gateway container: orbit-e2e-dev-4e4c64-gateway
+App-dev container: orbit-e2e-dev-4e4c64-dev
+Beast transport: ssh -tt -o HostName=192.168.6.20 beast
+
+Candidate source hash:
+ab229c2223208959642e9559426a5aeeb25f5a11b9568cb6d3a80bf2b738d3d3  apps/gateway/app/Services/Doctor/DoctorReportRunner.php
+462c73c4670ac93443632a572b068b062a78b1c27f5e488a0d6143f664f8ae80  apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php
+
+Mounted operator source hash:
+ab229c2223208959642e9559426a5aeeb25f5a11b9568cb6d3a80bf2b738d3d3  apps/gateway/app/Services/Doctor/DoctorReportRunner.php
+462c73c4670ac93443632a572b068b062a78b1c27f5e488a0d6143f664f8ae80  apps/gateway/app/Services/DatabaseConnections/DatabaseConnectionProbe.php
+
+Command, run twice in /home/orbit/orbit-run:
+apps/cli/orbit doctor --all --stream-json
+
+Observed:
+- Both runs exited 1 because the retained fixture contains expected drift.
+- The runs emitted 37 and 38 stream frames. Fleet progress timing can change
+  the frame count and is outside this issue-order contract.
+- Both final reports contained 15 issues.
+- The ordered (family, node, key) identity list matched exactly.
+- diff exit: 0
+- run 1 identity hash: bb085f63c3f8b86912d8b9b77bdbac75eea5d082b2470899e112ba81a50a21a6
+- run 2 identity hash: bb085f63c3f8b86912d8b9b77bdbac75eea5d082b2470899e112ba81a50a21a6
+
+Ordered identities:
+[["node","app-dev-1","node.wireguard_peer_missing"],["node","app-dev-1","node.security.public_ssh_deny"],["node","app-dev-1","node.security.sshd_config"],["node","app-dev-1","node.security.sysctl"],["node","app-dev-1","node.security.home_perms"],["node","gateway","node.platform_record_mismatch"],["node","gateway","node.security.public_ssh_deny"],["node","gateway","node.security.sshd_config"],["node","gateway","node.security.sysctl"],["node","gateway","node.security.home_perms"],["node","gateway","node.dns_mapping_mismatch"],["proxy","gateway","proxy.caddy_container_missing"],["proxy","gateway","proxy.global_config_missing"],["schedule","gateway","schedule.runtime_backend_unavailable"],["schedule","gateway","schedule.runtime_hibernator_missing"]]
+
+Result: passed

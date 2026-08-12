@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T10:07:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-doctor-deterministic-inventory/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-120715-fix-doctor-deterministic-inventory",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-doctor-inventory-order.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T09-55-05Z-e1b5220c7457/gateway_pest.log"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-doctor-inventory-order.txt": "24ddcfdebb0f04cc553e48c8f6b3f4001608b0f340ec98084a9c9aedd2c7eac0",
+        "loop.md": "cf816d99b53ae1af3bec51f6e5eff43bc056886ace9bc0464db697a3f2449acf",
+        "quality-gates/profiles/2026-08-12T09-55-05Z-e1b5220c7457/gateway_pest.log": "ea3948cf8d37e4619bfaeb94b2ace4760802ed7bcc8fba2a55ed8d3d23d9d440"
+    },
+    "slug": "fix-doctor-deterministic-inventory",
+    "requested_slug": "fix-doctor-deterministic-inventory",
+    "compatible_slugs": [
+        "fix-doctor-deterministic-inventory"
+    ],
+    "branch": "fix/doctor-deterministic-inventory",
+    "candidate_commit": "e1b5220c7457219839e4cc1fed9eb84946226f04",
+    "accepted_feature_tip": "e1b5220c7457219839e4cc1fed9eb84946226f04",
+    "accepted_main_tip": "08a5b0044b2d8a3e5cb13384f2fa38b80e546a53",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
