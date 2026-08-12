@@ -1,0 +1,32 @@
+candidate=0086f8b7ea15d7ce84498a2c8e0a5f4d6f38cad8
+venue=retained-incus
+environment=dev-fixture
+topology=dev-4bfb9c
+provider=incus
+host=192.168.6.20
+target=orbit-e2e-dev-4bfb9c-gateway
+
+expected=The candidate renders a bounded five-second wait on every gateway-direct IPv4 and IPv6 firewall command, applies successfully on the retained gateway, and preserves the exact DOCKER-USER policy.
+
+observed=The gateway uses iptables v1.8.11 nf_tables and reports --wait support. The candidate rendered 14 sudo iptables -w 5 commands and 5 sudo ip6tables -w 5 commands. GatewayDirectFirewallInstaller::install() returned successfully. IPv4 kept four WireGuard RETURN rules followed by TCP and UDP DROP rules. IPv6 kept the TCP and UDP DROP rules.
+
+result=passed
+
+candidate-script-counts:
+ipv4 wait commands=14
+ipv6 wait commands=5
+installer result=true
+
+ipv4-policy:
+-N DOCKER-USER
+-A DOCKER-USER -i wg-orbit -p tcp -m tcp --dport 443 -j RETURN
+-A DOCKER-USER -i wg-orbit -p udp -m udp --dport 443 -j RETURN
+-A DOCKER-USER -s 10.6.0.0/24 -p tcp -m tcp --dport 443 -j RETURN
+-A DOCKER-USER -s 10.6.0.0/24 -p udp -m udp --dport 443 -j RETURN
+-A DOCKER-USER -p tcp -m tcp --dport 443 -j DROP
+-A DOCKER-USER -p udp -m udp --dport 443 -j DROP
+
+ipv6-policy:
+-N DOCKER-USER
+-A DOCKER-USER -p tcp -m tcp --dport 443 -j DROP
+-A DOCKER-USER -p udp -m udp --dport 443 -j DROP

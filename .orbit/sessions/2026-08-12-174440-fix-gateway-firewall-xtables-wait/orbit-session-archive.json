@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T15:44:40+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-gateway-firewall-xtables-wait/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-174440-fix-gateway-firewall-xtables-wait",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/gateway-firewall-xtables-wait.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/gateway-firewall-xtables-wait.txt": "efc11de5deda58b85e99fb4d8b59b2f3c2283bbca211a8bc6ceb5ad2de5d8110",
+        "loop.md": "297e4e4e538a9df7ec71d9859af4e85b802874744d826736f474f74128d37f66"
+    },
+    "slug": "fix-gateway-firewall-xtables-wait",
+    "requested_slug": "fix-gateway-firewall-xtables-wait",
+    "compatible_slugs": [
+        "fix-gateway-firewall-xtables-wait"
+    ],
+    "branch": "fix/gateway-firewall-xtables-wait",
+    "candidate_commit": "0086f8b7ea15d7ce84498a2c8e0a5f4d6f38cad8",
+    "accepted_feature_tip": "0086f8b7ea15d7ce84498a2c8e0a5f4d6f38cad8",
+    "accepted_main_tip": "7560768645295cbb265f8ff7ac1517cef4806d90",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
