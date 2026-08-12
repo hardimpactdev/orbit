@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T14:50:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-node-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-165055-refactor-doctor-node-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-node-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T14-47-54Z-a738645b63c3/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-node-family-retained-incus.md": "299e9747c4dfcd975d163baaa54a6571621b64a7b19eb5783faf7ec54cf2f435",
+        "loop.md": "a515bcebdb771bc48d43a55a99e585e89f00798c4f33fa1062f7d14bc42bb436",
+        "quality-gates/profiles/2026-08-12T14-47-54Z-a738645b63c3/gateway_pest.junit.xml": "614a3a00997563197fb36a29b3d71c82245065d2eea2c3e42491908095f041f6"
+    },
+    "slug": "refactor-doctor-node-family",
+    "requested_slug": "refactor-doctor-node-family",
+    "compatible_slugs": [
+        "refactor-doctor-node-family"
+    ],
+    "branch": "refactor/doctor-node-family",
+    "candidate_commit": "a738645b63c3ceb5f1d13bf795ec0111f11d24ce",
+    "accepted_feature_tip": "a738645b63c3ceb5f1d13bf795ec0111f11d24ce",
+    "accepted_main_tip": "e96a8a97fb54d187f48e7112d81ebf53cbae86ff",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
