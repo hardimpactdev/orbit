@@ -16,6 +16,7 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Doctor\DoctorFirewallRuleFamilyProbe;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
+use App\Services\Doctor\DoctorProxyRouteInventory;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -146,8 +147,8 @@ it('reads every node inventory in stable row identity order', function (): void 
             ))
             ->toBe($processes->pluck('id')->all())
             ->and(doctor_inventory_ids(
-                $runner,
-                methodName: 'proxyRoutesForScope',
+                app(DoctorProxyRouteInventory::class),
+                methodName: 'forScope',
                 arguments: [$node, $scope],
                 orderedTable: 'proxy_routes',
             ))

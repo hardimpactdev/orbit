@@ -67,8 +67,6 @@ final readonly class DoctorReportRunner
 
     private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
 
-    private const array WORKSPACE_PROXY_OWNER_TYPES = ['workspace', Workspace::class];
-
     private const array VERIFIED_WEBSOCKET_RESTORE_KEYS = [
         'node.websocket.backend_cert_missing',
         'node.websocket.bind_public_interface',
@@ -105,6 +103,8 @@ final readonly class DoctorReportRunner
         private DoctorFamilyProbeRunner $familyProbeRunner,
         private DoctorAppFamilyProbe $appFamilyProbe,
         private DoctorProcessFamilyProbe $processFamilyProbe,
+        private DoctorProxyFamilyProbe $proxyFamilyProbe,
+        private DoctorProxyRouteInventory $proxyRouteInventory,
         private DoctorFirewallRuleFamilyProbe $firewallRuleFamilyProbe,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
@@ -117,7 +117,6 @@ final readonly class DoctorReportRunner
         private AnalyticsPublicProxyDoctorProbe $analyticsPublicProxyDoctorProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
         private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
-        private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
         private DnsmasqReconciler $dnsmasqReconciler,
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
@@ -1036,24 +1035,11 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
-            $proxyRoutes = $this->proxyRoutesForScope($node, $scope);
-            $proxyCheckTotal =
-                $proxyRoutes->count()
-                + 2
-                + ($scope->app === null && $scope->workspace === null ? 1 : 0)
-                + ($this->shouldProbeProxyDnsProjection($node, $scope) ? 1 : 0)
-                + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
-                + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0);
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->proxyFamilyProbe->probe(
                 node: $node,
-                family: 'proxy',
-                total: $proxyCheckTotal,
+                scope: $scope,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($node, $proxyRoutes, $scope): void {
-                    $this->probeProxyFamily($node, $proxyRoutes, $scope, $addIssue, $advance);
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1318,40 +1304,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return Collection<int, ProxyRoute>
-     */
-    private function proxyRoutesForScope(Node $node, DoctorTargetScope $scope): Collection
-    {
-        $query = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
-            ->where('node_id', $node->id);
-
-        if ($this->productionNodeExcludesWorkspaces($node)) {
-            $query
-                ->whereNull('workspace_id')
-                ->whereNotIn('owner_type', self::WORKSPACE_PROXY_OWNER_TYPES)
-                ->where('kind', '!=', 'workspace');
-        }
-
-        if ($scope->app !== null) {
-            $query->whereHas('app', static fn (Builder $appQuery): Builder => $appQuery->where('name', $scope->app));
-        }
-
-        if ($scope->workspace !== null) {
-            $query->whereHas(
-                'workspace',
-                static fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('name', $scope->workspace),
-            );
-        }
-
-        /** @mago-expect lint:inline-variable-return */
-        $routes = $query->orderBy('id')->get()->values();
-
-        /** @var Collection<int, ProxyRoute> $routes */
-        return $routes;
-    }
-
-    /**
      * @return Collection<int, NodeTool>
      */
     private function toolsForNode(Node $node): Collection
@@ -1366,136 +1318,6 @@ final readonly class DoctorReportRunner
 
         /** @var Collection<int, NodeTool> $tools */
         return $tools;
-    }
-
-    /**
-     * @param  Collection<int, ProxyRoute>  $routes
-     * @param  callable(DoctorIssue): void  $addIssue
-     */
-    private function probeProxyFamily(
-        Node $node,
-        Collection $routes,
-        DoctorTargetScope $scope,
-        callable $addIssue,
-        callable $advance,
-    ): void {
-        foreach ($routes as $route) {
-            $snapshot = $this->proxyRouteProbe->introspect($route);
-
-            foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
-                $addIssue($this->proxyIssuePayload($entry, $route));
-            }
-
-            $advance();
-        }
-
-        if ($scope->app === null && $scope->workspace === null) {
-            foreach ($this->proxyRouteProbe->diffAgentToolRouteIntent($node) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-
-            $advance();
-        }
-
-        if ($this->shouldProbeProxyDnsProjection($node, $scope)) {
-            foreach ($this->proxyDnsProjectionProbe->drift($node) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-
-            $advance();
-        }
-
-        if ($scope->workspace === null) {
-            foreach ($this->webSocketProxyDoctorProbe->drift($node, $scope->app) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-        }
-
-        $advance();
-
-        if ($scope->app === null && $scope->workspace === null) {
-            foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-
-            foreach ($this->analyticsProxyDoctorProbe->drift($node) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-        }
-
-        if ($scope->workspace === null) {
-            foreach ($this->analyticsPublicProxyDoctorProbe->drift($node, $scope->app) as $entry) {
-                $addIssue($this->nodeScopedIssuePayload($entry, $node));
-            }
-        }
-
-        $advance();
-
-        if ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
-            $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
-
-            foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
-                $addIssue($this->doctorIssueFactory->fromDriftEntry(
-                    $entry,
-                    $node->name,
-                    detail: $entry->detail ?? [],
-                ));
-            }
-
-            $advance();
-        }
-
-        if (! $node->isActive() || ! $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
-            return;
-        }
-
-        try {
-            $snapshot = $this->proxyRouteProbe->introspectNode($node);
-            $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
-
-            foreach ($this->proxyRouteProbe->observedRouteDomainsForNode($node, $snapshot) as $domain) {
-                if (in_array($domain, $expectedDomains, true)) {
-                    continue;
-                }
-
-                $entry = new DriftEntry(
-                    family: 'proxy',
-                    key: $domain,
-                    kind: DriftKind::Extra,
-                    summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
-                );
-
-                $addIssue($this->doctorIssueFactory->fromDriftEntry(
-                    $entry,
-                    $node->name,
-                    code: 'proxy.route_extra',
-                    detail: [
-                        'domain' => $domain,
-                        'code' => 'proxy.route_extra',
-                    ],
-                ));
-            }
-
-            $globalSnapshot = $this->proxyRouteProbe->introspectGlobalConfig($node);
-
-            foreach ($this->proxyRouteProbe->diffGlobalConfig($node, $globalSnapshot) as $entry) {
-                $addIssue($this->doctorIssueFactory->fromDriftEntry(
-                    $entry,
-                    $node->name,
-                    detail: $entry->detail ?? [],
-                ));
-            }
-        } catch (RemoteShellFailed $exception) {
-            $addIssue($this->remoteShellProbeFailedIssue(
-                node: $node,
-                family: 'proxy',
-                key: 'proxy.node_probe_failed',
-                exception: $exception,
-                summary: "Proxy node route scan failed on node '{$node->name}'; extra backend routes on the node cannot be detected.",
-            ));
-        }
-
-        $advance();
     }
 
     /**
@@ -1668,21 +1490,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return DoctorIssue
-     */
-    private function proxyIssuePayload(DriftEntry $entry, ProxyRoute $route): DoctorIssue
-    {
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $route->node->name,
-            detail: [
-                ...($entry->detail ?? []),
-                'domain' => $route->domain,
-            ],
-        );
-    }
-
-    /**
      * @param  list<string>  $families
      * @return list<array<string, mixed>>
      */
@@ -1770,19 +1577,9 @@ final readonly class DoctorReportRunner
     private function proxyAdoptSnapshotForScope(Node $node, DoctorTargetScope $scope): ProbeSnapshot
     {
         $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
+        $excludedDomains = $this->proxyRouteInventory->excludedWorkspaceDomains($node);
 
-        if ($this->productionNodeExcludesWorkspaces($node)) {
-            /** @var list<string> $excludedDomains */
-            $excludedDomains = ProxyRoute::query()
-                ->where('node_id', $node->id)
-                ->where(function (Builder $query): void {
-                    $query
-                        ->whereNotNull('workspace_id')
-                        ->orWhereIn('owner_type', self::WORKSPACE_PROXY_OWNER_TYPES)
-                        ->orWhere('kind', 'workspace');
-                })
-                ->pluck('domain')
-                ->all();
+        if ($excludedDomains !== []) {
             $snapshot = new ProbeSnapshot(array_diff_key($snapshot->items, array_fill_keys($excludedDomains, true)));
         }
 
@@ -1790,8 +1587,8 @@ final readonly class DoctorReportRunner
             return $snapshot;
         }
 
-        $domains = $this
-            ->proxyRoutesForScope($node, $scope)
+        $domains = $this->proxyRouteInventory
+            ->forScope($node, $scope)
             ->map(static fn (ProxyRoute $route): string => $route->domain)
             ->all();
 
@@ -1805,7 +1602,7 @@ final readonly class DoctorReportRunner
 
     private function productionNodeExcludesWorkspaces(Node $node): bool
     {
-        return $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppProduction->value);
+        return $this->proxyRouteInventory->nodeExcludesWorkspaces($node);
     }
 
     private function isUbuntuPlatform(Node $node): bool
@@ -1860,15 +1657,6 @@ final readonly class DoctorReportRunner
         return $sources;
     }
 
-    private function shouldProbeProxyDnsProjection(Node $node, DoctorTargetScope $scope): bool
-    {
-        return (
-            $scope->app === null
-            && $scope->workspace === null
-            && $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Router->value)
-        );
-    }
-
     private function productionNodeWorkspaceIssue(Node $node, DoctorIssue $issue): bool
     {
         if (! $this->productionNodeExcludesWorkspaces($node)) {
@@ -1912,11 +1700,7 @@ final readonly class DoctorReportRunner
 
     private function proxyRouteIsWorkspaceOwned(ProxyRoute $route): bool
     {
-        return (
-            $route->workspace_id !== null
-            || in_array($route->owner_type, self::WORKSPACE_PROXY_OWNER_TYPES, true)
-            || $route->kind === 'workspace'
-        );
+        return $this->proxyRouteInventory->routeIsWorkspaceOwned($route);
     }
 
     /**
