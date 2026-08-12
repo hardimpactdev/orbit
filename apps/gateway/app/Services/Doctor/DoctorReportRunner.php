@@ -48,7 +48,6 @@ use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Schedules\SchedulesProbe;
 use App\Services\Tools\ToolsFixer;
-use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -92,7 +91,6 @@ final readonly class DoctorReportRunner
         private ProxyRouteFixer $proxyRouteFixer,
         private ProxyRouteAdopter $proxyRouteAdopter,
         private NodeConverger $nodeConverger,
-        private ToolsProbe $toolsProbe,
         private ToolsFixer $toolsFixer,
         private SchedulesProbe $schedulesProbe,
         private SchedulesFixer $schedulesFixer,
@@ -105,6 +103,7 @@ final readonly class DoctorReportRunner
         private DoctorProxyFamilyProbe $proxyFamilyProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
         private DoctorFirewallRuleFamilyProbe $firewallRuleFamilyProbe,
+        private DoctorToolFamilyProbe $toolFamilyProbe,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
@@ -1012,58 +1011,10 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('tool', $selectedFamilies, true)) {
-            $tools = $this->toolsForNode($node);
-            $toolCheckTotal =
-                $tools->count()
-                + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
-                + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
-                + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->toolFamilyProbe->probe(
                 node: $node,
-                family: 'tool',
-                total: $toolCheckTotal,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($node, $tools): void {
-                    foreach ($tools as $tool) {
-                        $snapshot = $this->toolsProbe->introspect($tool);
-
-                        foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                            $addIssue($this->toolIssuePayload($entry, $tool));
-                        }
-
-                        $advance();
-                    }
-
-                    $webSocketAssignment = $this->activeWebSocketAssignment($node);
-
-                    if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                        foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
-                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                        }
-
-                        $advance();
-                    }
-
-                    $s3Assignment = $this->activeS3Assignment($node);
-
-                    if ($s3Assignment instanceof NodeRoleAssignment) {
-                        foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
-                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                        }
-
-                        $advance();
-                    }
-
-                    if ($this->shouldProbeDnsRuntime($node)) {
-                        foreach ($this->dnsRuntimeProbe->probe() as $entry) {
-                            $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                        }
-
-                        $advance();
-                    }
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1259,23 +1210,6 @@ final readonly class DoctorReportRunner
             ->values();
 
         return $instancesForNode;
-    }
-
-    /**
-     * @return Collection<int, NodeTool>
-     */
-    private function toolsForNode(Node $node): Collection
-    {
-        /** @mago-expect lint:inline-variable-return */
-        $tools = NodeTool::query()
-            ->with('node')
-            ->where('node_id', $node->id)
-            ->orderBy('id')
-            ->get()
-            ->values();
-
-        /** @var Collection<int, NodeTool> $tools */
-        return $tools;
     }
 
     /**
@@ -3063,23 +2997,6 @@ final readonly class DoctorReportRunner
                 ],
             ];
         }
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function toolIssuePayload(DriftEntry $entry, NodeTool $tool): DoctorIssue
-    {
-        $tool->loadMissing('node');
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $tool->node?->name,
-            detail: [
-                ...($entry->detail ?? []),
-                'tool' => $tool->name,
-            ],
-        );
     }
 
     /**

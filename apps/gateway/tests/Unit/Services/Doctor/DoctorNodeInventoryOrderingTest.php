@@ -18,6 +18,7 @@ use App\Services\Doctor\DoctorFirewallRuleFamilyProbe;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Doctor\DoctorProxyRouteInventory;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorToolFamilyProbe;
 use App\Services\Doctor\DoctorWorkspaceFamilyProbe;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -162,7 +163,7 @@ it('reads every node inventory in stable row identity order', function (): void 
             ))
             ->toBe($firewallRules->pluck('id')->all())
             ->and(doctor_inventory_ids(
-                $runner,
+                app(DoctorToolFamilyProbe::class),
                 methodName: 'toolsForNode',
                 arguments: [$node],
                 orderedTable: 'node_tools',
