@@ -1262,6 +1262,25 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         )->and((string) file_get_contents(repo_path('.codex/hooks.json')))->toContain('orbit-codex-pre-tool-use-hook');
 });
 
+it('installs locked TypeScript SDK tools in every prepared worktree', function (): void {
+    $script = (string) file_get_contents(repo_path('bin/orbit-prepare-worktree'));
+    $sdkInstallPosition = strpos(
+        haystack: $script,
+        needle: 'run_in "${worktree_path}/packages/sdk-typescript" npm ci --ignore-scripts --include=dev',
+    );
+    $optionalFrontendPosition = strpos(
+        haystack: $script,
+        needle: 'if [ "$run_frontend" -eq 1 ]; then',
+    );
+
+    expect($sdkInstallPosition)
+        ->toBeInt()
+        ->and($optionalFrontendPosition)
+        ->toBeInt()
+        ->and($sdkInstallPosition)
+        ->toBeLessThan($optionalFrontendPosition);
+});
+
 it('keeps retained cli proof agent-owned unless human judgment remains', function (): void {
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));

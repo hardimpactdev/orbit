@@ -215,6 +215,9 @@ for composer_manifest in "${worktree_path}"/packages/*/composer.json "${worktree
     fi
 done
 
+step "Installing TypeScript SDK dependencies"
+run_in "${worktree_path}/packages/sdk-typescript" npm ci --ignore-scripts --include=dev
+
 prepare_gateway_app() {
     local app_path="$1"
     local config_root="${app_path}/storage/framework/testing/worktree-orbit"
