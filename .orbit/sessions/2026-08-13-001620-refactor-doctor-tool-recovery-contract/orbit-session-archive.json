@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T22:16:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-tool-recovery-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-001620-refactor-doctor-tool-recovery-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-normal-tool-recovery-incus.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-normal-tool-recovery-incus.json": "e7dd0280c2bf94bb74481bab2139c83aa860718f8737411f4851756c52c5fa8b",
+        "loop.md": "aa3123ef0abadfe7b9f2bb588cff989906411aa51f07fb6e37227022b8fd479e"
+    },
+    "slug": "refactor-doctor-tool-recovery-contract",
+    "requested_slug": "refactor-doctor-tool-recovery-contract",
+    "compatible_slugs": [
+        "refactor-doctor-tool-recovery-contract"
+    ],
+    "branch": "refactor/doctor-tool-recovery-contract",
+    "candidate_commit": "33c93735d4100c5d22006f4d177bab9f74e55e20",
+    "accepted_feature_tip": "33c93735d4100c5d22006f4d177bab9f74e55e20",
+    "accepted_main_tip": "eff92e1af7c5dba5e710617c4e9076c7be7d6de3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

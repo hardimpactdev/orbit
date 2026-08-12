@@ -1,0 +1,32 @@
+{
+  "candidate": "33c93735d4100c5d22006f4d177bab9f74e55e20",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "host": "nckrtl@192.168.6.20",
+  "topology": "dev-b2dc39",
+  "target": "app-dev-1",
+  "expected": "Doctor detects a missing normal tool container, restores it through NodeConverger, and a fresh verify is healthy.",
+  "observed": {
+    "before": {
+      "healthy": false,
+      "issue": "tool.container_missing",
+      "tool": "caddy",
+      "container": "orbit-caddy"
+    },
+    "restore": {
+      "healthy": true,
+      "fixed": 1,
+      "failed": 0,
+      "passes": 1,
+      "stop_reason": "converged",
+      "action_status": "completed"
+    },
+    "after": {
+      "healthy": true,
+      "issues": 0,
+      "container_status": "running",
+      "container_image": "caddy:2-alpine"
+    }
+  },
+  "result": "passed"
+}
