@@ -39,8 +39,8 @@ final class FirewallRuleShapeCanonicalizer
     }
 
     /**
-     * Derive the concrete address family from an explicit host IP when the
-     * stored intent is `both`. A v4 host can only appear as a v4 UFW rule.
+     * Derive the concrete address family from an explicit IP or CIDR when the
+     * stored intent is `both`.
      */
     public static function effectiveAddressFamily(string $addressFamily, string $source, ?string $destination): string
     {
@@ -54,14 +54,35 @@ final class FirewallRuleShapeCanonicalizer
             return 'both';
         }
 
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+        $address = explode(separator: '/', string: $host, limit: 2)[0];
+
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
             return 'v4';
         }
 
-        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
             return 'v6';
         }
 
         return 'both';
+    }
+
+    /**
+     * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string}  $expected
+     * @return list<array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family: string, interface: ?string}>
+     */
+    public static function concreteExpectedShapes(array $expected): array
+    {
+        $addressFamilies = $expected['address_family'] === 'both'
+            ? ['v4', 'v6']
+            : [$expected['address_family']];
+
+        return array_map(
+            static fn (string $addressFamily): array => [
+                ...$expected,
+                'address_family' => $addressFamily,
+            ],
+            $addressFamilies,
+        );
     }
 }

@@ -335,41 +335,42 @@ final readonly class FirewallRuleProbe
             return [];
         }
 
-        $expected = $this->expectedShape($rule);
-        $observed = $snapshot->get($this->identityKey($expected));
+        foreach (FirewallRuleShapeCanonicalizer::concreteExpectedShapes($this->expectedShape($rule)) as $expected) {
+            if ($snapshot->get($this->identityKey($expected)) !== null) {
+                continue;
+            }
 
-        if ($observed !== null) {
-            return [];
-        }
+            $partial = $this->findPartialShapeMatch($snapshot, $expected);
 
-        $partial = $this->findPartialShapeMatch($snapshot, $expected);
+            if ($partial !== null) {
+                return [
+                    new DriftEntry(
+                        family: $this->key(),
+                        key: 'firewall_rule.rule_mismatch',
+                        kind: DriftKind::Divergent,
+                        summary: "Firewall backend rule {$rule->name} differs from gateway firewall intent.",
+                        detail: [
+                            'expected' => $expected,
+                            'observed' => $partial,
+                        ],
+                    ),
+                ];
+            }
 
-        if ($partial !== null) {
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'firewall_rule.rule_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Firewall backend rule {$rule->name} differs from gateway firewall intent.",
+                    key: 'firewall_rule.rule_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Firewall backend rule {$rule->name} is missing on the target node.",
                     detail: [
                         'expected' => $expected,
-                        'observed' => $partial,
                     ],
                 ),
             ];
         }
 
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'firewall_rule.rule_missing',
-                kind: DriftKind::Missing,
-                summary: "Firewall backend rule {$rule->name} is missing on the target node.",
-                detail: [
-                    'expected' => $expected,
-                ],
-            ),
-        ];
+        return [];
     }
 
     /**

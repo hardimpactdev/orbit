@@ -241,6 +241,109 @@ it('plans ok when observed bare host IP matches host CIDR intent with both famil
         ->toBe(ConvergenceStatus::Ok);
 });
 
+it('plans ok when observed CIDR matches intent stored with both family', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.97:9477/v1/commands' => Http::response(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+
+            OUT)),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.97');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'private-service',
+        'source' => '10.6.0.0/24',
+        'port' => '5173',
+        'address_family' => 'both',
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+
+    $probe = $convergence->probe($node);
+    $plan = $convergence->plan($probe);
+
+    expect($probe->present)
+        ->toBeTrue()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok);
+});
+
+it('requires both concrete UFW entries for wildcard both intent', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.98:9477/v1/commands' => Http::response(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 8443/tcp                   ALLOW IN    Anywhere
+            [ 2] 8443/tcp (v6)              ALLOW IN    Anywhere (v6)
+
+            OUT)),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.98');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'public-service',
+        'source' => 'any',
+        'port' => '8443',
+        'address_family' => 'both',
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+
+    $probe = $convergence->probe($node);
+    $plan = $convergence->plan($probe);
+
+    expect($probe->present)
+        ->toBeTrue()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok);
+});
+
+it('applies wildcard both intent without deleting its matching IPv4 entry when IPv6 is missing', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.99:9477/v1/commands' => Http::sequence()
+            ->push(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+                Status: active
+
+                     To                         Action      From
+                     --                         ------      ----
+                [ 1] 8443/tcp                   ALLOW IN    Anywhere
+
+                OUT))
+            ->push(ufw_firewall_rule_agent_payload('apply')),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.99');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'public-service',
+        'source' => 'any',
+        'port' => '8443',
+        'address_family' => 'both',
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+
+    $probe = $convergence->probe($node);
+    $plan = $convergence->plan($probe);
+    $result = $convergence->apply($node, $plan);
+
+    expect($probe->present)
+        ->toBeFalse()
+        ->and($probe->partialMatch)
+        ->toBeNull()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and(array_column(ufw_firewall_rule_agent_requests(), 'action'))
+        ->toBe(['apply']);
+});
+
 it('reports unreachable when ufw introspection fails', function (): void {
     Http::preventStrayRequests();
     Http::fake([

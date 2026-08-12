@@ -9,6 +9,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleProbe;
+use App\Services\Firewall\FirewallRuleShapeCanonicalizer;
 use App\Services\Firewall\RemoteFirewallRuleProbe;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -226,6 +227,131 @@ describe('firewall backend UFW reality', function (): void {
         $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
 
         expect($drift)->toBe([]);
+    });
+
+    it('derives the concrete family from IPv4 and IPv6 CIDR intent stored as both', function (
+        string $source,
+        string $observedRule,
+    ): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'private-service',
+            'source' => $source,
+            'port' => '5173',
+            'address_family' => 'both',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<UFW
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            {$observedRule}
+            UFW);
+
+        expect(new FirewallRuleProbe()->diff($rule, $snapshot))->toBe([]);
+    })->with([
+        'IPv4 network' => ['10.6.0.0/24', '[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24'],
+        'IPv6 network' => ['2001:db8::/64', '[ 1] 5173/tcp (v6)              ALLOW IN    2001:db8::/64'],
+    ]);
+
+    it('matches wildcard both intent only when IPv4 and IPv6 UFW entries exist', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'public-service',
+            'source' => 'any',
+            'port' => '8443',
+            'address_family' => 'both',
+        ]);
+        $completeSnapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 8443/tcp                   ALLOW IN    Anywhere
+            [ 2] 8443/tcp (v6)              ALLOW IN    Anywhere (v6)
+            UFW);
+        $incompleteSnapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 8443/tcp                   ALLOW IN    Anywhere
+            UFW);
+
+        $probe = new FirewallRuleProbe;
+        $incompleteDrift = $probe->diff($rule, $incompleteSnapshot);
+
+        expect($probe->diff($rule, $completeSnapshot))
+            ->toBe([])
+            ->and(firewallProbeIssue($incompleteDrift, key: 'firewall_rule.rule_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(firewallProbeIssue($incompleteDrift, key: 'firewall_rule.rule_mismatch'))
+            ->toBeNull();
+    });
+
+    it('reports a missing wildcard family regardless of which concrete family exists', function (
+        string $observedRule,
+        string $missingFamily,
+    ): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'public-service',
+            'source' => 'any',
+            'port' => '8443',
+            'address_family' => 'both',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<UFW
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            {$observedRule}
+            UFW);
+
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
+
+        expect(
+            firewallProbeIssue($drift, key: 'firewall_rule.rule_missing')?->detail['expected']['address_family']
+            ?? null,
+        )
+            ->toBe($missingFamily);
+    })->with([
+        'IPv6 is missing' => ['[ 1] 8443/tcp                   ALLOW IN    Anywhere', 'v6'],
+        'IPv4 is missing' => ['[ 1] 8443/tcp (v6)              ALLOW IN    Anywhere (v6)', 'v4'],
+    ]);
+
+    it('derives both from a concrete destination when the source is unrestricted', function (): void {
+        expect(FirewallRuleShapeCanonicalizer::effectiveAddressFamily(
+            addressFamily: 'both',
+            source: 'any',
+            destination: '2001:db8::/64',
+        ))->toBe('v6');
+    });
+
+    it('keeps a same-family wildcard shape difference as mismatch', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'public-service',
+            'source' => 'any',
+            'port' => '8443',
+            'address_family' => 'both',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 8443/tcp                   ALLOW IN    10.6.0.0/24
+            UFW);
+
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
+
+        expect(firewallProbeIssue($drift, key: 'firewall_rule.rule_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent);
     });
 
     it('treats host CIDR and bare host IP with derived family as equivalent', function (): void {

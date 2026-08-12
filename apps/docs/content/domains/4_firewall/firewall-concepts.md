@@ -20,6 +20,8 @@ Each firewall rule is defined by the following fields.
 - **Port:** Destination port or documented port range.
 - **Protocol:** Traffic protocol. One of `tcp` or `udp`.
 - **Address family:** `v4`, `v6`, or `both`. Existing rows default to `both`.
+  A concrete host or CIDR narrows `both` to its actual IP family. An
+  unrestricted `both` rule owns one IPv4 and one IPv6 backend entry.
 - **Interface scope:** Optional symbolic interface scope. `public` and
   `wireguard` are resolved to live interfaces by the apply path.
 - **Owner:** Rule owner. `user` means editable through firewall commands;

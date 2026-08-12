@@ -60,21 +60,21 @@ final readonly class UfwFirewallRule
             );
         }
 
-        $expected = $this->expectedShape();
+        foreach (FirewallRuleShapeCanonicalizer::concreteExpectedShapes($this->expectedShape()) as $expected) {
+            if ($snapshot->get($this->identityKey($expected)) !== null) {
+                continue;
+            }
 
-        if ($snapshot->get($this->identityKey($expected)) !== null) {
             return new UfwFirewallRuleProbe(
                 reachable: true,
-                present: true,
+                present: false,
+                partialMatch: $this->findPartialShapeMatch($snapshot, $expected),
             );
         }
 
-        $partialMatch = $this->findPartialShapeMatch($snapshot, $expected);
-
         return new UfwFirewallRuleProbe(
             reachable: true,
-            present: false,
-            partialMatch: $partialMatch,
+            present: true,
         );
     }
 
