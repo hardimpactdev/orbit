@@ -22,7 +22,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Tools\ToolScriptDispatcher;
-use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 use Throwable;
 
@@ -31,6 +30,8 @@ final readonly class ProcessesProbe
     private const array WORKSPACE_OWNER_TYPES = [Workspace::class, 'workspace'];
 
     public function __construct(
+        private ProcessRuntimeContextResolver $runtimeContextResolver,
+        private ProcessExpectedRuntimeUnits $expectedRuntimeUnits,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ToolScriptDispatcher $scripts = null,
         private ?RemoteRuntimeHibernation $runtimeHibernation = null,
@@ -48,22 +49,22 @@ final readonly class ProcessesProbe
 
     public function introspect(Process $process): ProbeSnapshot
     {
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
 
         if (! $node instanceof Node) {
             return new ProbeSnapshot([]);
         }
 
         try {
-            if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
+            if ($this->runtimeContextResolver->runtime($process) === ProcessRuntime::Docker) {
                 return $this->introspectDocker($process, $node);
             }
 
-            if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
+            if ($this->runtimeContextResolver->runtime($process) === ProcessRuntime::DockerSwarm) {
                 return $this->introspectDockerSwarm($process, $node);
             }
 
-            if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
+            if ($this->runtimeContextResolver->runtime($process) === ProcessRuntime::Launchd) {
                 if (! NodeHostPaths::isMacosPlatform($node->platform)) {
                     throw new InvalidArgumentException(
                         "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
@@ -82,7 +83,7 @@ final readonly class ProcessesProbe
 
     private function introspectDocker(Process $process, Node $node): ProbeSnapshot
     {
-        $expectedUnits = $this->expectedDockerUnitSpecs($process);
+        $expectedUnits = $this->expectedRuntimeUnits->unlabeledSpecifications($process);
         $runtimeUnits = [];
         $backendAvailable = true;
         $backendExitCode = 0;
@@ -193,7 +194,7 @@ final readonly class ProcessesProbe
 
     private function introspectDockerSwarm(Process $process, Node $node): ProbeSnapshot
     {
-        $expectedUnits = $this->expectedDockerSwarmUnitSpecs($process);
+        $expectedUnits = $this->expectedRuntimeUnits->unlabeledSpecifications($process);
         $runtimeUnits = [];
         $backendAvailable = true;
         $backendExitCode = 0;
@@ -300,7 +301,7 @@ final readonly class ProcessesProbe
     private function introspectSystemd(Process $process, Node $node): ProbeSnapshot
     {
         $probe = $this->runtimeBackendProbe()->check($node);
-        $spec = $this->expectedSystemdUnitSpecs($process);
+        $spec = $this->expectedRuntimeUnits->unlabeledSpecifications($process);
 
         $items = [
             $process->name => [
@@ -358,7 +359,7 @@ final readonly class ProcessesProbe
     private function introspectLaunchd(Process $process, Node $node): ProbeSnapshot
     {
         $probe = $this->runtimeBackendProbe()->check($node);
-        $spec = $this->expectedLaunchdUnitSpecs($process);
+        $spec = $this->expectedRuntimeUnits->launchdSpecifications($process);
 
         $items = [
             $process->name => [
@@ -605,7 +606,7 @@ final readonly class ProcessesProbe
     private function checkRuntimeUnitLiveness(Process $process, ProbeSnapshot $snapshot): array
     {
         if (
-            $this->runtimeFor($process) !== ProcessRuntime::Docker
+            $this->runtimeContextResolver->runtime($process) !== ProcessRuntime::Docker
             || $process->restart_policy !== ProcessRestartPolicy::Always
         ) {
             return [];
@@ -624,7 +625,7 @@ final readonly class ProcessesProbe
 
         $drift = [];
 
-        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
             $runtimeUnit = $observed['runtime_units'][$unit['name']] ?? null;
 
             if (
@@ -680,7 +681,7 @@ final readonly class ProcessesProbe
 
         $scopeKeysByUnit = [];
 
-        foreach ($this->runtimeContexts($process) as $index => $workspace) {
+        foreach ($this->runtimeContextResolver->contexts($process) as $index => $workspace) {
             $unitName = $expectedUnits[$index]['name'] ?? null;
 
             if (
@@ -802,7 +803,7 @@ final readonly class ProcessesProbe
             ];
         }
 
-        $this->loadProcessApp($process);
+        $this->runtimeContextResolver->loadRuntimeApp($process);
         $app = $process->app;
 
         if (! $app instanceof App) {
@@ -816,7 +817,7 @@ final readonly class ProcessesProbe
             ];
         }
 
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
         $instance = $process->instance;
 
         if (
@@ -845,7 +846,7 @@ final readonly class ProcessesProbe
      */
     private function checkWireGuardSelfRoute(Process $process): array
     {
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
 
         if (! $node instanceof Node) {
             return [];
@@ -910,11 +911,18 @@ final readonly class ProcessesProbe
 
         $process->loadMissing('owner');
 
-        if ($process->owner instanceof Node && $this->runtimeFor($process) === ProcessRuntime::Systemd) {
+        if (
+            $process->owner instanceof Node
+            && $this->runtimeContextResolver->runtime($process) === ProcessRuntime::Systemd
+        ) {
             return [];
         }
 
-        $isDocker = in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true);
+        $isDocker = in_array(
+            $this->runtimeContextResolver->runtime($process),
+            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+            true,
+        );
         $runtimeUnitPrefix = $this->runtimeUnitPrefix($process);
         $expectedRuntimeUnitsForApp = $this->expectedRuntimeUnitsForApp($process);
 
@@ -932,7 +940,7 @@ final readonly class ProcessesProbe
                 ]);
 
                 if (! $isDocker) {
-                    $runtime = $this->runtimeFor($process);
+                    $runtime = $this->runtimeContextResolver->runtime($process);
                     $detail['expected_path'] = $runtime === ProcessRuntime::Launchd
                         ? $this->launchdExtraExpectedPath($process, $runtimeUnit)
                         : "/etc/systemd/system/{$runtimeUnit}.service";
@@ -956,7 +964,7 @@ final readonly class ProcessesProbe
     private function expectedRuntimeUnitsForApp(Process $process): array
     {
         $app = $process->ownerApp();
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
 
         if (! $app instanceof App || ! $node instanceof Node) {
             return [];
@@ -968,7 +976,7 @@ final readonly class ProcessesProbe
             ->with(['owner', 'instance'])
             ->where('instance_id', $process->instance_id);
 
-        if ($this->productionNodeExcludesWorkspaces($node)) {
+        if ($this->runtimeContextResolver->productionNodeExcludesWorkspaces($node)) {
             $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
         }
 
@@ -979,7 +987,7 @@ final readonly class ProcessesProbe
                 return;
             }
 
-            $candidateNode = $this->processNode($candidate);
+            $candidateNode = $this->runtimeContextResolver->executionNode($candidate);
 
             if (! $candidateNode instanceof Node || ! $candidateNode->is($node)) {
                 return;
@@ -988,7 +996,7 @@ final readonly class ProcessesProbe
             try {
                 $runtimeUnits = [
                     ...$runtimeUnits,
-                    ...$this->expectedRuntimeUnits($candidate),
+                    ...$this->expectedRuntimeUnits->names($candidate),
                 ];
             } catch (InvalidArgumentException) {
                 return;
@@ -1015,14 +1023,14 @@ final readonly class ProcessesProbe
 
     private function launchdExtraExpectedPath(Process $process, string $runtimeUnit): string
     {
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
 
         if (! $node instanceof Node) {
             return "dev.hardimpact.orbit.{$runtimeUnit}.plist";
         }
 
         try {
-            return $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node);
+            return $this->expectedRuntimeUnits->launchdPath($runtimeUnit, $node);
         } catch (InvalidArgumentException) {
             // Inventory may surface identities that fail launchd validity. Do not
             // throw from the process family probe; leave a non-path label only.
@@ -1035,7 +1043,11 @@ final readonly class ProcessesProbe
      */
     private function checkRestartPolicy(Process $process, ProbeSnapshot $snapshot): array
     {
-        if (in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
+        if (in_array(
+            $this->runtimeContextResolver->runtime($process),
+            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+            true,
+        )) {
             return [];
         }
 
@@ -1053,7 +1065,11 @@ final readonly class ProcessesProbe
      */
     private function checkRuntimeEnvironment(Process $process, ProbeSnapshot $snapshot): array
     {
-        if (in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
+        if (in_array(
+            $this->runtimeContextResolver->runtime($process),
+            [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+            true,
+        )) {
             return [];
         }
 
@@ -1090,7 +1106,7 @@ final readonly class ProcessesProbe
 
         $drift = [];
 
-        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
             $name = $unit['name'];
             $runtimeUnit = $observed['runtime_units'][$name] ?? null;
 
@@ -1130,7 +1146,7 @@ final readonly class ProcessesProbe
 
         $drift = [];
 
-        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+        foreach ($this->expectedRuntimeUnits->specifications($process) as $unit) {
             $name = $unit['name'];
             $runtimeUnit = $observed['runtime_units'][$name] ?? null;
 
@@ -1150,7 +1166,7 @@ final readonly class ProcessesProbe
             $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
 
             if (! in_array(
-                $this->runtimeFor($process),
+                $this->runtimeContextResolver->runtime($process),
                 [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 strict: true,
             )) {
@@ -1179,7 +1195,7 @@ final readonly class ProcessesProbe
      */
     private function checkRuntimeBackend(Process $process, ProbeSnapshot $snapshot): array
     {
-        $node = $this->processNode($process);
+        $node = $this->runtimeContextResolver->executionNode($process);
 
         if (! $node instanceof Node) {
             return [];
@@ -1192,7 +1208,7 @@ final readonly class ProcessesProbe
         }
 
         if (($observed['runtime_backend_available'] ?? null) === false) {
-            $backendName = match ($this->runtimeFor($process)) {
+            $backendName = match ($this->runtimeContextResolver->runtime($process)) {
                 ProcessRuntime::Docker, ProcessRuntime::DockerSwarm => 'Docker',
                 ProcessRuntime::Launchd => 'launchd',
                 ProcessRuntime::Systemd => 'systemd',
@@ -1208,7 +1224,7 @@ final readonly class ProcessesProbe
                         'process' => $process->name,
                         ...$this->processOwnershipDetail($process),
                         'node' => $node->name,
-                        'runtime' => $this->runtimeFor($process)->value,
+                        'runtime' => $this->runtimeContextResolver->runtime($process)->value,
                         ...$this->serviceRuntimeDetail($process),
                         'exit_code' => $observed['runtime_backend_exit_code'] ?? null,
                         'output' => $observed['runtime_backend_output'] ?? '',
@@ -1244,7 +1260,7 @@ final readonly class ProcessesProbe
                     [
                         'process' => $process->name,
                         ...$this->processOwnershipDetail($process),
-                        'runtime' => $this->runtimeFor($process)->value,
+                        'runtime' => $this->runtimeContextResolver->runtime($process)->value,
                         ...$this->serviceRuntimeDetail($process),
                         'reason' => $observed['runtime_unit_render_error'] ?? null,
                     ],
@@ -1265,14 +1281,14 @@ final readonly class ProcessesProbe
             return [];
         }
 
-        $this->loadProcessApp($process, withWorkspaces: true);
+        $this->runtimeContextResolver->loadRuntimeApp($process, withWorkspaces: true);
 
         if (! $process->app instanceof App) {
             return [];
         }
 
         try {
-            $runtimeUnits = $this->expectedRuntimeUnits($process);
+            $runtimeUnits = $this->expectedRuntimeUnits->names($process);
         } catch (InvalidArgumentException $exception) {
             return [
                 new DriftEntry(
@@ -1301,35 +1317,6 @@ final readonly class ProcessesProbe
         }
 
         return [];
-    }
-
-    private function processNode(Process $process): ?Node
-    {
-        $process->loadMissing(['owner', 'node', 'instance']);
-
-        if ($process->owner instanceof Node) {
-            return $process->owner;
-        }
-
-        // Prefer current instance/workspace placement over a possibly stale
-        // denormalized process.node_id after the app instance moved.
-        if ($process->owner instanceof Workspace) {
-            $placed = app(WorkspacePlacement::class)->nodeForWorkspace($process->owner);
-
-            if ($placed instanceof Node) {
-                return $placed;
-            }
-        }
-
-        if ($process->instance instanceof Instance) {
-            $placed = app(WorkspacePlacement::class)->nodeForInstance($process->instance);
-
-            if ($placed instanceof Node) {
-                return $placed;
-            }
-        }
-
-        return $process->node;
     }
 
     /**
@@ -1397,375 +1384,6 @@ final readonly class ProcessesProbe
         );
     }
 
-    /**
-     * @mago-expect lint:halstead
-     *
-     * @return list<string>
-     */
-    private function expectedRuntimeUnits(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            $unitNames = [];
-
-            foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
-                $unitNames[] = $unit['name'];
-            }
-
-            return $unitNames;
-        }
-
-        $this->loadProcessApp($process, withWorkspaces: true);
-
-        $app = $process->app;
-
-        if (! $app instanceof App) {
-            return [];
-        }
-
-        $unitNames = [];
-
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            foreach ($this->runtimeContexts($process) as $workspace) {
-                $unitNames[] = $this->dockerContainerRenderer()->containerName($app, $process, $workspace);
-            }
-
-            return $unitNames;
-        }
-
-        if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
-            foreach ($this->runtimeContexts($process) as $workspace) {
-                $unitNames[] = $this->launchdPlistRenderer()->unitName($app, $process, $workspace);
-            }
-
-            return $unitNames;
-        }
-
-        foreach ($this->runtimeContexts($process) as $workspace) {
-            $unitNames[] = $this->systemdUnitRenderer()->unitName($app, $process, $workspace);
-        }
-
-        return $unitNames;
-    }
-
-    /**
-     * @mago-expect lint:halstead
-     *
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>, label?: string}>
-     */
-    private function expectedRuntimeUnitSpecs(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-                return $this->expectedDockerUnitSpecs($process);
-            }
-
-            if ($this->runtimeFor($process) === ProcessRuntime::DockerSwarm) {
-                return $this->expectedDockerSwarmUnitSpecs($process);
-            }
-
-            if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
-                return $this->expectedLaunchdUnitSpecs($process);
-            }
-
-            return $this->expectedSystemdUnitSpecs($process);
-        }
-
-        $this->loadProcessApp($process, withWorkspaces: true);
-
-        if (! $process->app instanceof App) {
-            return [];
-        }
-
-        if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
-            return $this->expectedDockerUnitSpecs($process);
-        }
-
-        if ($this->runtimeFor($process) === ProcessRuntime::Launchd) {
-            return $this->expectedLaunchdUnitSpecs($process);
-        }
-
-        return $this->expectedSystemdUnitSpecs($process);
-    }
-
-    /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
-     */
-    private function expectedDockerUnitSpecs(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            $container = $this->dockerContainerRenderer()->render(
-                $this->surrogateAppForNode($process->owner),
-                $process,
-            );
-            $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-            $configuredHash = $config['container_spec_hash'] ?? null;
-            $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
-
-            return [[
-                'name' => $container->name(),
-                'config_path' => $container->name(),
-                'config_hash' => is_string($configuredHash) && $configuredHash !== ''
-                    ? $configuredHash
-                    : $container->specHash(),
-                'config_hash_label' => is_string($configuredHashLabel) && $configuredHashLabel !== ''
-                    ? $configuredHashLabel
-                    : ProcessDockerContainer::SpecHashLabel,
-                'restart_policy' => '',
-                'environment_lines' => [],
-            ]];
-        }
-
-        $this->loadProcessApp($process, withWorkspaces: true);
-
-        $app = $process->app;
-
-        if (! $app instanceof App) {
-            return [];
-        }
-
-        return collect($this->runtimeContexts($process))
-            ->map(function (?Workspace $workspace) use ($process, $app): array {
-                $container = $this->dockerContainerRenderer()->render($app, $process, $workspace);
-                $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-                $configuredHash = $config['container_spec_hash'] ?? null;
-                $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
-
-                return [
-                    'name' => $container->name(),
-                    'config_path' => $container->name(),
-                    'config_hash' => is_string($configuredHash) && $configuredHash !== ''
-                        ? $configuredHash
-                        : $container->specHash(),
-                    'config_hash_label' => is_string($configuredHashLabel) && $configuredHashLabel !== ''
-                        ? $configuredHashLabel
-                        : ProcessDockerContainer::SpecHashLabel,
-                    'restart_policy' => '',
-                    'environment_lines' => [],
-                ];
-            })
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
-     */
-    private function expectedDockerSwarmUnitSpecs(Process $process): array
-    {
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $serviceName = $this->optionalConfigString($config, 'service_name') ?? $process->name;
-        $configuredHash =
-            $this->optionalConfigString($config, 'spec_hash') ?? $this->optionalConfigString(
-                $this->stringMap($config['labels'] ?? []),
-                ProcessDockerContainer::SpecHashLabel,
-            ) ?? '';
-
-        return [[
-            'name' => $serviceName,
-            'config_path' => $serviceName,
-            'config_hash' => $configuredHash,
-            'config_hash_label' => ProcessDockerContainer::SpecHashLabel,
-            'restart_policy' => '',
-            'environment_lines' => [],
-        ]];
-    }
-
-    /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>
-     */
-    private function expectedSystemdUnitSpecs(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            $app = $this->surrogateAppForNode($process->owner);
-            $runtimeUnit = $this->systemdUnitRenderer()->unitName($app, $process);
-            $content = $this->systemdUnitRenderer()->render($process->owner, $app, $process);
-
-            return [[
-                'name' => $runtimeUnit,
-                'config_path' => $this->systemdUnitRenderer()->unitPath($runtimeUnit),
-                'config_hash' => hash('sha256', $content),
-                'config_hash_label' => '',
-                'restart_policy' => $process->restart_policy->toSystemd(),
-                'environment_lines' => $this->environmentLines($content),
-            ]];
-        }
-
-        $this->loadProcessApp($process, withWorkspaces: true);
-
-        $app = $process->app;
-
-        if (! $app instanceof App) {
-            return [];
-        }
-
-        $node = $this->processNode($process);
-
-        if (! $node instanceof Node) {
-            return [];
-        }
-
-        $units = [];
-
-        foreach ($this->runtimeContexts($process) as $workspace) {
-            $runtimeUnit = $this->systemdUnitRenderer()->unitName($app, $process, $workspace);
-            $content = $this->systemdUnitRenderer()->render($node, $app, $process, $workspace);
-
-            $units[] = [
-                'name' => $runtimeUnit,
-                'config_path' => $this->systemdUnitRenderer()->unitPath($runtimeUnit),
-                'config_hash' => hash('sha256', $content),
-                'config_hash_label' => '',
-                'restart_policy' => $process->restart_policy->toSystemd(),
-                'environment_lines' => $this->environmentLines($content),
-            ];
-        }
-
-        return $units;
-    }
-
-    /**
-     * @return list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>, label: string}>
-     */
-    private function expectedLaunchdUnitSpecs(Process $process): array
-    {
-        $process->loadMissing('owner');
-
-        if ($process->owner instanceof Node) {
-            $node = $process->owner;
-            $app = $this->surrogateAppForNode($node);
-            $runtimeUnit = $this->launchdPlistRenderer()->unitName($app, $process);
-            $content = $this->launchdPlistRenderer()->render($node, $app, $process);
-
-            return [[
-                'name' => $runtimeUnit,
-                'config_path' => $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node),
-                'config_hash' => hash('sha256', $content),
-                'config_hash_label' => '',
-                'restart_policy' => '',
-                'environment_lines' => [],
-                'label' => $this->launchdPlistRenderer()->label($runtimeUnit),
-            ]];
-        }
-
-        $this->loadProcessApp($process, withWorkspaces: true);
-
-        $app = $process->app;
-
-        if (! $app instanceof App) {
-            return [];
-        }
-
-        $units = [];
-
-        $node = $this->processNode($process);
-
-        if (! $node instanceof Node) {
-            return [];
-        }
-
-        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
-            throw new InvalidArgumentException(
-                "Launchd runtime for process '{$process->name}' requires a macOS execution node; "
-                ."placement resolved to '{$node->name}' ({$node->platform}).",
-            );
-        }
-
-        foreach ($this->runtimeContexts($process) as $workspace) {
-            $runtimeUnit = $this->launchdPlistRenderer()->unitName($app, $process, $workspace);
-            $content = $this->launchdPlistRenderer()->render($node, $app, $process, $workspace);
-
-            $units[] = [
-                'name' => $runtimeUnit,
-                'config_path' => $this->launchdPlistRenderer()->plistPath($runtimeUnit, $node),
-                'config_hash' => hash('sha256', $content),
-                'config_hash_label' => '',
-                'restart_policy' => '',
-                'environment_lines' => [],
-                'label' => $this->launchdPlistRenderer()->label($runtimeUnit),
-            ];
-        }
-
-        return $units;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function environmentLines(string $content): array
-    {
-        $lines = [];
-
-        foreach (explode("\n", $content) as $line) {
-            if (! str_starts_with($line, 'Environment=')) {
-                continue;
-            }
-
-            $lines[] = $line;
-        }
-
-        return $lines;
-    }
-
-    private function runtimeFor(Process $process): ProcessRuntime
-    {
-        $raw = $process->getRawOriginal('runtime');
-
-        if (is_string($raw)) {
-            return ProcessRuntime::tryFrom($raw) ?? ProcessRuntime::Systemd;
-        }
-
-        return $process->runtime ?? ProcessRuntime::Systemd;
-    }
-
-    /**
-     * @return list<Workspace|null>
-     */
-    private function runtimeContexts(Process $process): array
-    {
-        $process->loadMissing('owner');
-        $owner = $process->owner;
-
-        if ($owner instanceof Workspace) {
-            return $this->processNodeExcludesWorkspaces($process) ? [] : [$owner];
-        }
-
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $containerName = $config['container_name'] ?? null;
-
-        if (is_string($containerName) && trim($containerName) !== '') {
-            return [null];
-        }
-
-        $app = $process->app;
-
-        if (! $app instanceof App) {
-            return [];
-        }
-
-        if ($this->processNodeExcludesWorkspaces($process)) {
-            return [null];
-        }
-
-        $app->loadMissing('workspaces');
-
-        $workspaces = $process->instance_id === null
-            ? $app->workspaces
-            : $app->workspaces->where('instance_id', $process->instance_id);
-
-        /** @var list<Workspace> $workspaceModels */
-        $workspaceModels = array_values($workspaces->all());
-
-        return [null, ...$workspaceModels];
-    }
-
     private function dockerRuntimeUnitExtraCommand(Process $process): string
     {
         $parts = [
@@ -1810,7 +1428,7 @@ final readonly class ProcessesProbe
             [
                 'process' => $process->name,
                 ...$this->processOwnershipDetail($process),
-                'runtime' => $this->runtimeFor($process)->value,
+                'runtime' => $this->runtimeContextResolver->runtime($process)->value,
                 'runtime_unit' => $unit['name'] ?? null,
                 'expected' => $unit['config_path'] ?? null,
                 ...$this->serviceRuntimeDetail($process),
@@ -1877,20 +1495,6 @@ final readonly class ProcessesProbe
         ];
     }
 
-    private function surrogateAppForNode(Node $node): App
-    {
-        $app = new App([
-            'name' => $node->name,
-            'path' => ($node->user ?: 'orbit') === 'root'
-                ? '/root'
-                : '/home/'.($node->user ?: 'orbit'),
-            'node_id' => $node->id,
-        ]);
-        $app->setRelation('node', $node);
-
-        return $app;
-    }
-
     /**
      * @param  array<string, mixed>  $config
      */
@@ -1899,79 +1503,6 @@ final readonly class ProcessesProbe
         $value = $config[$key] ?? null;
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function stringMap(mixed $value): array
-    {
-        if (! is_array($value)) {
-            return [];
-        }
-
-        $map = [];
-
-        foreach ($value as $key => $item) {
-            if (! is_string($key) || ! is_scalar($item)) {
-                continue;
-            }
-
-            $map[$key] = (string) $item;
-        }
-
-        return $map;
-    }
-
-    private function loadProcessApp(Process $process, bool $withWorkspaces = false): void
-    {
-        $process->loadMissing(['owner', 'node', 'instance']);
-        $logicalApp = $process->ownerApp();
-        $instance = $process->instance;
-        $node = $process->node;
-
-        if (
-            ! $logicalApp instanceof App
-            || ! $instance instanceof Instance
-            || ! $node instanceof Node
-            || $instance->app_id !== $logicalApp->id
-        ) {
-            return;
-        }
-
-        $runtimeApp = ProcessRuntimeApp::make($logicalApp, $node, $instance);
-        $runtimeApp->setRelation('node', $node);
-
-        if ($withWorkspaces) {
-            $runtimeApp->setRelation(
-                'workspaces',
-                $this->processNodeExcludesWorkspaces($process)
-                    ? $logicalApp->newCollection()
-                    : $logicalApp->workspaces()->where('instance_id', $instance->id)->get(),
-            );
-        }
-
-        if ($process->owner instanceof App) {
-            $process->setRelation('owner', $runtimeApp);
-
-            return;
-        }
-
-        if ($process->owner instanceof Workspace) {
-            $process->owner->setRelation('app', $runtimeApp);
-        }
-    }
-
-    private function processNodeExcludesWorkspaces(Process $process): bool
-    {
-        $node = $this->processNode($process);
-
-        return $node instanceof Node && $this->productionNodeExcludesWorkspaces($node);
-    }
-
-    private function productionNodeExcludesWorkspaces(Node $node): bool
-    {
-        return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, NodeRoleName::AppProduction->value);
     }
 
     /**
@@ -1998,16 +1529,6 @@ final readonly class ProcessesProbe
         return $detail;
     }
 
-    private function systemdUnitRenderer(): SystemdUnitRenderer
-    {
-        return app(SystemdUnitRenderer::class);
-    }
-
-    private function launchdPlistRenderer(): LaunchdPlistRenderer
-    {
-        return app(LaunchdPlistRenderer::class);
-    }
-
     private function runtimeBackendProbe(): RuntimeBackendProbe
     {
         return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
@@ -2021,11 +1542,6 @@ final readonly class ProcessesProbe
     private function scriptDispatcher(): ToolScriptDispatcher
     {
         return $this->scripts ?? new ToolScriptDispatcher($this->runtimeBackendProbe()->executor());
-    }
-
-    private function dockerContainerRenderer(): ProcessDockerContainerRenderer
-    {
-        return app(ProcessDockerContainerRenderer::class);
     }
 
     private function wireGuardSelfRouteProbe(): NodeWireGuardSelfRouteProbe

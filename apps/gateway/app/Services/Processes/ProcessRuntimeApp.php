@@ -11,6 +11,19 @@ use App\Models\Node;
 
 final class ProcessRuntimeApp
 {
+    public static function forNode(Node $node): App
+    {
+        $user = is_string($node->user) && $node->user !== '' ? $node->user : 'orbit';
+        $app = new App([
+            'name' => $node->name,
+            'path' => $user === 'root' ? '/root' : "/home/{$user}",
+            'node_id' => $node->id,
+        ]);
+        $app->setRelation('node', $node);
+
+        return $app;
+    }
+
     public static function make(App $app, Node $node, ?Instance $instance = null): App
     {
         if (! $instance instanceof Instance) {

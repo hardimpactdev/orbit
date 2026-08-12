@@ -7,6 +7,9 @@ use App\Services\Doctor\DoctorAppFamilyProbe;
 use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessExpectedRuntimeUnits;
+use App\Services\Processes\ProcessRuntimeContextResolver;
+use App\Services\Processes\ProcessRuntimeUnitSpecFactory;
 
 it('keeps app and process family probes behind focused services', function (): void {
     $coordinator = new ReflectionClass(DoctorNodeProbeRunner::class);
@@ -89,5 +92,34 @@ it('loads one app instance snapshot and removes hidden runtime service lookups',
             'introspectNodeRuntimeContainers(',
             'diffNodeRuntimeContainers(',
             'RemoteAppRuntimeContainersProbe',
+        );
+});
+
+it('keeps runtime context and expected unit construction outside ProcessesProbe', function (): void {
+    $probe = new ReflectionClass(ProcessesProbe::class);
+    $dependencies = collect($probe->getConstructor()?->getParameters() ?? [])
+        ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
+        ->filter()
+        ->values()
+        ->all();
+    $sourceFile = $probe->getFileName();
+
+    if (! is_string($sourceFile)) {
+        throw new LogicException('ProcessesProbe source file is unavailable.');
+    }
+
+    expect($dependencies)
+        ->toContain(ProcessRuntimeContextResolver::class, ProcessExpectedRuntimeUnits::class)
+        ->and(class_exists(ProcessRuntimeUnitSpecFactory::class))
+        ->toBeTrue()
+        ->and(file_get_contents($sourceFile))
+        ->not->toContain(
+            'private function processNode(',
+            'private function runtimeContexts(',
+            'private function expectedRuntimeUnitSpecs(',
+            'private function expectedDockerUnitSpecs(',
+            'private function expectedDockerSwarmUnitSpecs(',
+            'private function expectedSystemdUnitSpecs(',
+            'private function expectedLaunchdUnitSpecs(',
         );
 });

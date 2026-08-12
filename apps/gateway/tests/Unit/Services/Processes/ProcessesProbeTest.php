@@ -22,6 +22,7 @@ use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessRuntimeContextResolver;
 use App\Services\Processes\ProcessRuntimeUnitName;
 use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -37,15 +38,25 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->probe = new ProcessesProbe;
+    $this->probe = processes_probe();
 });
+
+function processes_probe(
+    ?RuntimeBackendProbe $runtimeBackendProbe = null,
+    ?RemoteRuntimeHibernation $runtimeHibernation = null,
+): ProcessesProbe {
+    return app()->makeWith(ProcessesProbe::class, array_filter([
+        'runtimeBackendProbe' => $runtimeBackendProbe,
+        'runtimeHibernation' => $runtimeHibernation,
+    ]));
+}
 
 function processesProbeWithShell(RemoteShell&RunsInternalCommands $shell): ProcessesProbe
 {
     app()->instance(RemoteShell::class, $shell);
     app()->instance(RunsInternalCommands::class, $shell);
 
-    return new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
+    return processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
 }
 
 function processesProbeSuccessData(array $data): string
@@ -942,7 +953,7 @@ describe('docker runtime probe scope', function (): void {
                 durationMs: 1,
             ),
         ]);
-        $probe = new ProcessesProbe(
+        $probe = processes_probe(
             runtimeBackendProbe: new RuntimeBackendProbe($shell),
             runtimeHibernation: new RemoteRuntimeHibernation($shell),
         );
@@ -1003,7 +1014,7 @@ describe('docker runtime probe scope', function (): void {
                 durationMs: 1,
             ),
         ]);
-        $probe = new ProcessesProbe(
+        $probe = processes_probe(
             runtimeBackendProbe: new RuntimeBackendProbe($shell),
             runtimeHibernation: new RemoteRuntimeHibernation($shell),
         );
@@ -1040,7 +1051,7 @@ describe('docker runtime probe scope', function (): void {
             ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
-        $probe = new ProcessesProbe(
+        $probe = processes_probe(
             runtimeBackendProbe: new RuntimeBackendProbe($shell),
             runtimeHibernation: new RemoteRuntimeHibernation(
                 new ProcessesProbeThrowingInternalExecutor,
@@ -1143,7 +1154,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($shell->scripts[0])
             ->toContain("docker container inspect --format '{{json .}}' 'orbit-app-docs'")
@@ -1201,7 +1212,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($shell->scripts)
             ->toHaveCount(2)
@@ -1272,7 +1283,7 @@ describe('docker runtime probe scope', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: "valkey-old\n", stderr: '', durationMs: 1),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($shell->nodes[0]->is($node))
             ->toBeTrue()
@@ -1318,7 +1329,7 @@ describe('docker runtime probe scope', function (): void {
                 ],
             ]);
 
-        $snapshot = new ProcessesProbe()->introspect($process);
+        $snapshot = processes_probe()->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_unrenderable')?->kind)
@@ -1463,7 +1474,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($shell->scripts[0])
             ->toContain('docker container inspect')
@@ -1490,7 +1501,7 @@ describe('docker runtime probe scope', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such container', durationMs: 1),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
@@ -1517,7 +1528,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch')?->kind)->toBe(DriftKind::Divergent);
@@ -1551,7 +1562,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         $extra = issue($drift, key: 'process.runtime_unit_extra');
@@ -1581,7 +1592,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1609,7 +1620,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1637,7 +1648,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1665,7 +1676,7 @@ describe('docker runtime probe scope', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processes_probe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1723,9 +1734,7 @@ describe('process placement after instance move', function (): void {
         DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
         $process->refresh();
 
-        $method = new \ReflectionMethod(ProcessesProbe::class, 'processNode');
-        $method->setAccessible(true);
-        $resolved = $method->invoke($this->probe, $process);
+        $resolved = app(ProcessRuntimeContextResolver::class)->executionNode($process);
 
         expect($resolved?->is($newNode))->toBeTrue()->and($process->node_id)->toBe($oldNode->id);
     });
