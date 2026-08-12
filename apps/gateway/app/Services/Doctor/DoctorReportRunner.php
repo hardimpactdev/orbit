@@ -52,7 +52,6 @@ use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspacePlacement;
-use App\Services\Workspaces\WorkspacesProbe;
 use Closure;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Builder;
@@ -86,7 +85,6 @@ final readonly class DoctorReportRunner
         private DatabaseConnectionProbe $databaseConnectionProbe,
         private DatabaseConnectionRestorer $databaseConnectionRestorer,
         private DatabaseConnectionAdopter $databaseConnectionAdopter,
-        private WorkspacesProbe $workspacesProbe,
         private DoctorProcessRestorer $processRestorer,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
@@ -102,6 +100,7 @@ final readonly class DoctorReportRunner
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorFamilyProbeRunner $familyProbeRunner,
         private DoctorAppFamilyProbe $appFamilyProbe,
+        private DoctorWorkspaceFamilyProbe $workspaceFamilyProbe,
         private DoctorProcessFamilyProbe $processFamilyProbe,
         private DoctorProxyFamilyProbe $proxyFamilyProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
@@ -129,32 +128,6 @@ final readonly class DoctorReportRunner
     public function supportedFamilies(): array
     {
         return $this->nodeFamilies->supportedFamilies();
-    }
-
-    /**
-     * @return Collection<int, Workspace>
-     */
-    private function workspacesForNode(Node $node): Collection
-    {
-        /** @var Builder<Workspace> $query */
-        $query = Workspace::query();
-
-        /** @var Collection<int, Workspace> $workspaces */
-        $workspaces = $query
-            ->with(['app.node', 'app.instances', 'instance'])
-            ->orderBy('id')
-            ->get();
-
-        /** @var Collection<int, Workspace> $workspacesForNode */
-        $workspacesForNode = $workspaces
-            ->filter(
-                fn (Workspace $workspace): bool => (
-                    $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
-                ),
-            )
-            ->values();
-
-        return $workspacesForNode;
     }
 
     /**
@@ -1001,25 +974,10 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('workspace', $selectedFamilies, true)) {
-            $workspaces = $this->workspacesForNode($node);
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->workspaceFamilyProbe->probe(
                 node: $node,
-                family: 'workspace',
-                total: $workspaces->count(),
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use ($workspaces): void {
-                    foreach ($workspaces as $workspace) {
-                        $snapshot = $this->workspacesProbe->introspect($workspace);
-
-                        foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
-                            $addIssue($this->workspaceIssuePayload($entry, $workspace));
-                        }
-
-                        $advance();
-                    }
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1445,24 +1403,6 @@ final readonly class DoctorReportRunner
         }
 
         return $result;
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): DoctorIssue
-    {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
-            detail: [
-                ...($entry->detail ?? []),
-                'workspace' => $workspace->name,
-                'app' => $workspace->app?->name,
-            ],
-        );
     }
 
     /**

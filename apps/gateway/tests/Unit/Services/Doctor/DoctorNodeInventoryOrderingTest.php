@@ -18,6 +18,7 @@ use App\Services\Doctor\DoctorFirewallRuleFamilyProbe;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Doctor\DoctorProxyRouteInventory;
 use App\Services\Doctor\DoctorReportRunner;
+use App\Services\Doctor\DoctorWorkspaceFamilyProbe;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -133,7 +134,7 @@ it('reads every node inventory in stable row identity order', function (): void 
         ))
             ->toBe($instances->pluck('id')->all())
             ->and(doctor_inventory_ids(
-                $runner,
+                app(DoctorWorkspaceFamilyProbe::class),
                 methodName: 'workspacesForNode',
                 arguments: [$node],
                 orderedTable: 'workspaces',
