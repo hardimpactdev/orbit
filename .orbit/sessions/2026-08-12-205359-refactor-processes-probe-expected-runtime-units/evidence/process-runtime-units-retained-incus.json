@@ -1,0 +1,21 @@
+{
+    "candidate": "2d905f7ebc92738bb75801957b13cd5ae8c34797",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "topology_id": "dev-bf6315",
+    "incus_host": "beast",
+    "incus_host_lan_ip": "192.168.6.20",
+    "ssh_user": "nckrtl",
+    "target": "app-dev-1 process family",
+    "command": "orbit doctor --node=app-dev-1 --family=process --json",
+    "expected": "exit code 0, healthy true, zero process issues",
+    "observed": {
+        "exit_code": 0,
+        "healthy": true,
+        "issues": 0,
+        "failed": 0
+    },
+    "candidate_file_hashes_matched": true,
+    "result": "passed",
+    "topology_released": true
+}

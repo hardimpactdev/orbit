@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 282,
-    "unique_candidate_commit_count": 178,
+    "record_count": 283,
+    "unique_candidate_commit_count": 179,
     "orphan_count": 0,
     "records": [
         {
@@ -7575,6 +7575,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-205359-refactor-processes-probe-expected-runtime-units",
+            "slug": "refactor-processes-probe-expected-runtime-units",
+            "timestamp": "2026-08-12-205359",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "2d905f7ebc92738bb75801957b13cd5ae8c34797",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,

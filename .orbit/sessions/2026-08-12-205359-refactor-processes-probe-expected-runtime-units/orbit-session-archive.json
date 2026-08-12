@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T18:53:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-processes-probe-expected-runtime-units/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-205359-refactor-processes-probe-expected-runtime-units",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/process-runtime-units-retained-incus.json",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T18-47-01Z-2d905f7ebc92/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/process-runtime-units-retained-incus.json": "9ed536786b87475555c10744d04a18e46ec6f8c1e0bf99c5691ebd493ffa27a3",
+        "loop.md": "d31b82f542ac5eab99444a64a1c35331655247d9785de57a0f3d31ce48f82cf2",
+        "quality-gates/profiles/2026-08-12T18-47-01Z-2d905f7ebc92/gateway_pest.junit.xml": "f82535f3143e64cf5bd7c8fca721fc11a8705082825b4169a319ea63a76c29f5"
+    },
+    "slug": "refactor-processes-probe-expected-runtime-units",
+    "requested_slug": "refactor-processes-probe-expected-runtime-units",
+    "compatible_slugs": [
+        "refactor-processes-probe-expected-runtime-units"
+    ],
+    "branch": "refactor/processes-probe-expected-runtime-units",
+    "candidate_commit": "2d905f7ebc92738bb75801957b13cd5ae8c34797",
+    "accepted_feature_tip": "2d905f7ebc92738bb75801957b13cd5ae8c34797",
+    "accepted_main_tip": "a0c19d169b712d79c8098d81718754945d083d06",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
