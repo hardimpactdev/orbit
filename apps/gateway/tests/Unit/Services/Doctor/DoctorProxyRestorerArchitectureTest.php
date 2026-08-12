@@ -107,4 +107,6 @@ it('keeps DoctorReportRunner as the proxy restore delegate', function (): void {
             'private function handleProxyAction(',
             'private function handleProxyExtraAction(',
         );
+
+    expect(substr_count($runnerSource, '$this->proxyRestorer->orderForRecovery($issues)'))->toBe(2);
 });

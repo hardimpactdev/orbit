@@ -15,6 +15,17 @@ use Throwable;
 
 final readonly class DoctorManagedProxyRestorer
 {
+    private const array CADDY_RUNTIME_KEYS = [
+        'proxy.caddy_container_missing',
+        'proxy.caddy_container_down',
+        'proxy.caddy_container_detached',
+    ];
+
+    private const array GLOBAL_CONFIG_KEYS = [
+        'proxy.global_config_missing',
+        'proxy.global_config_mismatch',
+    ];
+
     private const array BEFORE_EXTRA_KEYS = [
         'proxy.agent_tool_route_missing',
         'proxy.agent_tool_route_mismatch',
@@ -24,11 +35,8 @@ final readonly class DoctorManagedProxyRestorer
     ];
 
     private const array AFTER_EXTRA_KEYS = [
-        'proxy.caddy_container_missing',
-        'proxy.caddy_container_down',
-        'proxy.caddy_container_detached',
-        'proxy.global_config_missing',
-        'proxy.global_config_mismatch',
+        ...self::CADDY_RUNTIME_KEYS,
+        ...self::GLOBAL_CONFIG_KEYS,
         WebSocketProxyDoctorProbe::RouterRouteKey,
         WebSocketProxyDoctorProbe::PublicRouteKey,
         S3ProxyDoctorProbe::RouterRouteKey,
@@ -52,6 +60,19 @@ final readonly class DoctorManagedProxyRestorer
     public function supportsAfterExtra(string $key): bool
     {
         return in_array($key, self::AFTER_EXTRA_KEYS, strict: true);
+    }
+
+    public function recoveryPriority(string $key): int
+    {
+        if (in_array($key, self::CADDY_RUNTIME_KEYS, strict: true)) {
+            return 0;
+        }
+
+        if (in_array($key, self::GLOBAL_CONFIG_KEYS, strict: true)) {
+            return 1;
+        }
+
+        return 2;
     }
 
     /**

@@ -58,6 +58,39 @@ final readonly class DoctorProxyRestorer
         return $this->proxyRouteInventory->issueTargetsWorkspace($detail);
     }
 
+    /**
+     * Keep non-proxy positions stable while ordering proxy repairs by their
+     * runtime dependencies.
+     *
+     * @param  list<DoctorIssue>  $issues
+     * @return list<DoctorIssue>
+     */
+    public function orderForRecovery(array $issues): array
+    {
+        /** @var array<int, list<DoctorIssue>> $proxyIssuesByPriority */
+        $proxyIssuesByPriority = [[], [], []];
+
+        foreach ($issues as $issue) {
+            if ($issue->family !== 'proxy') {
+                continue;
+            }
+
+            $proxyIssuesByPriority[$this->managedProxyRestorer->recoveryPriority($issue->key)][] = $issue;
+        }
+
+        $orderedProxyIssues = array_merge(...$proxyIssuesByPriority);
+        $orderedIssues = [];
+        $proxyIssueIndex = 0;
+
+        foreach ($issues as $issue) {
+            $orderedIssues[] = $issue->family === 'proxy'
+                ? $orderedProxyIssues[$proxyIssueIndex++]
+                : $issue;
+        }
+
+        return $orderedIssues;
+    }
+
     private function driftEntryFromIssue(DoctorIssue $issue): DriftEntry
     {
         return new DriftEntry(

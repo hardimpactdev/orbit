@@ -149,6 +149,11 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
+For an unscoped proxy restore, Doctor repairs the managed Caddy runtime first,
+then the global Caddy config, and then routes that need a live Caddy reload.
+Doctor keeps the reported issue order unchanged. A dry run shows the same
+recovery action order as a real restore.
+
 For an instance primary route, restoring a mismatch also persists its app
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.

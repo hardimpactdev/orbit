@@ -152,7 +152,11 @@ final readonly class DoctorReportRunner
         }
 
         if ($dryRun) {
-            return $this->finalize($probe, $mode, $this->plannedActions($mode, $issues), dryRun: true);
+            $plannedIssues = $mode === 'restore'
+                ? $this->proxyRestorer->orderForRecovery($issues)
+                : $issues;
+
+            return $this->finalize($probe, $mode, $this->plannedActions($mode, $plannedIssues), dryRun: true);
         }
 
         if ($mode === 'restore') {
@@ -391,6 +395,10 @@ final readonly class DoctorReportRunner
      */
     private function applyIssues(Node $node, string $mode, array $issues): array
     {
+        if (in_array($mode, ['restore', 'interactive'], strict: true)) {
+            $issues = $this->proxyRestorer->orderForRecovery($issues);
+        }
+
         $actions = [];
         $convergenceRestoreIssues = [];
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Doctor\DoctorIssue;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -90,4 +91,50 @@ it('identifies workspace-owned proxy issues by their stored route', function ():
         ->toBeFalse()
         ->and($this->restorer->issueTargetsWorkspace([]))
         ->toBeFalse();
+});
+
+it('orders proxy recovery prerequisites without moving other families', function (): void {
+    $issues = collect([
+        ['proxy', 'proxy.route_missing'],
+        ['node',  'node.access_permission_invalid'],
+        ['proxy', 'proxy.global_config_mismatch'],
+        ['proxy', 'proxy.caddy_container_down'],
+        ['app',   'app.path_missing'],
+        ['proxy', 'proxy.route_mismatch'],
+        ['proxy', 'proxy.global_config_missing'],
+        ['proxy', 'proxy.caddy_container_detached'],
+    ])->map(fn (array $issue): DoctorIssue => $this->issueFactory->fromArray([
+        'family' => $issue[0],
+        'node' => $this->node->name,
+        'key' => $issue[1],
+        'kind' => DriftKind::Divergent->value,
+        'summary' => "Observed {$issue[1]}.",
+        'detail' => [],
+    ]))->all();
+
+    $ordered = $this->restorer->orderForRecovery($issues);
+
+    expect(collect($ordered)->pluck('key')->all())->toBe([
+        'proxy.caddy_container_down',
+        'node.access_permission_invalid',
+        'proxy.caddy_container_detached',
+        'proxy.global_config_mismatch',
+        'app.path_missing',
+        'proxy.global_config_missing',
+        'proxy.route_missing',
+        'proxy.route_mismatch',
+    ]);
+});
+
+it('does not change one exact-key proxy recovery issue', function (): void {
+    $issue = $this->issueFactory->fromArray([
+        'family' => 'proxy',
+        'node' => $this->node->name,
+        'key' => 'proxy.caddy_container_down',
+        'kind' => DriftKind::Divergent->value,
+        'summary' => 'Observed stopped Caddy container.',
+        'detail' => [],
+    ]);
+
+    expect($this->restorer->orderForRecovery([$issue]))->toBe([$issue]);
 });
