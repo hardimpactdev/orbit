@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T09:17:22+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-fleet-probe-worker/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-111722-refactor-doctor-fleet-probe-worker",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-doctor-fleet-worker.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T09-08-56Z-6534d94ffe3e/gateway_pest.log"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-doctor-fleet-worker.txt": "5c5a492607c6305e8a17fc2dfe407cea7330c93f3d721b30522e1f0bafef662d",
+        "loop.md": "97d18c09f3da132296dba9df74bee6168af5aead42a9ef2926635de793cc88ea",
+        "quality-gates/profiles/2026-08-12T09-08-56Z-6534d94ffe3e/gateway_pest.log": "47e935b53151124517437660ec18f3115a3b886f0a74bd180496bfb71da3c40d"
+    },
+    "slug": "refactor-doctor-fleet-probe-worker",
+    "requested_slug": "refactor-doctor-fleet-probe-worker",
+    "compatible_slugs": [
+        "refactor-doctor-fleet-probe-worker"
+    ],
+    "branch": "refactor/doctor-fleet-probe-worker",
+    "candidate_commit": "6534d94ffe3e775f65dbfc7069cb31acd7acf8e2",
+    "accepted_feature_tip": "6534d94ffe3e775f65dbfc7069cb31acd7acf8e2",
+    "accepted_main_tip": "bf4490ceee5fc0102ea87c34dce360294fb0eeab",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

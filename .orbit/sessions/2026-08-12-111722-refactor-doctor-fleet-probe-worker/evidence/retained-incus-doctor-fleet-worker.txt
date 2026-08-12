@@ -1,0 +1,15 @@
+candidate=6534d94ffe3e775f65dbfc7069cb31acd7acf8e2
+venue=retained-incus
+environment=dev-fixture
+topology=dev-c87f65
+topology_kind=operator_gateway_app-dev
+solo_terminal=solo://proj/29/process/2283
+beast_ssh=ssh -tt -o HostName=192.168.6.20 beast
+operator_checkout=/home/orbit/orbit-run
+command=apps/cli/orbit doctor --all --family=node --stream-json
+expected=The source-mounted candidate starts both eligible nodes, streams running and done progress, and returns one stable final fleet report whose target, node, and issue order follow app-dev-1 then gateway. Fixture drift may produce a documented non-zero exit.
+observed=The command started app-dev-1 and gateway together, streamed running progress for both nodes, reported gateway done before app-dev-1 done, and returned one final drift_detected report. The final targets and node summaries remained ordered as app-dev-1 then gateway. Issues also remained grouped in that target order. The expected fixture drift caused exit 1.
+result=passed
+source_hash_DoctorFleetProbeWorker.php=7e11c0ba66b333e1739d1cfa3723959e519592ec354cb2c6ce8a6e6b5eb95b74
+source_hash_DoctorReportRunner.php=586e747b9591c2314bbf0c0fe7313eee4be6505f01645aeeae1fb979123173c8
+local_hashes_match=yes
