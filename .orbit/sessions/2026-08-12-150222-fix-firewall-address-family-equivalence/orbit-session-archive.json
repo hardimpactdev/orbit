@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T13:02:22+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-firewall-address-family-equivalence/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-150222-fix-firewall-address-family-equivalence",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/firewall-address-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T124402Z-8d25b23eb2b1.json"
+    ],
+    "entry_digests": {
+        "evidence/firewall-address-family-retained-incus.md": "cb0d8fb495324285743e772031309323b885306928d459b1b009f95481323526",
+        "loop.md": "d3561ba5835266b05f8de2bd1e2493643cdeea509240a3add97287c715a93014",
+        "quality-gates/quality-check-2026-08-12T124402Z-8d25b23eb2b1.json": "b5b53903fec0ac6241425ba939d3425ac28ce3e03c0eba8268f25cddf6261db9"
+    },
+    "slug": "fix-firewall-address-family-equivalence",
+    "requested_slug": "fix-firewall-address-family-equivalence",
+    "compatible_slugs": [
+        "fix-firewall-address-family-equivalence"
+    ],
+    "branch": "fix/firewall-address-family-equivalence",
+    "candidate_commit": "54367677b9cc2f78cd303d9da1ed5ee812aafec4",
+    "accepted_feature_tip": "54367677b9cc2f78cd303d9da1ed5ee812aafec4",
+    "accepted_main_tip": "1fc21a0fde36663680598e1161cf281c4174a0c9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
