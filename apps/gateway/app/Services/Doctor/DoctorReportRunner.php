@@ -14,7 +14,6 @@ use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
-use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -39,7 +38,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
-use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
 use App\Services\Tools\ToolsFixer;
@@ -88,6 +86,7 @@ final readonly class DoctorReportRunner
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorNodeProbeRunner $nodeProbeRunner,
+        private DoctorFleetTargetProbe $fleetTargetProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
         private DoctorScheduleNodeResolver $scheduleNodeResolver,
         private DoctorFleetNodeProjection $fleetNodeProjection,
@@ -392,13 +391,12 @@ final readonly class DoctorReportRunner
         ?string $key,
         ?callable $onFamilyProgress = null,
     ): array {
-        try {
-            return $this->probe($node, families: $families, key: $key, onFamilyProgress: $onFamilyProgress);
-        } catch (RemoteShellFailed $exception) {
-            return $this->nodeProbeFailedReport($node, $families, $key, $exception);
-        } catch (RemoteLocalExecutorTransportFailed $exception) {
-            return $this->nodeLocalExecutorProbeFailedReport($node, $families, $key, $exception);
-        }
+        return $this->fleetTargetProbe->probe(
+            node: $node,
+            families: $families,
+            key: $key,
+            onFamilyProgress: $onFamilyProgress,
+        );
     }
 
     /**
@@ -874,101 +872,6 @@ final readonly class DoctorReportRunner
             key: $key,
             onFamilyProgress: $onFamilyProgress,
             scope: $scope,
-        );
-    }
-
-    /**
-     * @param  list<string>  $families
-     * @return array<string, mixed>
-     */
-    private function nodeProbeFailedReport(
-        Node $node,
-        array $families,
-        ?string $key,
-        RemoteShellFailed $exception,
-        ?DoctorTargetScope $scope = null,
-    ): array {
-        $scope ??= DoctorTargetScope::none();
-        $roleCategories = $this->categoriesForNode($node);
-        $selectedFamilies = $families === []
-            ? $roleCategories
-            : array_values(array_intersect($families, $roleCategories));
-        $issue = $this->remoteShellProbeFailedIssue(
-            node: $node,
-            family: 'node',
-            key: 'node.remote_shell_probe_failed',
-            exception: $exception,
-            summary: "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
-        );
-        $issues = $this->filterIssuesByKey([$issue], $key);
-        $summary = $this->reportSections->summary($issues, []);
-        $summary['dispositions'] = $this->reportSections->dispositions($issues);
-
-        return [
-            'healthy' => false,
-            'mode' => 'verify',
-            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
-            'summary' => $summary,
-            'issues' => $this->reportSections->serializeIssues($issues),
-            'actions' => [],
-        ];
-    }
-
-    /**
-     * @param  list<string>  $families
-     * @return array<string, mixed>
-     */
-    private function nodeLocalExecutorProbeFailedReport(
-        Node $node,
-        array $families,
-        ?string $key,
-        RemoteLocalExecutorTransportFailed $exception,
-        ?DoctorTargetScope $scope = null,
-    ): array {
-        $scope ??= DoctorTargetScope::none();
-        $roleCategories = $this->categoriesForNode($node);
-        $selectedFamilies = $families === []
-            ? $roleCategories
-            : array_values(array_intersect($families, $roleCategories));
-        $issue = $this->doctorIssueFactory->fromArray([
-            'family' => 'node',
-            'node' => $node->name,
-            'key' => 'node.local_executor_probe_failed',
-            'kind' => DriftKind::Unverifiable->value,
-            'summary' => "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
-            'detail' => [
-                'error' => $exception->getMessage(),
-            ],
-        ]);
-        $issues = $this->filterIssuesByKey([$issue], $key);
-        $summary = $this->reportSections->summary($issues, []);
-
-        return [
-            'healthy' => false,
-            'mode' => 'verify',
-            'scope' => $this->reportSections->nodeScope($selectedFamilies, $node, $key, $scope),
-            'summary' => $summary,
-            'issues' => $this->reportSections->serializeIssues($issues),
-            'actions' => [],
-        ];
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function remoteShellProbeFailedIssue(
-        Node $node,
-        string $family,
-        string $key,
-        RemoteShellFailed $exception,
-        string $summary,
-    ): DoctorIssue {
-        return $this->doctorIssueFactory->fromProbeFailure(
-            family: $family,
-            node: $node->name,
-            key: $key,
-            exception: $exception,
-            summary: $summary,
         );
     }
 
@@ -2869,22 +2772,6 @@ final readonly class DoctorReportRunner
                 'reason' => 'mode_not_supported',
             ],
         ];
-    }
-
-    /**
-     * @param  list<DoctorIssue>  $issues
-     * @return list<DoctorIssue>
-     */
-    private function filterIssuesByKey(array $issues, ?string $key): array
-    {
-        if ($key === null) {
-            return $issues;
-        }
-
-        return array_values(array_filter(
-            $issues,
-            fn (DoctorIssue $issue): bool => $issue->key === $key,
-        ));
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Doctor\DoctorFleetNodeProjection;
+use App\Services\Doctor\DoctorFleetTargetProbe;
 use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
@@ -181,16 +182,15 @@ it('preserves the local executor failed report without disposition counts', func
         'name' => 'local-executor-failed',
         'status' => 'active',
     ]);
-    $method = new ReflectionMethod(DoctorReportRunner::class, 'nodeLocalExecutorProbeFailedReport');
+    $method = new ReflectionMethod(DoctorFleetTargetProbe::class, 'localExecutorFailedReport');
     $method->setAccessible(true);
 
     $report = $method->invoke(
-        app(DoctorReportRunner::class),
+        app(DoctorFleetTargetProbe::class),
         $node,
         ['node'],
         null,
         new RemoteLocalExecutorTransportFailed('agent push unavailable'),
-        DoctorTargetScope::none(),
     );
 
     expect($report)

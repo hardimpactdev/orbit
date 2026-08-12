@@ -34,6 +34,7 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Doctor\DoctorFleetTargetProbe;
 use App\Services\Doctor\DoctorIssueFactory;
 use App\Services\Doctor\DoctorProcessRestorer;
 use App\Services\Doctor\DoctorReportRunner;
@@ -2103,7 +2104,7 @@ describe('DoctorReportRunner', function (): void {
             ),
         );
 
-        $report = app(DoctorReportRunner::class)->probeFleetTargetReport(
+        $report = app(DoctorFleetTargetProbe::class)->probe(
             $node,
             families: ['process', 'firewall_rule'],
             key: null,
@@ -3281,7 +3282,7 @@ describe('DoctorReportRunner', function (): void {
             ),
         );
 
-        $report = app(DoctorReportRunner::class)->probeFleetTargetReport(
+        $report = app(DoctorFleetTargetProbe::class)->probe(
             $node,
             families: ['process', 'firewall_rule'],
             key: null,
