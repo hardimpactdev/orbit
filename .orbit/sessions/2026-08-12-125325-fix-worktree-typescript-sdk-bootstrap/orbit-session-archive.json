@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T10:53:25+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-worktree-typescript-sdk-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-125325-fix-worktree-typescript-sdk-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T105136Z-7d4e5db0be43.json"
+    ],
+    "entry_digests": {
+        "loop.md": "aba4424aff09102c620b76f05baab3e70fcd732b41a32447ea928f14fe80ce71",
+        "quality-gates/quality-check-2026-08-12T105136Z-7d4e5db0be43.json": "809e071d9ed30e69199733e0c1ad1f104b920ced7215de21df8cb6658be59462"
+    },
+    "slug": "fix-worktree-typescript-sdk-bootstrap",
+    "requested_slug": "fix-worktree-typescript-sdk-bootstrap",
+    "compatible_slugs": [
+        "fix-worktree-typescript-sdk-bootstrap"
+    ],
+    "branch": "fix/worktree-typescript-sdk-bootstrap",
+    "candidate_commit": "2e72b4275900c15a014af202ed455e8abb090bb5",
+    "accepted_feature_tip": "2e72b4275900c15a014af202ed455e8abb090bb5",
+    "accepted_main_tip": "763449d05b5637cbef4ce56fdeba814288c5eb7f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
