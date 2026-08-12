@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T14:06:51+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-tool-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-160651-refactor-doctor-tool-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-tool-family-retained-incus.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T14-00-53Z-577ff62df64e/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-tool-family-retained-incus.md": "1a798f568fd8db19257a58d1dd9e308eac48d089c2044f16a79b2239a9119696",
+        "loop.md": "9c132e02b0e3404f56297eb5315432c86447959b8d660731cdd90b43347264c2",
+        "quality-gates/profiles/2026-08-12T14-00-53Z-577ff62df64e/gateway_pest.junit.xml": "02a8d9b239b3156fcd767d837ef843179bf520fa05d6cd2fafa8b6cedade1266"
+    },
+    "slug": "refactor-doctor-tool-family",
+    "requested_slug": "refactor-doctor-tool-family",
+    "compatible_slugs": [
+        "refactor-doctor-tool-family"
+    ],
+    "branch": "refactor/doctor-tool-family",
+    "candidate_commit": "577ff62df64e7e8c47adb394744c4c73a9764128",
+    "accepted_feature_tip": "577ff62df64e7e8c47adb394744c4c73a9764128",
+    "accepted_main_tip": "dbf1783baa8017895ef06962850249bc8f6d3837",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
