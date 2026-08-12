@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T08:12:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-process-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-101212-refactor-doctor-process-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-process-restorer-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-process-restorer-retained-incus.md": "4ceaefcbeca9f04b83a39880a52e440cc594c3bcaf8ddf1dd50d18cafddc2ec3",
+        "loop.md": "d2aafb01cccd1b060e62a6707219e81fd40c8650ad3ae57c2cf97f7482fe45c1"
+    },
+    "slug": "refactor-doctor-process-restorer",
+    "requested_slug": "refactor-doctor-process-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-process-restorer"
+    ],
+    "branch": "refactor/doctor-process-restorer",
+    "candidate_commit": "948142ba54fb3d74b8cd3be33a5012c66b247a73",
+    "accepted_feature_tip": "948142ba54fb3d74b8cd3be33a5012c66b247a73",
+    "accepted_main_tip": "e0633b82131bc352cf1dcc9ab3fc49794060b858",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
