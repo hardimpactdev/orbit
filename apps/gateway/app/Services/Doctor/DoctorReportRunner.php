@@ -10,8 +10,6 @@ use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Enums\Apps\AppRuntimeKind;
-use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
@@ -26,17 +24,12 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
-use App\Services\Apps\AppRuntimeContainer;
-use App\Services\Apps\AppRuntimeContainerRenderer;
-use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
-use App\Services\Apps\AppsProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
@@ -44,12 +37,8 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodeConverger;
-use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
-use App\Services\Processes\NodeProcessResolver;
-use App\Services\Processes\ProcessesProbe;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -95,14 +84,11 @@ final readonly class DoctorReportRunner
 
     public function __construct(
         private NodesProbe $nodesProbe,
-        private AppsProbe $appsProbe,
         private AppsFixer $appsFixer,
         private DatabaseConnectionProbe $databaseConnectionProbe,
         private DatabaseConnectionRestorer $databaseConnectionRestorer,
         private DatabaseConnectionAdopter $databaseConnectionAdopter,
         private WorkspacesProbe $workspacesProbe,
-        private ProcessesProbe $processesProbe,
-        private NodeProcessResolver $nodeProcesses,
         private DoctorProcessRestorer $processRestorer,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
@@ -117,6 +103,8 @@ final readonly class DoctorReportRunner
         private NodeRoleAssignments $nodeRoleAssignments,
         private DoctorNodeFamilyResolver $nodeFamilies,
         private DoctorFamilyProbeRunner $familyProbeRunner,
+        private DoctorAppFamilyProbe $appFamilyProbe,
+        private DoctorProcessFamilyProbe $processFamilyProbe,
         private DoctorNodeScheduleTargets $scheduleTargets,
         private DoctorFleetNodeProjection $fleetNodeProjection,
         private DoctorFleetProbeWorker $fleetProbeWorker,
@@ -126,7 +114,6 @@ final readonly class DoctorReportRunner
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AnalyticsProxyDoctorProbe $analyticsProxyDoctorProbe,
         private AnalyticsPublicProxyDoctorProbe $analyticsPublicProxyDoctorProbe,
-        private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
         private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
         private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
@@ -134,7 +121,6 @@ final readonly class DoctorReportRunner
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
-        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
 
     /**
@@ -163,20 +149,6 @@ final readonly class DoctorReportRunner
 
         /** @var Collection<int, Workspace> $workspaces */
         return $workspaces;
-    }
-
-    /**
-     * @return Collection<int, Process>
-     */
-    private function processesForNode(Node $node): Collection
-    {
-        $processes = $this->nodeProcesses
-            ->forNode($node, ['owner', 'instance', 'node'])
-            ->sortBy('id')
-            ->values();
-
-        /** @var Collection<int, Process> $processes */
-        return $processes;
     }
 
     /**
@@ -942,6 +914,9 @@ final readonly class DoctorReportRunner
             ? $roleCategories
             : array_values(array_intersect($families, $roleCategories));
         $issues = [];
+        $nodeInstances = array_intersect(['app', 'process'], $selectedFamilies) !== []
+            ? $this->instancesForNode($node)
+            : new Collection;
 
         if (in_array('node', $selectedFamilies, true)) {
             $nodeCheckTotal =
@@ -1009,29 +984,12 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('app', $selectedFamilies, true)) {
-            $appInstances = $this->scopedInstances($this->instancesForNode($node), $scope);
-            $includeNodeConfigInventory = $scope->app === null && $scope->instanceId === null;
-            $appCheckTotal = $appInstances->count() + ($includeNodeConfigInventory ? 1 : 0);
-
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->appFamilyProbe->probe(
                 node: $node,
-                family: 'app',
-                total: $appCheckTotal,
+                nodeInstances: $nodeInstances,
+                scope: $scope,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use (
-                    $appInstances,
-                    $includeNodeConfigInventory,
-                    $node,
-                ): void {
-                    $this->probeAppFamily(
-                        $node,
-                        $appInstances,
-                        $includeNodeConfigInventory,
-                        $addIssue,
-                        $advance,
-                    );
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1061,46 +1019,11 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('process', $selectedFamilies, true)) {
-            $missingRuntimeProcessIssues = $this->missingFrankenPhpRuntimeProcessIssues($node);
-            $processes = $this->processesForNode($node);
-            $familyIssues = $this->familyProbeRunner->run(
+            $familyIssues = $this->processFamilyProbe->probe(
                 node: $node,
-                family: 'process',
-                total: count($missingRuntimeProcessIssues) + $processes->count() + 1,
+                nodeInstances: $nodeInstances,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                probe: function (callable $addIssue, callable $advance) use (
-                    $missingRuntimeProcessIssues,
-                    $node,
-                    $processes,
-                ): void {
-                    foreach ($processes as $process) {
-                        $snapshot = $this->processesProbe->introspect($process);
-
-                        foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
-                            $addIssue($this->processIssuePayload($entry, $process));
-                        }
-
-                        $advance();
-                    }
-
-                    foreach ($missingRuntimeProcessIssues as $issue) {
-                        $addIssue($issue);
-                        $advance();
-                    }
-
-                    $runtimeContainers = $this->processesProbe->introspectNodeRuntimeContainers($node);
-
-                    foreach ($this->processesProbe->diffNodeRuntimeContainers(
-                        $node,
-                        $runtimeContainers,
-                        $this->activePhpRuntimeSlugsForNode($node),
-                    ) as $entry) {
-                        $addIssue($this->nodeScopedIssuePayload($entry, $node));
-                    }
-
-                    $advance();
-                },
             );
             $issues = [...$issues, ...$familyIssues];
         }
@@ -1376,89 +1299,6 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  Collection<int, Instance>  $appInstances
-     * @param  callable(DoctorIssue): void  $addIssue
-     */
-    private function probeAppFamily(
-        Node $node,
-        Collection $appInstances,
-        bool $includeNodeConfigInventory,
-        callable $addIssue,
-        callable $advance,
-    ): void {
-        foreach ($appInstances as $instance) {
-            $app = $instance->app;
-
-            $snapshot = $this->appsProbe->introspectInstance($app, $instance);
-
-            foreach ($this->appsProbe->diffInstance($app, $instance, $snapshot) as $entry) {
-                $addIssue($this->appIssuePayload($entry, $app));
-            }
-
-            foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
-                $addIssue($this->appIssuePayload($entry, $app));
-            }
-
-            $advance();
-        }
-
-        if (! $includeNodeConfigInventory) {
-            return;
-        }
-
-        $activePhpAppSlugs = $this
-            ->instancesForNode($node)
-            ->filter(fn (Instance $instance): bool => $instance->app->runtimeKind() === AppRuntimeKind::Php)
-            ->map(fn (Instance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
-                $instance->app,
-                $instance,
-            ))
-            ->all();
-
-        $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
-        $configSnapshot = $configProbe->configs;
-
-        if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
-            $addIssue($this->doctorIssueFactory->fromArray([
-                'family' => 'app',
-                'node' => $node->name,
-                'key' => 'app.runtime_config_probe_failed',
-                'kind' => DriftKind::Unverifiable->value,
-                'summary' => "Managed runtime config directory probe failed on node '{$node->name}'; stale orphan configs cannot be detected.",
-                'detail' => [
-                    'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                    'error' => $configProbe->error,
-                ],
-            ]));
-        } elseif ($configProbe->status === NodeRuntimeConfigsProbeStatus::Present) {
-            foreach ($configSnapshot->keys() as $appSlug) {
-                if (in_array($appSlug, $activePhpAppSlugs, true)) {
-                    continue;
-                }
-
-                $observed = $configSnapshot->get($appSlug) ?? [];
-                $path = is_string($observed['path'] ?? null)
-                    ? $observed['path']
-                    : $this->nodeHostPaths->appRuntimeConfigPath($node, $appSlug);
-
-                $addIssue($this->doctorIssueFactory->fromArray([
-                    'family' => 'app',
-                    'node' => $node->name,
-                    'key' => 'app.runtime_config_extra',
-                    'kind' => DriftKind::Extra->value,
-                    'summary' => "Managed runtime config for '{$appSlug}' exists on node but no matching active PHP app record.",
-                    'detail' => [
-                        'app' => $appSlug,
-                        'path' => $path,
-                    ],
-                ]));
-            }
-        }
-
-        $advance();
-    }
-
-    /**
      * @return Collection<int, Instance>
      */
     private function instancesForNode(Node $node): Collection
@@ -1476,108 +1316,6 @@ final readonly class DoctorReportRunner
             ->values();
 
         return $instances;
-    }
-
-    /**
-     * @param  Collection<int, Instance>  $instances
-     * @return Collection<int, Instance>
-     */
-    private function scopedInstances(Collection $instances, DoctorTargetScope $scope): Collection
-    {
-        /** @var list<Instance> $scoped */
-        $scoped = [];
-
-        foreach ($instances as $instance) {
-            if ($scope->instanceId !== null && $instance->id !== $scope->instanceId) {
-                continue;
-            }
-
-            if ($scope->instanceId === null && $scope->app !== null && $instance->app->name !== $scope->app) {
-                continue;
-            }
-
-            $scoped[] = $instance;
-        }
-
-        return new Collection($scoped);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function activePhpRuntimeSlugsForNode(Node $node): array
-    {
-        $slugs = [];
-
-        foreach ($this->instancesForNode($node) as $instance) {
-            if ($instance->app->runtimeKind() !== AppRuntimeKind::Php) {
-                continue;
-            }
-
-            $slugs[] = app(AppRuntimeContainerRenderer::class)->instanceSlug($instance->app, $instance);
-        }
-
-        return array_values(array_unique($slugs));
-    }
-
-    /**
-     * @return list<DoctorIssue>
-     */
-    private function missingFrankenPhpRuntimeProcessIssues(Node $node): array
-    {
-        $ensure = app(EnsureFrankenPhpRuntimeProcess::class);
-        $renderer = app(AppRuntimeContainerRenderer::class);
-        $issues = [];
-
-        foreach ($this->instancesForNode($node) as $instance) {
-            $app = $instance->app;
-
-            if (! $this->appHasManagedFrankenPhpRuntimeIntent($app)) {
-                continue;
-            }
-
-            $processName = $ensure->appProcessName($app);
-            $exists = Process::query()
-                ->where('owner_type', $app->getMorphClass())
-                ->where('owner_id', $app->getKey())
-                ->where('instance_id', $instance->id)
-                ->where('name', $processName)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
-            $issues[] = $this->doctorIssueFactory->fromArray([
-                'family' => 'process',
-                'node' => $node->name,
-                'key' => 'process.runtime_unit_missing',
-                'kind' => DriftKind::Missing->value,
-                'summary' => "FrankenPHP runtime intent is missing for instance {$app->name}.{$instance->name}.",
-                'detail' => [
-                    'app' => $app->name,
-                    'instance' => $instance->name,
-                    'process' => $processName,
-                    'runtime_unit' => $renderer->containerNameForInstance($app, $instance),
-                    'reason' => 'runtime_process_missing',
-                ],
-            ]);
-        }
-
-        return $issues;
-    }
-
-    private function appHasManagedFrankenPhpRuntimeIntent(App $app): bool
-    {
-        return Process::query()
-            ->where('owner_type', $app->getMorphClass())
-            ->where('owner_id', $app->getKey())
-            ->get()
-            ->contains(function (Process $process): bool {
-                $config = $process->runtime_config;
-
-                return ($config['container_spec_hash_label'] ?? null) === AppRuntimeContainer::SpecHashLabel;
-            });
     }
 
     /**
@@ -1908,23 +1646,6 @@ final readonly class DoctorReportRunner
     /**
      * @return DoctorIssue
      */
-    private function appIssuePayload(DriftEntry $entry, App $app): DoctorIssue
-    {
-        $app->loadMissing('node');
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $app->node?->name,
-            detail: [
-                ...($entry->detail ?? []),
-                'app' => $app->name,
-            ],
-        );
-    }
-
-    /**
-     * @return DoctorIssue
-     */
     private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): DoctorIssue
     {
         $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
@@ -1937,22 +1658,6 @@ final readonly class DoctorReportRunner
                 'workspace' => $workspace->name,
                 'app' => $workspace->app?->name,
             ],
-        );
-    }
-
-    /**
-     * @return DoctorIssue
-     */
-    private function processIssuePayload(DriftEntry $entry, Process $process): DoctorIssue
-    {
-        $app = $process->ownerApp();
-        $app?->loadMissing('node');
-        $node = $app instanceof App ? $app->node : $process->node;
-
-        return $this->doctorIssueFactory->fromDriftEntry(
-            $entry,
-            $node instanceof Node ? $node->name : null,
-            detail: $entry->detail ?? [],
         );
     }
 

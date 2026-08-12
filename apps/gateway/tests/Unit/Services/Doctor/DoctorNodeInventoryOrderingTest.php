@@ -14,6 +14,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Doctor\DoctorProcessFamilyProbe;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -126,7 +127,11 @@ it('reads every node inventory in stable row identity order', function (): void 
             ->toBe($instances->pluck('id')->all())
             ->and(doctor_inventory_ids($runner, methodName: 'workspacesForNode', arguments: [$node]))
             ->toBe($workspaces->pluck('id')->all())
-            ->and(doctor_inventory_ids($runner, methodName: 'processesForNode', arguments: [$node]))
+            ->and(doctor_inventory_ids(
+                app(DoctorProcessFamilyProbe::class),
+                methodName: 'processesForNode',
+                arguments: [$node],
+            ))
             ->toBe($processes->pluck('id')->all())
             ->and(doctor_inventory_ids($runner, methodName: 'proxyRoutesForScope', arguments: [$node, $scope]))
             ->toBe($routes->pluck('id')->all())
@@ -190,11 +195,11 @@ it('reads the gateway schedule inventory in stable row identity order', function
  * @param  list<mixed>  $arguments
  * @return list<int>
  */
-function doctor_inventory_ids(DoctorReportRunner $runner, string $methodName, array $arguments): array
+function doctor_inventory_ids(object $owner, string $methodName, array $arguments): array
 {
-    $method = new ReflectionMethod($runner, $methodName);
+    $method = new ReflectionMethod($owner, $methodName);
     /** @var Collection<int, Model> $inventory */
-    $inventory = $method->invokeArgs($runner, $arguments);
+    $inventory = $method->invokeArgs($owner, $arguments);
 
     expect($inventory)->toBeInstanceOf(Collection::class);
 

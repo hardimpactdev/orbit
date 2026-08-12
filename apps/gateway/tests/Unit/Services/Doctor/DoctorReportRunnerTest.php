@@ -453,6 +453,66 @@ describe('DoctorReportRunner', function (): void {
         expect($runtimeKeys)->toBeEmpty();
     });
 
+    it('uses one app instance snapshot across a process family probe', function (): void {
+        $node = createDoctorRunnerAppHostNode();
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'runtime' => AppRuntimeKind::Php->value,
+        ]);
+        Instance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'first',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        $insertedDuringProbe = false;
+        app()->instance(
+            RemoteShell::class,
+            new DoctorReportRunnerRemoteShell([], function (Node $target, string $script) use (
+                $app,
+                &$insertedDuringProbe,
+                $node,
+            ): ?RemoteShellResult {
+                if ($insertedDuringProbe || ! str_contains($script, 'internal:app-runtime-containers:probe')) {
+                    return null;
+                }
+
+                $insertedDuringProbe = true;
+                Instance::factory()->create([
+                    'app_id' => $app->id,
+                    'name' => 'second',
+                    'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+                ]);
+
+                expect($target->is($node))->toBeTrue();
+
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "orbit-container-scan:present\norbit-app-docs-first\tdocs-first\norbit-app-docs-second\tdocs-second\n",
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }),
+        );
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['process']);
+
+        expect($insertedDuringProbe)
+            ->toBeTrue()
+            ->and($report['issues'])
+            ->toHaveCount(1)
+            ->and($report['issues'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'key' => 'process.runtime_unit_extra',
+                'detail' => [
+                    'runtime_unit' => 'orbit-app-docs-second',
+                    'app' => 'docs-second',
+                    'reason' => 'orphaned_managed_app_runtime',
+                ],
+            ]);
+    });
+
     it('does not probe or fix workspace PHP-FPM pools for PHP apps because workspaces use Docker containers', function (): void {
         $node = createDoctorRunnerAppHostNode();
         $app = App::factory()->create([
