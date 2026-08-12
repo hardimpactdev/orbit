@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 280,
-    "unique_candidate_commit_count": 176,
+    "record_count": 281,
+    "unique_candidate_commit_count": 177,
     "orphan_count": 0,
     "records": [
         {
@@ -7526,6 +7526,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "f6d9cd512382fdf4e45ec4e0def7cff54e157128",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-12-195501-refactor-doctor-schedule-restorer",
+            "slug": "refactor-doctor-schedule-restorer",
+            "timestamp": "2026-08-12-195501",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "bcf9cfc6d5db87feb9bb53162516f6d8d82fc426",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "not-required",

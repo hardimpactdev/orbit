@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T17:55:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-schedule-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-195501-refactor-doctor-schedule-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-schedule-restorer-retained-incus-dev-a82d2c.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-12T174457Z-3fc923cc67e7.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-schedule-restorer-retained-incus-dev-a82d2c.md": "e21c7e863460c14b6ffcc1dc0a3b17fa35e9fc127fdaeb26966c7dd0ddd533ae",
+        "loop.md": "1c5d68af448b3e31fba671301428fb3152d4aff3c2ca821966622ea8fca23ffa",
+        "quality-gates/quality-check-2026-08-12T174457Z-3fc923cc67e7.json": "31e30e6f1307f95dd4534c3bea4d50a7e2dedec4d6e55a5a329396395977b505"
+    },
+    "slug": "refactor-doctor-schedule-restorer",
+    "requested_slug": "refactor-doctor-schedule-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-schedule-restorer"
+    ],
+    "branch": "refactor/doctor-schedule-restorer",
+    "candidate_commit": "bcf9cfc6d5db87feb9bb53162516f6d8d82fc426",
+    "accepted_feature_tip": "bcf9cfc6d5db87feb9bb53162516f6d8d82fc426",
+    "accepted_main_tip": "d45b1ca9790999e253c3b4a853376b7507168d8c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
