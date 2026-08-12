@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-12T16:44:05+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-fleet-coordinator/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-12-184405-refactor-doctor-fleet-coordinator",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-fleet-coordinator-retained-incus.json",
+        "loop.md",
+        "quality-gates/profiles/2026-08-12T16-39-17Z-f53ddd9e267b/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/doctor-fleet-coordinator-retained-incus.json": "6217dba5ace7bb2dfb68cffa092dc52ad3749ded8988973710a5f6ccc5ca25dd",
+        "loop.md": "0f41d1391403ec9519a209db13bc1383b35631883ab5192d72a434aadec8a4c9",
+        "quality-gates/profiles/2026-08-12T16-39-17Z-f53ddd9e267b/gateway_pest.junit.xml": "0d487cd71d918c65b0f040289376e8ce9f4ffb7d108928ede74954c609e8a24f"
+    },
+    "slug": "refactor-doctor-fleet-coordinator",
+    "requested_slug": "refactor-doctor-fleet-coordinator",
+    "compatible_slugs": [
+        "refactor-doctor-fleet-coordinator"
+    ],
+    "branch": "refactor/doctor-fleet-coordinator",
+    "candidate_commit": "f53ddd9e267b7ed6c98b54a3239e19f599206f73",
+    "accepted_feature_tip": "f53ddd9e267b7ed6c98b54a3239e19f599206f73",
+    "accepted_main_tip": "01a2779be12df34d21d3d1dd71a6dc62a2fde107",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

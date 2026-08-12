@@ -1,0 +1,27 @@
+{
+  "candidate": "f53ddd9e267b7ed6c98b54a3239e19f599206f73",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "host": "beast",
+  "host_ip": "192.168.6.20",
+  "ssh_user": "nckrtl",
+  "topology": "dev-862ee1",
+  "gateway_instance": "orbit-e2e-dev-862ee1-gateway",
+  "command": "orbit doctor --all --json",
+  "expected": "The multi-node Doctor command returns a valid deterministic report; fixture drift may produce exit 1.",
+  "observed": {
+    "launcher": "/home/orbit/.local/bin/orbit",
+    "working_directory": "/home/orbit/orbit-run",
+    "first_exit": 1,
+    "second_exit": 1,
+    "first_bytes": 6916,
+    "second_bytes": 6916,
+    "first_sha256": "83ddafe5e04f42b68269951468f255f0804c1416b6e101ca0592082697f034c4",
+    "second_sha256": "83ddafe5e04f42b68269951468f255f0804c1416b6e101ca0592082697f034c4",
+    "byte_identical": true,
+    "candidate_file_sha256": "821846205a359d9d05c38c94d8a05d3c036eb047dc2df1e3bedc6eac8ac3a6c6"
+  },
+  "result": "passed",
+  "solo_project_id": 50,
+  "solo_terminal_process_id": 2316
+}
