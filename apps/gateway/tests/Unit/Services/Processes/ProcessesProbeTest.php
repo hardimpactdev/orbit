@@ -9,7 +9,6 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
@@ -21,7 +20,6 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
-use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessRuntimeUnitName;
@@ -75,62 +73,6 @@ describe('interface contract', function (): void {
         $snapshot = $this->probe->introspect($process);
 
         expect($snapshot->isEmpty())->toBeTrue();
-    });
-});
-
-describe('node-wide managed runtime inventory', function (): void {
-    it('reports orphaned managed app runtime containers as process drift', function (): void {
-        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'tld' => 'app-one']);
-        $snapshot = new NodeRuntimeContainersProbe(
-            status: NodeRuntimeContainersProbeStatus::Present,
-            containers: new ProbeSnapshot([
-                'docs' => [
-                    'container_name' => 'orbit-app-docs',
-                    'app_slug' => 'docs',
-                ],
-                'removed' => [
-                    'container_name' => 'orbit-app-removed',
-                    'app_slug' => 'removed',
-                ],
-            ]),
-        );
-
-        $drift = $this->probe->diffNodeRuntimeContainers($node, $snapshot, ['docs']);
-        $extra = issue($drift, 'process.runtime_unit_extra');
-
-        expect($extra)
-            ->toBeInstanceOf(DriftEntry::class)
-            ->and($extra?->kind)
-            ->toBe(DriftKind::Extra)
-            ->and($extra?->detail)
-            ->toMatchArray([
-                'runtime_unit' => 'orbit-app-removed',
-                'app' => 'removed',
-                'reason' => 'orphaned_managed_app_runtime',
-            ]);
-    });
-
-    it('reports an unverifiable process backend when the node-wide scan fails', function (): void {
-        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'tld' => 'app-one']);
-        $snapshot = new NodeRuntimeContainersProbe(
-            status: NodeRuntimeContainersProbeStatus::Error,
-            containers: new ProbeSnapshot([]),
-            error: 'Docker daemon unavailable',
-        );
-
-        $drift = $this->probe->diffNodeRuntimeContainers($node, $snapshot, []);
-        $unavailable = issue($drift, 'process.runtime_backend_unavailable');
-
-        expect($unavailable)
-            ->toBeInstanceOf(DriftEntry::class)
-            ->and($unavailable?->kind)
-            ->toBe(DriftKind::Unverifiable)
-            ->and($unavailable?->detail)
-            ->toMatchArray([
-                'backend' => 'docker',
-                'reason' => 'runtime_inventory_probe_failed',
-                'error' => 'Docker daemon unavailable',
-            ]);
     });
 });
 

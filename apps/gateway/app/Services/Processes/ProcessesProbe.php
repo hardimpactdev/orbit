@@ -6,7 +6,6 @@ namespace App\Services\Processes;
 
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\ProcessCrashNotification;
@@ -17,8 +16,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Apps\NodeRuntimeContainersProbe;
-use App\Services\Apps\RemoteAppRuntimeContainersProbe;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -47,131 +44,6 @@ final readonly class ProcessesProbe
     public function label(): string
     {
         return 'Processes';
-    }
-
-    public function introspectNodeRuntimeContainers(Node $node): NodeRuntimeContainersProbe
-    {
-        try {
-            $stdout = $this->runtimeContainersProbe()->stdout($node);
-        } catch (Throwable $exception) {
-            return new NodeRuntimeContainersProbe(
-                status: NodeRuntimeContainersProbeStatus::Error,
-                containers: new ProbeSnapshot([]),
-                error: $exception->getMessage(),
-            );
-        }
-
-        $status = NodeRuntimeContainersProbeStatus::Error;
-        $error = 'orbit-container-scan probe returned no status sentinel';
-        $items = [];
-
-        foreach (explode("\n", rtrim($stdout, "\n\r")) as $rawLine) {
-            $line = trim($rawLine);
-
-            if ($line === '') {
-                continue;
-            }
-
-            if (str_starts_with($line, 'orbit-container-scan:')) {
-                $marker = substr($line, strlen('orbit-container-scan:'));
-
-                if ($marker === 'present') {
-                    $status = NodeRuntimeContainersProbeStatus::Present;
-                    $error = '';
-                } elseif ($marker === 'absent') {
-                    $status = NodeRuntimeContainersProbeStatus::Absent;
-                    $error = '';
-                } else {
-                    $status = NodeRuntimeContainersProbeStatus::Error;
-                    $error = trim(str_starts_with($marker, 'error') ? substr($marker, strlen('error')) : $marker);
-                    $error = $error !== '' ? $error : 'unknown Docker runtime inventory failure';
-                }
-
-                continue;
-            }
-
-            $parts = explode("\t", $rawLine, 2);
-
-            if (count($parts) !== 2 || trim($parts[1]) === '') {
-                continue;
-            }
-
-            $appSlug = trim($parts[1]);
-            $items[$appSlug] = [
-                'container_name' => trim($parts[0]),
-                'app_slug' => $appSlug,
-            ];
-        }
-
-        return new NodeRuntimeContainersProbe(
-            status: $status,
-            containers: new ProbeSnapshot(
-                $status === NodeRuntimeContainersProbeStatus::Present ? $items : [],
-            ),
-            error: $error,
-        );
-    }
-
-    /**
-     * @param  list<string>  $activeRuntimeSlugs
-     * @return list<DriftEntry>
-     */
-    public function diffNodeRuntimeContainers(
-        Node $node,
-        NodeRuntimeContainersProbe $snapshot,
-        array $activeRuntimeSlugs,
-    ): array {
-        if ($snapshot->status === NodeRuntimeContainersProbeStatus::Error) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'process.runtime_backend_unavailable',
-                    kind: DriftKind::Unverifiable,
-                    summary: "Managed process runtime inventory could not be scanned on node {$node->name}.",
-                    detail: [
-                        'backend' => 'docker',
-                        'reason' => 'runtime_inventory_probe_failed',
-                        'error' => $snapshot->error,
-                    ],
-                ),
-            ];
-        }
-
-        if ($snapshot->status !== NodeRuntimeContainersProbeStatus::Present) {
-            return [];
-        }
-
-        $drift = [];
-
-        foreach ($snapshot->containers->keys() as $appSlug) {
-            if (in_array($appSlug, $activeRuntimeSlugs, true)) {
-                continue;
-            }
-
-            $observed = $snapshot->containers->get($appSlug) ?? [];
-            $containerName = is_string($observed['container_name'] ?? null)
-                ? $observed['container_name']
-                : "orbit-app-{$appSlug}";
-
-            $drift[] = new DriftEntry(
-                family: $this->key(),
-                key: 'process.runtime_unit_extra',
-                kind: DriftKind::Extra,
-                summary: "Managed process runtime unit '{$containerName}' has no active app runtime intent.",
-                detail: [
-                    'runtime_unit' => $containerName,
-                    'app' => $appSlug,
-                    'reason' => 'orphaned_managed_app_runtime',
-                ],
-            );
-        }
-
-        return $drift;
-    }
-
-    private function runtimeContainersProbe(): RemoteAppRuntimeContainersProbe
-    {
-        return app(RemoteAppRuntimeContainersProbe::class);
     }
 
     public function introspect(Process $process): ProbeSnapshot

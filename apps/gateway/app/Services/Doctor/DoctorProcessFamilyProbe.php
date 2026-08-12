@@ -14,6 +14,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Apps\NodeRuntimeContainersInventory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\NodeProcessResolver;
 use App\Services\Processes\ProcessesProbe;
@@ -25,6 +26,7 @@ final readonly class DoctorProcessFamilyProbe
     public function __construct(
         private DoctorFamilyProbeRunner $familyProbeRunner,
         private ProcessesProbe $processesProbe,
+        private NodeRuntimeContainersInventory $runtimeContainersInventory,
         private NodeProcessResolver $nodeProcesses,
         private EnsureFrankenPhpRuntimeProcess $ensureRuntimeProcess,
         private AppRuntimeContainerRenderer $runtimeContainerRenderer,
@@ -72,9 +74,9 @@ final readonly class DoctorProcessFamilyProbe
                     $advance();
                 }
 
-                $runtimeContainers = $this->processesProbe->introspectNodeRuntimeContainers($node);
+                $runtimeContainers = $this->runtimeContainersInventory->introspect($node);
 
-                foreach ($this->processesProbe->diffNodeRuntimeContainers(
+                foreach ($this->runtimeContainersInventory->diff(
                     $node,
                     $runtimeContainers,
                     $this->activePhpRuntimeSlugs($nodeInstances),

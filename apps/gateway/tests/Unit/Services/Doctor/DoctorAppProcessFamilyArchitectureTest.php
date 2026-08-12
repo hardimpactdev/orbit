@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Services\Apps\NodeRuntimeContainersInventory;
 use App\Services\Doctor\DoctorAppFamilyProbe;
 use App\Services\Doctor\DoctorNodeProbeRunner;
 use App\Services\Doctor\DoctorProcessFamilyProbe;
+use App\Services\Processes\ProcessesProbe;
 
 it('keeps app and process family probes behind focused services', function (): void {
     $coordinator = new ReflectionClass(DoctorNodeProbeRunner::class);
@@ -67,4 +69,25 @@ it('loads one app instance snapshot and removes hidden runtime service lookups',
             ->and($serviceSource)
             ->not->toContain('app(');
     }
+
+    $processFamily = new ReflectionClass(DoctorProcessFamilyProbe::class);
+    $processFamilyDependencies = collect($processFamily->getConstructor()?->getParameters() ?? [])
+        ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
+        ->filter()
+        ->values()
+        ->all();
+    $processesProbeFile = new ReflectionClass(ProcessesProbe::class)->getFileName();
+
+    if (! is_string($processesProbeFile)) {
+        throw new LogicException('ProcessesProbe source file is unavailable.');
+    }
+
+    expect($processFamilyDependencies)
+        ->toContain(NodeRuntimeContainersInventory::class)
+        ->and(file_get_contents($processesProbeFile))
+        ->not->toContain(
+            'introspectNodeRuntimeContainers(',
+            'diffNodeRuntimeContainers(',
+            'RemoteAppRuntimeContainersProbe',
+        );
 });
