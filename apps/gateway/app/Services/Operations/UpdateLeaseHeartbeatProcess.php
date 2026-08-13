@@ -109,10 +109,24 @@ class UpdateLeaseHeartbeatProcess
             throw new RuntimeException('Update lease heartbeat cannot replace an active process alarm.');
         }
 
+        /** @var mixed $alarmHandler */
+        $alarmHandler = pcntl_signal_get_handler(SIGALRM);
+        /** @var mixed $terminationHandler */
+        $terminationHandler = pcntl_signal_get_handler(SIGTERM);
+
+        if (
+            ! is_int($alarmHandler)
+            && ! is_callable($alarmHandler)
+            || ! is_int($terminationHandler)
+            && ! is_callable($terminationHandler)
+        ) {
+            throw new RuntimeException('Update lease heartbeat could not preserve the process signal handlers.');
+        }
+
         $state = [
             'async_signals' => pcntl_async_signals(),
-            'alarm_handler' => pcntl_signal_get_handler(SIGALRM),
-            'termination_handler' => pcntl_signal_get_handler(SIGTERM),
+            'alarm_handler' => $alarmHandler,
+            'termination_handler' => $terminationHandler,
         ];
 
         pcntl_async_signals(true);
