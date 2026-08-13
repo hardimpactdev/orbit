@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T23:58:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-live-candidate-fleet-corrections/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-14-015859-codex-live-candidate-fleet-corrections",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-candidate-fleet-7f7d65dbb.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T232424Z-2f9d04fe24d4.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-candidate-fleet-7f7d65dbb.json": "a3ae07197bda74190e088dc96a31bd6a65b233583731bfc4c8abe33ba266613a",
+        "loop.md": "1d2c95314ffd9f7ddc620fb2e1a7c8dbe387f750cc843dc38b91d860e9532d1e",
+        "quality-gates/quality-check-2026-08-13T232424Z-2f9d04fe24d4.json": "cdf4d524cc2345b5b35e71eead60250147826a04f0f1dd2045c2d965a8bac357"
+    },
+    "slug": "codex-live-candidate-fleet-corrections",
+    "requested_slug": "codex-live-candidate-fleet-corrections",
+    "compatible_slugs": [
+        "codex-live-candidate-fleet-corrections"
+    ],
+    "branch": "codex/live-candidate-fleet-corrections",
+    "candidate_commit": "7f7d65dbb88f8961b10bca5f1b5fe4617b5e3152",
+    "accepted_feature_tip": "7f7d65dbb88f8961b10bca5f1b5fe4617b5e3152",
+    "accepted_main_tip": "afd0e399ce268980e23327b130ba7f5ba52b2468",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-13T23:53:30Z",
+  "candidate": "7f7d65dbb88f8961b10bca5f1b5fe4617b5e3152",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-3fecd0",
+    "host": "beast",
+    "roles": [
+      "operator",
+      "gateway",
+      "app-dev"
+    ],
+    "checkout": "/home/orbit/orbit-run"
+  },
+  "expected": "A caller node is never selected as a remote workload target, and an archive-backed digest-pinned FrankenPHP candidate installs through its digest-free loaded tag before the stable runtime alias is created.",
+  "observed": {
+    "caller_exclusion": {
+      "operation_run_id": "92ff09a4-f89b-4a12-93a6-b7526c7ff883",
+      "caller_node_id": 5,
+      "caller_node": "app-dev-1",
+      "update_targets": [
+        "gateway",
+        "local"
+      ],
+      "note": "The operation later stopped because the retained fixture initially lacked orbit-caddy; target selection completed before that fixture failure."
+    },
+    "archive_backed_role_alias": {
+      "operation_run_id": "028d91ec-80e5-423e-bbc3-7b64ab90ea02",
+      "caller_node_id": 2,
+      "caller_node": "operator-1",
+      "remote_workload": "app-dev-1",
+      "workload_doctor": "passed",
+      "role_image_verification": "passed",
+      "candidate_image": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260813T225812Z-afd0e399c@sha256:1573f2700df29148ca51890457ac2cb639670c39d73edc413f61ec6405e485b8",
+      "loaded_candidate_tag": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260813T225812Z-afd0e399c",
+      "stable_alias": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm",
+      "shared_image_id": "1573f2700df2"
+    },
+    "terminal_update": {
+      "operation_run_id": "628809f3-23cf-4177-bdb7-06a0669ba2d4",
+      "caller_node_id": 2,
+      "caller_node": "operator-1",
+      "status": "succeeded",
+      "exit_code": 0,
+      "gateway": "verified",
+      "scheduler": "verified",
+      "workload_cli": "verified",
+      "workload_agent": "verified",
+      "required_role_images": "verified",
+      "gateway_image": "127.0.0.1:5000/orbit-gateway:proof-7f7d65dbb@sha256:d3856b85b74de97e5135933d0d9fc9ee37b4facdc2c2a604a7f0966b8c548142",
+      "linux_cli_sha256": "32f2706697ebca25e28dde53f926de82022875c6676668fa768b32e1430c0cde",
+      "agent_service_on_app_dev": "active"
+    }
+  },
+  "quality_gate": {
+    "command": "composer quality-check",
+    "exit_code": 0,
+    "artifact": ".orbit/quality-gates/quality-check-2026-08-13T232424Z-2f9d04fe24d4.json"
+  },
+  "result": "passed"
+}
