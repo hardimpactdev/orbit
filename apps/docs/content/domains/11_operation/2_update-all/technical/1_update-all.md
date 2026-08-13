@@ -52,9 +52,11 @@ envelope (`meta.fields = ["json", "stream-json"]`,
    When the request omits an inline manifest, the gateway defers release-manifest
    resolution to the runner's `Checking for updates` step so the CLI can keep
    visible progress while the latest version is resolved.
-4. Follow the operation event journal by monotonic cursor. The current command
-   uses an exact-marked transitional SSE adapter, where `Last-Event-ID`
-   temporarily carries the cursor across gateway-service replacement. The
+4. Follow the operation event journal by monotonic operation-local
+   `event_sequence`. The current command uses an exact-marked transitional SSE
+   adapter, where `Last-Event-ID` temporarily carries that sequence across
+   gateway-service replacement. The global journal row `event_id` is durable
+   identity only and is never sent as the resume cursor. The
    target transport is the private operations WebSocket/Reverb plane.
 5. After the gateway phase succeeds, update the caller-local CLI as a fan-out
    target alongside the remote workload nodes. The gateway is the version
@@ -182,11 +184,12 @@ The expected target shape per calling context:
   and Docker socket are mounted.
   The runner survives replacement of the long-running `orbit-gateway` service
   and owns the rest of the fleet update.
-- Followers replay persisted events after a monotonic journal cursor, then
-  follow live frames. `update:all` currently reaches this contract through an
-  exact-marked transitional gateway SSE adapter, where `Last-Event-ID` carries
-  the cursor. Duplicate events after reconnect must not be rendered twice. The
-  adapter is removed when this command migrates to the operations
+- Followers replay persisted events after a monotonic operation-local
+  `event_sequence`, then follow live frames. `update:all` currently reaches this
+  contract through an exact-marked transitional gateway SSE adapter, where
+  `Last-Event-ID` carries that sequence. The global journal row `event_id` is
+  never a resume position. Duplicate events after reconnect must not be
+  rendered twice. The adapter is removed when this command migrates to the operations
   WebSocket/Reverb plane.
 
 ## Lease Rules

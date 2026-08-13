@@ -32,14 +32,14 @@ class GatewayOperationEventStreamClient
      * @param  callable(ProgressEventType, array<string, mixed>, int|null): void  $onEvent
      * @return array{type: ProgressEventType, payload: array<string, mixed>}|null
      */
-    public function replay(string $eventsUrl, ?int $lastEventId, callable $onEvent): ?array
+    public function replay(string $eventsUrl, ?int $lastSequence, callable $onEvent): ?array
     {
         if (ForkedFrameTicker::hasIdleCallback() && function_exists('curl_multi_init')) {
-            return $this->replayWithCurlIdleTicks($eventsUrl, $lastEventId, $onEvent);
+            return $this->replayWithCurlIdleTicks($eventsUrl, $lastSequence, $onEvent);
         }
 
         try {
-            $response = $this->openStreamResponse($eventsUrl, $lastEventId);
+            $response = $this->openStreamResponse($eventsUrl, $lastSequence);
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
         }
@@ -51,15 +51,15 @@ class GatewayOperationEventStreamClient
         return $this->processResponseStream($response->toPsrResponse()->getBody(), $onEvent);
     }
 
-    private function openStreamResponse(string $eventsUrl, ?int $lastEventId): Response
+    private function openStreamResponse(string $eventsUrl, ?int $lastSequence): Response
     {
-        return $this->pendingRequest($lastEventId)->get('/'.ltrim($eventsUrl, '/'));
+        return $this->pendingRequest($lastSequence)->get('/'.ltrim($eventsUrl, '/'));
     }
 
-    private function pendingRequest(?int $lastEventId): PendingRequest
+    private function pendingRequest(?int $lastSequence): PendingRequest
     {
         return Http::baseUrl($this->normalizedBaseUrl())
-            ->withHeaders($this->headers($lastEventId))
+            ->withHeaders($this->headers($lastSequence))
             ->timeout($this->timeout)
             ->withOptions($this->streamOptions());
     }
@@ -68,7 +68,7 @@ class GatewayOperationEventStreamClient
      * @param  callable(ProgressEventType, array<string, mixed>, int|null): void  $onEvent
      * @return array{type: ProgressEventType, payload: array<string, mixed>}|null
      */
-    private function replayWithCurlIdleTicks(string $eventsUrl, ?int $lastEventId, callable $onEvent): ?array
+    private function replayWithCurlIdleTicks(string $eventsUrl, ?int $lastSequence, callable $onEvent): ?array
     {
         $curl = curl_init($this->absoluteUrl($eventsUrl));
 
@@ -86,7 +86,7 @@ class GatewayOperationEventStreamClient
 
         curl_setopt_array($curl, [
             CURLOPT_HTTPGET => true,
-            CURLOPT_HTTPHEADER => $this->curlHeaders($lastEventId),
+            CURLOPT_HTTPHEADER => $this->curlHeaders($lastSequence),
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_CONNECTTIMEOUT => $this->timeout,
             CURLOPT_HEADER => false,
@@ -198,11 +198,11 @@ class GatewayOperationEventStreamClient
     /**
      * @return list<string>
      */
-    private function curlHeaders(?int $lastEventId): array
+    private function curlHeaders(?int $lastSequence): array
     {
         $headers = [];
 
-        foreach ($this->headers($lastEventId) as $name => $value) {
+        foreach ($this->headers($lastSequence) as $name => $value) {
             $headers[] = "{$name}: {$value}";
         }
 
@@ -346,12 +346,12 @@ class GatewayOperationEventStreamClient
     /**
      * @return array<string, string>
      */
-    private function headers(?int $lastEventId): array
+    private function headers(?int $lastSequence): array
     {
         $headers = ['Accept' => 'text/event-stream'];
 
-        if ($lastEventId !== null && $lastEventId > 0) {
-            $headers['Last-Event-ID'] = (string) $lastEventId;
+        if ($lastSequence !== null && $lastSequence > 0) {
+            $headers['Last-Event-ID'] = (string) $lastSequence;
         }
 
         return $headers;

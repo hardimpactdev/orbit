@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 
-it('gets operation events with last event id and exposes decoded event ids', function (): void {
+it('sends the operation-local resume sequence as Last-Event-ID and exposes decoded SSE ids', function (): void {
     $body =
         "id: 42\n"
         ."event: step\n"

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Http;
 use Orbit\Core\Operations\OperationStreamFrameEvents;
 use Orbit\Core\Progress\ProgressEventType;
 
-it('subscribes to a private operation stream and backfills after the last durable cursor', function (): void {
+it('resumes backfill from the operation-local sequence when the global event id differs', function (): void {
     $history = [];
     $backfillFrame = operation_stream_durable_node_frame(11, 11, 101, 'backfill');
     $liveFrame = operation_stream_durable_node_frame(12, 12, 102, 'live');
@@ -127,7 +127,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
         ->and($events->replays)
         ->toBe([
             ['/api/operations/run-1/events?once=1', 10],
-            ['/api/operations/run-1/events?once=1', 102],
+            ['/api/operations/run-1/events?once=1', 12],
         ])
         ->and($history)
         ->toBe([
@@ -138,7 +138,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
             'replay:/api/operations/run-1/events?once=1:10',
             'receive:operation.stream.frame',
             'receive:null',
-            'replay:/api/operations/run-1/events?once=1:102',
+            'replay:/api/operations/run-1/events?once=1:12',
             'close',
         ])
         ->and($frames)
@@ -277,7 +277,7 @@ it('replays frames published after descriptor fetch but before subscription conf
     expect($events->replays)
         ->toBe([
             ['/api/operations/run-1/events?once=1', null],
-            ['/api/operations/run-1/events?once=1', 101],
+            ['/api/operations/run-1/events?once=1', 11],
         ])
         ->and($frames)
         ->toBe([$postDescriptorFrame]);
@@ -417,14 +417,14 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
         timeout: 30,
         events: $events,
         transport: $transport,
-    )->subscribe('run-1', 100, function (array $frame) use (&$frames): void {
+    )->subscribe('run-1', 10, function (array $frame) use (&$frames): void {
         $frames[] = $frame;
     });
 
     expect($events->replays)
         ->toBe([
-            ['/api/operations/run-1/events?once=1', 100],
-            ['/api/operations/run-1/events?once=1', 101],
+            ['/api/operations/run-1/events?once=1', 10],
+            ['/api/operations/run-1/events?once=1', 11],
         ])
         ->and($frames)
         ->toBe([$backfillFrame, $fallbackFrame]);
@@ -796,10 +796,10 @@ class FakeOperationStreamBackfillClient extends GatewayOperationEventStreamClien
      * @param  callable(ProgressEventType, array<string, mixed>, int|null): void  $onEvent
      */
     #[Override]
-    public function replay(string $eventsUrl, ?int $lastEventId, callable $onEvent): ?array
+    public function replay(string $eventsUrl, ?int $lastSequence, callable $onEvent): ?array
     {
-        $this->replays[] = [$eventsUrl, $lastEventId];
-        $this->history[] = "replay:{$eventsUrl}:".($lastEventId ?? 'null');
+        $this->replays[] = [$eventsUrl, $lastSequence];
+        $this->history[] = "replay:{$eventsUrl}:".($lastSequence ?? 'null');
 
         $events = array_shift($this->eventBatches) ?? [];
 

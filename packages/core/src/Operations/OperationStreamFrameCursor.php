@@ -58,6 +58,11 @@ final readonly class OperationStreamFrameCursor
         );
     }
 
+    public function resumeSequence(): int
+    {
+        return $this->eventSequence;
+    }
+
     /**
      * @return array{operation_uuid: string, event_sequence: int, event_id: int}
      */

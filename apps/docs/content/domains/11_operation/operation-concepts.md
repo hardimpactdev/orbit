@@ -39,10 +39,13 @@ These terms describe the update workflow and its components.
   update as fan-out targets through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
   operation. The gateway stores each complete operation stream frame and its
-  monotonic journal cursor together before publishing the frame live. The
-  journal cursor is the authority for replay and duplicate removal; a
-  publisher's local `sequence` records publisher order only. Subscribers replay
-  events after the journal cursor before following live frames through the
+  monotonic operation-local `event_sequence` together before publishing the
+  frame live. This operation-local sequence is the resume cursor and the
+  authority for replay and duplicate removal. The global journal row
+  `event_id` identifies the stored row but is never a resume position. A
+  publisher's local `sequence` records publisher order only. The transitional
+  SSE adapter carries `event_sequence` in `Last-Event-ID`. Subscribers replay
+  events after that sequence before following live frames through the
   private operations WebSocket/Reverb plane until a terminal `complete` or
   `error` event is persisted. The CLI bounds consecutive journal replays that
   return no new event. A new event resets that count. If the bound is reached

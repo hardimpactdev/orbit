@@ -143,8 +143,11 @@ A node carries one or more **roles** assigned by the gateway. Roles are fixed co
 The `gateway` role also owns the operations WebSocket/Reverb surface for Orbit
 operation streams. The gateway persists each operation stream frame in the
 operation event journal before publishing it, and subscribers replay gaps by
-journal cursor before following live frames. The gateway Swarm stack renders a
-single `orbit-operations-reverb` service on the gateway role, using the same
+journal cursor before following live frames. That resume cursor is the
+operation-local `event_sequence`; the global journal row `event_id` is durable
+identity and is never a resume position. The transitional SSE adapter carries
+the operation-local sequence in `Last-Event-ID`. The gateway Swarm stack
+renders a single `orbit-operations-reverb` service on the gateway role, using the same
 `orbit-reverb` runtime image as the workload websocket role. This service is
 separate from app WebSocket bindings and `websocket.orbit`: it has its own
 operations app config path, does not depend on Valkey or a database-role node,

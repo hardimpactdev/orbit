@@ -42,7 +42,7 @@ class GatewayOperationStreamSubscriber
         $channel = $this->stringValue($descriptor, 'channel.name');
         $socketId = null;
         $transport = $this->transport ?? new RawOperationStreamWebSocketTransport;
-        $lastEventId = $lastReplayCursor;
+        $lastSequence = $lastReplayCursor;
         $seenSequences = [];
 
         try {
@@ -59,7 +59,7 @@ class GatewayOperationStreamSubscriber
             ]);
 
             $this->waitForSubscription($transport, $channel);
-            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
+            $lastSequence = $this->replayBackfill($descriptor, $lastSequence, $onFrame, $seenSequences, force: true);
             $this->receiveFrames(
                 $operationRunId,
                 $descriptor,
@@ -68,15 +68,15 @@ class GatewayOperationStreamSubscriber
                 $channel,
                 $onFrame,
                 $seenSequences,
-                $lastEventId,
+                $lastSequence,
             );
-            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
+            $lastSequence = $this->replayBackfill($descriptor, $lastSequence, $onFrame, $seenSequences, force: true);
         } catch (GatewayApiException $exception) {
             if (! $this->shouldReplayFallback($exception)) {
                 throw $exception;
             }
 
-            $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
+            $this->replayBackfill($descriptor, $lastSequence, $onFrame, $seenSequences, force: true);
         } finally {
             if (is_string($socketId) && $socketId !== '') {
                 $this->leave($descriptor, $socketId);
@@ -114,7 +114,7 @@ class GatewayOperationStreamSubscriber
      */
     private function replayBackfill(
         array $descriptor,
-        ?int $lastEventId,
+        ?int $lastSequence,
         callable $onFrame,
         array &$seenSequences,
         bool $force = false,
@@ -122,17 +122,17 @@ class GatewayOperationStreamSubscriber
         $eventsEndpoint = $this->stringValue($descriptor, 'backfill.events_endpoint');
         $cursor = $this->integerValue($descriptor, 'backfill.cursor');
 
-        if (! $force && $cursor === null && $lastEventId === null) {
-            return $lastEventId;
+        if (! $force && $cursor === null && $lastSequence === null) {
+            return $lastSequence;
         }
 
         $this->events->replay(
             $eventsEndpoint,
-            $lastEventId,
-            function (ProgressEventType $type, array $payload, ?int $eventId) use (
+            $lastSequence,
+            function (ProgressEventType $type, array $payload, ?int $eventSequence) use (
                 $onFrame,
                 &$seenSequences,
-                &$lastEventId,
+                &$lastSequence,
             ): void {
                 $frame = $payload['frame'] ?? null;
 
@@ -141,11 +141,11 @@ class GatewayOperationStreamSubscriber
                 }
 
                 /** @var array<string, mixed> $frame */
-                $this->dispatchFrame($frame, $onFrame, $seenSequences, $lastEventId, $eventId);
+                $this->dispatchFrame($frame, $onFrame, $seenSequences, $lastSequence, $eventSequence);
             },
         );
 
-        return $lastEventId;
+        return $lastSequence;
     }
 
     /**
@@ -296,7 +296,7 @@ class GatewayOperationStreamSubscriber
         string $channel,
         callable $onFrame,
         array &$seenSequences,
-        ?int &$lastEventId,
+        ?int &$lastSequence,
     ): void {
         while (($message = $transport->receive()) !== null) {
             if (($message['event'] ?? null) === 'pusher:ping') {
@@ -314,7 +314,7 @@ class GatewayOperationStreamSubscriber
                 continue;
             }
 
-            $this->dispatchFrame($this->messageData($message), $onFrame, $seenSequences, $lastEventId);
+            $this->dispatchFrame($this->messageData($message), $onFrame, $seenSequences, $lastSequence);
         }
     }
 
@@ -388,14 +388,14 @@ class GatewayOperationStreamSubscriber
         array $frame,
         callable $onFrame,
         array &$seenSequences,
-        ?int &$lastEventId,
-        ?int $eventId = null,
+        ?int &$lastSequence,
+        ?int $journalSequence = null,
     ): void {
         try {
             $durableFrame = DurableOperationStreamFrame::fromArray($frame);
         } catch (InvalidArgumentException $exception) {
-            if ($eventId !== null && $this->isLegacyCursorlessJournalFrame($frame)) {
-                $lastEventId = max($lastEventId ?? 0, $eventId);
+            if ($journalSequence !== null && $this->isLegacyCursorlessJournalFrame($frame)) {
+                $lastSequence = max($lastSequence ?? 0, $journalSequence);
                 $onFrame($frame);
 
                 return;
@@ -404,17 +404,16 @@ class GatewayOperationStreamSubscriber
             throw GatewayApiException::streamMalformed($exception);
         }
 
-        $eventSequence = $durableFrame->cursor()->eventSequence;
-        $frameEventId = $durableFrame->cursor()->eventId;
+        $eventSequence = $durableFrame->cursor()->resumeSequence();
 
         if (array_key_exists($eventSequence, $seenSequences)) {
-            $lastEventId = max($lastEventId ?? 0, $frameEventId);
+            $lastSequence = max($lastSequence ?? 0, $eventSequence);
 
             return;
         }
 
         $seenSequences[$eventSequence] = true;
-        $lastEventId = max($lastEventId ?? 0, $frameEventId);
+        $lastSequence = max($lastSequence ?? 0, $eventSequence);
 
         $onFrame($durableFrame->toArray());
     }

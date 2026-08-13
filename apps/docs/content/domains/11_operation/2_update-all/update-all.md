@@ -85,10 +85,12 @@ orbit update:all --stream-json
    restarts an existing managed service when present, falls back to replacing an
    unmanaged listener when one is running, and records installed artifact
    identity for future drift checks.
-5. Each persisted operation event carries a monotonic journal cursor. This
-   command still follows an exact-marked transitional Server-Sent Events
-   adapter; `Last-Event-ID` temporarily carries that cursor so a reconnect
-   replays only events the CLI has not rendered. The adapter is removed when
+5. Each persisted operation event carries a monotonic operation-local
+   `event_sequence`. This is the replay cursor. The global journal row
+   `event_id` is durable identity only. This command still follows an
+   exact-marked transitional Server-Sent Events adapter; `Last-Event-ID`
+   temporarily carries `event_sequence` so a reconnect replays only events the
+   CLI has not rendered. The adapter is removed when
    `update:all` moves to the private operations WebSocket/Reverb plane.
 6. The runner performs final verification: gateway health, scheduler health,
    CLI execution on selected nodes, Orbit Agent artifact hashes on supported

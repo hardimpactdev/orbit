@@ -63,6 +63,12 @@ it('keeps the exact gateway wire shape', function (): void {
         ->toBe(OperationStreamFrameType::Step);
 });
 
+it('uses the operation-local event sequence as the resume cursor', function (): void {
+    $cursor = new OperationStreamFrameCursor('run-1', 11, 101);
+
+    expect($cursor->resumeSequence())->toBe(11);
+});
+
 it('rejects a cursor for another operation', function (): void {
     $draft = OperationStreamFrameDraft::fromArray(
         operation_stream_fixture('node-draft-frame.json'),
