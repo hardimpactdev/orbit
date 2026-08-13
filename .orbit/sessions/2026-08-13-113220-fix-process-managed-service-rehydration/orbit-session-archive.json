@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T09:32:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-process-managed-service-rehydration/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-113220-fix-process-managed-service-rehydration",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/managed-service-doctor-rehydration-a3bab1c22.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T092045Z-7d19679b246a.json"
+    ],
+    "entry_digests": {
+        "evidence/managed-service-doctor-rehydration-a3bab1c22.md": "b8124d3397be2bf62c9f5db430056c62bda10a292b2098163312b166f60f57a4",
+        "loop.md": "e7d92f2f6a29ae14f654f464909b9aa5f5b4a28ab783cda1d4e6baf1a8713e84",
+        "quality-gates/quality-check-2026-08-13T092045Z-7d19679b246a.json": "b26d9064d864285dc21cef7648e8954737ef7f19c6a09a2549205a38d3d129d3"
+    },
+    "slug": "fix-process-managed-service-rehydration",
+    "requested_slug": "fix-process-managed-service-rehydration",
+    "compatible_slugs": [
+        "fix-process-managed-service-rehydration"
+    ],
+    "branch": "fix/process-managed-service-rehydration",
+    "candidate_commit": "a3bab1c225d22f3fae1ca3cf90a8443c8aa65598",
+    "accepted_feature_tip": "a3bab1c225d22f3fae1ca3cf90a8443c8aa65598",
+    "accepted_main_tip": "6b5e196020af7fc3467ff81acefd0f7338eefd3c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
