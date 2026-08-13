@@ -98,7 +98,7 @@ it('starts and preflights a source-mounted gateway-local executor shim', functio
         ->toBeLessThan($preflight);
 });
 
-it('binds the source-mounted checkout orbit cli into retained incus gateway shims', function (): void {
+it('runs the source-mounted checkout orbit cli from its real directory in retained incus gateway shims', function (): void {
     $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance {
         /** @var list<string> */
         public array $execCommands = [];
@@ -157,9 +157,11 @@ it('binds the source-mounted checkout orbit cli into retained incus gateway shim
     foreach ($shimCommands as $command) {
         expect($command)
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/srv/orbit'))
-            ->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
-            ->toContain('--env '.escapeshellarg('ORBIT_OPERATIONS_REVERB_APP_KEY=orbit-e2e-operations-key'))
-            ->toContain(
+            ->toContain('--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI=/srv/orbit/apps/cli/orbit'))
+            ->toContain('--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit'))
+            ->not->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))->toContain(
+                '--env '.escapeshellarg('ORBIT_OPERATIONS_REVERB_APP_KEY=orbit-e2e-operations-key'),
+            )->toContain(
                 '--env '
                     .escapeshellarg(
                         'ORBIT_OPERATIONS_REVERB_APP_SECRET='
@@ -227,7 +229,9 @@ it('binds an explicit current checkout into prepared incus gateway shims', funct
     foreach ($shimCommands as $command) {
         expect($command)
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit'))
-            ->toContain(escapeshellarg('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
+            ->toContain('--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI=/srv/orbit/apps/cli/orbit'))
+            ->toContain('--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit'))
+            ->not->toContain(escapeshellarg('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
             ->not->toContain(escapeshellarg('/usr/local/bin/orbit:/usr/local/bin/orbit-cli:ro'));
     }
 });
@@ -291,7 +295,9 @@ it('lets an explicit runtime checkout override the source-mounted gateway path',
     foreach ($shimCommands as $command) {
         expect($command)
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit-run,target=/srv/orbit'))
-            ->toContain(escapeshellarg('/home/orbit/orbit-run/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
+            ->toContain('--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI=/srv/orbit/apps/cli/orbit'))
+            ->toContain('--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit'))
+            ->not->toContain(escapeshellarg('/home/orbit/orbit-run/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
             ->not->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'));
     }
 });

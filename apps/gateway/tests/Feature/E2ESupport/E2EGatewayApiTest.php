@@ -406,7 +406,9 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toContain('orbit-gateway:prepared-current')
         ->toContain('/home/orbit/.config/orbit')
         ->toContain('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit')
-        ->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
+        ->toContain('ORBIT_GATEWAY_E2E_CLI=/srv/orbit/apps/cli/orbit')
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
+        ->not->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
         ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')->toContain(
             '/home/orbit/.ssh:/home/orbit/.ssh',
         )->toContain('ORBIT_E2E_TRUST_WIREGUARD_HEADER=true')
@@ -423,25 +425,24 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toBeString()
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->toContain('ORBIT_GATEWAY_URL=http://10.6.0.2')
-        ->toContain('ORBIT_FORWARD_INSTALL_BINARY=/usr/local/bin/orbit-cli')
-        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli')
+        ->toContain('ORBIT_FORWARD_INSTALL_BINARY=/srv/orbit/apps/cli/orbit')
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
         ->toContain('PHP_CLI_SERVER_WORKERS=4')
         ->toContain('VIEW_COMPILED_PATH=/srv/orbit/apps/gateway/storage/framework/views')
         ->toContain('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit')
-        ->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
-        ->not
-        ->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
-        ->toContain('/home/orbit/.wg-easy:/home/orbit/.wg-easy')
-        ->toContain('/home/orbit/.ssh:/home/orbit/.ssh')
-        ->toContain('/root/.ssh:/root/.ssh')
-        ->toContain('/tmp/orbit-runtime-env-http-router.php')
-        ->toContain(
+        ->not->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
+        ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')->toContain(
+            '/home/orbit/.wg-easy:/home/orbit/.wg-easy',
+        )->toContain('/home/orbit/.ssh:/home/orbit/.ssh')->toContain('/root/.ssh:/root/.ssh')->toContain(
+            '/tmp/orbit-runtime-env-http-router.php',
+        )->toContain(
             'php -d display_errors=0 -d max_execution_time=0 -S 10.6.0.2:80 -t public /tmp/orbit-runtime-env-http-router.php',
         );
 
     expect($tlsStart)
         ->toBeString()
-        ->toContain('ORBIT_GATEWAY_E2E_CLI=/usr/local/bin/orbit-cli')
+        ->toContain('ORBIT_GATEWAY_E2E_CLI=/srv/orbit/apps/cli/orbit')
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
         ->toContain('/tmp/orbit-runtime-env-tls.php');
 });
 

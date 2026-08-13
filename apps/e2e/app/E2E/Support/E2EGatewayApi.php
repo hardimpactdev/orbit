@@ -390,7 +390,9 @@ final readonly class E2EGatewayApi
             $gateway,
             $orbitPath,
         );
-        $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
+        $containerOrbitCliPath = $hostOrbitPath === null
+            ? self::GatewayContainerOrbitCliPath
+            : self::SourceMountedGatewayContainerOrbitCliPath;
 
         E2ECommand::gatewayArtisan(
             $gateway,
@@ -421,7 +423,6 @@ final readonly class E2EGatewayApi
                 ."\nexec php -d display_errors=0 -d max_execution_time=0 -S {$bindAddress}:80 -t public {$httpRouterPath}",
                 mountHostCli: true,
                 mountSsh: true,
-                hostCliPath: $hostCliPath,
                 hostOrbitPath: $hostOrbitPath,
             ),
             'Could not start gateway HTTP API',
@@ -442,13 +443,12 @@ final readonly class E2EGatewayApi
                         $certKey,
                         $peerIdentityMap,
                         dockerGatewayContainer: true,
-                        orbitCommand: self::GatewayContainerOrbitCliPath,
+                        orbitCommand: $containerOrbitCliPath,
                     )
                     ."\nPHP\nexec php "
                     .escapeshellarg($tlsScriptPath),
                 mountHostCli: true,
                 mountSsh: true,
-                hostCliPath: $hostCliPath,
                 hostOrbitPath: $hostOrbitPath,
             ),
             'Could not start gateway TLS test server',
@@ -2133,7 +2133,6 @@ final readonly class E2EGatewayApi
         string $script,
         bool $mountHostCli = false,
         bool $mountSsh = false,
-        ?string $hostCliPath = null,
         ?string $hostOrbitPath = null,
         bool $matchGatewayConfigOwner = false,
     ): string {
@@ -2177,13 +2176,22 @@ final readonly class E2EGatewayApi
         }
 
         if ($mountHostCli) {
-            $hostCliPath ??= self::HostOrbitCliPath;
+            $containerOrbitCliPath = $hostOrbitPath === null
+                ? self::GatewayContainerOrbitCliPath
+                : self::SourceMountedGatewayContainerOrbitCliPath;
 
             $arguments[] = '--env '.escapeshellarg('ORBIT_GATEWAY_URL='.self::GatewayWireGuardHttpUrl);
-            $arguments[] = '--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI='.self::GatewayContainerOrbitCliPath);
-            $arguments[] = '--env '.escapeshellarg('ORBIT_FORWARD_INSTALL_BINARY='.self::GatewayContainerOrbitCliPath);
-            $arguments[] = '--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath);
-            $arguments[] = '-v '.escapeshellarg($hostCliPath.':'.self::GatewayContainerOrbitCliPath.':ro');
+            $arguments[] = '--env '.escapeshellarg('ORBIT_GATEWAY_E2E_CLI='.$containerOrbitCliPath);
+            $arguments[] = '--env '.escapeshellarg('ORBIT_FORWARD_INSTALL_BINARY='.$containerOrbitCliPath);
+            $arguments[] = '--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY='.$containerOrbitCliPath);
+
+            if ($hostOrbitPath === null) {
+                $arguments[] = '-v '
+                .escapeshellarg(
+                    self::HostOrbitCliPath.':'.self::GatewayContainerOrbitCliPath.':ro',
+                );
+            }
+
             $arguments[] = '-v '.escapeshellarg(self::WgEasyStatePath.':'.self::WgEasyStatePath);
         }
 
@@ -2223,15 +2231,6 @@ final readonly class E2EGatewayApi
             escapeshellarg(self::sourceGatewayArtisanImage()),
             escapeshellarg(self::gatewayImage()),
         );
-    }
-
-    private static function gatewayHostOrbitCliPath(?string $hostOrbitPath): string
-    {
-        if ($hostOrbitPath !== null) {
-            return "{$hostOrbitPath}/apps/cli/orbit";
-        }
-
-        return self::HostOrbitCliPath;
     }
 
     private static function gatewayHostOrbitPath(E2EInstance $gateway, string $orbitPath): ?string
