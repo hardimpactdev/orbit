@@ -82,18 +82,18 @@ class UpdateLeaseHeartbeatProcess
 
     private function assertSignalSupport(): void
     {
-        if (
-            function_exists('pcntl_alarm')
-            && function_exists('pcntl_async_signals')
-            && function_exists('pcntl_signal')
-            && function_exists('pcntl_signal_get_handler')
-            && defined('SIGALRM')
-            && defined('SIGTERM')
-        ) {
-            return;
-        }
+        $functionsAvailable = array_all(
+            ['pcntl_alarm', 'pcntl_async_signals', 'pcntl_signal', 'pcntl_signal_get_handler'],
+            static fn (string $function): bool => function_exists($function),
+        );
+        $constantsAvailable = array_all(
+            ['SIGALRM', 'SIGTERM'],
+            static fn (string $constant): bool => defined($constant),
+        );
 
-        throw new RuntimeException('PCNTL signal support is required to monitor the update lease heartbeat.');
+        if (! $functionsAvailable || ! $constantsAvailable) {
+            throw new RuntimeException('PCNTL signal support is required to monitor the update lease heartbeat.');
+        }
     }
 
     /**
@@ -109,24 +109,10 @@ class UpdateLeaseHeartbeatProcess
             throw new RuntimeException('Update lease heartbeat cannot replace an active process alarm.');
         }
 
-        /** @var mixed $alarmHandler */
-        $alarmHandler = pcntl_signal_get_handler(SIGALRM);
-        /** @var mixed $terminationHandler */
-        $terminationHandler = pcntl_signal_get_handler(SIGTERM);
-
-        if (
-            ! is_int($alarmHandler)
-            && ! is_callable($alarmHandler)
-            || ! is_int($terminationHandler)
-            && ! is_callable($terminationHandler)
-        ) {
-            throw new RuntimeException('Update lease heartbeat could not preserve the process signal handlers.');
-        }
-
         $state = [
             'async_signals' => pcntl_async_signals(),
-            'alarm_handler' => $alarmHandler,
-            'termination_handler' => $terminationHandler,
+            'alarm_handler' => $this->savedSignalHandler(SIGALRM),
+            'termination_handler' => $this->savedSignalHandler(SIGTERM),
         ];
 
         pcntl_async_signals(true);
@@ -135,6 +121,18 @@ class UpdateLeaseHeartbeatProcess
         });
 
         return $state;
+    }
+
+    private function savedSignalHandler(int $signal): callable|int
+    {
+        /** @var mixed $handler */
+        $handler = pcntl_signal_get_handler($signal);
+
+        if (is_int($handler) || is_callable($handler)) {
+            return $handler;
+        }
+
+        throw new RuntimeException('Update lease heartbeat could not preserve the process signal handlers.');
     }
 
     private function startHeartbeatWatchdog(InvokedProcess $heartbeat, int $ttlSeconds): void
