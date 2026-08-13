@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T00:45:10+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-managed-frankenphp-restorer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-024510-refactor-doctor-managed-frankenphp-restorer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/managed-frankenphp-restorer-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T004245Z-cd5bf14fdbb4.json"
+    ],
+    "entry_digests": {
+        "evidence/managed-frankenphp-restorer-incus.json": "3de49f98ace3feba64fc8fa1348525d42b05e95706f57998e3fb127636bbf0aa",
+        "loop.md": "9ee12b21d1fd753b87ebb8a9b0b6441945331d8ff2aa0aea7f1069bd4aa66225",
+        "quality-gates/quality-check-2026-08-13T004245Z-cd5bf14fdbb4.json": "868a7761cf4160e7b01c7c12a4799f79d903c1cda68a8ed21be6687f2c999357"
+    },
+    "slug": "refactor-doctor-managed-frankenphp-restorer",
+    "requested_slug": "refactor-doctor-managed-frankenphp-restorer",
+    "compatible_slugs": [
+        "refactor-doctor-managed-frankenphp-restorer"
+    ],
+    "branch": "refactor/doctor-managed-frankenphp-restorer",
+    "candidate_commit": "bfba62059704bae438fa1b623bec5e9663c76f74",
+    "accepted_feature_tip": "bfba62059704bae438fa1b623bec5e9663c76f74",
+    "accepted_main_tip": "efe7a85c7f3609a5ba6312748af6d84b8759a619",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

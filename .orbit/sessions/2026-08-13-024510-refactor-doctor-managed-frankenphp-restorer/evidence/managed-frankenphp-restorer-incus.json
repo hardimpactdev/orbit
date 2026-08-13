@@ -1,0 +1,49 @@
+{
+    "schema_version": 1,
+    "candidate": "bfba62059704bae438fa1b623bec5e9663c76f74",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "target": "dev-80802f/orbit-e2e-dev-80802f-gateway->orbit-e2e-dev-80802f-dev",
+    "transport": {
+        "host": "beast",
+        "ssh_user": "nckrtl",
+        "ssh_address": "192.168.6.20",
+        "wireguard_address_used_for_ssh": false
+    },
+    "expected": "Managed FrankenPHP repair creates the canonical running container, stores matching process intent, and repeats without changes.",
+    "observed": {
+        "candidate_overlay_test_sha256": "ec72335c22c1998883b0febe4d1d5a30faf6353d2b8a453b4e414dad04e2e734",
+        "first_repair_status": "completed",
+        "first_repair_outcome": "created",
+        "second_repair_status": "completed",
+        "second_repair_outcome": "unchanged",
+        "final_candidate_repair_status": "completed",
+        "final_candidate_repair_outcome": "unchanged",
+        "container": "orbit-app-acceptance-frankenphp-development",
+        "container_running": true,
+        "container_status": "running",
+        "container_health": "healthy",
+        "container_image": "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm",
+        "container_spec_hash": "e4f6f2cc6d22be5455c01727bcb3ac3b8632d4111555a064d3d812de2c6cfbee",
+        "process_intent_spec_hash": "e4f6f2cc6d22be5455c01727bcb3ac3b8632d4111555a064d3d812de2c6cfbee"
+    },
+    "fixture": {
+        "app": "acceptance-frankenphp",
+        "instance": "development",
+        "process": "frankenphp-acceptance-frankenphp",
+        "source": "/home/orbit/apps/acceptance-frankenphp",
+        "source_setup": "Cloned the public laravel/laravel fixture into the disposable app node.",
+        "image_setup": "The retained node had the version 1 image cached and private registry pull was unavailable, so the disposable node tagged that image with the expected version 2 fixture tag."
+    },
+    "safety": {
+        "live_node_selected": false,
+        "operator_cli_used_after_saved_live_gateway_was_detected": false,
+        "topology_released": true,
+        "reaped_instances": [
+            "orbit-e2e-dev-80802f-operator",
+            "orbit-e2e-dev-80802f-gateway",
+            "orbit-e2e-dev-80802f-dev"
+        ]
+    },
+    "result": "passed"
+}
