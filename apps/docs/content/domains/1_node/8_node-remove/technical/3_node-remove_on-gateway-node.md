@@ -31,14 +31,14 @@ execution.
 3. Apply destructive consent.
 4. Remove the gateway-managed peer from wg-easy durable state and the current
    live VPN task interface. If either step fails, keep Orbit registry state.
-5. Delete node access grants.
-6. Delete the node's firewall-rule registry rows from gateway state without
-   contacting the target or altering its live firewall.
-7. Delete the node record.
-8. Reconcile node- and proxy-owned DNS projections through the shared
-   `reconcileRecords()` materializer and restart DNS once when artifacts
-   changed. Do not rewrite tool-owned base configuration.
-9. Return the result.
+5. In one database transaction, delete the Orbit peer row, node access grants,
+   firewall-rule registry rows, and node record without contacting the target
+   or altering its live firewall.
+6. Before that transaction commits, reconcile node- and proxy-owned DNS
+   projections through the shared `reconcileRecords()` materializer and restart
+   DNS once when artifacts changed. Do not rewrite tool-owned base
+   configuration.
+7. Return the result.
 
 ## Failure Semantics
 
@@ -50,16 +50,16 @@ execution.
   non-interactive input mode or when interactive confirmation is declined.
 - Return `node.wireguard_peer_removal_failed` and retain the node, peer, grants,
   and firewall rows when WireGuard detach fails.
-- Fail the removal action when DNS projection reconciliation fails; do not
-  report projection cleanup as successful.
+- Return `node.dns_reconciliation_failed` and roll the registry transaction back
+  when DNS projection reconciliation fails. The same command can retry safely.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local authorization, destructive consent, self-removal eligibility, gateway-node denial, teardown retry, and grant cleanup. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local authorization, destructive consent, self-removal eligibility, gateway-node denial, WireGuard and DNS retry, and registry cleanup. |
 | `apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php` | Dynamic VPN task resolution and live peer removal. |
 
 Destructive consent coverage note: gateway API tests cover missing-consent rejection; interactive confirmation remains a CLI prompt coverage gap outside this gateway-caller page.
 
-Focused gateway tests cover WireGuard detach failure and retry behavior.
+Focused gateway tests cover WireGuard detach failure and DNS rollback/retry behavior.

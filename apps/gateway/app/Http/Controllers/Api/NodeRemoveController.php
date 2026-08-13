@@ -83,6 +83,8 @@ final class NodeRemoveController implements Loggable
         try {
             $dto = $this->removeNode->handle($node, $removedSelf);
         } catch (NodeRemovalFailed $exception) {
+            $this->activityWireGuardPeerRemoved = ($exception->meta['wireguard_peer_removed'] ?? false) === true;
+
             return $this->error(
                 code: $exception->errorCode,
                 message: $exception->getMessage(),

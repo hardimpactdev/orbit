@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -137,6 +138,32 @@ function bind_node_remove_vpn_installer(?Closure $removePeer = null): NodeRemove
     app()->instance(VpnDnsSwarmInstaller::class, $installer);
 
     return $installer;
+}
+
+function bind_node_remove_dns_reconciler(?Closure $reconcile = null): DnsmasqReconciler
+{
+    $reconciler = new class($reconcile) extends DnsmasqReconciler {
+        public int $calls = 0;
+
+        public function __construct(
+            private readonly ?Closure $reconcile,
+        ) {}
+
+        public function reconcileRecords(): bool
+        {
+            $this->calls++;
+
+            if ($this->reconcile instanceof Closure) {
+                ($this->reconcile)($this->calls);
+            }
+
+            return true;
+        }
+    };
+
+    app()->instance(DnsmasqReconciler::class, $reconciler);
+
+    return $reconciler;
 }
 
 describe('NodeRemoveController', function (): void {
@@ -410,6 +437,119 @@ describe('NodeRemoveController', function (): void {
             ->and(DB::table('nodes')->where('id', $target->id)->exists())
             ->toBeFalse()
             ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+            ->toBeFalse();
+    });
+
+    it('rolls registry deletion back when DNS reconciliation fails and permits a retry', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        $target = Node::query()->create(apiRemoveNodeRow());
+        grantRemoveNodeAccess($callerId, $target->id);
+        grantRemoveNodeAccess($target->id, $gatewayId);
+        $peer = WireGuardPeer::factory()->for($target)->create([
+            'public_key' => 'dns-retry-public-key',
+        ]);
+        $firewallRuleId = (int) DB::table('firewall_rules')->insertGetId([
+            'node_id' => $target->id,
+            'name' => 'orbit-deny-public-ssh',
+            'direction' => 'in',
+            'action' => 'deny',
+            'source' => 'any',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'reason' => 'Orbit security baseline',
+            'source_hash' => hash(algo: 'sha256', data: 'orbit-deny-public-ssh'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $installer = bind_node_remove_vpn_installer(static function () use ($target, $peer, $firewallRuleId): void {
+            expect(DB::table('nodes')->where('id', $target->id)->exists())
+                ->toBeTrue()
+                ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+                ->toBeTrue()
+                ->and(DB::table('node_access')->where('consumer_node_id', $target->id)->exists())
+                ->toBeTrue()
+                ->and(DB::table('node_access')->where('serving_node_id', $target->id)->exists())
+                ->toBeTrue()
+                ->and(DB::table('firewall_rules')->where('id', $firewallRuleId)->exists())
+                ->toBeTrue();
+        });
+        $reconciler = bind_node_remove_dns_reconciler(static function (int $attempt) use (
+            $target,
+            $peer,
+            $firewallRuleId,
+        ): void {
+            expect(DB::table('nodes')->where('id', $target->id)->exists())
+                ->toBeFalse()
+                ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+                ->toBeFalse()
+                ->and(DB::table('node_access')->where('consumer_node_id', $target->id)->exists())
+                ->toBeFalse()
+                ->and(DB::table('node_access')->where('serving_node_id', $target->id)->exists())
+                ->toBeFalse()
+                ->and(DB::table('firewall_rules')->where('id', $firewallRuleId)->exists())
+                ->toBeFalse();
+
+            if ($attempt === 1) {
+                throw new RuntimeException('runtime detail must not leak');
+            }
+        });
+        $request = [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ];
+        $server = ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP];
+
+        deleteRemoveNodeJson('/api/nodes/app-1', $request, $server)
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.dns_reconciliation_failed')
+            ->assertJsonPath('error.meta.name', 'app-1')
+            ->assertJsonPath('error.meta.retryable', true)
+            ->assertJsonPath('error.meta.wireguard_peer_removed', true)
+            ->assertJsonMissing(['runtime detail must not leak']);
+
+        $failedActivity = Activity::query()->latest('id')->first();
+
+        expect(DB::table('nodes')->where('id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('node_access')->where('consumer_node_id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('node_access')->where('serving_node_id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('firewall_rules')->where('id', $firewallRuleId)->exists())
+            ->toBeTrue()
+            ->and($failedActivity?->description)
+            ->toBe('Node app-1 removal failed')
+            ->and($failedActivity?->properties->get('wireguard_peer_removed'))
+            ->toBeTrue()
+            ->and($failedActivity?->properties->get('grants_removed'))
+            ->toBe(0);
+
+        deleteRemoveNodeJson('/api/nodes/app-1', $request, $server)
+            ->assertOk()
+            ->assertJsonPath('success.data.wireguard_peer_removed', true)
+            ->assertJsonPath('success.data.grants_removed', 2);
+
+        expect($reconciler->calls)
+            ->toBe(2)
+            ->and($installer->calls)
+            ->toBe([
+                ['public_key' => 'dns-retry-public-key'],
+                ['public_key' => 'dns-retry-public-key'],
+            ])
+            ->and(DB::table('nodes')->where('id', $target->id)->exists())
+            ->toBeFalse()
+            ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+            ->toBeFalse()
+            ->and(DB::table('node_access')->where('consumer_node_id', $target->id)->exists())
+            ->toBeFalse()
+            ->and(DB::table('node_access')->where('serving_node_id', $target->id)->exists())
+            ->toBeFalse()
+            ->and(DB::table('firewall_rules')->where('id', $firewallRuleId)->exists())
             ->toBeFalse();
     });
 

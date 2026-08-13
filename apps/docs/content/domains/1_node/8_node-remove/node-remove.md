@@ -60,22 +60,19 @@ command.
 3. If the gateway manages a WireGuard peer for the node, removes it from
    wg-easy durable state and then from the live gateway WireGuard interface.
    A failure stops removal and keeps the node registry state for retry.
-4. Removes all node access grants where the node is the consumer or the
-   serving node.
-5. Deletes the removed node's firewall-rule registry rows. This changes gateway
-   configuration only; it does not contact the target or alter its live
-   firewall.
-6. Removes the node record from the gateway registry.
-7. Reconciles the node-owned record projection and any affected proxy-owned
+4. In one gateway transaction, removes all node access grants where the node is
+   the consumer or serving node, deletes its firewall-rule and WireGuard peer
+   rows, and deletes the node record.
+5. In that same transaction, reconciles the node-owned record projection and any affected proxy-owned
    exact backend records so DNS contains no records for the removed node. The
    shared materializer replaces changed artifacts under one lock and restarts
    DNS once without changing family ownership or touching tool-owned base
    configuration.
    Contract:
    [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
-8. Reports a WireGuard detach failure as a retryable command error. Projection
-   reconciliation failures also fail the removal action instead of claiming
-   successful cleanup.
+6. Reports a WireGuard detach failure as a retryable command error. A DNS
+   projection failure returns `node.dns_reconciliation_failed` and rolls the
+   registry transaction back, so the same command can retry safely.
 
 When a configured client targets its own node record, Orbit refuses removal
 while that node still has a gateway-managed WireGuard peer. Run the command from
@@ -101,6 +98,7 @@ local WireGuard configuration are left untouched.
 Downstream family state on a removed node becomes orphaned node reality. Clean
 it up through family-specific commands before removal. A WireGuard teardown
 failure leaves the node registered so the same `node:remove` request can retry;
+a DNS reconciliation failure also leaves the node registry state intact.
 Doctor is not a recovery path after the node identity has been deleted.
 
 Already-absent node removal is not idempotent because the node record is the

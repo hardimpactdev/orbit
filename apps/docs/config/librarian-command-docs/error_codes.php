@@ -41,6 +41,7 @@ return [
         'node' => [
             'bootstrap_required',
             'bootstrap_ssh_failed',
+            'dns_reconciliation_failed',
             'field_role_incompatible',
             'gateway_api_error',
             'gateway_removal_denied',

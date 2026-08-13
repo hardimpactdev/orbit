@@ -11,6 +11,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\WgEasyStateInstallerFailed;
+use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\Responses\Nodes\NodeRemoveResponse;
 use Throwable;
 
@@ -50,22 +51,33 @@ final readonly class RemoveNode
                 throw NodeRemovalFailed::wireGuardPeerRemoval($name, $meta, $exception);
             }
 
-            $wireguardPeer->delete();
             $wireguardPeerRemoved = true;
         }
 
-        $grantsRemoved = NodeAccess::query()
-            ->where('consumer_node_id', $node->id)
-            ->orWhere('serving_node_id', $node->id)
-            ->delete();
+        $grantsRemoved = DB::transaction(function () use ($name, $node, $wireguardPeer, $wireguardPeerRemoved): int {
+            if ($wireguardPeer instanceof WireGuardPeer) {
+                $wireguardPeer->delete();
+            }
 
-        FirewallRule::query()
-            ->where('node_id', $node->id)
-            ->delete();
+            $grantsRemoved = (int) NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->orWhere('serving_node_id', $node->id)
+                ->delete();
 
-        $node->delete();
+            FirewallRule::query()
+                ->where('node_id', $node->id)
+                ->delete();
 
-        $this->dnsmasqReconciler->reconcileRecords();
+            $node->delete();
+
+            try {
+                $this->dnsmasqReconciler->reconcileRecords();
+            } catch (Throwable $exception) {
+                throw NodeRemovalFailed::dnsReconciliation($name, $wireguardPeerRemoved, $exception);
+            }
+
+            return $grantsRemoved;
+        });
 
         return new NodeRemoveResponse(
             name: $name,

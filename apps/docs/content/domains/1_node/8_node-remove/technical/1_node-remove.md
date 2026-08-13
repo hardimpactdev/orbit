@@ -86,17 +86,20 @@ This command follows the shared
 
 - If an Orbit `wireguard_peers` row exists, complete the WireGuard detach rules
   before deleting any Orbit registry row.
-- Delete all `node_access` records where the node is the consumer or the
-  serving node.
-- Delete all gateway-side `firewall_rules` registry rows for the removed node so
-  the node record can be deleted. Do not contact the target or alter live
-  firewall state.
-- Delete the node record from the gateway registry.
-- After deletion, rematerialize the node-owned `10-node-records.conf` and any
-  affected proxy-owned `20-proxy-records.conf` from remaining gateway state.
-  Use `reconcileRecords()`, the shared ownership-neutral materializer, and one
-  DNS restart. This path never rewrites base `dnsmasq.conf`. Do not call
-  `dns:*`, remove caller-local resolver overrides, or edit public/provider DNS.
+- In one database transaction, delete the Orbit peer row, all `node_access`
+  records where the node is the consumer or serving node, all gateway-side
+  `firewall_rules` registry rows for the node, and the node record itself. Do
+  not contact the target or alter live firewall state.
+- Before that transaction commits, rematerialize the node-owned
+  `10-node-records.conf` and affected proxy-owned `20-proxy-records.conf` from
+  the remaining gateway state. Use `reconcileRecords()`, the shared
+  ownership-neutral materializer, and one DNS restart. This path never rewrites
+  base `dnsmasq.conf`. Do not call `dns:*`, remove caller-local resolver
+  overrides, or edit public/provider DNS.
+- If DNS materialization or activation fails, return
+  `node.dns_reconciliation_failed` with `retryable=true` and roll the registry
+  transaction back. A retry repeats WireGuard detach; an already-absent peer in
+  durable or live state is success.
 
 ### WireGuard Detach Rules
 
@@ -157,6 +160,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Gateway node removal | The target node has role `gateway`, regardless of gateway count. | Failure |
 | Self-removal has a managed peer | The authenticated caller targets its own node and an Orbit peer row exists. | Failure (`node.self_removal_requires_remote_caller`); no mutation. |
 | WireGuard teardown failed | Durable or live peer removal fails for a reason other than an accepted absent peer. | Failure (`node.wireguard_peer_removal_failed`, retryable); retain registry state. |
+| DNS reconciliation failed | Node- or proxy-owned private DNS materialization or activation fails before registry commit. | Failure (`node.dns_reconciliation_failed`, retryable); roll back peer-row, grant, firewall-row, and node deletion. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
 
@@ -164,9 +168,10 @@ Current removal always returns an empty warnings list. Peer removal is reported
 through `wireguard_peer_removed` only after durable state and the live interface
 are clean. A teardown failure is an error, not a warning or a successful result.
 
-DNS projection reconciliation failure is a command failure. Removal must not
-claim that node- or proxy-owned DNS artifacts are clean before the shared
-materializer and runtime restart succeed.
+DNS projection reconciliation failure is a command failure. The registry
+transaction rolls back, and removal must not claim that node- or proxy-owned
+DNS artifacts are clean before the shared materializer and runtime restart
+succeed.
 
 The absent-target rule is intentionally different from `node:revoke`.
 `node:revoke` validates both endpoint node identities and then makes the
@@ -182,6 +187,9 @@ node checks that still have a registered node identity.
 - A WireGuard teardown failure keeps the node and peer rows, so the operator
   retries `node:remove` instead of asking Doctor to reconstruct deleted
   identity.
+- A DNS reconciliation failure also restores the node, peer, grants, and
+  firewall rows through transaction rollback. Retry `node:remove`; an
+  already-absent WireGuard peer is accepted.
 - Removed nodes disappear from normal `doctor --family=node` scope. Doctor is
   not the recovery mechanism for a peer whose node identity was already
   deleted outside this contract.
@@ -208,7 +216,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI delete forwarding, force gating, human and JSON renderer output, and lifecycle validation before gateway contact. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway authorization, self-removal eligibility, teardown failure retention and retry, activity descriptions, and success envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway authorization, self-removal eligibility, WireGuard and DNS failure retention and retry, activity descriptions, and success envelopes. |
 | `apps/gateway/tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php` | Durable-before-live teardown order, absent-peer retry, signing-key failure, and runtime failure. |
 | `apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php` | Current Swarm VPN task resolution and live peer removal failure. |
 

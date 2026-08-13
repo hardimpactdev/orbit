@@ -114,7 +114,7 @@ final class NodeRemoveCommand extends GatewayCommand
     {
         $data = $this->successData($response);
 
-        if (($data['self_removal'] ?? null) === true) {
+        if (($data['removed_self'] ?? null) === true) {
             $this->line('  This machine no longer has Orbit gateway access.');
         }
 

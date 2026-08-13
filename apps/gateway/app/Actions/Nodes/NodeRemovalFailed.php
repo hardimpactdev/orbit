@@ -45,4 +45,19 @@ final class NodeRemovalFailed extends RuntimeException
             previous: $previous,
         );
     }
+
+    public static function dnsReconciliation(string $name, bool $wireguardPeerRemoved, Throwable $previous): self
+    {
+        return new self(
+            errorCode: 'node.dns_reconciliation_failed',
+            status: 502,
+            meta: [
+                'name' => $name,
+                'retryable' => true,
+                'wireguard_peer_removed' => $wireguardPeerRemoved,
+            ],
+            message: "Node '{$name}' could not be removed because its private DNS records could not be reconciled.",
+            previous: $previous,
+        );
+    }
 }

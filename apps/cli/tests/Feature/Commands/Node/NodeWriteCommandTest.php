@@ -691,6 +691,28 @@ describe('node write commands', function (): void {
             ->not->toContain('{');
     });
 
+    it('renders the gateway access note when node:remove removes the caller', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'operator-1',
+            'action' => 'removed',
+            'removed_self' => true,
+            'wireguard_peer_removed' => false,
+            'grants_removed' => 1,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:remove', [
+            'name' => 'operator-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Node 'operator-1' removed")
+            ->and($output)
+            ->toContain('This machine no longer has Orbit gateway access.');
+    });
+
     it('renders node:remove gateway failures as prose in human mode', function (): void {
         fakeGateway(
             fakeErrorEnvelope('authorization_failed', "This node is not authorized for 'node:remove' on 'app-1'."),
