@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T17:06:43+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-node-remove-wireguard-peer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-190642-fix-node-remove-wireguard-peer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/node-remove-wireguard-dev-564d3e.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T165655Z-e86df84f15c7.json"
+    ],
+    "entry_digests": {
+        "evidence/node-remove-wireguard-dev-564d3e.txt": "42599c39537cce7810588367f731f52decd3eebbf99221164e6593d632eefc7c",
+        "loop.md": "afde9722ee02b84f83049eb23a5a31652b7e1ca8d43165edd88e481a9b4d28a5",
+        "quality-gates/quality-check-2026-08-13T165655Z-e86df84f15c7.json": "eb2e29947985c5e69bfbc92727bb472d14e8adc47d75c34d8743f577fb151545"
+    },
+    "slug": "fix-node-remove-wireguard-peer",
+    "requested_slug": "fix-node-remove-wireguard-peer",
+    "compatible_slugs": [
+        "fix-node-remove-wireguard-peer"
+    ],
+    "branch": "fix/node-remove-wireguard-peer",
+    "candidate_commit": "e78e88cb2dee0d22be3fae52f056c1e227cff7e4",
+    "accepted_feature_tip": "e78e88cb2dee0d22be3fae52f056c1e227cff7e4",
+    "accepted_main_tip": "3f7528ca7fc0b3f48f22961b836fa112cf658f13",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

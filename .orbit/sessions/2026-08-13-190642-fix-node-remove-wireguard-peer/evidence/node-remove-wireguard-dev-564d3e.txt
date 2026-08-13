@@ -1,0 +1,66 @@
+Orbit node-removal WireGuard teardown proof
+Date: 2026-08-13
+Candidate: e78e88cb2dee0d22be3fae52f056c1e227cff7e4
+Venue: retained Incus topology dev-564d3e
+Topology: operator_gateway_app-dev
+Host route: nckrtl@192.168.6.20 (Beast LAN)
+Target: app-dev-1 / 10.6.0.4
+
+Candidate identity in the gateway runtime:
+- RemoveNode.php sha256: a243550abaaf9885820f1873437666e7440b13872d48e29c25a9587e8ab1e3b2
+- WgEasyServiceInstaller.php sha256: 1fe653b6de4ae9d437ceb7d0af7a2c3cee91e876df8a32346adf07e254a08acc
+- E2EGatewayApi.php sha256: 3b38302e8241034bb53f70fd9abc7abaaf8578b45f5e522c9c26a646dc29fa55
+
+Fixture normalization:
+- The prepared topology had five durable and live WireGuard peers, but no Orbit wireguard_peers rows.
+- A temporary Orbit peer row linked app-dev-1 to the existing durable/live peer by public key.
+- The public key was never printed and was removed from /tmp after proof.
+- The wg-easy peer name was `dev`, while the Orbit node name was `app-dev-1`.
+  This makes the proof discriminate public-key matching from the rejected name matching.
+
+Proof-harness correction discovered during proof:
+- The retained source-mounted HTTP/TLS shims selected /usr/local/bin/orbit-cli.
+- That path contained only the source launcher, so its relative dependencies were absent.
+- The internal executor failed with exit 127 before wg-easy ran.
+- Candidate e78e88cb2 corrects source-mounted shims to use /srv/orbit/apps/cli/orbit.
+- The post-proof commit change only updates the mirrored gateway characterization test. The runtime product and harness file hashes below are unchanged from the retained proof.
+- The focused harness regression passed: 5 tests, 54 assertions.
+- The retained shims were recreated with that corrected path.
+- Internal wg-easy state preflight then returned exit 0 and writable=true.
+
+Retry-safety observation before the corrected shim launch:
+- The failed removal returned node.wireguard_peer_removal_failed.
+- Registry node count remained 1.
+- Registry peer count remained 1.
+- Durable target peer count remained 1.
+- Live target peer count remained 1.
+
+Final precondition:
+- registry node count: 1
+- registry peer count: 1
+- durable target peer count: 1
+- live target peer count: 1
+- total live peer count: 5
+
+Operator command:
+  orbit node:remove app-dev-1 --force
+
+Observed operator result:
+- Validated removal
+- Removed WireGuard peer
+- Removed node grants
+- Removed node record
+- Node 'app-dev-1' removed
+
+Postcondition:
+- registry node count: 0
+- registry peer count: 0
+- remaining registry node count: 2
+- durable target peer count: 0
+- total durable peer count: 4
+- live target peer count: 0
+- total live peer count: 4
+- gateway API HTTP status: 200
+- config.json owner restored/preserved as 1002:1002
+
+Result: PASS
