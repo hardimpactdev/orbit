@@ -1,0 +1,46 @@
+{
+  "candidate": "3af0239a33176ed7da74f11d4cd7b2b8797a7aed",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": "dev-c43f44",
+  "host": {
+    "name": "beast",
+    "ssh": "nckrtl@192.168.6.20",
+    "route": "lan"
+  },
+  "target": "gateway deployment run lifecycle",
+  "checkout": {
+    "role": "gateway",
+    "path": "/home/orbit/orbit-run",
+    "verified_files": {
+      "apps/gateway/app/Services/Deploy/DeploymentRunLifecycle.php": "d4ce52ce851f71d45ac078ab0f4fbb429e384a535c895fe9d4ebe597af70c76d",
+      "apps/gateway/app/Services/Deploy/DeployManager.php": "fecb4cf2ee490b05f22ea1d62984b5c8766e5e2f6405ea6087d19be00da8b00b"
+    }
+  },
+  "expected": [
+    "A deployment transport failure records a failed terminal deployment run and matching instance latest status.",
+    "When an older run finishes after a newer run, the newer run remains the instance latest deployment outcome."
+  ],
+  "observed": {
+    "transport_failure": {
+      "setup": "Stopped orbit-agent.service on the retained Agent node before deploy:run.",
+      "run_id": 1,
+      "run_status": "failed",
+      "exit_code": 1,
+      "finished_at": "2026-08-13T04:27:38.000000Z",
+      "duration_ms": 1998,
+      "instance_latest_run_id": 1,
+      "instance_latest_status": "failed"
+    },
+    "overlap": {
+      "older": {"id": 2, "status": "failed"},
+      "newer": {"id": 3, "status": "completed"},
+      "instance_latest_run_id": 3,
+      "instance_latest_status": "completed"
+    },
+    "cleanup": {
+      "agent_service": "active"
+    }
+  },
+  "result": "passed"
+}

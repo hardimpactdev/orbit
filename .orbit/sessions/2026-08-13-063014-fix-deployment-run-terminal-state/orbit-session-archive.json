@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T04:30:14+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-deployment-run-terminal-state/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-063014-fix-deployment-run-terminal-state",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/deployment-run-lifecycle-retained-incus-dev-c43f44.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T041224Z-f56585bb7448.json"
+    ],
+    "entry_digests": {
+        "evidence/deployment-run-lifecycle-retained-incus-dev-c43f44.json": "39e11b2a5a087ff76ba628f47c3ac7604cabb261d601d02209c3422fd03feb77",
+        "loop.md": "50c81a8888bff1535477da567360b0297f0ac466e8e55bd327fbc96a58ddadad",
+        "quality-gates/quality-check-2026-08-13T041224Z-f56585bb7448.json": "aed5af7d6ef04e76d38fbb7b5f2e8a967a778bc3f2dc78d04d90c53985c32df9"
+    },
+    "slug": "fix-deployment-run-terminal-state",
+    "requested_slug": "fix-deployment-run-terminal-state",
+    "compatible_slugs": [
+        "fix-deployment-run-terminal-state"
+    ],
+    "branch": "fix/deployment-run-terminal-state",
+    "candidate_commit": "3af0239a33176ed7da74f11d4cd7b2b8797a7aed",
+    "accepted_feature_tip": "3af0239a33176ed7da74f11d4cd7b2b8797a7aed",
+    "accepted_main_tip": "a1df248a9b1ef8cf03ffb8dd438c767ef4cd4e64",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
