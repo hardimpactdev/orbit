@@ -1,0 +1,29 @@
+{
+  "candidate": "24ac09172d778e5ade08e2c10b2f8967ac25de44",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "dev-4d06d5/orbit-e2e-dev-4d06d5-gateway",
+  "provider": {
+    "host": "beast",
+    "ssh_user": "nckrtl",
+    "ssh_address": "192.168.6.20"
+  },
+  "expected": "Remove a canonical Orbit-owned systemd unit, refuse a non-Orbit unit without touching it, and release the retained topology.",
+  "observed": {
+    "owned_fixture_before": "present",
+    "owned_action_status": "completed",
+    "owned_action_summary": "Removed orphaned managed process runtime orbit_acceptance_extra.",
+    "owned_fixture_after": "absent",
+    "non_orbit_fixture_before": "present",
+    "non_orbit_action": null,
+    "non_orbit_fixture_after": "present",
+    "fixture_cleanup": "complete",
+    "topology_release": "Released retained E2E topology [dev-4d06d5]. Instances reaped: 3"
+  },
+  "result": "passed",
+  "notes": [
+    "The proof ran the committed gateway checkout at /home/orbit/orbit-run.",
+    "The service used the retained gateway node at 10.6.0.2. No live node was selected.",
+    "SSH to the Incus host used the Beast LAN address. The WireGuard address 10.6.0.7 was not used for SSH."
+  ]
+}

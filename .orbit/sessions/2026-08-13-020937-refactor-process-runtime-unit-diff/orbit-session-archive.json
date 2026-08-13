@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T00:09:37+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-process-runtime-unit-diff/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-020937-refactor-process-runtime-unit-diff",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/process-extra-runtime-remover-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T000055Z-8050d29e8304.json"
+    ],
+    "entry_digests": {
+        "evidence/process-extra-runtime-remover-incus.json": "b8ba8e11f1aeb11158ec7b2e2a311343d8a994d4a2e59968ffcfd36e694e45fa",
+        "loop.md": "2063d3e47b7a4a4232a8e70e13e218a5e651abe5009e88349c97399318973d8c",
+        "quality-gates/quality-check-2026-08-13T000055Z-8050d29e8304.json": "288022f63a867230d925644a3d9a9555c4c30f6834bbcf73451164380b09043a"
+    },
+    "slug": "refactor-process-runtime-unit-diff",
+    "requested_slug": "refactor-process-runtime-unit-diff",
+    "compatible_slugs": [
+        "refactor-process-runtime-unit-diff"
+    ],
+    "branch": "refactor/process-runtime-unit-diff",
+    "candidate_commit": "24ac09172d778e5ade08e2c10b2f8967ac25de44",
+    "accepted_feature_tip": "24ac09172d778e5ade08e2c10b2f8967ac25de44",
+    "accepted_main_tip": "75be0b61b75a7417ba25aba01d7f3d083a2000fe",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
