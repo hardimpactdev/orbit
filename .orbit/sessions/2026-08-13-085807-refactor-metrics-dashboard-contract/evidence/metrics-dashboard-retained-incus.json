@@ -1,0 +1,46 @@
+{
+  "candidate": "ce68b2b200fd2004fff5304cb9856ae02af518a8",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": "dev-9c53e3",
+  "topology_kind": "operator_gateway",
+  "host": {
+    "name": "beast",
+    "address": "192.168.6.20",
+    "user": "nckrtl"
+  },
+  "target": "gateway",
+  "checkout": "/home/orbit/orbit-run",
+  "input": {
+    "selected_node_name": "metrics-1",
+    "node_names": [
+      "metrics-1",
+      "app-1"
+    ]
+  },
+  "observed": {
+    "bytes": 22008,
+    "sha256": "d5d4a04401c8888af2f9e6d3d6e32ec33757dafdf971e53f247211a14e4d8096",
+    "pre_refactor_sha256": "d5d4a04401c8888af2f9e6d3d6e32ec33757dafdf971e53f247211a14e4d8096",
+    "uid": "orbit-node-resources",
+    "title": "Orbit Node Resources",
+    "schema_version": 39,
+    "panels": [
+      "Exporter Up",
+      "CPU Used",
+      "Memory Used",
+      "Root Disk Used",
+      "CPU By Mode",
+      "Load Average",
+      "Memory",
+      "Network Throughput"
+    ],
+    "selected_node": "metrics-1",
+    "node_options": [
+      "metrics-1",
+      "app-1"
+    ],
+    "trailing_newline": true
+  },
+  "result": "passed"
+}

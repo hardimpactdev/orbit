@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T06:58:07+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-metrics-dashboard-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-085807-refactor-metrics-dashboard-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/metrics-dashboard-retained-incus.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/metrics-dashboard-retained-incus.json": "8d9c7755ed5636723dd67904c30c397593ea837c91d35208a74cd77b4ef71e80",
+        "loop.md": "2499234bb1490084f8baae557b08dc374b7d128a6db94cf8a5bf34a57d1bb4d3"
+    },
+    "slug": "refactor-metrics-dashboard-contract",
+    "requested_slug": "refactor-metrics-dashboard-contract",
+    "compatible_slugs": [
+        "refactor-metrics-dashboard-contract"
+    ],
+    "branch": "refactor/metrics-dashboard-contract",
+    "candidate_commit": "ce68b2b200fd2004fff5304cb9856ae02af518a8",
+    "accepted_feature_tip": "ce68b2b200fd2004fff5304cb9856ae02af518a8",
+    "accepted_main_tip": "d69606fbbbe363a90a21c948d497d790d1d3e547",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
