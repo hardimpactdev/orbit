@@ -37,6 +37,7 @@ final readonly class ToolsProbe
         private ?RunsInternalCommands $localExecutor = null,
         private ?ToolScriptDispatcher $scripts = null,
         private ?AgentToolConsumerUrlProbe $agentConsumerUrlProbe = null,
+        private ?ToolCapabilityProbeContract $capabilityProbeContract = null,
     ) {}
 
     public function key(): string
@@ -68,41 +69,12 @@ final readonly class ToolsProbe
             return $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
         }
 
-        $binary = is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name;
-        $versionCommand = $metadata['version_command'] ?? null;
-        $service = $metadata['service'] ?? null;
-        $providerCommand = $metadata['provider_command'] ?? null;
-        $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
-        $script = $this->toolCapabilityProbeScript(
-            binary: $binary,
-            binaryAsUser: $this->binaryAsUserFromMetadata($metadata),
-            versionCommand: is_string($versionCommand) ? $versionCommand : '',
-            service: is_string($service) ? $service : '',
-            providerCommand: is_string($providerCommand) ? $providerCommand : '',
-            container: is_string($container) ? $container : '',
-            extraProbe: $this->extraProbeFromMetadata($metadata),
-        );
+        $script = $this->capabilityProbeContract()->renderOne($this->capabilityProbeInput($tool, $metadata));
 
         $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe', $script);
-        $parts = explode(separator: "\t", string: trim($result->stdout), limit: 12);
-        $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
         return $this->withManagedFileProbes($tool, new ProbeSnapshot([
-            $tool->name => [
-                'installed' => $result->successful(),
-                'path' => ($parts[0] ?? '') !== '' ? $parts[0] : null,
-                'version' => ($parts[1] ?? '') !== '' ? $parts[1] : null,
-                'state' => $containerState ?? (($parts[2] ?? '') !== '' ? $parts[2] : null),
-                'config_exists' => ($parts[3] ?? '') !== '' ? $parts[3] === '1' : null,
-                'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
-                'secret_exists' => ($parts[5] ?? '') !== '' ? $parts[5] === '1' : null,
-                'secret_hash' => ($parts[6] ?? '') !== '' ? $parts[6] : null,
-                'container_exists' => ($parts[7] ?? '') !== '' ? $parts[7] === '1' : null,
-                'container_state' => $containerState,
-                'container_spec_hash' => ($parts[9] ?? '') !== '' ? $parts[9] : null,
-                'provider_reachable' => ($parts[10] ?? '') !== '' ? $parts[10] === '1' : null,
-                'provider_error' => ($parts[11] ?? '') !== '' ? $parts[11] : null,
-            ],
+            $tool->name => $this->capabilityProbeContract()->parseOne($result),
         ]));
     }
 
@@ -151,21 +123,7 @@ final readonly class ToolsProbe
             }
 
             $node = $toolNode;
-            $batch[$tool->name] = [
-                'binary' => is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name,
-                'binary_as_user' => $this->binaryAsUserFromMetadata($metadata),
-                'version_command' => is_string($metadata['version_command'] ?? null)
-                    ? $metadata['version_command']
-                    : '',
-                'service' => is_string($metadata['service'] ?? null) ? $metadata['service'] : '',
-                'provider_command' => is_string($metadata['provider_command'] ?? null)
-                    ? $metadata['provider_command']
-                    : '',
-                'container' =>
-                    $this->expectedContainerName($tool)
-                        ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
-                'extra_probe' => $this->extraProbeFromMetadata($metadata),
-            ];
+            $batch[$tool->name] = $this->capabilityProbeInput($tool, $metadata);
             $batchedTools[$tool->name] = $tool;
         }
 
@@ -173,7 +131,7 @@ final readonly class ToolsProbe
             return $snapshots;
         }
 
-        $script = $this->batchedToolCapabilityProbeScript($batch);
+        $script = $this->capabilityProbeContract()->renderMany($batch);
         $result = $this->scriptDispatcher()->run($node, 'tool-catalog', 'probe-many', $script);
 
         if (! $result->successful()) {
@@ -184,21 +142,8 @@ final readonly class ToolsProbe
             return $snapshots;
         }
 
-        foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
-            if ($line === '') {
-                continue;
-            }
-
-            $payload = json_decode($line, associative: true);
-
-            if (! is_array($payload) || ! is_string($payload['name'] ?? null)) {
-                continue;
-            }
-
-            $name = $payload['name'];
-            unset($payload['name']);
-
-            $snapshots[$name] = new ProbeSnapshot([$name => $payload]);
+        foreach ($this->capabilityProbeContract()->parseMany($result) as $name => $observation) {
+            $snapshots[$name] = new ProbeSnapshot([$name => $observation]);
         }
 
         foreach (array_keys($batch) as $toolName) {
@@ -212,137 +157,16 @@ final readonly class ToolsProbe
         return $snapshots;
     }
 
-    private function toolCapabilityProbeScript(
-        string $binary,
-        string $binaryAsUser,
-        string $versionCommand,
-        string $service,
-        string $providerCommand,
-        string $container,
-        string $extraProbe = '',
-    ): string {
-        $script = <<<'SH'
-            set -eu
-            # orbit-tool-probe:capability
-
-            binary=__BINARY__
-            binary_as_user=__BINARY_AS_USER__
-            version_command=__VERSION_COMMAND__
-            service=__SERVICE__
-            provider_command=__PROVIDER_COMMAND__
-            container=__CONTAINER__
-            extra_probe=__EXTRA_PROBE__
-
-            path=''
-            version=''
-            state='unknown'
-            provider_reachable=''
-            provider_error=''
-            config_exists=''
-            config_hash=''
-            secret_exists=''
-            secret_hash=''
-            container_exists=''
-            container_state=''
-            container_spec_hash=''
-
-            case "$binary" in
-                */*)
-                    if [ -n "$binary_as_user" ]; then
-                        if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
-                            path=$binary
-                        fi
-                    elif [ -x "$binary" ]; then
-                        path=$binary
-                    fi
-                    ;;
-                *)
-                    path=$(command -v "$binary" 2>/dev/null || true)
-                    ;;
-            esac
-
-            if [ -z "$path" ]; then
-                exit 1
-            fi
-
-            if [ -n "$extra_probe" ]; then
-                if ! sh -c "$extra_probe" >/dev/null 2>&1; then
-                    exit 1
-                fi
-            fi
-
-            if [ -n "$version_command" ]; then
-                version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
-            fi
-
-            if [ -n "$provider_command" ]; then
-                if provider_output=$(sh -c "$provider_command" 2>&1 >/dev/null); then
-                    provider_reachable='1'
-                else
-                    provider_reachable='0'
-                    provider_error=$(printf '%s' "$provider_output" | sed -n '1p')
-                fi
-            fi
-
-            if [ -n "$service" ]; then
-                if systemctl is-active --quiet "$service" 2>/dev/null; then
-                    state='running'
-                else
-                    state='stopped'
-                fi
-            fi
-
-            if [ -n "$container" ]; then
-                if docker container inspect "$container" >/dev/null 2>&1; then
-                    container_exists='1'
-                    container_state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf 'stopped')
-
-                    state=$container_state
-                    container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
-
-                    if [ "$container_spec_hash" = "<no value>" ]; then
-                        container_spec_hash=''
-                    fi
-                else
-                    container_exists='0'
-                    container_state='missing'
-                fi
-            fi
-
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash" "$provider_reachable" "$provider_error"
-            SH;
-
-        return strtr($script, [
-            '__BINARY__' => escapeshellarg($binary),
-            '__BINARY_AS_USER__' => escapeshellarg($binaryAsUser),
-            '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
-            '__SERVICE__' => escapeshellarg($service),
-            '__PROVIDER_COMMAND__' => escapeshellarg($providerCommand),
-            '__CONTAINER__' => escapeshellarg($container),
-            '__EXTRA_PROBE__' => escapeshellarg($extraProbe),
-        ]);
-    }
-
     /**
      * @param  array<string, mixed>  $metadata
      */
-    private function binaryAsUserFromMetadata(array $metadata): string
+    private function capabilityProbeInput(NodeTool $tool, array $metadata): ToolCapabilityProbeInput
     {
-        return UserScopedCliUsers::normalize($metadata['binary_as_user'] ?? null) ?? '';
-    }
-
-    /**
-     * @param  array<string, mixed>  $metadata
-     */
-    private function extraProbeFromMetadata(array $metadata): string
-    {
-        $probe = $metadata['probe'] ?? null;
-
-        if (! is_string($probe) || $probe === '' || $probe === 'docker_images') {
-            return '';
-        }
-
-        return $probe;
+        return ToolCapabilityProbeInput::fromMetadata(
+            metadata: $metadata,
+            binaryFallback: $tool->name,
+            containerOverride: $this->expectedContainerName($tool),
+        );
     }
 
     /**
@@ -404,161 +228,6 @@ final readonly class ToolsProbe
         $nodeUser = UserScopedCliUsers::normalize($tool->node instanceof Node ? $tool->node->user : null);
 
         return $nodeUser ?? 'orbit';
-    }
-
-    /**
-     * @param  array<string, array{binary: mixed, binary_as_user: string, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
-     */
-    private function batchedToolCapabilityProbeScript(array $batch): string
-    {
-        $cases = [];
-        $names = [];
-
-        foreach ($batch as $name => $tool) {
-            $names[] = $name;
-            $cases[] = implode("\n", [
-                '        '.escapeshellarg($name).')',
-                '            binary='.escapeshellarg((string) ($tool['binary'] ?? '')),
-                '            binary_as_user='.escapeshellarg($tool['binary_as_user']),
-                '            version_command='.escapeshellarg($tool['version_command']),
-                '            service='.escapeshellarg($tool['service']),
-                '            provider_command='.escapeshellarg($tool['provider_command']),
-                '            container='.escapeshellarg($tool['container']),
-                '            extra_probe='.escapeshellarg($tool['extra_probe']),
-                '            ;;',
-            ]);
-        }
-
-        $script = <<<'SH'
-            set -eu
-            # orbit-tool-probe:capability-batch
-
-            json_escape() {
-                printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'
-            }
-
-            json_string_or_null() {
-                if [ -n "$1" ]; then
-                    printf '"%s"' "$(json_escape "$1")"
-                else
-                    printf 'null'
-                fi
-            }
-
-            while IFS= read -r name; do
-                if [ -z "$name" ]; then
-                    continue
-                fi
-
-                binary=''
-                binary_as_user=''
-                version_command=''
-                service=''
-                provider_command=''
-                container=''
-                extra_probe=''
-
-                case "$name" in
-            __CASES__
-                    *)
-                        continue
-                        ;;
-                esac
-
-                path=''
-                version=''
-                state='unknown'
-                provider_reachable='null'
-                provider_error=''
-                container_exists='null'
-                container_state=''
-                container_spec_hash=''
-
-                case "$binary" in
-                    */*)
-                        if [ -n "$binary_as_user" ]; then
-                            if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
-                                path=$binary
-                            fi
-                        elif [ -x "$binary" ]; then
-                            path=$binary
-                        fi
-                        ;;
-                    *)
-                        path=$(command -v "$binary" 2>/dev/null || true)
-                        ;;
-                esac
-
-                if [ -n "$path" ] && [ -n "$extra_probe" ]; then
-                    if ! sh -c "$extra_probe" >/dev/null 2>&1; then
-                        path=''
-                    fi
-                fi
-
-                if [ -n "$path" ] && [ -n "$version_command" ]; then
-                    version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
-                fi
-
-                if [ -n "$path" ] && [ -n "$provider_command" ]; then
-                    if provider_output=$(sh -c "$provider_command" 2>&1 >/dev/null); then
-                        provider_reachable='true'
-                    else
-                        provider_reachable='false'
-                        provider_error=$(printf '%s' "$provider_output" | sed -n '1p')
-                    fi
-                fi
-
-                if [ -n "$path" ] && [ -n "$service" ]; then
-                    if systemctl is-active --quiet "$service" 2>/dev/null; then
-                        state='running'
-                    else
-                        state='stopped'
-                    fi
-                fi
-
-                if [ -n "$path" ] && [ -n "$container" ]; then
-                    if docker container inspect "$container" >/dev/null 2>&1; then
-                        container_exists='true'
-                        container_state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf 'stopped')
-
-                        state=$container_state
-                        container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
-
-                        if [ "$container_spec_hash" = "<no value>" ]; then
-                            container_spec_hash=''
-                        fi
-                    else
-                        container_exists='false'
-                        container_state='missing'
-                    fi
-                fi
-
-                if [ -n "$path" ]; then
-                    installed='true'
-                else
-                    installed='false'
-                fi
-
-                printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s,"provider_reachable":%s,"provider_error":%s}\n' \
-                    "$(json_escape "$name")" \
-                    "$installed" \
-                    "$(json_string_or_null "$path")" \
-                    "$(json_string_or_null "$version")" \
-                    "$(json_string_or_null "$state")" \
-                    "$container_exists" \
-                    "$(json_string_or_null "$container_state")" \
-                    "$(json_string_or_null "$container_spec_hash")" \
-                    "$provider_reachable" \
-                    "$(json_string_or_null "$provider_error")"
-            done <<'ORBIT_TOOLS'
-            __NAMES__
-            ORBIT_TOOLS
-            SH;
-
-        return strtr($script, [
-            '__CASES__' => implode("\n", $cases),
-            '__NAMES__' => implode("\n", $names),
-        ]);
     }
 
     private function introspectPhpCliRuntimes(NodeTool $tool): ProbeSnapshot
@@ -672,6 +341,7 @@ final readonly class ToolsProbe
 
     /**
      * @return list<DriftEntry>
+     * @mago-expect lint:halstead
      */
     private function checkPhpCliRuntimeState(NodeTool $tool, ProbeSnapshot $snapshot): array
     {
@@ -1761,14 +1431,14 @@ final readonly class ToolsProbe
 
     private function summarizeDiagnostic(string $value): string
     {
-        $normalized = trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+        $normalized = trim(preg_replace(pattern: '/\s+/', replacement: ' ', subject: $value) ?? $value);
 
         if ($normalized === '') {
             return 'probe failed';
         }
 
         if (strlen($normalized) > 240) {
-            return substr($normalized, 0, 237).'...';
+            return substr(string: $normalized, offset: 0, length: 237).'...';
         }
 
         return $normalized;
@@ -1782,6 +1452,11 @@ final readonly class ToolsProbe
     private function scriptDispatcher(): ToolScriptDispatcher
     {
         return $this->scripts ?? app(ToolScriptDispatcher::class);
+    }
+
+    private function capabilityProbeContract(): ToolCapabilityProbeContract
+    {
+        return $this->capabilityProbeContract ?? new ToolCapabilityProbeContract;
     }
 
     /**
