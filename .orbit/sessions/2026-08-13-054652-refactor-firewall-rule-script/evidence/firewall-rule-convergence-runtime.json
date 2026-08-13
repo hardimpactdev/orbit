@@ -1,0 +1,72 @@
+{
+    "candidate": "a82aa92451c3edb2b35ad20eaf6709acbed18bcb",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "topology": {
+        "id": "dev-1340bf",
+        "kind": "operator_gateway",
+        "host": "beast",
+        "ssh_transport": "nckrtl@192.168.6.20",
+        "gateway_instance": "orbit-e2e-dev-1340bf-gateway",
+        "gateway_api_ready_seconds": 0.982
+    },
+    "candidate_binding": {
+        "result": "passed",
+        "method": "SHA-256 comparison between the committed worktree and the retained gateway checkout",
+        "files": {
+            "apps/gateway/app/Services/Firewall/IptablesRuleScript.php": "7bf5741cce19c51c7c87b6e539e1c86285c136c03dec0d1f51a1def5464ec94a",
+            "apps/gateway/app/Services/Gateway/GatewayDirectFirewallInstaller.php": "4c68e4fe587e6e6c3d91fa38a4967186a419abe598c1bdc40481b1cf26c20f7d",
+            "apps/gateway/app/Services/Vpn/VpnDnsForwardingScript.php": "56ded52a8fdba7b7fd76b88c2a9faf243b97f42405de4d533fd02dd0c06b23f5",
+            "apps/gateway/app/Services/Vpn/VpnDnsSwarmStackRenderer.php": "a1e9f2c75e3eb0d25e586bd17a44767cd592c5e1481e39f4a8616ed13fefbcac"
+        }
+    },
+    "checks": [
+        {
+            "name": "operator_to_gateway_control_plane",
+            "attempts": 1,
+            "result": "passed",
+            "observed": "orbit node:list --json returned the active gateway node through the retained gateway API"
+        },
+        {
+            "name": "gateway_direct_firewall_convergence",
+            "attempts": 2,
+            "result": "passed",
+            "observed": {
+                "ipv4_rule_count": 6,
+                "ipv6_rule_count": 2,
+                "duplicate_rule_count": 0,
+                "ipv4_rules": [
+                    "-A DOCKER-USER -i wg-orbit -p tcp -m tcp --dport 443 -j RETURN",
+                    "-A DOCKER-USER -i wg-orbit -p udp -m udp --dport 443 -j RETURN",
+                    "-A DOCKER-USER -s 10.6.0.0/24 -p tcp -m tcp --dport 443 -j RETURN",
+                    "-A DOCKER-USER -s 10.6.0.0/24 -p udp -m udp --dport 443 -j RETURN",
+                    "-A DOCKER-USER -p tcp -m tcp --dport 443 -j DROP",
+                    "-A DOCKER-USER -p udp -m udp --dport 443 -j DROP"
+                ],
+                "ipv6_rules": [
+                    "-A DOCKER-USER -p tcp -m tcp --dport 443 -j DROP",
+                    "-A DOCKER-USER -p udp -m udp --dport 443 -j DROP"
+                ]
+            }
+        },
+        {
+            "name": "vpn_dns_firewall_convergence",
+            "attempts": 2,
+            "result": "passed",
+            "observed": {
+                "vpn_container": "orbit_orbit-vpn.1.fnk538b7vc9kxz3mojqfvrg5l",
+                "health": "healthy",
+                "dns_rule_count": 4,
+                "duplicate_rule_count": 0,
+                "dns_rules": [
+                    "-A PREROUTING -i wg0 -p udp -m udp --dport 53 -j DNAT --to-destination 10.0.1.5:53",
+                    "-A PREROUTING -i wg0 -p tcp -m tcp --dport 53 -j DNAT --to-destination 10.0.1.5:53",
+                    "-A POSTROUTING -d 10.0.1.5/32 -p udp -m udp --dport 53 -j MASQUERADE",
+                    "-A POSTROUTING -d 10.0.1.5/32 -p tcp -m tcp --dport 53 -j MASQUERADE"
+                ],
+                "unrelated_expected_rule": "-A POSTROUTING -s 10.6.0.0/24 -o eth0 -j MASQUERADE"
+            }
+        }
+    ],
+    "result": "passed"
+}

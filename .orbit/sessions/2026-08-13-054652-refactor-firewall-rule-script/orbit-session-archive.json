@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T03:46:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-firewall-rule-script/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-054652-refactor-firewall-rule-script",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/firewall-rule-convergence-runtime.json",
+        "loop.md",
+        "quality-gates/profiles/2026-08-13T03-37-56Z-a82aa92451c3/gateway_pest.log"
+    ],
+    "entry_digests": {
+        "evidence/firewall-rule-convergence-runtime.json": "57c7156dab91b7269c1a19b9318d0a97f764559b5f4757771cdf13ac108fc66f",
+        "loop.md": "9611c6011e87a93025710a26984e4351fd8ac9830dc1cd09a45179cea6704b03",
+        "quality-gates/profiles/2026-08-13T03-37-56Z-a82aa92451c3/gateway_pest.log": "90c792bfc8d02ac266ee1c6775c58aacec7b430b694149dea82e4d66420d7c8d"
+    },
+    "slug": "refactor-firewall-rule-script",
+    "requested_slug": "refactor-firewall-rule-script",
+    "compatible_slugs": [
+        "refactor-firewall-rule-script"
+    ],
+    "branch": "refactor/firewall-rule-script",
+    "candidate_commit": "a82aa92451c3edb2b35ad20eaf6709acbed18bcb",
+    "accepted_feature_tip": "a82aa92451c3edb2b35ad20eaf6709acbed18bcb",
+    "accepted_main_tip": "58643258db0d7946ce26cf70d188d5e74899c9e1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
