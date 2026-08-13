@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 301,
-    "unique_candidate_commit_count": 197,
+    "record_count": 302,
+    "unique_candidate_commit_count": 198,
     "orphan_count": 0,
     "records": [
         {
@@ -8012,6 +8012,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-070313-fix-deploy-operation-error-response",
+            "slug": "fix-deploy-operation-error-response",
+            "timestamp": "2026-08-13-070313",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "9b443ebd66b04a228d5275f069957143ab9853d4",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,

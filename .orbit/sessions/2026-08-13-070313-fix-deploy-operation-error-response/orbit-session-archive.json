@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T05:03:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-deploy-operation-error-response/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-070313-fix-deploy-operation-error-response",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/deploy-operation-error-retained-incus-dev-c61899.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T045148Z-306645777577.json"
+    ],
+    "entry_digests": {
+        "evidence/deploy-operation-error-retained-incus-dev-c61899.json": "bcdd3818d56a723e2579c6ebd36d750fcd7793f0b49dc020ed680ead354ef3a7",
+        "loop.md": "2bd15b44e7495d766749b658744d0b8a814c06ecfa183fe6c64ee1143a47432d",
+        "quality-gates/quality-check-2026-08-13T045148Z-306645777577.json": "6ed9973eff539d4560bad61a3e16d7fcb9183e72304825629aac869f35c4454c"
+    },
+    "slug": "fix-deploy-operation-error-response",
+    "requested_slug": "fix-deploy-operation-error-response",
+    "compatible_slugs": [
+        "fix-deploy-operation-error-response"
+    ],
+    "branch": "fix/deploy-operation-error-response",
+    "candidate_commit": "9b443ebd66b04a228d5275f069957143ab9853d4",
+    "accepted_feature_tip": "9b443ebd66b04a228d5275f069957143ab9853d4",
+    "accepted_main_tip": "4a13205998552f1a151159476ee3a476a0752a3b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,34 @@
+{
+  "candidate": "9b443ebd6",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": "dev-c61899",
+  "host": {
+    "name": "beast",
+    "ssh": "nckrtl@192.168.6.20",
+    "route": "lan"
+  },
+  "target": "deploy operation terminal error replay",
+  "checkout": {
+    "role": "gateway",
+    "path": "/home/orbit/orbit-run",
+    "verified_file": "apps/e2e/app/E2E/Support/E2EGatewayApi.php",
+    "sha256": "c12b24d32f246f77a5bf5a3b53744026cc9785a04a02e358a5fa8da48f457f0b"
+  },
+  "expected": "When Orbit Agent is unreachable, deploy:run reads the terminal error from the durable operation journal and returns node.agent_unreachable.",
+  "observed": {
+    "cli_error_code": "node.agent_unreachable",
+    "operation_id": "a0efde92-7aeb-4ccd-8844-0e900e651d89",
+    "operation_status": "failed",
+    "operation_exit_code": 1,
+    "terminal_frame_type": "error",
+    "terminal_frame_sequence": 7,
+    "durable_replay_event_id": 7,
+    "cleanup": {
+      "app_prod_agent_service": "active",
+      "topology": "released",
+      "instances_reaped": 4
+    }
+  },
+  "result": "passed"
+}
