@@ -158,6 +158,17 @@ it('binds the source-mounted checkout orbit cli into retained incus gateway shim
         expect($command)
             ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/srv/orbit'))
             ->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
+            ->toContain('--env '.escapeshellarg('ORBIT_OPERATIONS_REVERB_APP_KEY=orbit-e2e-operations-key'))
+            ->toContain(
+                '--env '
+                    .escapeshellarg(
+                        'ORBIT_OPERATIONS_REVERB_APP_SECRET='
+                            .hash(
+                                algo: 'sha256',
+                                data: 'orbit-e2e-operations-key',
+                            ),
+                    ),
+            )
             ->not->toContain(escapeshellarg('/usr/local/bin/orbit:/usr/local/bin/orbit-cli:ro'));
     }
 });

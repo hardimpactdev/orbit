@@ -20,6 +20,8 @@ final readonly class E2EGatewayApi
 
     private const string GatewayWireGuardHttpUrl = 'http://10.6.0.2';
 
+    private const string OperationsReverbAppKey = 'orbit-e2e-operations-key';
+
     private const string WgEasyStatePath = '/home/orbit/.wg-easy';
 
     public static function seedOperatorIdentity(
@@ -2145,6 +2147,15 @@ final readonly class E2EGatewayApi
             '--env '.escapeshellarg('SESSION_DRIVER=file'),
             '--env '.escapeshellarg('ORBIT_E2E_TRUST_WIREGUARD_HEADER=true'),
             '--env '.escapeshellarg('ORBIT_TRUST_WIREGUARD_PROXY_HEADER=1'),
+            '--env '.escapeshellarg('ORBIT_OPERATIONS_REVERB_APP_KEY='.self::OperationsReverbAppKey),
+            '--env '
+                .escapeshellarg(
+                    'ORBIT_OPERATIONS_REVERB_APP_SECRET='
+                        .hash(
+                            algo: 'sha256',
+                            data: self::OperationsReverbAppKey,
+                        ),
+                ),
             '--env '
                 .escapeshellarg(
                     'VIEW_COMPILED_PATH='.self::GatewayContainerOrbitPath.'/apps/gateway/storage/framework/views',
