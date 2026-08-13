@@ -126,6 +126,7 @@ function runtime_backend_probe_executor(): RemoteLocalExecutor
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
+        agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
         applicationKey: runtime_backend_probe_gateway_secret(),
     );
 }

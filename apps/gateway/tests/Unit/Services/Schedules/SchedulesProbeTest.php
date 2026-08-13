@@ -489,6 +489,7 @@ function schedule_probe_local_executor(): RemoteLocalExecutor
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
+        agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
         applicationKey: schedule_probe_operation_secret(),
     );
 }

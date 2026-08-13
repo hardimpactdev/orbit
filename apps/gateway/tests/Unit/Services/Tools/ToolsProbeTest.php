@@ -112,6 +112,7 @@ function toolsProbeLocalExecutor(): RemoteLocalExecutor
         activityLogger: app(ActivityLogger::class),
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
+        agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
         applicationKey: $secret,
     );
 }

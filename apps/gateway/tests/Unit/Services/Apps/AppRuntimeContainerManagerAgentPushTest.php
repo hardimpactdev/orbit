@@ -564,6 +564,7 @@ function app_runtime_manager_executor(): RemoteLocalExecutor
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
+        agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
         applicationKey: app_runtime_manager_operation_secret(),
     );
 }

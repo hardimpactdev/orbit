@@ -10,11 +10,9 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeAgentPushClient;
-use App\Services\NodeCommandTransport\NodeAgentPushResult;
+use App\Services\NodeCommandTransport\NodeAgentPushDispatcher;
 use App\Services\NodeCommandTransport\NodeAgentPushStreamResult;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
-use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\FleetUpdateNodeCliLauncher;
@@ -38,6 +36,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
         private RemoteExecutorOutputRedactor $outputRedactor,
+        private NodeAgentPushDispatcher $agentPush,
         private string $applicationKey,
     ) {
         if (trim($this->applicationKey) === '') {
@@ -167,7 +166,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 timeoutSeconds: $transportOptions->timeoutSeconds(),
             );
             // Selector remains authoritative for the actual execution path.
-            $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
+            $transport = $this->agentPush->select($node, $envelope);
             $forceRemoteHost = $transportOptions->forceRemoteHost();
 
             $result = match ($transport) {
@@ -182,10 +181,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     transportOptions: $transportOptions,
                     forceRemoteHost: $forceRemoteHost,
                 ),
-                NodeTransport::AgentPush => $this->runAgentPush(
+                NodeTransport::AgentPush => $this->agentPush->execute(
                     node: $node,
-                    dispatch: $dispatch,
                     envelope: $envelope,
+                    operationToken: $dispatch['operationToken'],
                 ),
             };
         } catch (RemoteShellFailed $exception) {
@@ -378,11 +377,19 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 activityTransport: $activityTransport,
             );
 
-            $streamResult = $this->streamAgentPush(
+            $streamResult = $this->agentPush->stream(
                 node: $node,
-                dispatch: $dispatch,
-                operationId: $run->id,
-                transportOptions: $transportOptions,
+                envelope: NodeCommandEnvelope::agentPushBinary(
+                    operationId: $run->id,
+                    binary: 'orbit',
+                    argv: $dispatch['argv'],
+                    input: $transportOptions->input(),
+                    cwd: $transportOptions->cwd(),
+                    environment: $environment,
+                    timeoutSeconds: $transportOptions->streamTimeoutSeconds(),
+                    stream: true,
+                ),
+                operationToken: $dispatch['operationToken'],
                 onOutput: $onOutput,
             );
 
@@ -970,25 +977,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{
-     *     operationId: string,
-     *     operationToken: string,
-     *     auditLine: string,
-     *     argv: list<string>,
-     *     commandContext: OperationTokenCommandContext,
-     * }  $dispatch
-     */
-    private function runAgentPush(
-        Node $node,
-        array $dispatch,
-        NodeCommandEnvelope $envelope,
-    ): RemoteShellResult {
-        $result = app(NodeAgentPushClient::class)->execute($node, $envelope, $dispatch['operationToken']);
-
-        return $this->agentPushResult($result);
-    }
-
-    /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
      * @param  array{
@@ -1052,42 +1040,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         );
     }
 
-    /**
-     * @param  array{
-     *     operationId: string,
-     *     operationToken: string,
-     *     auditLine: string,
-     *     argv: list<string>,
-     *     commandContext: OperationTokenCommandContext,
-     * }  $dispatch
-     * @param  callable(string): void  $onOutput
-     */
-    private function streamAgentPush(
-        Node $node,
-        array $dispatch,
-        string $operationId,
-        LocalExecutorTransportOptions $transportOptions,
-        callable $onOutput,
-    ): NodeAgentPushStreamResult {
-        $envelope = NodeCommandEnvelope::agentPushBinary(
-            operationId: $operationId,
-            binary: 'orbit',
-            argv: $dispatch['argv'],
-            input: $transportOptions->input(),
-            cwd: $transportOptions->cwd(),
-            environment: $this->localExecutorEnvironment($node, $transportOptions),
-            timeoutSeconds: $transportOptions->streamTimeoutSeconds(),
-            stream: true,
-        );
-        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
-
-        if ($transport !== NodeTransport::AgentPush) {
-            throw new RuntimeException('agent-push streaming transport is unavailable');
-        }
-
-        return app(NodeAgentPushClient::class)->stream($node, $envelope, $dispatch['operationToken'], $onOutput);
-    }
-
     private function streamExitCode(NodeAgentPushStreamResult $streamResult): int
     {
         if ($streamResult->agentError !== null) {
@@ -1113,44 +1065,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             'code' => 'remote_shell_failed',
             'duration_ms' => $result->durationMs,
         ];
-    }
-
-    private function agentPushResult(NodeAgentPushResult $result): RemoteShellResult
-    {
-        $stdout = '';
-        $stderr = '';
-
-        foreach ($result->frames as $frame) {
-            $message = $frame['message'] ?? '';
-
-            if (! is_string($message)) {
-                continue;
-            }
-
-            if (! array_key_exists('type', $frame) || ! is_string($frame['type'])) {
-                continue;
-            }
-
-            $type = $frame['type'];
-
-            if ($type === 'stderr') {
-                $stderr .= $message;
-
-                continue;
-            }
-
-            if ($type === 'stdout') {
-                $stdout .= $message;
-            }
-        }
-
-        return new RemoteShellResult(
-            exitCode: $result->exitCode ?? 1,
-            stdout: $stdout,
-            stderr: $stderr,
-            // Record the gateway-observed Agent dispatch round trip.
-            durationMs: $result->timings['gateway_post_ms'],
-        );
     }
 
     private function nodeId(Node $node): int

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\NodeCommandTransport\NodeAgentPushDispatcher;
 use App\Services\RemoteShell\LocalExecutorTransportOptions;
 use App\Services\RemoteShell\RemoteExecutorOutputRedactor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -18,6 +19,7 @@ it('keeps transport options and output redaction outside the executor coordinato
     );
 
     expect($dependencies)
+        ->toContain(NodeAgentPushDispatcher::class)
         ->toContain(RemoteExecutorOutputRedactor::class)
         ->and($executor->hasMethod('sanitizedResult'))
         ->toBeFalse()
@@ -26,6 +28,12 @@ it('keeps transport options and output redaction outside the executor coordinato
         ->and($executor->hasMethod('transportExceptionMetadata'))
         ->toBeFalse()
         ->and($executor->hasMethod('redactedCommandOptionNames'))
+        ->toBeFalse()
+        ->and($executor->hasMethod('runAgentPush'))
+        ->toBeFalse()
+        ->and($executor->hasMethod('streamAgentPush'))
+        ->toBeFalse()
+        ->and($executor->hasMethod('agentPushResult'))
         ->toBeFalse();
 });
 
@@ -35,5 +43,6 @@ it('keeps the extracted contracts final and readonly', function (string $class):
     expect($reflection->isFinal())->toBeTrue()->and($reflection->isReadOnly())->toBeTrue();
 })->with([
     LocalExecutorTransportOptions::class,
+    NodeAgentPushDispatcher::class,
     RemoteExecutorOutputRedactor::class,
 ]);

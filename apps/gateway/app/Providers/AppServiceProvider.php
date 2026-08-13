@@ -32,6 +32,7 @@ use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Doctor\NodeDnsProjectionProbe;
 use App\Services\Doctor\ProxyDnsProjectionProbe;
 use App\Services\Gateway\SdkUpdateAllGatewayStream;
+use App\Services\NodeCommandTransport\NodeAgentPushDispatcher;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
@@ -182,6 +183,7 @@ class AppServiceProvider extends ServiceProvider
             activityLogger: $app->make(ActivityLogger::class),
             operationRuns: $app->make(OperationRunRecorder::class),
             outputRedactor: $app->make(RemoteExecutorOutputRedactor::class),
+            agentPush: $app->make(NodeAgentPushDispatcher::class),
             applicationKey: $this->applicationKey(),
         ));
         $this->app->bind(NodeWireGuardSelfRouteProbe::class, fn (Application $app): NodeWireGuardSelfRouteProbe => new NodeWireGuardSelfRouteProbe(

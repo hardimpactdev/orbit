@@ -99,6 +99,7 @@ function workspace_runtime_manager_local_executor_for_test(): RemoteLocalExecuto
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
+        agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
         applicationKey: workspace_runtime_manager_operation_secret_for_test(),
     );
 }
